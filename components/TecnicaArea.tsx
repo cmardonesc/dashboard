@@ -1,0 +1,908 @@
+
+import React, { useState, useMemo, useEffect } from 'react';
+import { MOCK_PLAYERS } from '../mockData';
+import { ItineraryActivity, Category, MicrocicloDB, CATEGORY_ID_MAP } from '../types';
+import { supabase } from '../lib/supabase';
+
+type ViewMode = 'selection' | 'management';
+type SubTab = 'cronograma' | 'tareas' | 'evaluacion';
+
+interface Tarea {
+  id: string;
+  nombre: string;
+  tipoDinamica: string;
+  descripcion?: string;
+}
+
+interface MicrocicloUI extends MicrocicloDB {
+  id: number;
+  nombre_display: string;
+}
+
+const DINAMICAS_OFICIALES = [
+  'Cuadrados',
+  'Dinámicas Cerradas',
+  'Dinámicas Abiertas',
+  'Dinámicas de Partido',
+  'General'
+];
+
+const LOCATIONS = [
+  'JUAN PINTO DURAN',
+  'FERNANDO RIERA',
+  'CAR JOSE SULANTAY',
+  'OTRO'
+];
+
+const PREDEFINED_ACTIVITIES = [
+  { label: 'Desayuno', emoji: '☕' },
+  { label: 'Almuerzo', emoji: '🍽️' },
+  { label: 'Merienda', emoji: '🥐' },
+  { label: 'Snack', emoji: '🥨' },
+  { label: 'Cena', emoji: '🌙' },
+  { label: 'Activación AM', emoji: '🏃‍♂️' },
+  { label: 'Activación PM', emoji: '🧘‍♂️' },
+  { label: 'Entrenamiento', emoji: '⚽' },
+  { label: 'Gym', emoji: '🏋️‍♂️' },
+  { label: 'Análisis de Rival', emoji: '📊' },
+  { label: 'Análisis Propio', emoji: '📉' },
+  { label: 'Análisis de video', emoji: '📹' },
+  { label: 'Charla Técnica', emoji: '📋' },
+  { label: 'Charla Portero', emoji: '🧤' },
+  { label: 'Charla Nutricional', emoji: '🍎' },
+  { label: 'Charla Psicológica', emoji: '🧠' },
+  { label: 'Evaluaciones Físicas', emoji: '📏' },
+  { label: 'Evaluación Nutricional', emoji: '⚖️' },
+  { label: 'Actividad Social', emoji: '🤝' },
+  { label: 'Salida', emoji: '🛫' },
+  { label: 'Retorno', emoji: '🛬' },
+  { label: 'Partido Amistoso', emoji: '🏟️' },
+  { label: 'Partido Oficial', emoji: '🏆' },
+  { label: 'OTRA', emoji: '📝' },
+];
+
+const TecnicaArea: React.FC = () => {
+  const [viewMode, setViewMode] = useState<ViewMode>('selection');
+  const [activeTab, setActiveTab] = useState<SubTab>('cronograma');
+  const [selectedMicro, setSelectedMicro] = useState<MicrocicloUI | null>(null);
+  const [microciclos, setMicrociclos] = useState<MicrocicloUI[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [savingActivity, setSavingActivity] = useState(false);
+  const [savingDayTasks, setSavingDayTasks] = useState<Record<string, boolean>>({});
+  const [loadingBiblioteca, setLoadingBiblioteca] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(['TODOS LOS PROCESOS']);
+
+  const toggleCategory = (cat: string) => {
+    setSelectedCategories(prev => {
+      if (cat === 'TODOS LOS PROCESOS') return ['TODOS LOS PROCESOS'];
+      const newSelection = prev.includes(cat)
+        ? prev.filter(c => c !== cat)
+        : [...prev.filter(c => c !== 'TODOS LOS PROCESOS'), cat];
+      return newSelection.length === 0 ? ['TODOS LOS PROCESOS'] : newSelection;
+    });
+  };
+
+  // Biblioteca y planificación
+  const [biblioteca, setBiblioteca] = useState<Tarea[]>([]);
+  const [weeklySchedule, setWeeklySchedule] = useState<Record<string, (ItineraryActivity & { db_id?: any })[]>>({});
+  const [fieldTasks, setFieldTasks] = useState<Record<string, Tarea[]>>({});
+
+  // Modales
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [showTareaFieldModal, setShowTareaFieldModal] = useState(false);
+  const [showBibliotecaAddModal, setShowBibliotecaAddModal] = useState(false);
+  const [showDailyReportModal, setShowDailyReportModal] = useState(false);
+  const [showWeeklyReportModal, setShowWeeklyReportModal] = useState(false);
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
+  const [searchTermBiblioteca, setSearchTermBiblioteca] = useState('');
+
+  const [activityForm, setActivityForm] = useState({
+    time: '08:00',
+    type: PREDEFINED_ACTIVITIES[0].label,
+    location: LOCATIONS[0],
+    customLocation: '',
+    customType: '',
+    rival: ''
+  });
+
+  const [newBibliotecaTarea, setNewBibliotecaTarea] = useState({
+    nombre: '',
+    tipoDinamica: DINAMICAS_OFICIALES[0],
+    descripcion: ''
+  });
+
+  useEffect(() => {
+    fetchMicrocycles();
+    fetchBiblioteca();
+  }, []);
+
+  const getEmojiForType = (type: string) => {
+    const isCustom = !PREDEFINED_ACTIVITIES.some(a => type === a.label || type.startsWith(a.label + ' vs'));
+    if (isCustom) return '📝';
+    
+    const found = PREDEFINED_ACTIVITIES.find(a => type.includes(a.label));
+    return found ? found.emoji : '📅';
+  };
+
+  const fetchMicrocycles = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('microcycles')
+        .select('*')
+        .order('start_date', { ascending: false });
+
+      if (error) throw error;
+      if (data) {
+        const formatted = data.map((m: any) => ({
+          ...m,
+          nombre_display: m.type === 'Entrenamientos' ? 'MICROCICLO' : (m.type ? m.type.toUpperCase() : 'MICROCICLO')
+        }));
+        setMicrociclos(formatted);
+      }
+    } catch (err) {
+      console.error("Error cargando microciclos:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchSchedule = async (microId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('cronograma_semanal')
+        .select('*')
+        .eq('id_microcycles', microId)
+        .order('hora', { ascending: true });
+
+      if (error) throw error;
+      if (data) {
+        const grouped: Record<string, any[]> = {};
+        data.forEach(item => {
+          const key = item.fecha;
+          if (!grouped[key]) grouped[key] = [];
+          
+          const horaString = (item.hora || "00:00").substring(0, 5);
+          
+          grouped[key].push({
+            id: item.id.toString(),
+            db_id: item.id,
+            time: horaString,
+            type: item.actividad || "Sin actividad",
+            location: item.lugar || "Sin lugar",
+            emoji: getEmojiForType(item.actividad || ""),
+            isCustom: !!item.otra
+          });
+        });
+        setWeeklySchedule(grouped);
+      }
+    } catch (err) {
+      console.error("Error cargando cronograma:", err);
+    }
+  };
+
+  const fetchWeeklyTasks = async (microId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('tareas_semanales')
+        .select('*')
+        .eq('id_microcycles', microId);
+
+      if (error) throw error;
+      if (data) {
+        const grouped: Record<string, Tarea[]> = {};
+        data.forEach(item => {
+          const key = item.fecha;
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push({
+            id: item.id.toString(),
+            nombre: item.nombre,
+            tipoDinamica: item.dinamica,
+            descripcion: item.observacion
+          });
+        });
+        setFieldTasks(grouped);
+      }
+    } catch (err) {
+      console.error("Error cargando tareas semanales:", err);
+    }
+  };
+
+  const fetchBiblioteca = async () => {
+    setLoadingBiblioteca(true);
+    try {
+      const { data, error } = await supabase
+        .from('tareas')
+        .select('*')
+        .order('nombre', { ascending: true });
+
+      if (error) throw error;
+      if (data) {
+        const mapped: Tarea[] = data.map((t: any) => ({
+          id: t.id.toString(),
+          nombre: t.nombre,
+          tipoDinamica: t.tipo_dinamica || 'General',
+          descripcion: t.descripcion
+        }));
+        setBiblioteca(mapped);
+      }
+    } catch (err) {
+      console.error("Error cargando biblioteca de tareas:", err);
+    } finally {
+      setLoadingBiblioteca(false);
+    }
+  };
+
+  const handleSelectMicro = (mc: MicrocicloUI) => {
+    setSelectedMicro(mc);
+    setWeeklySchedule({});
+    setFieldTasks({});
+    fetchSchedule(mc.id);
+    fetchWeeklyTasks(mc.id);
+    setViewMode('management');
+    setActiveTab('cronograma');
+  };
+
+  const currentWeekDays = useMemo(() => {
+    if (!selectedMicro) return [];
+    const start = new Date(selectedMicro.start_date + 'T12:00:00');
+    const end = new Date(selectedMicro.end_date + 'T12:00:00');
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    
+    return Array.from({ length: diffDays }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  }, [selectedMicro]);
+
+  const formatDateKey = (date: Date) => date.toISOString().split('T')[0];
+
+  const handleAddActivity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedDayIndex === null || !selectedMicro || savingActivity) return;
+    
+    setSavingActivity(true);
+    const dateKey = formatDateKey(currentWeekDays[selectedDayIndex]);
+    
+    const isCustom = activityForm.type === 'OTRA';
+    const finalType = isCustom ? (activityForm.customType || 'Actividad') : activityForm.type;
+
+    const isMatch = finalType === 'Partido Amistoso' || finalType === 'Partido Oficial';
+    const displayType = (isMatch && activityForm.rival.trim()) 
+      ? `${finalType} vs ${activityForm.rival.trim()}` 
+      : finalType;
+
+    const finalLocation = activityForm.location === 'OTRO' 
+      ? (activityForm.customLocation || 'Sin definir') 
+      : activityForm.location;
+
+    try {
+      const { data, error } = await supabase
+        .from('cronograma_semanal')
+        .insert([{
+          id_microcycles: selectedMicro.id,
+          id_categoria: selectedMicro.category_id,
+          fecha: dateKey,
+          hora: activityForm.time,
+          actividad: displayType,
+          lugar: finalLocation,
+          otra: isCustom ? (activityForm.customType || 'Personalizada') : null
+        }])
+        .select();
+
+      if (error) throw error;
+
+      if (data && data[0]) {
+        const item = data[0];
+        const horaString = (item.hora || activityForm.time || "00:00").substring(0, 5);
+        
+        const newActivity = {
+          id: item.id.toString(),
+          db_id: item.id,
+          time: horaString,
+          type: item.actividad,
+          location: item.lugar,
+          emoji: getEmojiForType(item.actividad),
+          isCustom: !!item.otra
+        };
+
+        setWeeklySchedule(prev => {
+          const currentDayActivities = prev[dateKey] || [];
+          return {
+            ...prev,
+            [dateKey]: [...currentDayActivities, newActivity].sort((a, b) => 
+              (a.time || "").localeCompare(b.time || "")
+            )
+          };
+        });
+      }
+
+      // Reiniciamos el formulario pero permanecemos en la pestaña actual de Cronograma
+      setActivityForm({
+        time: '08:00',
+        type: PREDEFINED_ACTIVITIES[0].label,
+        location: LOCATIONS[0],
+        customLocation: '',
+        customType: '',
+        rival: ''
+      });
+      
+      // Cerramos el modal pero mantenemos la vista de gestión
+      setShowActivityModal(false);
+      setSelectedDayIndex(null);
+      setActiveTab('cronograma'); // Aseguramos que siga en cronograma (aunque ya debería estarlo)
+      
+    } catch (err: any) {
+      console.error("Error al agendar:", err);
+      alert("Error al agendar: " + err.message);
+    } finally {
+      setSavingActivity(false);
+    }
+  };
+
+  const handleSaveDayTasks = async (dateKey: string) => {
+    if (!selectedMicro || savingDayTasks[dateKey]) return;
+    
+    setSavingDayTasks(prev => ({ ...prev, [dateKey]: true }));
+    const dayTasks = fieldTasks[dateKey] || [];
+    
+    try {
+      const { error: deleteError } = await supabase
+        .from('tareas_semanales')
+        .delete()
+        .eq('id_microcycles', selectedMicro.id)
+        .eq('fecha', dateKey);
+
+      if (deleteError) throw deleteError;
+
+      if (dayTasks.length > 0) {
+        const payload = dayTasks.map(t => ({
+          id_microcycles: selectedMicro.id,
+          fecha: dateKey,
+          dinamica: t.tipoDinamica,
+          nombre: t.nombre,
+          observacion: t.descripcion || ''
+        }));
+
+        const { error: insertError } = await supabase
+          .from('tareas_semanales')
+          .insert(payload);
+
+        if (insertError) throw insertError;
+      }
+
+      alert(`Sincronización exitosa: Tareas del día ${dateKey} guardadas.`);
+    } catch (err: any) {
+      console.error("Error al sincronizar tareas:", err);
+      alert("Error crítico al guardar tareas: " + err.message);
+    } finally {
+      setSavingDayTasks(prev => ({ ...prev, [dateKey]: false }));
+    }
+  };
+
+  const handleSelectTareaFromBiblioteca = (tarea: Tarea) => {
+    if (selectedDayIndex === null || !selectedMicro) return;
+    const dateKey = formatDateKey(currentWeekDays[selectedDayIndex]);
+    const newFieldTarea: Tarea = { ...tarea, id: `${tarea.id}-${Date.now()}` };
+    setFieldTasks({
+      ...fieldTasks,
+      [dateKey]: [...(fieldTasks[dateKey] || []), newFieldTarea]
+    });
+    setShowTareaFieldModal(false);
+  };
+
+  const handleAddTareaToBiblioteca = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const payload = {
+        nombre: newBibliotecaTarea.nombre,
+        tipo_dinamica: newBibliotecaTarea.tipoDinamica,
+        descripcion: newBibliotecaTarea.descripcion
+      };
+
+      const { error } = await supabase
+        .from('tareas')
+        .insert([payload]);
+
+      if (error) throw error;
+
+      await fetchBiblioteca();
+      setShowBibliotecaAddModal(false);
+      setNewBibliotecaTarea({ 
+        nombre: '', 
+        tipoDinamica: DINAMICAS_OFICIALES[0], 
+        descripcion: '' 
+      });
+    } catch (err: any) {
+      console.error("Error guardando tarea:", err);
+      alert("Error al guardar tarea: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeActivity = async (dateKey: string, activity: any) => {
+    if (!activity.db_id) return;
+    try {
+      const { error } = await supabase
+        .from('cronograma_semanal')
+        .delete()
+        .eq('id', activity.db_id);
+      
+      if (error) throw error;
+
+      setWeeklySchedule(prev => ({ 
+        ...prev, 
+        [dateKey]: (prev[dateKey] || []).filter(a => a.id !== activity.id) 
+      }));
+    } catch (err: any) {
+      alert("Error al eliminar: " + err.message);
+    }
+  };
+
+  const removeFieldTask = (dateKey: string, tareaId: string) => {
+    setFieldTasks({ ...fieldTasks, [dateKey]: (fieldTasks[dateKey] || []).filter(t => t.id !== tareaId) });
+  };
+
+  const formatCategoryLabel = (idOrName: any) => {
+    if (idOrName === 'TODOS LOS PROCESOS') return idOrName;
+    if (typeof idOrName === 'number') {
+      const entry = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === idOrName);
+      return entry ? entry[0].toUpperCase().replace('_', ' ') : 'N/A';
+    }
+    return String(idOrName).toUpperCase().replace('_', ' ');
+  };
+
+  const getActivityStyle = (type: string) => {
+    const t = type.toUpperCase();
+    if (t.includes('ENTRENAMIENTO')) return 'bg-red-600 text-white font-black';
+    if (t.includes('GYM') || t.includes('GIMNASIO')) return 'bg-[#0b1220] text-white font-black';
+    if (t.includes('PSICOLÓGICA') || t.includes('PSICOLOGO') || t.includes('CHARLA')) return 'bg-[#a3d977] text-[#0b1220] font-black';
+    if (t.includes('DESAYUNO') || t.includes('ALMUERZO') || t.includes('MERIENDA') || t.includes('SNACK') || t.includes('CENA')) return 'bg-slate-200 text-[#0b1220] font-bold';
+    return 'bg-white text-[#0b1220] font-medium';
+  };
+
+  const getDinamicaStyle = (dinamica: string) => {
+    const d = dinamica.toLowerCase();
+    if (d.includes('cuadrados')) return 'bg-blue-600 text-white';
+    if (d.includes('cerradas')) return 'bg-orange-500 text-white';
+    if (d.includes('abiertas')) return 'bg-emerald-500 text-white';
+    if (d.includes('partido')) return 'bg-slate-900 text-white';
+    if (d.includes('dinámica') || d.includes('dinamica')) return 'bg-indigo-600 text-white';
+    return 'bg-slate-400 text-white';
+  };
+
+  const filteredMicrociclos = useMemo(() => {
+    return microciclos.filter(m => {
+      if (selectedCategories.includes('TODOS LOS PROCESOS')) return true;
+      return selectedCategories.some(cat => {
+        const categoryIdToMatch = CATEGORY_ID_MAP[cat as Category];
+        return Number(m.category_id) === Number(categoryIdToMatch);
+      });
+    });
+  }, [microciclos, selectedCategories]);
+
+  if (viewMode === 'selection') {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+        <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <div className="w-14 h-14 bg-[#CF1B2B] rounded-2xl flex items-center justify-center text-white shadow-xl">
+              <i className="fa-solid fa-bullseye text-xl"></i>
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">ÁREA TÉCNICA</h2>
+              <p className="text-slate-400 text-xs font-medium uppercase tracking-widest mt-1">Seleccione un proceso para gestionar su planificación.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 p-1.5 bg-white rounded-[24px] border border-slate-100 shadow-sm max-w-fit overflow-x-auto">
+          {['TODOS LOS PROCESOS', ...Object.values(Category)].map(cat => {
+            const isSelected = selectedCategories.includes(cat);
+            return (
+              <button 
+                key={cat} 
+                onClick={() => toggleCategory(cat)} 
+                className={`px-6 py-3.5 rounded-[20px] text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${isSelected ? 'bg-[#0b1220] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                {formatCategoryLabel(cat)}
+              </button>
+            );
+          })}
+        </div>
+
+        {loading ? (
+          <div className="py-20 text-center text-slate-400 font-black uppercase italic tracking-widest animate-pulse">Consultando Base de Datos...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {filteredMicrociclos.map((mc) => (
+              <div 
+                key={mc.id} 
+                onClick={() => handleSelectMicro(mc)} 
+                className="group bg-white rounded-[40px] p-10 border-2 border-slate-50 transition-all cursor-pointer hover:shadow-2xl hover:border-red-100 relative overflow-hidden transform-gpu"
+              >
+                <div className="relative z-10 flex flex-col h-full">
+                  <span className="bg-blue-600 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest w-fit mb-6 shadow-sm">
+                    {formatCategoryLabel(mc.category_id)}
+                  </span>
+                  <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-2 group-hover:text-red-600 transition-colors">
+                    {mc.nombre_display}
+                  </h3>
+                  <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mb-4">
+                    {new Date(mc.start_date + 'T12:00:00').toLocaleDateString()} - {new Date(mc.end_date + 'T12:00:00').toLocaleDateString()}
+                  </p>
+                  <div className="pt-6 border-t border-slate-50 flex justify-between items-end">
+                    <span className="text-[10px] font-black text-red-600 uppercase italic">{mc.city}, {mc.country}</span>
+                    <div className="flex items-center gap-2 text-slate-300 group-hover:text-red-600 transition-all">
+                      <span className="text-[9px] font-black uppercase">Gestionar</span>
+                      <i className="fa-solid fa-arrow-right text-xs"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 pb-20">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+        <div className="flex items-center gap-6">
+          <button onClick={() => setViewMode('selection')} className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center hover:bg-[#0b1220] hover:text-white transition-all flex items-center justify-center shadow-inner">
+            <i className="fa-solid fa-arrow-left"></i>
+          </button>
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="bg-red-600 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">
+                {formatCategoryLabel(selectedMicro?.category_id)}
+              </span>
+              <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">
+                {selectedMicro?.nombre_display} <span className="text-red-500">PROCESO</span>
+              </h2>
+            </div>
+            <p className="text-slate-400 text-xs font-medium uppercase tracking-widest mt-1">
+              Sede: {selectedMicro?.city}, {selectedMicro?.country} | Periodo: {new Date(selectedMicro?.start_date! + 'T12:00:00').toLocaleDateString()} - {new Date(selectedMicro?.end_date! + 'T12:00:00').toLocaleDateString()}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white/50 p-1.5 rounded-[24px] border border-slate-100 flex items-center gap-2 max-w-fit shadow-sm overflow-x-auto">
+        <button onClick={() => setActiveTab('cronograma')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'cronograma' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+          <i className="fa-regular fa-calendar-days text-sm"></i> Cronograma Semanal
+        </button>
+        <button onClick={() => setActiveTab('tareas')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'tareas' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+          <i className="fa-solid fa-futbol text-sm"></i> Tareas Semanales
+        </button>
+      </div>
+
+      {activeTab === 'cronograma' && (
+        <div className="space-y-12 relative animate-in fade-in duration-300 transform-gpu">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+            {currentWeekDays.map((date, i) => {
+              const dateKey = formatDateKey(date);
+              const schedule = weeklySchedule[dateKey] || [];
+              const isWeekend = i >= 5;
+              
+              return (
+                <div key={dateKey} className={`flex flex-col h-[520px] rounded-[40px] transition-all relative group shadow-sm border ${isWeekend ? 'border-red-500/20 bg-red-50/5' : 'bg-white border-slate-100'} transform-gpu`}>
+                  <div className="pt-8 pb-4 text-center border-b border-dashed border-slate-100">
+                    <span className={`text-[10px] font-black uppercase tracking-[0.2em] block mb-1 ${isWeekend ? 'text-red-500' : 'text-slate-400'}`}>DÍA {i+1}</span>
+                    <span className={`text-3xl font-black tracking-tighter ${isWeekend ? 'text-red-600' : 'text-slate-800'}`}>{date.getDate()}</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                    {schedule.map(act => (
+                      <div key={act.id} className="bg-slate-50/80 p-3 rounded-2xl border border-slate-100 group/item relative">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm">{getEmojiForType(act.type)}</span>
+                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{act.time}</span>
+                        </div>
+                        <p className="text-[10px] font-black text-slate-900 uppercase italic tracking-tight truncate leading-tight">{act.type}</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter truncate">{act.location}</p>
+                        <button onClick={() => removeActivity(dateKey, act)} className="absolute -top-1 -right-1 w-5 h-5 bg-white border border-slate-100 rounded-full text-slate-300 hover:text-red-500 hover:border-red-500 flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-all shadow-sm">
+                          <i className="fa-solid fa-xmark text-[10px]"></i>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="p-4 space-y-2">
+                    <button onClick={() => { setSelectedDayIndex(i); setShowDailyReportModal(true); }} className="w-full py-4 rounded-[20px] bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-red-600 transition-all shadow-md">
+                      <i className="fa-solid fa-file-lines"></i> Reporte Diario
+                    </button>
+                    <button onClick={() => { setSelectedDayIndex(i); setShowActivityModal(true); }} className="w-full py-4 rounded-[20px] bg-slate-50 border border-slate-100 text-slate-400 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-lg transition-all flex items-center justify-center gap-2 group">
+                      <i className="fa-solid fa-plus text-sm"></i>
+                      <span className="text-[10px] font-black uppercase tracking-widest">Agendar</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'tareas' && (
+        <div className="space-y-12 relative animate-in fade-in duration-300 transform-gpu">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
+              <span className="w-2 h-6 bg-red-600 rounded-full"></span>
+              Planificación Técnica de Campo
+            </h3>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setShowWeeklyReportModal(true)} 
+                className="bg-white border-2 border-slate-200 text-slate-500 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#0b1220] hover:text-white hover:border-[#0b1220] transition-all"
+              >
+                <i className="fa-solid fa-file-pdf text-red-500"></i> Generar Reporte Semanal Técnico
+              </button>
+              <button 
+                onClick={() => setShowBibliotecaAddModal(true)} 
+                className="bg-[#0b1220] text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-xl hover:bg-slate-800 transition-all"
+              >
+                <i className="fa-solid fa-plus"></i> Gestionar Base de Tareas
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+            {currentWeekDays.map((date, i) => {
+              const dateKey = formatDateKey(date);
+              const tasks = fieldTasks[dateKey] || [];
+              const isWeekend = i >= 5;
+              const isSaving = savingDayTasks[dateKey];
+              
+              return (
+                <div key={dateKey} className={`flex flex-col h-[520px] rounded-[40px] transition-all relative group shadow-sm border ${isWeekend ? 'border-red-500/20 bg-red-50/5' : 'bg-white border-slate-100'} transform-gpu`}>
+                  <div className="pt-8 pb-4 text-center border-b border-dashed border-slate-100">
+                    <span className={`text-[10px] font-black uppercase tracking-[0.2em] block mb-1 ${isWeekend ? 'text-red-500' : 'text-slate-400'}`}>DÍA {i+1}</span>
+                    <span className={`text-3xl font-black tracking-tighter ${isWeekend ? 'text-red-600' : 'text-slate-800'}`}>{date.getDate()}</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                    {tasks.map(task => (
+                      <div key={task.id} className={`${getDinamicaStyle(task.tipoDinamica)} p-3 rounded-2xl group/item relative shadow-sm`}>
+                        <p className="text-[10px] font-black uppercase italic tracking-tight leading-tight mb-1">{task.nombre}</p>
+                        <p className="text-[8px] font-bold opacity-70 uppercase tracking-widest">{task.tipoDinamica}</p>
+                        <button onClick={() => removeFieldTask(dateKey, task.id)} className="absolute -top-1 -right-1 w-5 h-5 bg-white border border-slate-100 rounded-full text-slate-300 hover:text-red-500 hover:border-red-500 flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-all shadow-sm">
+                          <i className="fa-solid fa-xmark text-[10px]"></i>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="p-4 space-y-2">
+                    <button 
+                      onClick={() => handleSaveDayTasks(dateKey)} 
+                      disabled={isSaving}
+                      className={`w-full py-4 rounded-[20px] bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all shadow-md ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    >
+                      {isSaving ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-floppy-disk"></i>}
+                      {isSaving ? 'Guardando...' : 'Guardar Día'}
+                    </button>
+                    <button onClick={() => { setSelectedDayIndex(i); setShowTareaFieldModal(true); }} className="w-full py-4 rounded-[20px] bg-slate-50 border border-slate-100 text-slate-400 hover:bg-[#CF1B2B] hover:text-white hover:border-[#CF1B2B] hover:shadow-lg transition-all flex items-center justify-center gap-2 group">
+                      <i className="fa-solid fa-plus text-sm"></i>
+                      <span className="text-[10px] font-black uppercase tracking-widest">Asignar Tarea</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {showTareaFieldModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-[#0b1220]/95 transform-gpu animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-2xl rounded-[48px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 transform-gpu">
+            <div className="bg-[#0b1220] p-10 text-white relative">
+              <button onClick={() => setShowTareaFieldModal(false)} className="absolute top-8 right-8 text-white/20 hover:text-white transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
+              <h3 className="text-2xl font-black uppercase italic tracking-tighter">Asignar Tarea Técnica</h3>
+            </div>
+            <div className="p-10 space-y-6">
+              <div className="relative">
+                <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
+                <input type="text" placeholder="Buscar tarea..." className="w-full bg-slate-50 border-none rounded-2xl px-12 py-4 text-sm font-bold outline-none" value={searchTermBiblioteca} onChange={e => setSearchTermBiblioteca(e.target.value)} />
+              </div>
+              <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                {biblioteca.filter(t => t.nombre.toLowerCase().includes(searchTermBiblioteca.toLowerCase())).map(tarea => (
+                  <button key={tarea.id} onClick={() => handleSelectTareaFromBiblioteca(tarea)} className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-2xl hover:bg-red-50 border border-transparent transition-all group">
+                    <p className="text-[11px] font-black text-slate-900 uppercase italic">{tarea.nombre}</p>
+                    <i className="fa-solid fa-plus text-slate-200 group-hover:text-red-500"></i>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBibliotecaAddModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-[#0b1220]/95 transform-gpu animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-xl rounded-[48px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 transform-gpu">
+            <div className="bg-red-600 p-10 text-white relative">
+              <button onClick={() => setShowBibliotecaAddModal(false)} className="absolute top-8 right-8 text-white/40 hover:text-white transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
+              <h3 className="text-2xl font-black uppercase italic tracking-tighter">Nueva Tarea en Base de Datos</h3>
+            </div>
+            <form onSubmit={handleAddTareaToBiblioteca} className="p-10 space-y-8">
+              <input required type="text" placeholder="Nombre de la Tarea" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={newBibliotecaTarea.nombre} onChange={e => setNewBibliotecaTarea({...newBibliotecaTarea, nombre: e.target.value})} />
+              <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={newBibliotecaTarea.tipoDinamica} onChange={e => setNewBibliotecaTarea({...newBibliotecaTarea, tipoDinamica: e.target.value})}>
+                {DINAMICAS_OFICIALES.map(d => <option key={d} value={d}>{d.toUpperCase()}</option>)}
+              </select>
+              <textarea rows={3} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold resize-none" value={newBibliotecaTarea.descripcion} onChange={e => setNewBibliotecaTarea({...newBibliotecaTarea, descripcion: e.target.value})} />
+              <button type="submit" className="w-full py-5 bg-[#0b1220] text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-xl">Guardar en Sistema</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showDailyReportModal && selectedDayIndex !== null && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#0b1220]/95 backdrop-blur-sm animate-in fade-in duration-300 overflow-y-auto">
+           {/* Overlay to close */}
+           <div className="absolute inset-0" onClick={() => setShowDailyReportModal(false)}></div>
+           
+           <div className="relative bg-white w-full max-w-[210mm] min-h-[297mm] rounded-[24px] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 transform-gpu my-8">
+              
+              {/* Header Actions (No Printable) */}
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-50 print:hidden">
+                 <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter">Vista Previa Reporte Diario</h3>
+                 <div className="flex gap-3">
+                   <button 
+                     onClick={() => window.print()} 
+                     className="bg-red-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:bg-red-700 transition-all"
+                   >
+                     <i className="fa-solid fa-print"></i> Imprimir
+                   </button>
+                   <button 
+                     onClick={() => setShowDailyReportModal(false)} 
+                     className="bg-slate-100 text-slate-500 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
+                   >
+                     Cerrar
+                   </button>
+                 </div>
+              </div>
+
+              {/* Printable Content (A4 Ratio) */}
+              <div className="flex-1 p-12 bg-white print:p-0" id="daily-report-print">
+                 
+                 {/* 1. HEADER: Título y Datos del Microciclo */}
+                 <div className="flex justify-between items-start border-b-4 border-red-600 pb-8 mb-10">
+                    <div>
+                       <h1 className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-2">
+                          PLANIFICACIÓN <span className="text-red-600">DIARIA</span>
+                       </h1>
+                       <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.3em]">
+                          DEPARTAMENTO TÉCNICO • SELECCIÓN NACIONAL
+                       </p>
+                    </div>
+                    <div className="text-right">
+                       <div className="bg-slate-50 px-6 py-3 rounded-xl border border-slate-100 inline-block">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">MICROCICLO</p>
+                          <p className="text-xl font-black text-slate-900 uppercase italic tracking-tight">
+                             {selectedMicro?.nombre_display}
+                          </p>
+                       </div>
+                       <div className="mt-2 flex justify-end gap-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          <span>{formatCategoryLabel(selectedMicro?.category_id)}</span>
+                          <span>•</span>
+                          <span>{selectedMicro?.city}, {selectedMicro?.country}</span>
+                       </div>
+                    </div>
+                 </div>
+
+                 {/* 2. FECHA DEL REPORTE */}
+                 <div className="mb-10">
+                    <h2 className="text-5xl font-black text-slate-900 uppercase italic tracking-tighter">
+                       {currentWeekDays[selectedDayIndex].toLocaleDateString('es-ES', { weekday: 'long' })} <span className="text-slate-300">/</span> {currentWeekDays[selectedDayIndex].toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}
+                    </h2>
+                 </div>
+
+                 {/* 3. TABLA DE ACTIVIDADES */}
+                 <div className="border-2 border-slate-100 rounded-2xl overflow-hidden mb-10">
+                    <table className="w-full text-center border-collapse">
+                       <thead>
+                          <tr className="bg-slate-50 border-b-2 border-slate-100">
+                             <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] w-24">Hora</th>
+                             <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Actividad</th>
+                             <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Lugar</th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-100">
+                          {(weeklySchedule[formatDateKey(currentWeekDays[selectedDayIndex])] || []).map((act, idx) => (
+                             <tr key={idx} className={act.type.toUpperCase().includes('ENTRENAMIENTO') ? 'bg-red-50/50' : ''}>
+                                <td className="py-5 px-4 text-sm font-black text-slate-900 tracking-tight border-r border-slate-50">{act.time}</td>
+                                <td className="py-5 px-4 text-sm font-bold text-slate-800 uppercase italic tracking-tight border-r border-slate-50">
+                                   {act.type}
+                                </td>
+                                <td className="py-5 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                   {act.location}
+                                </td>
+                             </tr>
+                          ))}
+                          {(weeklySchedule[formatDateKey(currentWeekDays[selectedDayIndex])] || []).length === 0 && (
+                             <tr>
+                                <td colSpan={3} className="py-12 text-center text-slate-300 text-xs font-bold uppercase tracking-widest italic">
+                                   Sin actividades registradas
+                                </td>
+                             </tr>
+                          )}
+                       </tbody>
+                    </table>
+                 </div>
+
+                 {/* 4. FOOTER / NOTAS (Opcional) */}
+                 <div className="mt-auto pt-8 border-t border-slate-100 flex justify-between items-end text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                    <span>Generado automáticamente por el Sistema de Gestión</span>
+                    <span>{new Date().toLocaleDateString()}</span>
+                 </div>
+
+              </div>
+           </div>
+        </div>
+      )}
+
+      {showActivityModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-[#0b1220]/90 transform-gpu animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-xl rounded-[48px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 transform-gpu">
+            <div className="bg-[#0b1220] p-10 text-white relative">
+              <button onClick={() => setShowActivityModal(false)} className="absolute top-8 right-8 text-white/20 hover:text-white transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
+              <h3 className="text-2xl font-black uppercase italic tracking-tighter">Programar Jornada</h3>
+              <p className="text-red-500 font-black uppercase text-[10px] tracking-[0.3em] mt-2">DÍA {selectedDayIndex !== null && selectedDayIndex + 1} • {currentWeekDays[selectedDayIndex!].toLocaleDateString()}</p>
+            </div>
+            <form onSubmit={handleAddActivity} className="p-12 space-y-8">
+              <div className="grid grid-cols-2 gap-8">
+                <input required type="time" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={activityForm.time} onChange={e => setActivityForm({...activityForm, time: e.target.value})} />
+                <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={activityForm.location} onChange={e => setActivityForm({...activityForm, location: e.target.value})}>
+                  {LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                </select>
+              </div>
+              {activityForm.location === 'OTRO' && (
+                <input required placeholder="Especificar Lugar..." className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black" value={activityForm.customLocation} onChange={e => setActivityForm({...activityForm, customLocation: e.target.value})} />
+              )}
+              <div className="grid grid-cols-3 gap-2 h-48 overflow-y-auto pr-2 custom-scrollbar p-1">
+                {PREDEFINED_ACTIVITIES.map(act => (
+                  <button key={act.label} type="button" onClick={() => setActivityForm({...activityForm, type: act.label})} className={`p-4 rounded-2xl text-left border-2 transition-all ${activityForm.type === act.label ? 'bg-red-600 border-red-600 text-white shadow-lg' : 'bg-slate-50 border-transparent text-slate-600 hover:bg-slate-100'}`}>
+                    <span className="text-lg block mb-1">{act.emoji}</span>
+                    <span className="text-[9px] font-black uppercase tracking-tight leading-none">{act.label}</span>
+                  </button>
+                ))}
+              </div>
+              <button type="submit" disabled={savingActivity} className="w-full py-6 rounded-[32px] bg-red-600 text-white text-xs font-black uppercase tracking-widest shadow-2xl hover:bg-red-700 transition-all">
+                {savingActivity ? 'Guardando...' : 'Confirmar y Agendar'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        
+        @media print {
+          body * { visibility: hidden; }
+          #daily-report-print, #daily-report-print *, 
+          #weekly-report-print, #weekly-report-print * { visibility: visible; }
+          #daily-report-print, #weekly-report-print {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 20mm;
+            margin: 0;
+            z-index: 9999;
+            background: white;
+          }
+          @page { size: A4; margin: 0; }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default TecnicaArea;
