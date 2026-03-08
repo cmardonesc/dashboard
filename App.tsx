@@ -21,6 +21,7 @@ type MenuId =
   | 'nutricion'
   | 'citaciones'
   | 'desconvocatoria'
+  | 'logistica_jugadores'
   | 'usuarios'
 
 export default function App() {
@@ -74,6 +75,17 @@ export default function App() {
         gpsQuery.order('session_date', { ascending: true }),
         nutritionQuery
       ]);
+
+      console.log("Supabase Data Counts:", {
+        wellness: wellnessRes.data?.length || 0,
+        loads: loadsRes.data?.length || 0,
+        gps: gpsRes.data?.length || 0,
+        nutrition: nutritionRes.data?.length || 0
+      });
+
+      if (nutritionRes.data && nutritionRes.data.length > 0) {
+        console.log("Sample Nutrition Record:", nutritionRes.data[0]);
+      }
 
       const mappedWellness = (wellnessRes.data || []).map((w: any) => ({
         id: w.id.toString(),
@@ -129,21 +141,25 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('players')
-        .select('id_del_jugador, nombre, apellido1, club, posicion, anio')
+        .select('id_del_jugador, nombre, apellido1, apellido2, club, posicion, anio')
 
       if (error) throw error
 
-      const mappedPlayers: User[] = (data || []).map((p: any) => ({
-        id: `player-${p.id_del_jugador}`,
-        id_del_jugador: Number(p.id_del_jugador),
-        name: `${p.nombre} ${p.apellido1}`,
-        nombre: p.nombre,
-        apellido1: p.apellido1,
-        role: UserRole.PLAYER,
-        club: p.club,
-        position: p.posicion,
-        anio: p.anio
-      }))
+      const mappedPlayers: User[] = (data || []).map((p: any) => {
+        const pid = p.id_del_jugador || p.id;
+        return {
+          id: `player-${pid}`,
+          id_del_jugador: pid ? Number(pid) : undefined,
+          name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${pid}`,
+          nombre: p.nombre,
+          apellido1: p.apellido1,
+          apellido2: p.apellido2,
+          role: UserRole.PLAYER,
+          club: p.club,
+          position: p.posicion,
+          anio: p.anio
+        };
+      })
 
       setDbPlayers(mappedPlayers)
     } catch (err) {
@@ -201,7 +217,16 @@ export default function App() {
         const session = data?.session
         if (session) {
           setSessionUser(session.user)
-          const userData = await fetchUserData(session.user.id)
+          let userData = await fetchUserData(session.user.id)
+          
+          // RECOVERY: Si el perfil no tiene ID pero el metadata sí (común si el upsert falló por RLS en el registro)
+          if (userData.role === 'player' && !userData.id_del_jugador && session.user.user_metadata?.id_del_jugador) {
+            const recoveredId = Number(session.user.user_metadata.id_del_jugador);
+            console.log("Recuperando id_del_jugador desde metadata:", recoveredId);
+            await supabase.from('profiles').update({ id_del_jugador: recoveredId }).eq('id', session.user.id);
+            userData.id_del_jugador = recoveredId;
+          }
+
           if (isMounted) {
             setRole(userData.role)
             setLinkedPlayerId(userData.id_del_jugador)
@@ -284,8 +309,16 @@ export default function App() {
     }
     
     try {
-      const userData = await fetchUserData(session.user.id);
+      let userData = await fetchUserData(session.user.id);
       console.log("Datos de usuario obtenidos:", userData);
+      
+      // RECOVERY: Si el perfil no tiene ID pero el metadata sí
+      if (userData.role === 'player' && !userData.id_del_jugador && session.user.user_metadata?.id_del_jugador) {
+        const recoveredId = Number(session.user.user_metadata.id_del_jugador);
+        console.log("Recuperando id_del_jugador desde metadata en login:", recoveredId);
+        await supabase.from('profiles').update({ id_del_jugador: recoveredId }).eq('id', session.user.id);
+        userData.id_del_jugador = recoveredId;
+      }
       
       if (userData.role) {
         setRole(userData.role);
@@ -306,13 +339,57 @@ export default function App() {
   };
 
   const performanceRecords: AthletePerformanceRecord[] = useMemo(() => {
-    const playersToUse = dbPlayers.length > 0 ? dbPlayers : role === 'player' ? [] : MOCK_PLAYERS
+    // 1. Empezamos con los jugadores reales de la tabla 'players'
+    let playersToUse = [...dbPlayers];
+    
+    // 2. "Descubrimiento" de jugadores: Si hay datos en antropometría para un ID que no está en 'players',
+    // lo agregamos como un jugador virtual para que no se pierdan sus registros.
+    allData.nutrition.forEach((n: any) => {
+      const nId = n.id_del_jugador || n.id_jugador || n.player_id;
+      if (!nId) return;
+      const nIdStr = nId.toString();
+      const exists = playersToUse.some(p => p.id_del_jugador?.toString() === nIdStr);
+      if (!exists) {
+        playersToUse.push({
+          id: `player-v-${nIdStr}`,
+          id_del_jugador: isNaN(Number(nIdStr)) ? undefined : Number(nIdStr),
+          name: n.nombre_raw || `Atleta #${nIdStr}`,
+          role: UserRole.PLAYER,
+          club: 'Registro Histórico',
+          position: 'S/D'
+        });
+      }
+    });
+
+    // 3. Fallback a MOCK si no hay nada de nada (solo para staff/admin)
+    if (playersToUse.length === 0 && role !== 'player') {
+      playersToUse = MOCK_PLAYERS;
+    }
+
+    console.log(`PerformanceRecords: ${playersToUse.length} jugadores, ${allData.nutrition.length} registros nutrición`);
+
     return (playersToUse as User[]).map((player) => ({
       player,
-      wellness: allData.wellness.filter((w) => w.playerId === `player-${player.id_del_jugador}`),
-      loads: allData.loads.filter((l) => l.playerId === `player-${player.id_del_jugador}`),
-      gps: allData.gps.filter((g) => g.playerId === `player-${player.id_del_jugador}`),
-      nutrition: allData.nutrition.filter((n) => n.id_del_jugador === player.id_del_jugador)
+      wellness: allData.wellness.filter((w: any) => {
+        const wId = (w.id_del_jugador || w.player_id || w.playerId)?.toString().replace('player-', '');
+        const pId = player.id_del_jugador?.toString();
+        return wId && pId && wId === pId;
+      }),
+      loads: allData.loads.filter((l: any) => {
+        const lId = (l.id_del_jugador || l.player_id || l.playerId)?.toString().replace('player-', '');
+        const pId = player.id_del_jugador?.toString();
+        return lId && pId && lId === pId;
+      }),
+      gps: allData.gps.filter((g: any) => {
+        const gId = (g.id_del_jugador || g.player_id || g.playerId)?.toString().replace('player-', '');
+        const pId = player.id_del_jugador?.toString();
+        return gId && pId && gId === pId;
+      }),
+      nutrition: allData.nutrition.filter((n: any) => {
+        const nId = (n.id_del_jugador || n.id_jugador || n.player_id)?.toString();
+        const pId = player.id_del_jugador?.toString();
+        return nId && pId && nId === pId;
+      })
     }))
   }, [allData, dbPlayers, role])
 
@@ -371,22 +448,27 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9] text-slate-900 font-sans">
-      <nav className="bg-white px-8 py-4 border-b border-slate-200 flex justify-between items-center sticky top-0 z-50">
-        <h1 className="text-sm font-black italic uppercase tracking-tighter text-slate-900">ESPACIO ATLETA</h1>
-        <button onClick={async () => { await supabase.auth.signOut() }} className="text-slate-400 hover:text-red-600 transition-all">
-          <i className="fa-solid fa-arrow-right-from-bracket"></i>
-        </button>
-      </nav>
-      <main className="py-12 px-6">
-        {currentPlayerRecord ? (
-          <PlayerDashboard player={currentPlayerRecord.player} wellness={currentPlayerRecord.wellness} loads={currentPlayerRecord.loads} gps={currentPlayerRecord.gps} onRefresh={() => fetchPerformanceData(role, linkedPlayerId)} />
-        ) : (
-          <div className="text-center py-20 bg-white rounded-[40px] shadow-sm border border-slate-100 max-w-xl mx-auto">
+    <div className="min-h-screen bg-slate-50">
+      {currentPlayerRecord ? (
+        <PlayerDashboard 
+          player={currentPlayerRecord.player} 
+          wellness={currentPlayerRecord.wellness} 
+          loads={currentPlayerRecord.loads} 
+          gps={currentPlayerRecord.gps} 
+          nutrition={currentPlayerRecord.nutrition}
+          onRefresh={() => fetchPerformanceData(role, linkedPlayerId)} 
+        />
+      ) : (
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <div className="text-center py-20 bg-white rounded-[40px] shadow-sm border border-slate-100 w-full max-w-xl">
+            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <i className="fa-solid fa-circle-notch animate-spin text-red-600 text-2xl"></i>
+            </div>
             <p className="text-slate-900 font-black uppercase tracking-widest text-xs mb-2">Buscando Ficha Técnica...</p>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-tighter">Sincronizando con el servidor central</p>
           </div>
-        )}
-      </main>
+        </div>
+      )}
     </div>
   )
 }
@@ -519,7 +601,16 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         setTimeout(() => reject(new Error('El servidor tardó demasiado en responder (10s).')), 10000)
       );
 
-      const signUpPromise = supabase.auth.signUp({ email, password, options: { data: { role: signupRole } } });
+      const signUpPromise = supabase.auth.signUp({ 
+        email, 
+        password, 
+        options: { 
+          data: { 
+            role: signupRole,
+            id_del_jugador: verifiedPlayerId 
+          } 
+        } 
+      });
       
       const result = await Promise.race([signUpPromise, timeoutPromise]) as any;
       const { data, error } = result;

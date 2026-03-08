@@ -23,12 +23,13 @@ import {
 
 interface NutricionAreaProps {
   performanceRecords: AthletePerformanceRecord[];
+  initialTab?: TabId;
 }
 
 type TabId = 'general' | 'individual' | 'top10' | 'crecimiento';
 
-const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords }) => {
-  const [activeTab, setActiveTab] = useState<TabId>('general');
+const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initialTab = 'general' }) => {
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -260,7 +261,11 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords }) => 
 
   const individualRecord = useMemo(() => {
     if (!selectedIndividual) return null;
-    return nutritionList.find(n => n.player.id === selectedIndividual.id);
+    return nutritionList.find(n => {
+      const nId = n.player.id_del_jugador?.toString();
+      const sId = selectedIndividual.id_del_jugador?.toString();
+      return nId && sId && nId === sId;
+    });
   }, [selectedIndividual, nutritionList]);
 
   return (
@@ -273,7 +278,14 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords }) => 
           </h2>
           <p className="text-slate-500 text-sm font-medium">Departamento de Rendimiento • Federación de Fútbol de Chile</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          <button 
+            onClick={() => window.location.reload()} 
+            className="w-12 h-12 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center text-slate-400 hover:text-red-600 transition-all shadow-sm"
+            title="Recargar Datos"
+          >
+            <i className="fa-solid fa-rotate"></i>
+          </button>
           <button onClick={() => setIsDrawerOpen(true)} className="bg-[#0b1220] text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all shadow-xl">
             <i className="fa-solid fa-plus"></i> Ingreso Manual ISAK
           </button>
@@ -517,14 +529,22 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords }) => 
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
-              {searchTerm.length > 1 && !selectedIndividual && (
+              {searchTerm.length > 0 && !selectedIndividual && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden max-h-60 overflow-y-auto">
-                   {performanceRecords.filter(r => r.player.name.toLowerCase().includes(searchTerm.toLowerCase())).map(r => (
-                     <button key={r.player.id} onClick={() => { setSelectedIndividual(r.player); setSearchTerm(''); }} className="w-full p-4 hover:bg-red-50 text-left border-b border-slate-50 flex items-center justify-between group">
-                       <span className="text-xs font-black uppercase italic group-hover:text-red-600">{r.player.name}</span>
-                       <span className="text-[9px] font-bold text-slate-400 uppercase">{r.player.club}</span>
-                     </button>
-                   ))}
+                   {performanceRecords
+                    .filter(r => 
+                      r.player.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                      r.player.id_del_jugador?.toString().includes(searchTerm)
+                    )
+                    .map(r => (
+                      <button key={r.player.id} onClick={() => { setSelectedIndividual(r.player); setSearchTerm(''); }} className="w-full p-4 hover:bg-red-50 text-left border-b border-slate-50 flex items-center justify-between group">
+                        <div>
+                          <p className="text-xs font-black uppercase italic group-hover:text-red-600">{r.player.name}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">{r.nutrition && r.nutrition.length > 0 ? `${r.nutrition.length} registros` : 'Sin registros'}</p>
+                        </div>
+                        <i className="fa-solid fa-chevron-right text-slate-200 group-hover:text-red-500 transition-all"></i>
+                      </button>
+                    ))}
                 </div>
               )}
             </div>
@@ -545,15 +565,48 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords }) => 
           ) : selectedIndividual ? (
             <div className="py-24 bg-white rounded-[48px] border border-slate-100 shadow-sm text-center">
                <i className="fa-solid fa-hourglass-start text-slate-100 text-6xl mb-6"></i>
-               <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest italic">Sin registros históricos para este atleta.</p>
+               <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest italic mb-4">Sin registros históricos para este atleta.</p>
+               <button onClick={() => setSelectedIndividual(null)} className="text-red-600 font-black uppercase text-[10px] tracking-widest hover:underline">Volver a la búsqueda</button>
             </div>
           ) : (
-            <div className="py-32 bg-slate-900 rounded-[56px] text-center shadow-2xl relative overflow-hidden group">
-               <div className="absolute inset-0 bg-gradient-to-br from-red-600/5 to-transparent"></div>
-               <div className="relative z-10">
-                 <h3 className="text-white text-3xl font-black uppercase italic tracking-tighter mb-4 leading-none">ANALISTA INDIVIDUAL <span className="text-red-500">PRO</span></h3>
-                 <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.4em]">Use el buscador superior para seleccionar un perfil</p>
-               </div>
+            <div className="space-y-6">
+              <div className="flex items-center justify-between px-8">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] italic">Atletas con Reportes Disponibles</h3>
+                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">{nutritionList.length} Atletas</span>
+              </div>
+              
+              {nutritionList.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {nutritionList.map((item, i) => (
+                    <button 
+                      key={i} 
+                      onClick={() => setSelectedIndividual(item.player)}
+                      className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all text-left flex items-center gap-4 group"
+                    >
+                      <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 font-black italic text-lg group-hover:bg-[#0b1220] group-hover:text-white transition-all">
+                        {item.player.name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-black uppercase text-slate-900 italic truncate">{item.player.name}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{item.history.length} EVALS</span>
+                          <span className="w-1 h-1 rounded-full bg-slate-200"></span>
+                          <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest italic">ÚLTIMA: {new Date(item.data.fecha_medicion).toLocaleDateString('es-CL', { month: 'short', year: '2-digit' })}</span>
+                        </div>
+                      </div>
+                      <i className="fa-solid fa-chevron-right text-slate-100 group-hover:text-red-500 transition-all"></i>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-32 bg-slate-900 rounded-[56px] text-center shadow-2xl relative overflow-hidden group">
+                   <div className="absolute inset-0 bg-gradient-to-br from-red-600/5 to-transparent"></div>
+                   <div className="relative z-10">
+                     <h3 className="text-white text-3xl font-black uppercase italic tracking-tighter mb-4 leading-none">ANALISTA INDIVIDUAL <span className="text-red-500">PRO</span></h3>
+                     <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.4em]">Use el buscador superior para seleccionar un perfil</p>
+                   </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -917,6 +970,18 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords }) => 
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
       `}</style>
+      {/* DEBUG INFO & TOOLS */}
+      <div className="mt-20 p-8 bg-slate-100 rounded-[32px] flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">
+          Debug: {performanceRecords.length} atletas en sistema | {nutritionList.length} con reportes nutricionales
+        </div>
+        <button 
+          onClick={() => console.log('DEBUG DATA:', { performanceRecords, nutritionList })}
+          className="bg-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-red-600 transition-colors border border-slate-200 shadow-sm"
+        >
+          Inspeccionar Datos (Consola)
+        </button>
+      </div>
     </div>
   );
 };

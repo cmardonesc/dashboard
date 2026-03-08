@@ -188,8 +188,12 @@ export default function CitacionesArea() {
         console.warn("No se pudo obtener el último micro_number, usando 1 por defecto:", numError);
       }
 
-      // 2. Generar un código único más robusto y corto (evitar truncamiento)
-      const generateCode = () => `M${catId}${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+      // 2. Generar un código único extremadamente robusto
+      const generateCode = () => {
+        const timestamp = Date.now().toString(36).toUpperCase();
+        const randomStr = Math.random().toString(36).substring(2, 7).toUpperCase();
+        return `MC-${catId}-${newMicroForm.start_date.replace(/-/g, '')}-${timestamp}-${randomStr}`;
+      };
       let uniqueCode = generateCode();
 
       // 3. Buscar jugadores para copiar si está habilitado
@@ -228,57 +232,82 @@ export default function CitacionesArea() {
       };
       console.log("Payload final con código:", uniqueCode);
 
-      // Intentamos insertar directamente
-      console.log("Intentando crear microciclo con payload:", payload);
-      let { data: newMicro, error } = await supabase
-        .from('microcycles')
-        .insert([payload])
-        .select()
-        .single();
-        
-      // Si falla por duplicado de código, reintentamos una vez con un código nuevo
-      if (error && (error.code === '23505' || error.message?.includes('microcycles_code_key'))) {
-        console.warn("Colisión de código detectada, reintentando con nuevo código...");
-        uniqueCode = generateCode();
-        payload.code = uniqueCode;
-        const retry = await supabase
+      // Intentamos insertar con reintentos para colisiones de código
+      let newMicro = null;
+      let error = null;
+      let attempts = 0;
+      const maxAttempts = 2;
+
+      while (attempts < maxAttempts) {
+        console.log(`Intento de creación ${attempts + 1} con código:`, uniqueCode);
+        const { data, error: insertError } = await supabase
           .from('microcycles')
           .insert([payload])
           .select()
           .single();
-        newMicro = retry.data;
-        error = retry.error;
-      }
+        
+        if (!insertError) {
+          newMicro = data;
+          error = null;
+          break;
+        }
 
-      if (error) {
-        console.error("Error en intento de creación:", error);
-      }
+        error = insertError;
+        console.error("Error en intento de inserción:", error);
 
-      // Si falla por columna inexistente (code o micro_number), reintentamos sin ellas
+        // Si es error de duplicado, reintentamos con nuevo código
+        if (error.code === '23505' || error.message?.includes('microcycles_code_key')) {
+          console.warn("Colisión de código detectada, generando nuevo código...");
+          uniqueCode = generateCode();
+          payload.code = uniqueCode;
+          attempts++;
+        } else if (error.code === 'PGRST204' || error.message?.includes('column "code"')) {
+          // Si la columna no existe en el cache, no tiene sentido reintentar el bucle
+          break;
+        } else {
+          break;
+        }
+      }
+        
+      // FALLBACK AGRESIVO: Si sigue fallando por duplicado o columnas inexistentes
       if (error && (
+        error.code === '23505' || 
+        error.code === 'PGRST204' ||
+        error.message?.includes('microcycles_code_key') ||
         error.message?.includes('column "code"') || 
         error.message?.includes('column "micro_number"') ||
-        error.message?.includes("'code' column") ||
-        error.message?.includes("'micro_number' column") ||
-        error.code === 'PGRST204' ||
-        error.code === '42703'
+        error.code === '42703' ||
+        error.code === 'PGRST200'
       )) {
-        console.log("Activando fallback: reintentando sin columnas extendidas...");
-        const fallbackPayload = { ...payload };
-        delete fallbackPayload.code;
-        delete fallbackPayload.micro_number;
+        console.warn("⚠️ Activando fallback de emergencia: intentando creación simplificada...");
         
-        const retry = await supabase
-          .from('microcycles')
-          .insert([fallbackPayload])
-          .select()
-          .single();
+        // Intentamos primero quitando solo 'code'
+        const fallback1 = { ...payload };
+        delete fallback1.code;
         
-        newMicro = retry.data;
-        error = retry.error;
+        const retry1 = await supabase.from('microcycles').insert([fallback1]).select().single();
         
-        if (error) {
-          console.error("Error en reintento de creación:", error);
+        if (!retry1.error) {
+          console.log("✅ Creación exitosa en fallback 1 (sin 'code')");
+          newMicro = retry1.data;
+          error = null;
+        } else {
+          console.warn("❌ Fallback 1 falló, intentando fallback 2 (mínimo)...", retry1.error);
+          // Si falla, intentamos quitando ambos
+          const fallback2 = { ...payload };
+          delete fallback2.code;
+          delete fallback2.micro_number;
+          
+          const retry2 = await supabase.from('microcycles').insert([fallback2]).select().single();
+          
+          if (!retry2.error) {
+            console.log("✅ Creación exitosa en fallback 2 (mínimo)");
+            newMicro = retry2.data;
+            error = null;
+          } else {
+            error = retry2.error;
+            console.error("❌ Fallback de emergencia falló completamente:", error);
+          }
         }
       }
 

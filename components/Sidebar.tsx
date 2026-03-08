@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 
-type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'medica' | 'nutricion' | 'citaciones' | 'desconvocatoria' | 'usuarios';
+type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios';
 
 interface SidebarProps {
   activeMenu: MenuId;
@@ -11,11 +11,15 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [logisticsOpen, setLogisticsOpen] = useState(activeMenu === 'citaciones' || activeMenu === 'desconvocatoria');
+  const [logisticsOpen, setLogisticsOpen] = useState(activeMenu === 'citaciones' || activeMenu === 'desconvocatoria' || activeMenu === 'logistica_jugadores');
   
   // Estado para Área Física y sus submenús
   const isFisicaActive = activeMenu.startsWith('fisica_');
   const [fisicaOpen, setFisicaOpen] = useState(isFisicaActive);
+
+  // Estado para Nutrición y sus submenús
+  const isNutricionActive = activeMenu.startsWith('nutricion_');
+  const [nutricionOpen, setNutricionOpen] = useState(isNutricionActive);
   
   const [cargaInternaOpen, setCargaInternaOpen] = useState(activeMenu === 'fisica_wellness' || activeMenu === 'fisica_pse');
   const [cargaExternaOpen, setCargaExternaOpen] = useState(activeMenu === 'fisica_carga_externa_total' || activeMenu === 'fisica_carga_externa_tareas');
@@ -28,11 +32,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole })
 
   const handleMenuClick = (id: MenuId) => {
     onMenuChange(id);
-    if (id !== 'citaciones' && id !== 'desconvocatoria') {
+    if (id !== 'citaciones' && id !== 'desconvocatoria' && id !== 'logistica_jugadores') {
       setLogisticsOpen(false);
     }
     if (!id.startsWith('fisica_')) {
       setFisicaOpen(false);
+    }
+    if (!id.startsWith('nutricion_')) {
+      setNutricionOpen(false);
     }
   };
 
@@ -41,6 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole })
     // Si colapsamos, cerramos los submenús para limpieza visual
     if (!isCollapsed) {
       setFisicaOpen(false);
+      setNutricionOpen(false);
       setLogisticsOpen(false);
     }
   };
@@ -218,15 +226,82 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole })
           {!isCollapsed && <span className="font-bold text-sm tracking-tight">Área Médica</span>}
         </button>
 
+        {/* NUTRICIÓN COLLAPSIBLE */}
+        <div className="pt-2">
+          <button
+            onClick={() => handleSubmenuClick(setNutricionOpen, !nutricionOpen)}
+            title={isCollapsed ? 'Nutrición' : ''}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 ${
+              nutricionOpen ? 'text-white bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
+              <i className={`fa-solid fa-utensils text-xl ${isCollapsed ? '' : 'w-6'} ${nutricionOpen ? 'text-red-500' : 'text-slate-500'}`}></i>
+              {!isCollapsed && <span className="font-bold text-sm tracking-tight">Nutrición</span>}
+            </div>
+            {!isCollapsed && <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${nutricionOpen ? 'rotate-180' : ''}`}></i>}
+          </button>
+          
+          {nutricionOpen && !isCollapsed && (
+            <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
+              <button
+                onClick={() => onMenuChange('nutricion_resumen_grupal')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'nutricion_resumen_grupal' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'nutricion_resumen_grupal' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Resumen Grupal</span>
+              </button>
+              <button
+                onClick={() => onMenuChange('nutricion_comparativo')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'nutricion_comparativo' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'nutricion_comparativo' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Dashboard Comparativo</span>
+              </button>
+              <button
+                onClick={() => onMenuChange('nutricion_individual')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'nutricion_individual' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'nutricion_individual' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Reporte Individual</span>
+              </button>
+              <button
+                onClick={() => onMenuChange('nutricion_top10')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'nutricion_top10' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'nutricion_top10' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Top 10 Rankings</span>
+              </button>
+              <button
+                onClick={() => onMenuChange('nutricion_maduracion')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'nutricion_maduracion' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'nutricion_maduracion' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Crecimiento & Maduración</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         <button
-          onClick={() => handleMenuClick('nutricion')}
-          title={isCollapsed ? 'Nutrición' : ''}
+          onClick={() => handleMenuClick('competencia')}
+          title={isCollapsed ? 'Competencia' : ''}
           className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 group ${
-            activeMenu === 'nutricion' ? 'bg-red-900/20 text-[#CF1B2B]' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            activeMenu === 'competencia' ? 'bg-red-900/20 text-[#CF1B2B]' : 'text-slate-400 hover:bg-white/5 hover:text-white'
           }`}
         >
-          <i className={`fa-solid fa-utensils text-xl ${isCollapsed ? '' : 'w-6'} ${activeMenu === 'nutricion' ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
-          {!isCollapsed && <span className="font-bold text-sm tracking-tight">Nutrición</span>}
+          <i className={`fa-solid fa-trophy text-xl ${isCollapsed ? '' : 'w-6'} ${activeMenu === 'competencia' ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
+          {!isCollapsed && <span className="font-bold text-sm tracking-tight">Competencia</span>}
         </button>
 
         <div className="pt-2">
@@ -246,6 +321,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole })
           
           {logisticsOpen && !isCollapsed && (
             <div className="mt-2 ml-10 space-y-1 animate-in slide-in-from-top-2 duration-300">
+              <button
+                onClick={() => onMenuChange('logistica_jugadores')}
+                className={`w-full flex items-center gap-4 px-6 py-3 rounded-xl transition-all ${
+                  activeMenu === 'logistica_jugadores' 
+                    ? 'bg-[#CF1B2B] text-white shadow-lg' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'logistica_jugadores' ? 'bg-white' : 'bg-slate-700'}`}></div>
+                <span className="text-xs font-bold tracking-tight">Gestión Jugadores</span>
+              </button>
               <button
                 onClick={() => onMenuChange('citaciones')}
                 className={`w-full flex items-center gap-4 px-6 py-3 rounded-xl transition-all ${

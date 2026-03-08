@@ -58,6 +58,7 @@ export interface User {
   name: string;
   nombre?: string;
   apellido1?: string;
+  apellido2?: string;
   role: UserRole;
   category?: string;
   position?: string;

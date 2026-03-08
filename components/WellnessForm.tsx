@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { BODY_PARTS } from '../constants';
 
 interface WellnessFormProps {
   onSubmit: (data: any) => void;
@@ -9,6 +10,7 @@ type WellnessStep = 'fatigue' | 'sleep' | 'stress' | 'mood' | 'soreness' | 'illn
 
 const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit }) => {
   const [step, setStep] = useState<WellnessStep>('fatigue');
+  const [view, setView] = useState<'ANTERIOR' | 'POSTERIOR'>('ANTERIOR');
   const [formData, setFormData] = useState({
     fatigue: 3,
     sleep: 3,
@@ -102,34 +104,58 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit }) => {
   };
 
   const renderSorenessStep = () => {
-    const areas = [
-      "CABEZA", "CUELLO ANT.", "HOMBRO IZQ.", "HOMBRO DER.",
-      "PECTORAL IZQ.", "PECTORAL DER.", "BÍCEPS IZQ.", "BÍCEPS DER.",
-      "ANTEBRAZO IZQ.", "ANTEBRAZO DER.", "ABDOMEN", "OBLICUOS",
-      "FLEXOR CADERA I.", "FLEXOR CADERA D.", "CUÁDRICEPS I.", "CUÁDRICEPS D."
-    ];
+    const currentAreas = BODY_PARTS[view];
 
     return (
       <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900 text-center mb-10">
+        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900 text-center mb-6">
           ¿MOLESTIAS FÍSICAS? 🩹
         </h2>
 
-        <div className="max-h-[420px] overflow-y-auto pr-2 custom-scrollbar grid grid-cols-2 gap-3 mb-10">
-          {areas.map((area) => (
-            <button
-              key={area}
-              type="button"
-              onClick={() => toggleSorenessArea(area)}
-              className={`py-5 px-4 rounded-[20px] border text-[10px] font-black uppercase tracking-tight transition-all text-center leading-none ${
-                formData.sorenessAreas.includes(area)
-                ? 'bg-[#0b1220] text-white border-[#0b1220] shadow-lg'
-                : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'
-              }`}
-            >
-              {area}
-            </button>
-          ))}
+        <div className="flex bg-slate-100 p-1 rounded-2xl mb-6">
+          <button 
+            type="button"
+            onClick={() => setView('ANTERIOR')}
+            className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${view === 'ANTERIOR' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+          >
+            FRENTE
+          </button>
+          <button 
+            type="button"
+            onClick={() => setView('POSTERIOR')}
+            className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${view === 'POSTERIOR' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+          >
+            ESPALDA
+          </button>
+        </div>
+
+        <div className="max-h-[380px] overflow-y-auto pr-2 custom-scrollbar space-y-6 mb-10">
+          {['SUPERIOR', 'TRONCO', 'INFERIOR'].map(cat => {
+            const catAreas = currentAreas.filter(a => a.category === cat);
+            if (catAreas.length === 0) return null;
+            
+            return (
+              <div key={cat} className="space-y-3">
+                <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">{cat}</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {catAreas.map((area) => (
+                    <button
+                      key={area.id}
+                      type="button"
+                      onClick={() => toggleSorenessArea(area.label)}
+                      className={`py-4 px-3 rounded-[16px] border text-[9px] font-black uppercase tracking-tight transition-all text-center leading-none ${
+                        formData.sorenessAreas.includes(area.label)
+                        ? 'bg-[#0b1220] text-white border-[#0b1220] shadow-lg'
+                        : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'
+                      }`}
+                    >
+                      {area.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="flex gap-4">

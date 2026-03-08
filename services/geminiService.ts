@@ -142,10 +142,31 @@ export const getWeatherForecast = async (city: string, country: string): Promise
       sources
     };
   } catch (error: any) {
-    console.error("Error fetching weather:", error);
+    const errorMsg = error?.message || "";
+    const errorStatus = error?.status || "";
+    const errorJson = JSON.stringify(error);
+    
+    const isQuotaError = 
+      errorMsg.includes("429") || 
+      errorMsg.toLowerCase().includes("quota") || 
+      errorStatus === "RESOURCE_EXHAUSTED" ||
+      errorJson.includes("429") ||
+      errorJson.includes("RESOURCE_EXHAUSTED");
+    
+    if (isQuotaError) {
+      console.warn("Weather API quota exhausted. Using fallback logic.");
+    } else {
+      console.error("Error fetching weather:", error);
+    }
+
     let errorMessage = "Error al obtener el clima";
-    if (error?.message?.includes("429") || error?.message?.includes("quota")) {
+    if (isQuotaError) {
       errorMessage = "QUOTA_EXHAUSTED";
+      // Cache the exhausted state for 5 minutes to avoid spamming the API
+      weatherCache[cacheKey] = { 
+        data: null as any, 
+        timestamp: now - (CACHE_DURATION - 5 * 60 * 1000) 
+      };
     }
     return { data: null, sources: [], error: errorMessage };
   }

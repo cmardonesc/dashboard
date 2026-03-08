@@ -137,6 +137,34 @@ export default function NutritionReport({ data, history, player, onClose }: Nutr
     return { label: 'POST-PHV', color: 'text-emerald-600', bg: 'bg-emerald-50', desc: 'Crecimiento finalizado. Apto para fuerza.' };
   }, [data]);
 
+  const nutritionActionStatus = useMemo(() => {
+    const imo = (data.masa_muscular_kg && data.masa_osea_kg && Number(data.masa_osea_kg) > 0) 
+      ? (Number(data.masa_muscular_kg) / Number(data.masa_osea_kg)) 
+      : Number(data.indice_imo || 0);
+    const pliegues = Number(data.sum_pliegues_6_mm || 0);
+
+    if (imo === 0 || pliegues === 0) return { text: "PENDIENTE DE EVALUACIÓN", color: "text-slate-400" };
+
+    // Lógica basada en la tabla ISAK
+    if (imo > 4.4) {
+      if (pliegues < 40) return { text: "MANTENER", color: "text-emerald-500" };
+      if (pliegues <= 41.5) return { text: "AUMENTAR masa muscular", color: "text-blue-500" };
+      if (pliegues > 42) return { text: "BAJAR masa grasa", color: "text-amber-500" };
+    }
+    
+    if (imo >= 4.0 && imo <= 4.4) {
+      if (pliegues < 40) return { text: "AUMENTAR masa muscular", color: "text-blue-500" };
+      if (pliegues > 40) return { text: "AUMENTAR masa muscular, bajar masa grasa", color: "text-red-500" };
+    }
+    
+    if (imo < 4.0) {
+      if (pliegues < 40) return { text: "AUMENTAR masa muscular", color: "text-blue-500" };
+      if (pliegues > 40) return { text: "AUMENTAR masa muscular, bajar masa grasa", color: "text-red-500" };
+    }
+    
+    return { text: "ANÁLISIS EN CURSO", color: "text-slate-400" };
+  }, [data]);
+
   return (
     <div className="w-full bg-white shadow-xl rounded-[48px] overflow-hidden flex flex-col relative border border-slate-100 animate-in fade-in slide-in-from-bottom-8 duration-700">
       
@@ -168,7 +196,9 @@ export default function NutritionReport({ data, history, player, onClose }: Nutr
                     <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{player.club || 'Selección Chile'}</span>
                   </div>
                   <h2 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">{player.name}</h2>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Informe Evolutivo Antropométrico</p>
+                  <p className={`text-[11px] font-black uppercase tracking-[0.2em] italic ${nutritionActionStatus.color}`}>
+                    {nutritionActionStatus.text}
+                  </p>
                </div>
             </div>
 

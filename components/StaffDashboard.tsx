@@ -11,10 +11,13 @@ import NutricionArea from './NutricionArea'
 import MedicaArea from './MedicaArea'
 import PlanificacionAnual from './PlanificacionAnual'
 import UserManagementArea from './UserManagementArea'
+import MatchManagementArea from './MatchManagementArea'
+import NutricionResumenGrupal from './NutricionResumenGrupal'
+import LogisticaJugadores from './LogisticaJugadores'
 import { getPerformanceInsights, getWeatherForecast, queryCoachAssistant, WeatherData } from '../services/geminiService'
 import { AreaChart, Area, XAxis, ResponsiveContainer, Tooltip, BarChart, Bar, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
 
-type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'medica' | 'nutricion' | 'citaciones' | 'desconvocatoria' | 'usuarios';
+type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios';
 
 interface StaffDashboardProps {
   performanceRecords: AthletePerformanceRecord[];
@@ -426,12 +429,24 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         return <CargaTareasArea />;
       case 'fisica_reporte':
         return <FisicaArea performanceRecords={performanceRecords} view="report" />;
+      case 'nutricion_resumen_grupal':
+        return <NutricionResumenGrupal performanceRecords={performanceRecords} />;
+      case 'nutricion_comparativo':
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="general" />;
+      case 'nutricion_individual':
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="individual" />;
+      case 'nutricion_top10':
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="top10" />;
+      case 'nutricion_maduracion':
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="crecimiento" />;
+      case 'logistica_jugadores':
+        return <LogisticaJugadores />;
       default:
         const ContentComponent = {
           planificacion_anual: PlanificacionAnual,
           tecnica: TecnicaArea,
           medica: MedicaArea,
-          nutricion: NutricionArea,
+          competencia: MatchManagementArea,
           citaciones: CitacionesArea,
           desconvocatoria: DesconvocatoriaArea,
           usuarios: UserManagementArea
