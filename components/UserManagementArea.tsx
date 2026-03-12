@@ -22,7 +22,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const { data: profs, error: pErr } = await supabase.from('profiles').select('*');
+      const { data: profs, error: pErr } = await supabase.from('profiles').select('*, club_name');
       const { data: plays, error: plErr } = await supabase.from('players').select('id_del_jugador, nombre, apellido1');
       
       if (pErr) throw pErr;
@@ -44,7 +44,8 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
         .from('profiles')
         .update({
           role: editingProfile.role,
-          id_del_jugador: editingProfile.id_del_jugador || null
+          id_del_jugador: editingProfile.id_del_jugador || null,
+          club_name: editingProfile.club_name || null
         })
         .eq('id', editingProfile.id);
 
@@ -97,9 +98,17 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                       <p className="text-[10px] font-mono text-slate-400">{p.id}</p>
                     </td>
                     <td className="px-8 py-4">
-                      <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${p.role === 'admin' ? 'bg-red-100 text-red-600' : p.role === 'staff' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'}`}>
+                      <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                        p.role === 'admin' ? 'bg-red-100 text-red-600' : 
+                        p.role === 'staff' ? 'bg-blue-100 text-blue-600' : 
+                        p.role === 'club' ? 'bg-emerald-100 text-emerald-600' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
                         {p.role}
                       </span>
+                      {p.role === 'club' && p.club_name && (
+                        <p className="text-[8px] font-black text-slate-400 mt-1 uppercase tracking-tighter">{p.club_name}</p>
+                      )}
                     </td>
                     <td className="px-8 py-4">
                       <p className="text-[10px] font-bold text-slate-600">
@@ -139,9 +148,24 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                 >
                   <option value="player">Jugador</option>
                   <option value="staff">Staff Técnico</option>
+                  <option value="club">Club (Visualizador)</option>
                   <option value="admin">Administrador</option>
                 </select>
               </div>
+
+              {editingProfile.role === 'club' && (
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre del Club</label>
+                  <input 
+                    type="text"
+                    value={editingProfile.club_name || ''} 
+                    onChange={e => setEditingProfile({...editingProfile, club_name: e.target.value})}
+                    placeholder="Ej: Colo-Colo, U. de Chile..."
+                    className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <p className="text-[8px] font-medium text-slate-400 ml-4 italic">Este nombre debe coincidir exactamente con el campo 'club' en la tabla de jugadores.</p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Vincular Jugador (Opcional)</label>

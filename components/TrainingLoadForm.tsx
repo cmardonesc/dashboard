@@ -253,7 +253,7 @@ const TrainingLoadForm: React.FC<TrainingLoadFormProps> = ({ onSubmit }) => {
   };
 
   return (
-    <div className="bg-white p-10 rounded-[48px] shadow-2xl border border-slate-100 w-full max-w-md mx-auto min-h-[650px] flex flex-col justify-center">
+    <div className="bg-white p-6 md:p-10 rounded-[32px] md:rounded-[48px] shadow-2xl border border-slate-100 w-full max-w-md mx-auto min-h-[550px] md:min-h-[650px] flex flex-col justify-center">
       {step === 'details' && renderDetailsStep()}
       {step === 'rpe' && renderRPEStep()}
       {step === 'soreness' && renderSorenessStep()}

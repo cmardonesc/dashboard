@@ -1,7 +1,9 @@
 
 export enum UserRole {
-  PLAYER = 'PLAYER',
-  STAFF = 'STAFF'
+  PLAYER = 'player',
+  STAFF = 'staff',
+  CLUB = 'club',
+  ADMIN = 'admin'
 }
 
 export enum Category {
@@ -64,9 +66,11 @@ export interface User {
   position?: string;
   position_linea?: string;
   club?: string;
+  club_name?: string;
   perfil_pierna?: string;
   fecha_nacimiento?: string;
   anio?: number; 
+  celular?: string;
 }
 
 export interface CitacionDB {
@@ -97,6 +101,8 @@ export interface MicrocicloDB {
   country: string;
   city: string;
   created_by: string;
+  micro_number?: number;
+  code?: string;
 }
 
 export interface WellnessData {
@@ -110,6 +116,7 @@ export interface WellnessData {
   mood: number;
   soreness_areas?: string[];
   illness_symptoms?: string[];
+  created_at?: string;
 }
 
 export interface TrainingLoadData {
@@ -122,6 +129,7 @@ export interface TrainingLoadData {
   type: 'FIELD' | 'GYM' | 'MATCH';
   soreness_areas?: string[];
   illness_symptoms?: string[];
+  created_at?: string;
 }
 
 export interface GPSData {
@@ -133,11 +141,13 @@ export interface GPSData {
   hsrDistance: number; 
   sprintCount: number;
   maxSpeed: number; 
+  intensity: number;
 }
 
 export interface NutritionData {
   id: string;
   id_del_jugador: number;
+  nombre_raw?: string;
   fecha_medicion: string;
   edad_cronologica: number;
   masa_corporal_kg: number;
@@ -167,7 +177,7 @@ export interface NutritionData {
   cm_por_crecer_mirwald?: number;
   cm_por_crecer_moore?: number;
   cm_por_crecer_media?: number;
-  estatura_proy_mirwald?: number;
+  estatura_proy_mirwald_cm?: number;
   estatura_proy_moore_cm?: number;
   estatura_proy_media_cm?: number;
   created_at?: string;

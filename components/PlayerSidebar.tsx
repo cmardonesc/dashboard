@@ -32,7 +32,7 @@ const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange,
             <h1 className="text-white font-black text-sm uppercase tracking-tighter">Espacio Atleta</h1>
           </div>
         )}
-        <button onClick={() => setIsCollapsed(!isCollapsed)} className="text-slate-500 hover:text-white transition-colors mx-auto">
+        <button onClick={() => setIsCollapsed(!isCollapsed)} className="text-slate-500 hover:text-white transition-colors mx-auto hidden lg:block">
           <i className={`fa-solid fa-${isCollapsed ? 'indent' : 'outdent'}`}></i>
         </button>
       </div>

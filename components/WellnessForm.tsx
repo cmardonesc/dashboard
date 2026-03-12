@@ -211,7 +211,7 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit }) => {
   };
 
   return (
-    <div className="bg-white p-10 rounded-[48px] shadow-2xl border border-slate-100 w-full max-w-md mx-auto min-h-[600px] flex flex-col justify-center">
+    <div className="bg-white p-6 md:p-10 rounded-[32px] md:rounded-[48px] shadow-2xl border border-slate-100 w-full max-w-md mx-auto min-h-[500px] md:min-h-[600px] flex flex-col justify-center">
       {step === 'fatigue' && renderScaleStep('FATIGA', '¿Cómo te sientes de energía?', formData.fatigue, 'fatigue')}
       {step === 'sleep' && renderScaleStep('SUEÑO', '¿Cómo calificarías tu descanso?', formData.sleep, 'sleep')}
       {step === 'stress' && renderScaleStep('ESTRÉS', '¿Qué tan estresado te sientes hoy?', formData.stress, 'stress')}

@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { MOCK_PLAYERS } from '../mockData';
-import { ItineraryActivity, Category, MicrocicloDB, CATEGORY_ID_MAP } from '../types';
+import { ItineraryActivity, Category, MicrocicloDB, CATEGORY_ID_MAP, AthletePerformanceRecord } from '../types';
 import { supabase } from '../lib/supabase';
+import { logActivity } from '../lib/activityLogger';
 
 type ViewMode = 'selection' | 'management';
 type SubTab = 'cronograma' | 'tareas' | 'evaluacion';
@@ -12,11 +13,17 @@ interface Tarea {
   nombre: string;
   tipoDinamica: string;
   descripcion?: string;
+  jornada?: 'AM' | 'PM';
 }
 
 interface MicrocicloUI extends MicrocicloDB {
   id: number;
   nombre_display: string;
+}
+
+interface TecnicaAreaProps {
+  performanceRecords?: AthletePerformanceRecord[];
+  onMenuChange?: (id: any) => void;
 }
 
 const DINAMICAS_OFICIALES = [
@@ -58,13 +65,16 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'Retorno', emoji: '🛬' },
   { label: 'Partido Amistoso', emoji: '🏟️' },
   { label: 'Partido Oficial', emoji: '🏆' },
+  { label: 'Citación', emoji: '📢' },
+  { label: 'Liberación jug.', emoji: '🏠' },
   { label: 'OTRA', emoji: '📝' },
 ];
 
-const TecnicaArea: React.FC = () => {
+const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuChange }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('selection');
   const [activeTab, setActiveTab] = useState<SubTab>('cronograma');
   const [selectedMicro, setSelectedMicro] = useState<MicrocicloUI | null>(null);
+  const [selectedJornada, setSelectedJornada] = useState<'AM' | 'PM'>('AM');
   const [microciclos, setMicrociclos] = useState<MicrocicloUI[]>([]);
   const [loading, setLoading] = useState(false);
   const [savingActivity, setSavingActivity] = useState(false);
@@ -94,6 +104,7 @@ const TecnicaArea: React.FC = () => {
   const [showDailyReportModal, setShowDailyReportModal] = useState(false);
   const [showWeeklyReportModal, setShowWeeklyReportModal] = useState(false);
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [searchTermBiblioteca, setSearchTermBiblioteca] = useState('');
 
   const [activityForm, setActivityForm] = useState({
@@ -102,7 +113,8 @@ const TecnicaArea: React.FC = () => {
     location: LOCATIONS[0],
     customLocation: '',
     customType: '',
-    rival: ''
+    rival: '',
+    grupo: 'Todos'
   });
 
   const [newBibliotecaTarea, setNewBibliotecaTarea] = useState({
@@ -171,7 +183,8 @@ const TecnicaArea: React.FC = () => {
             type: item.actividad || "Sin actividad",
             location: item.lugar || "Sin lugar",
             emoji: getEmojiForType(item.actividad || ""),
-            isCustom: !!item.otra
+            isCustom: !!item.otra,
+            grupo: item.grupo || 'Todos'
           });
         });
         setWeeklySchedule(grouped);
@@ -198,7 +211,8 @@ const TecnicaArea: React.FC = () => {
             id: item.id.toString(),
             nombre: item.nombre,
             tipoDinamica: item.dinamica,
-            descripcion: item.observacion
+            descripcion: item.observacion,
+            jornada: item.jornada || 'AM'
           });
         });
         setFieldTasks(grouped);
@@ -279,60 +293,91 @@ const TecnicaArea: React.FC = () => {
       : activityForm.location;
 
     try {
-      const { data, error } = await supabase
-        .from('cronograma_semanal')
-        .insert([{
-          id_microcycles: selectedMicro.id,
-          id_categoria: selectedMicro.category_id,
-          fecha: dateKey,
-          hora: activityForm.time,
-          actividad: displayType,
-          lugar: finalLocation,
-          otra: isCustom ? (activityForm.customType || 'Personalizada') : null
-        }])
-        .select();
+      const payload = {
+        id_microcycles: selectedMicro.id,
+        id_categoria: selectedMicro.category_id,
+        fecha: dateKey,
+        hora: activityForm.time,
+        actividad: displayType,
+        lugar: finalLocation,
+        otra: isCustom ? (activityForm.customType || 'Personalizada') : null,
+        grupo: activityForm.grupo
+      };
 
-      if (error) throw error;
+      if (editingActivityId) {
+        const { error } = await supabase
+          .from('cronograma_semanal')
+          .update(payload)
+          .eq('id', editingActivityId);
 
-      if (data && data[0]) {
-        const item = data[0];
-        const horaString = (item.hora || activityForm.time || "00:00").substring(0, 5);
-        
-        const newActivity = {
-          id: item.id.toString(),
-          db_id: item.id,
-          time: horaString,
-          type: item.actividad,
-          location: item.lugar,
-          emoji: getEmojiForType(item.actividad),
-          isCustom: !!item.otra
-        };
+        if (error) throw error;
 
         setWeeklySchedule(prev => {
           const currentDayActivities = prev[dateKey] || [];
           return {
             ...prev,
-            [dateKey]: [...currentDayActivities, newActivity].sort((a, b) => 
-              (a.time || "").localeCompare(b.time || "")
-            )
+            [dateKey]: currentDayActivities.map(a => 
+              a.db_id === editingActivityId 
+                ? { ...a, time: activityForm.time.substring(0, 5), type: displayType, location: finalLocation, emoji: getEmojiForType(displayType), isCustom, grupo: activityForm.grupo }
+                : a
+            ).sort((a, b) => (a.time || "").localeCompare(b.time || ""))
           };
         });
+      } else {
+        const { data, error } = await supabase
+          .from('cronograma_semanal')
+          .insert([payload])
+          .select();
+
+        if (error) throw error;
+
+        if (data && data[0]) {
+          const item = data[0];
+          const horaString = (item.hora || activityForm.time || "00:00").substring(0, 5);
+          
+          const newActivity = {
+            id: item.id.toString(),
+            db_id: item.id,
+            time: horaString,
+            type: item.actividad,
+            location: item.lugar,
+            emoji: getEmojiForType(item.actividad),
+            isCustom: !!item.otra,
+            grupo: item.grupo || 'Todos'
+          };
+
+          logActivity('Agendamiento Actividad', { 
+            microcycle: selectedMicro.nombre_display, 
+            date: dateKey, 
+            activity: item.actividad 
+          });
+
+          setWeeklySchedule(prev => {
+            const currentDayActivities = prev[dateKey] || [];
+            return {
+              ...prev,
+              [dateKey]: [...currentDayActivities, newActivity].sort((a, b) => 
+                (a.time || "").localeCompare(b.time || "")
+              )
+            };
+          });
+        }
       }
 
-      // Reiniciamos el formulario pero permanecemos en la pestaña actual de Cronograma
+      // Reiniciamos el formulario
       setActivityForm({
         time: '08:00',
         type: PREDEFINED_ACTIVITIES[0].label,
         location: LOCATIONS[0],
         customLocation: '',
         customType: '',
-        rival: ''
+        rival: '',
+        grupo: 'Todos'
       });
       
-      // Cerramos el modal pero mantenemos la vista de gestión
+      setEditingActivityId(null);
       setShowActivityModal(false);
       setSelectedDayIndex(null);
-      setActiveTab('cronograma'); // Aseguramos que siga en cronograma (aunque ya debería estarlo)
       
     } catch (err: any) {
       console.error("Error al agendar:", err);
@@ -346,14 +391,15 @@ const TecnicaArea: React.FC = () => {
     if (!selectedMicro || savingDayTasks[dateKey]) return;
     
     setSavingDayTasks(prev => ({ ...prev, [dateKey]: true }));
-    const dayTasks = fieldTasks[dateKey] || [];
+    const dayTasks = (fieldTasks[dateKey] || []).filter(t => t.jornada === selectedJornada);
     
     try {
       const { error: deleteError } = await supabase
         .from('tareas_semanales')
         .delete()
         .eq('id_microcycles', selectedMicro.id)
-        .eq('fecha', dateKey);
+        .eq('fecha', dateKey)
+        .eq('jornada', selectedJornada);
 
       if (deleteError) throw deleteError;
 
@@ -363,7 +409,8 @@ const TecnicaArea: React.FC = () => {
           fecha: dateKey,
           dinamica: t.tipoDinamica,
           nombre: t.nombre,
-          observacion: t.descripcion || ''
+          observacion: t.descripcion || '',
+          jornada: selectedJornada
         }));
 
         const { error: insertError } = await supabase
@@ -373,7 +420,14 @@ const TecnicaArea: React.FC = () => {
         if (insertError) throw insertError;
       }
 
-      alert(`Sincronización exitosa: Tareas del día ${dateKey} guardadas.`);
+      logActivity('Sincronización Tareas Campo', { 
+        microcycle: selectedMicro.nombre_display, 
+        date: dateKey, 
+        jornada: selectedJornada,
+        taskCount: dayTasks.length
+      });
+
+      alert(`Sincronización exitosa: Tareas (${selectedJornada}) del día ${dateKey} guardadas.`);
     } catch (err: any) {
       console.error("Error al sincronizar tareas:", err);
       alert("Error crítico al guardar tareas: " + err.message);
@@ -385,7 +439,7 @@ const TecnicaArea: React.FC = () => {
   const handleSelectTareaFromBiblioteca = (tarea: Tarea) => {
     if (selectedDayIndex === null || !selectedMicro) return;
     const dateKey = formatDateKey(currentWeekDays[selectedDayIndex]);
-    const newFieldTarea: Tarea = { ...tarea, id: `${tarea.id}-${Date.now()}` };
+    const newFieldTarea: Tarea = { ...tarea, id: `${tarea.id}-${Date.now()}`, jornada: selectedJornada };
     setFieldTasks({
       ...fieldTasks,
       [dateKey]: [...(fieldTasks[dateKey] || []), newFieldTarea]
@@ -410,6 +464,7 @@ const TecnicaArea: React.FC = () => {
       if (error) throw error;
 
       await fetchBiblioteca();
+      logActivity('Nueva Tarea Biblioteca', { nombre: newBibliotecaTarea.nombre });
       setShowBibliotecaAddModal(false);
       setNewBibliotecaTarea({ 
         nombre: '', 
@@ -426,6 +481,7 @@ const TecnicaArea: React.FC = () => {
 
   const removeActivity = async (dateKey: string, activity: any) => {
     if (!activity.db_id) return;
+    if (!window.confirm("¿Estás seguro de que quieres eliminar esta actividad?")) return;
     try {
       const { error } = await supabase
         .from('cronograma_semanal')
@@ -445,6 +501,75 @@ const TecnicaArea: React.FC = () => {
 
   const removeFieldTask = (dateKey: string, tareaId: string) => {
     setFieldTasks({ ...fieldTasks, [dateKey]: (fieldTasks[dateKey] || []).filter(t => t.id !== tareaId) });
+  };
+
+  const handleCopyDay = async (targetDateKey: string) => {
+    const sourceDateKey = window.prompt("Ingresa la fecha de origen para copiar (AAAA-MM-DD):", targetDateKey);
+    if (!sourceDateKey || sourceDateKey === targetDateKey || !selectedMicro) return;
+
+    try {
+      const { data: sourceActivities, error: fetchError } = await supabase
+        .from('cronograma_semanal')
+        .select('*')
+        .eq('id_microcycles', selectedMicro.id)
+        .eq('fecha', sourceDateKey);
+
+      if (fetchError) throw fetchError;
+      if (!sourceActivities || sourceActivities.length === 0) {
+        alert("No se encontraron actividades en la fecha de origen.");
+        return;
+      }
+
+      const newActivities = sourceActivities.map(act => ({
+        id_microcycles: selectedMicro.id,
+        id_categoria: selectedMicro.category_id,
+        fecha: targetDateKey,
+        hora: act.hora,
+        actividad: act.actividad,
+        lugar: act.lugar,
+        otra: act.otra,
+        grupo: act.grupo
+      }));
+
+      const { error: insertError } = await supabase
+        .from('cronograma_semanal')
+        .insert(newActivities);
+
+      if (insertError) throw insertError;
+
+      alert(`Se copiaron ${newActivities.length} actividades con éxito.`);
+      fetchSchedule(selectedMicro.id);
+    } catch (err: any) {
+      alert("Error al copiar día: " + err.message);
+    }
+  };
+
+  const startEditing = (act: any, dayIndex: number) => {
+    setSelectedDayIndex(dayIndex);
+    setEditingActivityId(act.db_id);
+    
+    // Parse type and rival
+    let type = act.type;
+    let rival = '';
+    if (type.includes(' vs ')) {
+      const parts = type.split(' vs ');
+      type = parts[0];
+      rival = parts[1];
+    }
+
+    // Check if it's a predefined activity or custom
+    const isPredefined = PREDEFINED_ACTIVITIES.some(pa => pa.label === type);
+
+    setActivityForm({
+      time: act.time,
+      type: isPredefined ? type : 'OTRA',
+      location: LOCATIONS.includes(act.location) ? act.location : 'OTRO',
+      customLocation: LOCATIONS.includes(act.location) ? '' : act.location,
+      customType: isPredefined ? '' : type,
+      rival: rival,
+      grupo: act.grupo || 'Todos'
+    });
+    setShowActivityModal(true);
   };
 
   const formatCategoryLabel = (idOrName: any) => {
@@ -593,24 +718,49 @@ const TecnicaArea: React.FC = () => {
               
               return (
                 <div key={dateKey} className={`flex flex-col h-[520px] rounded-[40px] transition-all relative group shadow-sm border ${isWeekend ? 'border-red-500/20 bg-red-50/5' : 'bg-white border-slate-100'} transform-gpu`}>
-                  <div className="pt-8 pb-4 text-center border-b border-dashed border-slate-100">
+                  <div className="pt-8 pb-4 text-center border-b border-dashed border-slate-100 relative group/header">
                     <span className={`text-[10px] font-black uppercase tracking-[0.2em] block mb-1 ${isWeekend ? 'text-red-500' : 'text-slate-400'}`}>DÍA {i+1}</span>
                     <span className={`text-3xl font-black tracking-tighter ${isWeekend ? 'text-red-600' : 'text-slate-800'}`}>{date.getDate()}</span>
+                    <button 
+                      onClick={() => handleCopyDay(dateKey)}
+                      className="absolute top-2 right-2 w-6 h-6 rounded-lg bg-slate-100 text-slate-400 hover:text-blue-600 transition-all flex items-center justify-center opacity-0 group-hover/header:opacity-100 shadow-sm"
+                      title="Copiar de otro día"
+                    >
+                      <i className="fa-solid fa-copy text-[10px]"></i>
+                    </button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                    {schedule.map(act => (
-                      <div key={act.id} className="bg-slate-50/80 p-3 rounded-2xl border border-slate-100 group/item relative">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm">{getEmojiForType(act.type)}</span>
-                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{act.time}</span>
+                    {schedule.map(act => {
+                      const groupStyles = act.grupo === 'Concentrados' 
+                        ? 'bg-amber-50 border-amber-200' 
+                        : act.grupo === 'Santiago' 
+                          ? 'bg-blue-50 border-blue-200' 
+                          : 'bg-slate-50/80 border-slate-100';
+
+                      return (
+                        <div key={act.id} className={`${groupStyles} p-3 rounded-2xl border group/item relative`}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm">{getEmojiForType(act.type)}</span>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{act.time}</span>
+                            {act.grupo && act.grupo !== 'Todos' && (
+                              <span className={`text-[6px] font-black uppercase px-1 rounded ${act.grupo === 'Concentrados' ? 'bg-amber-200 text-amber-700' : 'bg-blue-200 text-blue-700'}`}>
+                                {act.grupo}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] font-black text-slate-900 uppercase italic tracking-tight truncate leading-tight">{act.type}</p>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter truncate">{act.location}</p>
+                          <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
+                            <button onClick={() => startEditing(act, i)} className="w-5 h-5 bg-white border border-slate-100 rounded-full text-blue-400 hover:text-blue-600 hover:border-blue-600 flex items-center justify-center shadow-sm">
+                              <i className="fa-solid fa-pen text-[8px]"></i>
+                            </button>
+                            <button onClick={() => removeActivity(dateKey, act)} className="w-5 h-5 bg-white border border-slate-100 rounded-full text-slate-300 hover:text-red-500 hover:border-red-500 flex items-center justify-center shadow-sm">
+                              <i className="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-[10px] font-black text-slate-900 uppercase italic tracking-tight truncate leading-tight">{act.type}</p>
-                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter truncate">{act.location}</p>
-                        <button onClick={() => removeActivity(dateKey, act)} className="absolute -top-1 -right-1 w-5 h-5 bg-white border border-slate-100 rounded-full text-slate-300 hover:text-red-500 hover:border-red-500 flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-all shadow-sm">
-                          <i className="fa-solid fa-xmark text-[10px]"></i>
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   <div className="p-4 space-y-2">
                     <button onClick={() => { setSelectedDayIndex(i); setShowDailyReportModal(true); }} className="w-full py-4 rounded-[20px] bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-red-600 transition-all shadow-md">
@@ -630,12 +780,30 @@ const TecnicaArea: React.FC = () => {
 
       {activeTab === 'tareas' && (
         <div className="space-y-12 relative animate-in fade-in duration-300 transform-gpu">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
-              <span className="w-2 h-6 bg-red-600 rounded-full"></span>
-              Planificación Técnica de Campo
-            </h3>
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div className="flex items-center gap-6">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
+                <span className="w-2 h-6 bg-red-600 rounded-full"></span>
+                Planificación Técnica de Campo
+              </h3>
+              
+              <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner">
+                <button 
+                  onClick={() => setSelectedJornada('AM')}
+                  className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedJornada === 'AM' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Jornada AM
+                </button>
+                <button 
+                  onClick={() => setSelectedJornada('PM')}
+                  className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedJornada === 'PM' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Jornada PM
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-3">
               <button 
                 onClick={() => setShowWeeklyReportModal(true)} 
                 className="bg-white border-2 border-slate-200 text-slate-500 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#0b1220] hover:text-white hover:border-[#0b1220] transition-all"
@@ -654,7 +822,7 @@ const TecnicaArea: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             {currentWeekDays.map((date, i) => {
               const dateKey = formatDateKey(date);
-              const tasks = fieldTasks[dateKey] || [];
+              const tasks = (fieldTasks[dateKey] || []).filter(t => t.jornada === selectedJornada);
               const isWeekend = i >= 5;
               const isSaving = savingDayTasks[dateKey];
               
@@ -781,9 +949,9 @@ const TecnicaArea: React.FC = () => {
                     </div>
                     <div className="text-right">
                        <div className="bg-slate-50 px-6 py-3 rounded-xl border border-slate-100 inline-block">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">MICROCICLO</p>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">MICROCICLO {selectedMicro?.micro_number || ''}</p>
                           <p className="text-xl font-black text-slate-900 uppercase italic tracking-tight">
-                             {selectedMicro?.nombre_display}
+                             {formatCategoryLabel(selectedMicro?.category_id)}
                           </p>
                        </div>
                        <div className="mt-2 flex justify-end gap-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
@@ -812,17 +980,20 @@ const TecnicaArea: React.FC = () => {
                           </tr>
                        </thead>
                        <tbody className="divide-y divide-slate-100">
-                          {(weeklySchedule[formatDateKey(currentWeekDays[selectedDayIndex])] || []).map((act, idx) => (
-                             <tr key={idx} className={act.type.toUpperCase().includes('ENTRENAMIENTO') ? 'bg-red-50/50' : ''}>
-                                <td className="py-5 px-4 text-sm font-black text-slate-900 tracking-tight border-r border-slate-50">{act.time}</td>
-                                <td className="py-5 px-4 text-sm font-bold text-slate-800 uppercase italic tracking-tight border-r border-slate-50">
-                                   {act.type}
-                                </td>
-                                <td className="py-5 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                   {act.location}
-                                </td>
-                             </tr>
-                          ))}
+                          {(weeklySchedule[formatDateKey(currentWeekDays[selectedDayIndex])] || []).map((act, idx) => {
+                             const rowStyle = getActivityStyle(act.type);
+                             return (
+                               <tr key={idx} className={rowStyle}>
+                                  <td className="py-5 px-4 text-sm font-black tracking-tight border-r border-slate-50/20">{act.time}</td>
+                                  <td className="py-5 px-4 text-sm font-bold uppercase italic tracking-tight border-r border-slate-50/20">
+                                     {act.type}
+                                  </td>
+                                  <td className="py-5 px-4 text-[10px] font-bold uppercase tracking-wider">
+                                     {act.location}
+                                  </td>
+                               </tr>
+                             );
+                          })}
                           {(weeklySchedule[formatDateKey(currentWeekDays[selectedDayIndex])] || []).length === 0 && (
                              <tr>
                                 <td colSpan={3} className="py-12 text-center text-slate-300 text-xs font-bold uppercase tracking-widest italic">
@@ -849,15 +1020,20 @@ const TecnicaArea: React.FC = () => {
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-[#0b1220]/90 transform-gpu animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-xl rounded-[48px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 transform-gpu">
             <div className="bg-[#0b1220] p-10 text-white relative">
-              <button onClick={() => setShowActivityModal(false)} className="absolute top-8 right-8 text-white/20 hover:text-white transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
-              <h3 className="text-2xl font-black uppercase italic tracking-tighter">Programar Jornada</h3>
+              <button onClick={() => { setShowActivityModal(false); setEditingActivityId(null); }} className="absolute top-8 right-8 text-white/20 hover:text-white transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
+              <h3 className="text-2xl font-black uppercase italic tracking-tighter">{editingActivityId ? 'Editar Actividad' : 'Programar Jornada'}</h3>
               <p className="text-red-500 font-black uppercase text-[10px] tracking-[0.3em] mt-2">DÍA {selectedDayIndex !== null && selectedDayIndex + 1} • {currentWeekDays[selectedDayIndex!].toLocaleDateString()}</p>
             </div>
             <form onSubmit={handleAddActivity} className="p-12 space-y-8">
-              <div className="grid grid-cols-2 gap-8">
+              <div className="grid grid-cols-3 gap-4">
                 <input required type="time" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={activityForm.time} onChange={e => setActivityForm({...activityForm, time: e.target.value})} />
                 <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={activityForm.location} onChange={e => setActivityForm({...activityForm, location: e.target.value})}>
                   {LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                </select>
+                <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={activityForm.grupo} onChange={e => setActivityForm({...activityForm, grupo: e.target.value})}>
+                  <option value="Todos">TODOS</option>
+                  <option value="Concentrados">CONCENTRADOS</option>
+                  <option value="Santiago">SANTIAGO</option>
                 </select>
               </div>
               {activityForm.location === 'OTRO' && (
@@ -872,7 +1048,7 @@ const TecnicaArea: React.FC = () => {
                 ))}
               </div>
               <button type="submit" disabled={savingActivity} className="w-full py-6 rounded-[32px] bg-red-600 text-white text-xs font-black uppercase tracking-widest shadow-2xl hover:bg-red-700 transition-all">
-                {savingActivity ? 'Guardando...' : 'Confirmar y Agendar'}
+                {savingActivity ? 'Guardando...' : (editingActivityId ? 'Actualizar Actividad' : 'Confirmar y Agendar')}
               </button>
             </form>
           </div>
@@ -887,7 +1063,11 @@ const TecnicaArea: React.FC = () => {
         @media print {
           body * { visibility: hidden; }
           #daily-report-print, #daily-report-print *, 
-          #weekly-report-print, #weekly-report-print * { visibility: visible; }
+          #weekly-report-print, #weekly-report-print * { 
+            visibility: visible; 
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
           #daily-report-print, #weekly-report-print {
             position: fixed;
             left: 0;

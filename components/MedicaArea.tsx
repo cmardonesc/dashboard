@@ -312,29 +312,29 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 transform-gpu">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic flex items-center gap-2">
+          <h2 className="text-xl md:text-2xl font-black text-slate-900 uppercase tracking-tighter italic flex items-center gap-2">
             Área Médica <span className="text-red-500">LR</span>
           </h2>
-          <p className="text-slate-500 text-sm font-medium">Gestión clínica y disponibilidad de jugadores.</p>
+          <p className="text-slate-500 text-[10px] md:text-sm font-medium">Gestión clínica y disponibilidad de jugadores.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 md:gap-3">
           <button 
             onClick={() => setView('dashboard')}
-            className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'dashboard' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
+            className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'dashboard' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
           >
             Tablero Médico
           </button>
           <button 
             onClick={() => setView('calendar')}
-            className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'calendar' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
+            className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'calendar' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
           >
             Calendario Lesiones
           </button>
           <button 
             onClick={() => setView('reintegro_gps')}
-            className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'reintegro_gps' ? 'bg-[#CF1B2B] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
+            className={`w-full md:w-auto px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'reintegro_gps' ? 'bg-[#CF1B2B] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
           >
             Reintegro del GPS
           </button>
@@ -342,22 +342,22 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       </div>
 
       {view === 'dashboard' && (
-        <div className="space-y-12 animate-in fade-in duration-300">
-          <section className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm space-y-6 relative overflow-visible">
+        <div className="space-y-8 md:space-y-12 animate-in fade-in duration-300">
+          <section className="bg-white p-6 md:p-10 rounded-[32px] md:rounded-[48px] border border-slate-100 shadow-sm space-y-6 relative overflow-visible">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
-                <span className="w-2 h-6 bg-red-600 rounded-full"></span>
+              <h3 className="text-xs md:text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
+                <span className="w-2 h-5 md:h-6 bg-red-600 rounded-full"></span>
                 Gestión Clínica: Buscar Atleta
               </h3>
             </div>
             
-            <div className="flex gap-4 relative" ref={searchRef}>
+            <div className="flex flex-col md:flex-row gap-4 relative" ref={searchRef}>
               <div className="relative flex-1 group">
-                <i className="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 text-lg transition-colors group-focus-within:text-red-500"></i>
+                <i className="fa-solid fa-magnifying-glass absolute left-5 md:left-6 top-1/2 -translate-y-1/2 text-slate-300 text-base md:text-lg transition-colors group-focus-within:text-red-500"></i>
                 <input 
                   type="text" 
                   placeholder="Escriba el nombre del jugador..."
-                  className="w-full bg-slate-50 border-none rounded-3xl px-16 py-6 text-sm font-black text-slate-900 outline-none focus:ring-4 focus:ring-red-500/10 shadow-inner transition-all"
+                  className="w-full bg-slate-50 border-none rounded-2xl md:rounded-3xl px-12 md:px-16 py-4 md:py-6 text-[11px] md:text-sm font-black text-slate-900 outline-none focus:ring-4 focus:ring-red-500/10 shadow-inner transition-all"
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   onKeyDown={handleKeyDown}
@@ -365,40 +365,40 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                 />
                 
                 {hasSearched && (
-                  <div className="absolute top-full left-0 right-0 mt-3 bg-white rounded-[32px] shadow-[0_40px_100px_rgba(0,0,0,0.2)] border border-slate-100 overflow-hidden z-[999] animate-in slide-in-from-top-2 duration-200">
+                  <div className="absolute top-full left-0 right-0 mt-3 bg-white rounded-[24px] md:rounded-[32px] shadow-[0_40px_100px_rgba(0,0,0,0.2)] border border-slate-100 overflow-hidden z-[999] animate-in slide-in-from-top-2 duration-200">
                     {foundPlayers.length > 0 ? (
-                      <div className="p-3 space-y-1">
+                      <div className="p-2 md:p-3 space-y-1">
                         {foundPlayers.map((p, idx) => (
                           <button 
                             key={p.id}
                             onClick={() => handleSelectPlayerForReport(p)}
-                            className={`w-full flex items-center justify-between p-4 hover:bg-red-50 rounded-2xl transition-all text-left group ${idx === 0 ? 'bg-slate-50/50' : ''}`}
+                            className={`w-full flex items-center justify-between p-3 md:p-4 hover:bg-red-50 rounded-xl md:rounded-2xl transition-all text-left group ${idx === 0 ? 'bg-slate-50/50' : ''}`}
                           >
-                            <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 bg-[#0b1220] text-white rounded-xl flex items-center justify-center font-black italic text-xs group-hover:bg-red-600 transition-colors shadow-sm">
+                            <div className="flex items-center gap-3 md:gap-4">
+                              <div className="w-8 h-8 md:w-10 md:h-10 bg-[#0b1220] text-white rounded-lg md:rounded-xl flex items-center justify-center font-black italic text-[10px] md:text-xs group-hover:bg-red-600 transition-colors shadow-sm">
                                 {p.name.charAt(0)}
                               </div>
                               <div>
-                                <p className="text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                <p className="text-[10px] md:text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
+                                <p className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                                   {p.club} • {p.position}
                                 </p>
                               </div>
                             </div>
                             {idx === 0 && (
-                              <span className="text-[8px] font-black bg-red-100 text-red-600 px-3 py-1 rounded-full uppercase tracking-tighter">Enter para seleccionar</span>
+                              <span className="hidden sm:inline-block text-[8px] font-black bg-red-100 text-red-600 px-3 py-1 rounded-full uppercase tracking-tighter">Enter para seleccionar</span>
                             )}
                           </button>
                         ))}
                       </div>
                     ) : (
-                      <div className="p-12 text-center bg-white">
-                        <i className="fa-solid fa-user-slash text-slate-200 text-4xl mb-4"></i>
-                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest italic">Atleta no registrado en la base de datos central</p>
+                      <div className="p-8 md:p-12 text-center bg-white">
+                        <i className="fa-solid fa-user-slash text-slate-200 text-3xl md:text-4xl mb-4"></i>
+                        <p className="text-[10px] md:text-[11px] font-black text-slate-400 uppercase tracking-widest italic">Atleta no registrado</p>
                       </div>
                     )}
-                    <div className="bg-slate-50 p-4 text-center border-t border-slate-100">
-                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Fuente oficial: Tabla 'players' Supabase</p>
+                    <div className="bg-slate-50 p-3 md:p-4 text-center border-t border-slate-100">
+                       <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Fuente oficial: Tabla 'players' Supabase</p>
                     </div>
                   </div>
                 )}
@@ -407,7 +407,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
               <button 
                 onClick={handleQuickAction}
                 disabled={foundPlayers.length === 0}
-                className={`px-12 py-6 rounded-3xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-3 shadow-xl active:scale-95 ${foundPlayers.length > 0 ? 'bg-[#0b1220] text-white hover:bg-red-600' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                className={`px-8 md:px-12 py-4 md:py-6 rounded-2xl md:rounded-3xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-xl active:scale-95 ${foundPlayers.length > 0 ? 'bg-[#0b1220] text-white hover:bg-red-600' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
               >
                 INGRESAR <i className="fa-solid fa-arrow-right-to-bracket"></i>
               </button>
@@ -425,24 +425,24 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
               </div>
             </div>
             
-            <div className="bg-white rounded-[40px] border border-slate-100 shadow-xl overflow-hidden overflow-x-auto">
-              <table className="w-full text-[10px] text-center border-collapse min-w-[1000px]">
+            <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl overflow-hidden overflow-x-auto">
+              <table className="w-full text-[9px] md:text-[10px] text-center border-collapse min-w-[800px] md:min-w-full">
                 <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest">
                   <tr>
-                    <th className="px-10 py-6 text-left">Atleta</th>
-                    <th className="px-4 py-6 text-left">Localización</th>
-                    <th className="px-4 py-6 text-left">Diagnóstico</th>
-                    <th className="px-4 py-6">Estado</th>
-                    <th className="px-4 py-6">Disponibilidad</th>
-                    <th className="px-4 py-6">Inicio</th>
-                    <th className="px-10 py-6 text-right">Acciones</th>
+                    <th className="px-6 md:px-10 py-4 md:py-6 text-left">Atleta</th>
+                    <th className="px-2 md:px-4 py-4 md:py-6 text-left">Localización</th>
+                    <th className="px-2 md:px-4 py-4 md:py-6 text-left">Diagnóstico</th>
+                    <th className="px-2 md:px-4 py-4 md:py-6">Estado</th>
+                    <th className="px-2 md:px-4 py-4 md:py-6">Disponibilidad</th>
+                    <th className="px-2 md:px-4 py-4 md:py-6">Inicio</th>
+                    <th className="px-6 md:px-10 py-4 md:py-6 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
                   {dbInjuries.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-24 text-slate-300 font-black uppercase tracking-widest italic opacity-50 text-center">
-                        <i className="fa-solid fa-notes-medical text-4xl mb-4 block"></i>
+                      <td colSpan={7} className="py-16 md:py-24 text-slate-300 font-black uppercase tracking-widest italic opacity-50 text-center">
+                        <i className="fa-solid fa-notes-medical text-3xl md:text-4xl mb-4 block"></i>
                         No hay reportes clínicos activos.
                       </td>
                     </tr>
@@ -451,45 +451,45 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                       const athleteName = `${injury.players?.nombre} ${injury.players?.apellido1}`;
                       return (
                         <tr key={injury.id} className="hover:bg-slate-50 transition-colors group">
-                          <td className="px-10 py-6 text-left">
-                            <p className="font-black text-slate-900 uppercase italic text-xs leading-none group-hover:text-red-600 transition-colors">
+                          <td className="px-6 md:px-10 py-4 md:py-6 text-left">
+                            <p className="font-black text-slate-900 uppercase italic text-[11px] md:text-xs leading-none group-hover:text-red-600 transition-colors">
                               {athleteName}
                             </p>
-                            <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">{injury.players?.posicion}</p>
+                            <p className="text-[7px] md:text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">{injury.players?.posicion}</p>
                           </td>
-                          <td className="px-4 py-6 text-left">
+                          <td className="px-2 md:px-4 py-4 md:py-6 text-left">
                             <span className="text-slate-900 font-black uppercase tracking-tighter">{injury.localizacion}</span>
-                            <p className="text-[8px] text-slate-400 uppercase">{injury.lado}</p>
+                            <p className="text-[7px] md:text-[8px] text-slate-400 uppercase">{injury.lado}</p>
                           </td>
-                          <td className="px-4 py-6 text-left italic text-slate-500 max-w-xs truncate">{injury.diagnostico_clinico}</td>
-                          <td className="px-4 py-6">
-                            <span className={`px-4 py-2 rounded-full text-[8px] font-black uppercase tracking-tighter ${getFaseColor(injury.estado)}`}>
+                          <td className="px-2 md:px-4 py-4 md:py-6 text-left italic text-slate-500 max-w-[150px] md:max-w-xs truncate">{injury.diagnostico_clinico}</td>
+                          <td className="px-2 md:px-4 py-4 md:py-6">
+                            <span className={`px-3 md:px-4 py-1.5 md:py-2 rounded-full text-[7px] md:text-[8px] font-black uppercase tracking-tighter ${getFaseColor(injury.estado)}`}>
                               {injury.estado === 'Activo' ? 'LESIONADO' : injury.estado}
                             </span>
                           </td>
-                          <td className="px-4 py-6">
-                             <span className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg ${injury.disponibilidad.toLowerCase().includes('no') ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
+                          <td className="px-2 md:px-4 py-4 md:py-6">
+                             <span className={`text-[7px] md:text-[8px] font-black uppercase px-2 md:px-3 py-1 rounded-lg ${injury.disponibilidad.toLowerCase().includes('no') ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
                                {injury.disponibilidad}
                              </span>
                           </td>
-                          <td className="px-4 py-6 text-slate-400 font-black">
+                          <td className="px-2 md:px-4 py-4 md:py-6 text-slate-400 font-black">
                              {new Date(injury.fecha_inicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
                           </td>
-                          <td className="px-10 py-6 text-right">
-                             <div className="flex justify-end gap-2">
+                          <td className="px-6 md:px-10 py-4 md:py-6 text-right">
+                             <div className="flex justify-end gap-1.5 md:gap-2">
                                 <button 
                                   onClick={() => handleEditClick(injury)}
-                                  className="w-10 h-10 bg-slate-100 text-slate-400 rounded-xl flex items-center justify-center hover:bg-[#0b1220] hover:text-white transition-all shadow-sm active:scale-90"
+                                  className="w-8 h-8 md:w-10 md:h-10 bg-slate-100 text-slate-400 rounded-lg md:rounded-xl flex items-center justify-center hover:bg-[#0b1220] hover:text-white transition-all shadow-sm active:scale-90"
                                   title="Editar Ficha"
                                 >
-                                   <i className="fa-solid fa-pen-to-square text-xs"></i>
+                                   <i className="fa-solid fa-pen-to-square text-[10px] md:text-xs"></i>
                                 </button>
                                 <button 
                                   onClick={() => handleDeleteInjury(injury.id, athleteName)}
-                                  className="w-10 h-10 bg-slate-100 text-slate-400 rounded-xl flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90"
+                                  className="w-8 h-8 md:w-10 md:h-10 bg-slate-100 text-slate-400 rounded-lg md:rounded-xl flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90"
                                   title="Eliminar Registro"
                                 >
-                                   <i className="fa-solid fa-trash-can text-xs"></i>
+                                   <i className="fa-solid fa-trash-can text-[10px] md:text-xs"></i>
                                 </button>
                              </div>
                           </td>
@@ -505,31 +505,31 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       )}
 
       {view === 'report_injury' && reportingPlayer && (
-        <div className="max-w-5xl mx-auto bg-white rounded-[48px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 pb-12">
-          <div className={`${editingInjuryId ? 'bg-[#0b1220]' : 'bg-[#CF1B2B]'} p-12 text-white relative text-center transition-colors duration-500`}>
-            <button onClick={() => setView('dashboard')} className="absolute top-10 left-10 text-white/50 hover:text-white transition-colors">
+        <div className="max-w-5xl mx-auto bg-white rounded-[32px] md:rounded-[48px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 pb-8 md:pb-12">
+          <div className={`${editingInjuryId ? 'bg-[#0b1220]' : 'bg-[#CF1B2B]'} p-8 md:p-12 text-white relative text-center transition-colors duration-500`}>
+            <button onClick={() => setView('dashboard')} className="absolute top-6 md:top-10 left-6 md:left-10 text-white/50 hover:text-white transition-colors">
                <i className="fa-solid fa-arrow-left"></i>
             </button>
-            <div className="w-20 h-20 bg-white/20 rounded-[32px] flex items-center justify-center text-white font-black text-3xl mb-4 mx-auto border border-white/20 shadow-xl">
+            <div className="w-16 h-16 md:w-20 md:h-20 bg-white/20 rounded-2xl md:rounded-[32px] flex items-center justify-center text-white font-black text-2xl md:text-3xl mb-4 mx-auto border border-white/20 shadow-xl">
               {reportingPlayer.name.charAt(0)}
             </div>
-            <h3 className="text-3xl font-black uppercase italic tracking-tighter leading-none">
+            <h3 className="text-2xl md:text-3xl font-black uppercase italic tracking-tighter leading-none">
               {editingInjuryId ? 'Editar Ficha Clínica' : 'Nueva Ficha Clínica'}
             </h3>
-            <p className="text-white/70 font-bold uppercase text-[10px] tracking-[0.3em] mt-3">{reportingPlayer.name} • {reportingPlayer.club}</p>
+            <p className="text-white/70 font-bold uppercase text-[8px] md:text-[10px] tracking-[0.3em] mt-3">{reportingPlayer.name} • {reportingPlayer.club}</p>
           </div>
 
-          <form onSubmit={handleSaveInjury} className="p-12 space-y-12">
+          <form onSubmit={handleSaveInjury} className="p-6 md:p-12 space-y-8 md:space-y-12">
             <div className="space-y-6">
-              <h4 className="text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">1. Identificación Cronológica y Anatómica</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <h4 className="text-[9px] md:text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">1. Identificación Cronológica y Anatómica</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha de Inicio</label>
-                  <input required type="date" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.fecha_inicio} onChange={e => setInjuryForm({...injuryForm, fecha_inicio: e.target.value})} />
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha de Inicio</label>
+                  <input required type="date" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.fecha_inicio} onChange={e => setInjuryForm({...injuryForm, fecha_inicio: e.target.value})} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Momento</label>
-                  <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.momento_lesion} onChange={e => setInjuryForm({...injuryForm, momento_lesion: e.target.value})}>
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Momento</label>
+                  <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.momento_lesion} onChange={e => setInjuryForm({...injuryForm, momento_lesion: e.target.value})}>
                     <option value="Entrenamiento">Entrenamiento</option>
                     <option value="Partido">Partido</option>
                     <option value="Gimnasio">Gimnasio</option>
@@ -537,8 +537,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Lado</label>
-                  <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.lado} onChange={e => setInjuryForm({...injuryForm, lado: e.target.value})}>
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Lado</label>
+                  <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.lado} onChange={e => setInjuryForm({...injuryForm, lado: e.target.value})}>
                     <option value="Derecho">Derecho</option>
                     <option value="Izquierdo">Izquierdo</option>
                     <option value="Bilateral">Bilateral</option>
@@ -546,19 +546,19 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Localización</label>
-                  <input required placeholder="Ej: Isquiotibial" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.localizacion} onChange={e => setInjuryForm({...injuryForm, localizacion: e.target.value})} />
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Localización</label>
+                  <input required placeholder="Ej: Isquiotibial" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.localizacion} onChange={e => setInjuryForm({...injuryForm, localizacion: e.target.value})} />
                 </div>
               </div>
             </div>
 
             <div className="space-y-6">
-              <h4 className="text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">2. Clasificación y Diagnóstico</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <h4 className="text-[9px] md:text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">2. Clasificación y Diagnóstico</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Tipo de Lesión</label>
-                    <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.tipo_lesion} onChange={e => setInjuryForm({...injuryForm, tipo_lesion: e.target.value})}>
+                    <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Tipo de Lesión</label>
+                    <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.tipo_lesion} onChange={e => setInjuryForm({...injuryForm, tipo_lesion: e.target.value})}>
                       <option value="Muscular">Muscular</option>
                       <option value="Ligamentaria">Ligamentaria</option>
                       <option value="Tendinosa">Tendinosa</option>
@@ -567,8 +567,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Mecanismo</label>
-                    <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.mecanismo} onChange={e => setInjuryForm({...injuryForm, mecanismo: e.target.value})}>
+                    <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Mecanismo</label>
+                    <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.mecanismo} onChange={e => setInjuryForm({...injuryForm, mecanismo: e.target.value})}>
                       <option value="No Contacto">No Contacto</option>
                       <option value="Contacto">Contacto</option>
                       <option value="Sobrecarga">Sobrecarga</option>
@@ -577,13 +577,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Diagnóstico Clínico</label>
-                  <textarea rows={1} className="w-full bg-slate-50 border-none rounded-2xl p-4 text-xs font-bold text-slate-700 shadow-inner resize-none" value={injuryForm.diagnostico_clinico} onChange={e => setInjuryForm({...injuryForm, diagnostico_clinico: e.target.value})} />
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Diagnóstico Clínico</label>
+                  <textarea rows={1} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl p-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner resize-none" value={injuryForm.diagnostico_clinico} onChange={e => setInjuryForm({...injuryForm, diagnostico_clinico: e.target.value})} />
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Diagnóstico Funcional</label>
-                <textarea rows={2} className="w-full bg-slate-50 border-none rounded-2xl p-4 text-xs font-bold text-slate-700 shadow-inner resize-none" value={injuryForm.diagnostico_funcional} onChange={e => setInjuryForm({...injuryForm, diagnostico_funcional: e.target.value})} />
+                <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Diagnóstico Funcional</label>
+                <textarea rows={2} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl p-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner resize-none" value={injuryForm.diagnostico_funcional} onChange={e => setInjuryForm({...injuryForm, diagnostico_funcional: e.target.value})} />
               </div>
             </div>
 
@@ -600,40 +600,40 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Disponibilidad</label>
-                  <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.disponibilidad} onChange={e => setInjuryForm({...injuryForm, disponibilidad: e.target.value})}>
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Disponibilidad</label>
+                  <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.disponibilidad} onChange={e => setInjuryForm({...injuryForm, disponibilidad: e.target.value})}>
                     <option value="No Disponible">No Disponible</option>
                     <option value="Limitado">Limitado</option>
                     <option value="Disponible">Disponible</option>
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Último Control</label>
-                  <input type="date" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.ultimo_control} onChange={e => setInjuryForm({...injuryForm, ultimo_control: e.target.value})} />
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Último Control</label>
+                  <input type="date" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.ultimo_control} onChange={e => setInjuryForm({...injuryForm, ultimo_control: e.target.value})} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha de Alta</label>
-                  <input type="date" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.fecha_alta} onChange={e => setInjuryForm({...injuryForm, fecha_alta: e.target.value})} />
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha de Alta</label>
+                  <input type="date" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.fecha_alta} onChange={e => setInjuryForm({...injuryForm, fecha_alta: e.target.value})} />
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Restricciones / Observaciones</label>
-                <textarea rows={3} className="w-full bg-slate-50 border-none rounded-[32px] p-6 text-xs font-bold text-slate-700 shadow-inner resize-none" value={injuryForm.observaciones} onChange={e => setInjuryForm({...injuryForm, observaciones: e.target.value})} placeholder="Detalles clínicos y limitaciones de carga..." />
+                <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Restricciones / Observaciones</label>
+                <textarea rows={3} className="w-full bg-slate-50 border-none rounded-[24px] md:rounded-[32px] p-4 md:p-6 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner resize-none" value={injuryForm.observaciones} onChange={e => setInjuryForm({...injuryForm, observaciones: e.target.value})} placeholder="Detalles clínicos y limitaciones de carga..." />
               </div>
             </div>
 
             <div className="space-y-6">
-              <h4 className="text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">4. Exámenes</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <h4 className="text-[9px] md:text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">4. Exámenes</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha</label>
-                  <input type="date" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={newExam.date} onChange={e => setNewExam({...newExam, date: e.target.value})} />
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha</label>
+                  <input type="date" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={newExam.date} onChange={e => setNewExam({...newExam, date: e.target.value})} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Tipo de Examen</label>
-                  <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={newExam.type} onChange={e => setNewExam({...newExam, type: e.target.value})}>
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Tipo de Examen</label>
+                  <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={newExam.type} onChange={e => setNewExam({...newExam, type: e.target.value})}>
                     <option value="Resonancia">Resonancia</option>
                     <option value="Ecografía">Ecografía</option>
                     <option value="Radiografía">Radiografía</option>
@@ -641,11 +641,11 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                     <option value="Otro">Otro</option>
                   </select>
                 </div>
-                <div className="space-y-2">
-                   <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Descripción</label>
+                <div className="space-y-2 sm:col-span-2 md:col-span-1">
+                   <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Descripción</label>
                    <div className="flex gap-2">
-                     <input type="text" placeholder="Breve descripción..." className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={newExam.description} onChange={e => setNewExam({...newExam, description: e.target.value})} />
-                     <button type="button" onClick={handleAddExam} className="bg-[#0b1220] text-white rounded-2xl px-4 flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors">
+                     <input type="text" placeholder="Breve descripción..." className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={newExam.description} onChange={e => setNewExam({...newExam, description: e.target.value})} />
+                     <button type="button" onClick={handleAddExam} className="bg-[#0b1220] text-white rounded-xl md:rounded-2xl px-4 flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors">
                        <i className="fa-solid fa-plus"></i>
                      </button>
                    </div>
@@ -653,16 +653,16 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
               </div>
 
               {exams.length > 0 && (
-                <div className="bg-slate-50 rounded-[32px] p-6 space-y-3">
+                <div className="bg-slate-50 rounded-[24px] md:rounded-[32px] p-4 md:p-6 space-y-3">
                   {exams.map((exam) => (
-                    <div key={exam.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-                          <i className="fa-solid fa-file-medical"></i>
+                    <div key={exam.id} className="bg-white p-3 md:p-4 rounded-xl md:rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+                      <div className="flex items-center gap-3 md:gap-4">
+                        <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-50 text-blue-600 rounded-lg md:rounded-xl flex items-center justify-center">
+                          <i className="fa-solid fa-file-medical text-sm md:text-base"></i>
                         </div>
                         <div>
-                          <p className="text-[10px] font-black text-slate-900 uppercase tracking-wide">{exam.type} • {new Date(exam.date).toLocaleDateString()}</p>
-                          <p className="text-[9px] text-slate-500 font-medium">{exam.description}</p>
+                          <p className="text-[9px] md:text-[10px] font-black text-slate-900 uppercase tracking-wide">{exam.type} • {new Date(exam.date).toLocaleDateString()}</p>
+                          <p className="text-[8px] md:text-[9px] text-slate-500 font-medium">{exam.description}</p>
                         </div>
                       </div>
                       <button type="button" onClick={() => handleRemoveExam(exam.id)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50 text-slate-300 hover:text-red-500 transition-colors">
@@ -674,9 +674,9 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
               )}
             </div>
 
-            <div className="flex gap-4 pt-6">
-              <button type="button" onClick={() => setView('dashboard')} className="flex-1 py-5 rounded-[24px] bg-slate-100 text-slate-500 text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all">Cancelar</button>
-              <button type="submit" disabled={loading} className={`flex-1 py-5 rounded-[24px] ${editingInjuryId ? 'bg-[#0b1220]' : 'bg-[#CF1B2B]'} text-white text-xs font-black uppercase tracking-widest shadow-2xl hover:opacity-90 transition-all active:scale-95 flex items-center justify-center gap-3`}>
+            <div className="flex flex-col sm:flex-row gap-3 md:gap-4 pt-6">
+              <button type="button" onClick={() => setView('dashboard')} className="order-2 sm:order-1 flex-1 py-4 md:py-5 rounded-xl md:rounded-[24px] bg-slate-100 text-slate-500 text-[11px] md:text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all">Cancelar</button>
+              <button type="submit" disabled={loading} className={`order-1 sm:order-2 flex-1 py-4 md:py-5 rounded-xl md:rounded-[24px] ${editingInjuryId ? 'bg-[#0b1220]' : 'bg-[#CF1B2B]'} text-white text-[11px] md:text-xs font-black uppercase tracking-widest shadow-2xl hover:opacity-90 transition-all active:scale-95 flex items-center justify-center gap-3`}>
                 {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
                 {editingInjuryId ? 'Actualizar Registro' : 'Finalizar y Sincronizar'}
               </button>
@@ -686,70 +686,70 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       )}
 
       {view === 'calendar' && (
-        <div className="space-y-8 animate-in fade-in duration-300">
-           <div className="bg-[#0b1220] rounded-[48px] p-12 shadow-2xl relative overflow-hidden text-white border border-white/5">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
-            <h3 className="text-3xl font-black italic tracking-tighter uppercase mb-2 relative z-10">Calendario de <span className="text-blue-500">Evolución</span></h3>
-            <p className="text-slate-400 text-xs font-medium uppercase tracking-[0.2em] relative z-10">Línea de tiempo desde lesión hasta alta médica.</p>
+        <div className="space-y-6 md:space-y-8 animate-in fade-in duration-300">
+           <div className="bg-[#0b1220] rounded-[32px] md:rounded-[48px] p-8 md:p-12 shadow-2xl relative overflow-hidden text-white border border-white/5">
+            <div className="absolute top-0 right-0 w-48 md:w-64 h-48 md:h-64 bg-blue-600/10 rounded-full -mr-24 md:-mr-32 -mt-24 md:-mt-32 blur-3xl"></div>
+            <h3 className="text-2xl md:text-3xl font-black italic tracking-tighter uppercase mb-2 relative z-10">Calendario de <span className="text-blue-500">Evolución</span></h3>
+            <p className="text-slate-400 text-[10px] md:text-xs font-medium uppercase tracking-[0.2em] relative z-10">Línea de tiempo desde lesión hasta alta médica.</p>
           </div>
 
-          <div className="grid grid-cols-1 gap-6">
+          <div className="grid grid-cols-1 gap-4 md:gap-6">
             {dbInjuries.length === 0 ? (
-              <div className="bg-white rounded-[40px] p-20 text-center border border-slate-100 opacity-50">
-                <i className="fa-solid fa-calendar-xmark text-5xl mb-6 text-slate-200"></i>
-                <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No hay lesiones activas para mostrar en el calendario</p>
+              <div className="bg-white rounded-[32px] md:rounded-[40px] p-12 md:p-20 text-center border border-slate-100 opacity-50">
+                <i className="fa-solid fa-calendar-xmark text-4xl md:text-5xl mb-6 text-slate-200"></i>
+                <p className="text-slate-400 font-black uppercase text-[9px] md:text-[10px] tracking-widest">No hay lesiones activas</p>
               </div>
             ) : (
               dbInjuries.map(injury => {
                 const athleteName = `${injury.players?.nombre} ${injury.players?.apellido1}`;
                 return (
-                  <div key={injury.id} className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm hover:shadow-xl transition-all">
-                    <div className="flex items-center justify-between mb-8">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-[#0b1220] text-white rounded-2xl flex items-center justify-center font-black italic text-sm shadow-lg">
+                  <div key={injury.id} className="bg-white rounded-[24px] md:rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm hover:shadow-xl transition-all">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
+                      <div className="flex items-center gap-3 md:gap-4">
+                        <div className="w-10 h-10 md:w-12 md:h-12 bg-[#0b1220] text-white rounded-xl md:rounded-2xl flex items-center justify-center font-black italic text-xs md:text-sm shadow-lg">
                           {athleteName.charAt(0)}
                         </div>
                         <div>
-                          <h4 className="text-sm font-black text-slate-900 uppercase italic tracking-tight">{athleteName}</h4>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{injury.diagnostico_clinico || 'Sin diagnóstico'}</p>
+                          <h4 className="text-xs md:text-sm font-black text-slate-900 uppercase italic tracking-tight">{athleteName}</h4>
+                          <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{injury.diagnostico_clinico || 'Sin diagnóstico'}</p>
                         </div>
                       </div>
-                      <span className={`px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest ${getFaseColor(injury.estado)}`}>
+                      <span className={`self-start sm:self-center px-3 md:px-4 py-1.5 md:py-2 rounded-full text-[8px] md:text-[9px] font-black uppercase tracking-widest ${getFaseColor(injury.estado)}`}>
                         {injury.estado}
                       </span>
                     </div>
 
-                    <div className="relative pt-6 pb-2 px-4">
+                    <div className="relative pt-8 md:pt-6 pb-2 px-2 md:px-4">
                       {/* Timeline Line */}
-                      <div className="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 -translate-y-1/2 rounded-full"></div>
+                      <div className="absolute top-[40px] md:top-1/2 left-0 right-0 h-1 bg-slate-100 -translate-y-1/2 rounded-full"></div>
                       
-                      <div className="relative flex justify-between items-center">
+                      <div className="relative flex justify-between items-start md:items-center">
                         {/* Inicio */}
-                        <div className="flex flex-col items-center gap-3 relative z-10">
-                          <div className="w-4 h-4 rounded-full bg-red-500 border-4 border-white shadow-sm"></div>
+                        <div className="flex flex-col items-center gap-2 md:gap-3 relative z-10 w-1/3">
+                          <div className="w-3 h-3 md:w-4 md:h-4 rounded-full bg-red-500 border-2 md:border-4 border-white shadow-sm"></div>
                           <div className="text-center">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Inicio Lesión</p>
-                            <p className="text-xs font-black text-slate-900">{formatDate(injury.fecha_inicio)}</p>
+                            <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Inicio</p>
+                            <p className="text-[10px] md:text-xs font-black text-slate-900">{formatDate(injury.fecha_inicio)}</p>
                           </div>
                         </div>
 
                         {/* Reintegro */}
-                        <div className="flex flex-col items-center gap-3 relative z-10">
-                          <div className={`w-4 h-4 rounded-full border-4 border-white shadow-sm ${injury.fecha_estimada_retorno ? 'bg-amber-500' : 'bg-slate-200'}`}></div>
+                        <div className="flex flex-col items-center gap-2 md:gap-3 relative z-10 w-1/3">
+                          <div className={`w-3 h-3 md:w-4 md:h-4 rounded-full border-2 md:border-4 border-white shadow-sm ${injury.fecha_estimada_retorno ? 'bg-amber-500' : 'bg-slate-200'}`}></div>
                           <div className="text-center">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Reintegro Deportivo</p>
-                            <p className={`text-xs font-black ${injury.fecha_estimada_retorno ? 'text-slate-900' : 'text-slate-300 italic'}`}>
+                            <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Reintegro</p>
+                            <p className={`text-[10px] md:text-xs font-black ${injury.fecha_estimada_retorno ? 'text-slate-900' : 'text-slate-300 italic'}`}>
                               {formatDate(injury.fecha_estimada_retorno)}
                             </p>
                           </div>
                         </div>
 
                         {/* Alta */}
-                        <div className="flex flex-col items-center gap-3 relative z-10">
-                          <div className={`w-4 h-4 rounded-full border-4 border-white shadow-sm ${injury.fecha_alta ? 'bg-emerald-500' : 'bg-slate-200'}`}></div>
+                        <div className="flex flex-col items-center gap-2 md:gap-3 relative z-10 w-1/3">
+                          <div className={`w-3 h-3 md:w-4 md:h-4 rounded-full border-2 md:border-4 border-white shadow-sm ${injury.fecha_alta ? 'bg-emerald-500' : 'bg-slate-200'}`}></div>
                           <div className="text-center">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Alta Médica</p>
-                            <p className={`text-xs font-black ${injury.fecha_alta ? 'text-slate-900' : 'text-slate-300 italic'}`}>
+                            <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Alta Médica</p>
+                            <p className={`text-[10px] md:text-xs font-black ${injury.fecha_alta ? 'text-slate-900' : 'text-slate-300 italic'}`}>
                               {formatDate(injury.fecha_alta)}
                             </p>
                           </div>
@@ -765,14 +765,14 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       )}
 
       {view === 'reintegro_gps' && (
-        <div className="space-y-8 animate-in fade-in duration-300">
-          <div className="bg-[#0b1220] rounded-[48px] p-12 shadow-2xl relative overflow-hidden text-white">
-            <h3 className="text-4xl font-black italic tracking-tighter uppercase mb-2">Monitoreo GPS <span className="text-blue-500">Reintegro</span></h3>
-            <p className="text-slate-400 text-xs font-medium uppercase tracking-[0.2em]">Análisis de carga progresiva para deportistas en fase de RTP.</p>
+        <div className="space-y-6 md:space-y-8 animate-in fade-in duration-300">
+          <div className="bg-[#0b1220] rounded-[32px] md:rounded-[48px] p-8 md:p-12 shadow-2xl relative overflow-hidden text-white">
+            <h3 className="text-2xl md:text-4xl font-black italic tracking-tighter uppercase mb-2">Monitoreo GPS <span className="text-blue-500">Reintegro</span></h3>
+            <p className="text-slate-400 text-[10px] md:text-xs font-medium uppercase tracking-[0.2em]">Análisis de carga progresiva para deportistas en fase de RTP.</p>
           </div>
-          <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden p-20 text-center opacity-50">
-             <i className="fa-solid fa-chart-line text-5xl mb-6 text-slate-200"></i>
-             <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">Funcionalidad en desarrollo - Sincronizando sensores de campo</p>
+          <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm overflow-hidden p-12 md:p-20 text-center opacity-50">
+             <i className="fa-solid fa-chart-line text-4xl md:text-5xl mb-6 text-slate-200"></i>
+             <p className="text-slate-400 font-black uppercase text-[9px] md:text-[10px] tracking-widest">Funcionalidad en desarrollo</p>
           </div>
         </div>
       )}

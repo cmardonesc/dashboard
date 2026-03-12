@@ -271,22 +271,22 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic flex items-center gap-2">
+          <h2 className="text-xl md:text-2xl font-black text-slate-900 uppercase tracking-tighter italic flex items-center gap-2">
             Nutrición & <span className="text-red-500">Antropometría</span>
           </h2>
-          <p className="text-slate-500 text-sm font-medium">Departamento de Rendimiento • Federación de Fútbol de Chile</p>
+          <p className="text-slate-500 text-[10px] md:text-sm font-medium">Departamento de Rendimiento • Federación de Fútbol de Chile</p>
         </div>
-        <div className="flex gap-3 items-center">
+        <div className="flex gap-2 md:gap-3 items-center">
           <button 
             onClick={() => window.location.reload()} 
-            className="w-12 h-12 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center text-slate-400 hover:text-red-600 transition-all shadow-sm"
+            className="w-10 h-10 md:w-12 md:h-12 bg-slate-50 border border-slate-100 rounded-xl md:rounded-2xl flex items-center justify-center text-slate-400 hover:text-red-600 transition-all shadow-sm"
             title="Recargar Datos"
           >
-            <i className="fa-solid fa-rotate"></i>
+            <i className="fa-solid fa-rotate text-sm md:text-base"></i>
           </button>
-          <button onClick={() => setIsDrawerOpen(true)} className="bg-[#0b1220] text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all shadow-xl">
+          <button onClick={() => setIsDrawerOpen(true)} className="flex-1 md:flex-none bg-[#0b1220] text-white px-4 md:px-8 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-xl">
             <i className="fa-solid fa-plus"></i> Ingreso Manual ISAK
           </button>
         </div>
@@ -318,24 +318,24 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
         <div className="space-y-8 animate-in fade-in duration-500">
           
           {/* Tarjeta Informativa: Última Evaluación */}
-          <div className="bg-[#0b1220] rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-8">
-             <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/20 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+          <div className="bg-[#0b1220] rounded-[32px] md:rounded-[40px] p-6 md:p-8 text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8">
+             <div className="absolute top-0 right-0 w-48 h-48 md:w-64 md:h-64 bg-red-600/20 rounded-full blur-3xl -mr-12 md:-mr-16 -mt-12 md:-mt-16 pointer-events-none"></div>
              
-             <div className="relative z-10 flex items-center gap-6">
-                <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center text-3xl">
+             <div className="relative z-10 flex items-center gap-4 md:gap-6">
+                <div className="w-12 h-12 md:w-16 md:h-16 bg-white/10 rounded-xl md:rounded-2xl flex items-center justify-center text-2xl md:text-3xl">
                   <i className="fa-solid fa-calendar-check text-red-500"></i>
                 </div>
                 <div>
-                  <h3 className="text-3xl font-black italic tracking-tighter leading-none mb-1">Última Evaluación</h3>
-                  <p className="text-white/50 text-xs font-bold uppercase tracking-widest">Fecha de registro más reciente</p>
+                  <h3 className="text-2xl md:text-3xl font-black italic tracking-tighter leading-none mb-1">Última Evaluación</h3>
+                  <p className="text-white/50 text-[10px] md:text-xs font-bold uppercase tracking-widest">Fecha de registro más reciente</p>
                 </div>
              </div>
 
-             <div className="relative z-10 text-right">
-                <p className="text-4xl font-black italic tracking-tighter text-white mb-1">{latestEvaluationInfo.date}</p>
+             <div className="relative z-10 text-center md:text-right">
+                <p className="text-3xl md:text-4xl font-black italic tracking-tighter text-white mb-1">{latestEvaluationInfo.date}</p>
                 <div className="inline-flex items-center gap-2 bg-white/10 px-4 py-1.5 rounded-full">
                   <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-white/80">{latestEvaluationInfo.count} Atletas Evaluados</span>
+                  <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-white/80">{latestEvaluationInfo.count} Atletas Evaluados</span>
                 </div>
              </div>
           </div>
@@ -448,25 +448,25 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
             </div>
 
             {/* GRÁFICO RADAR (Columna Derecha - Ocupa 2 espacios) */}
-            <div className="lg:col-span-2 bg-white rounded-[40px] border border-slate-100 shadow-xl p-8 flex flex-col">
-               <div className="flex justify-between items-start mb-4">
+            <div className="lg:col-span-2 bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl p-6 md:p-8 flex flex-col">
+               <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6 md:mb-4">
                  <div>
-                   <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">Comparativa Antropométrica</h3>
-                   <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Análisis de Perfiles Promedio</p>
+                   <h3 className="text-lg md:text-xl font-black text-slate-900 uppercase italic tracking-tighter">Comparativa Antropométrica</h3>
+                   <p className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-widest">Análisis de Perfiles Promedio</p>
                  </div>
                  <div className="flex gap-4">
                     <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
-                      <span className="text-[10px] font-black uppercase text-slate-500">Grupo A</span>
+                      <span className="w-2.5 h-2.5 md:w-3 md:h-3 bg-blue-500 rounded-full"></span>
+                      <span className="text-[9px] md:text-[10px] font-black uppercase text-slate-500">Grupo A</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-                      <span className="text-[10px] font-black uppercase text-slate-500">Grupo B</span>
+                      <span className="w-2.5 h-2.5 md:w-3 md:h-3 bg-red-500 rounded-full"></span>
+                      <span className="text-[9px] md:text-[10px] font-black uppercase text-slate-500">Grupo B</span>
                     </div>
                  </div>
                </div>
 
-               <div className="flex-1 min-h-[400px] w-full relative">
+               <div className="flex-1 min-h-[300px] md:min-h-[400px] w-full relative">
                  {(!statsA && !statsB) ? (
                    <div className="absolute inset-0 flex items-center justify-center text-slate-300 font-black uppercase tracking-widest text-sm">
                      Selecciona filtros para visualizar datos
@@ -519,13 +519,13 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
       {/* 2. TABLA INDIVIDUAL (REPORTE) */}
       {activeTab === 'individual' && (
         <div className="space-y-8 animate-in fade-in duration-500">
-          <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col md:flex-row gap-6 items-center">
+          <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 md:gap-6 items-center">
             <div className="flex-1 w-full relative">
-              <i className="fa-solid fa-magnifying-glass absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"></i>
+              <i className="fa-solid fa-magnifying-glass absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 text-xs md:text-base"></i>
               <input 
                 type="text" 
                 placeholder="Buscar atleta para reporte individual..." 
-                className="w-full bg-slate-50 border-none rounded-2xl px-14 py-4 text-sm font-black outline-none focus:ring-2 focus:ring-red-500"
+                className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-12 md:px-14 py-3 md:py-4 text-[11px] md:text-sm font-black outline-none focus:ring-2 focus:ring-red-500"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />

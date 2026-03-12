@@ -18,7 +18,12 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
   }, [view]);
   
   // Filtros Globales
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  });
   const [selectedCategories, setSelectedCategories] = useState<string[]>([Category.SUB_17]);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [athleteSearch, setAthleteSearch] = useState(''); 
@@ -168,7 +173,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
       dist: allGpsSessions.length ? allGpsSessions.reduce((acc, c) => acc + c.totalDistance, 0) / allGpsSessions.length : 0,
       hsr: allGpsSessions.length ? allGpsSessions.reduce((acc, c) => acc + c.hsrDistance, 0) / allGpsSessions.length : 0,
       velMax: allGpsSessions.length ? Math.max(...allGpsSessions.map(s => s.maxSpeed)) : 0,
-      int: allGpsSessions.length ? allGpsSessions.reduce((acc, c) => acc + ((c as any).intensity || 0), 0) / allGpsSessions.length : 0
+      int: allGpsSessions.length ? allGpsSessions.reduce((acc, c) => acc + (c.intensity || 0), 0) / allGpsSessions.length : 0
     };
 
     const tasksMap: Record<string, any> = {};
@@ -258,25 +263,73 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
 
   const totalPages = wellnessChunks.length + loadChunks.length + gpsChunks.length + 1;
 
-  const { reported, pending } = useMemo(() => {
+  const stats = useMemo(() => {
+    let checkInDone = 0;
+    let checkOutDone = 0;
+    let molestias = 0;
+    
+    currentCitadosPlayers.forEach(record => {
+      const dayWellness = record.wellness.find(w => w.date === selectedDate);
+      const dayLoads = record.loads.filter(l => l.date === selectedDate);
+      
+      if (dayWellness) {
+        checkInDone++;
+        if ((dayWellness.soreness !== undefined && dayWellness.soreness < 5) || 
+            (dayWellness.soreness_areas && dayWellness.soreness_areas.length > 0) ||
+            (dayWellness.illness_symptoms && dayWellness.illness_symptoms.length > 0)) {
+          molestias++;
+        }
+      }
+      if (dayLoads.length > 0) {
+        checkOutDone++;
+      }
+    });
+
+    return {
+      checkInDone,
+      checkInPending: currentCitadosPlayers.length - checkInDone,
+      checkOutDone,
+      checkOutPending: currentCitadosPlayers.length - checkOutDone,
+      molestias
+    };
+  }, [currentCitadosPlayers, selectedDate]);
+
+  const { reported, pending, unifiedList } = useMemo(() => {
     const reportedList: any[] = [];
     const pendingList: any[] = [];
+    const fullList: any[] = [];
+
     currentCitadosPlayers.forEach(record => {
       const dayWellness = record.wellness.find(w => w.date === selectedDate);
       const dayLoads = record.loads.filter(l => l.date === selectedDate);
       const matchesSearch = record.player.name.toLowerCase().includes(athleteSearch.toLowerCase());
       if (!matchesSearch) return;
+
       if (dayLoads.length > 0) {
         dayLoads.forEach((load, index) => {
-          reportedList.push({ player: record.player, wellness: dayWellness, load: load, sessionIndex: index + 1 });
+          const item = { player: record.player, wellness: dayWellness, load: load, sessionIndex: index + 1, hasReported: true };
+          reportedList.push(item);
+          fullList.push(item);
         });
       } else if (dayWellness) {
-        reportedList.push({ player: record.player, wellness: dayWellness, load: null, sessionIndex: 1 });
+        const item = { player: record.player, wellness: dayWellness, load: null, sessionIndex: 1, hasReported: true };
+        reportedList.push(item);
+        fullList.push(item);
       } else {
+        const item = { player: record.player, wellness: null, load: null, sessionIndex: 1, hasReported: false };
         pendingList.push(record);
+        fullList.push(item);
       }
     });
-    return { reported: reportedList, pending: pendingList };
+
+    // Sort fullList: reported first, then pending
+    const sortedFullList = [...fullList].sort((a, b) => {
+      if (a.hasReported && !b.hasReported) return -1;
+      if (!a.hasReported && b.hasReported) return 1;
+      return 0;
+    });
+
+    return { reported: reportedList, pending: pendingList, unifiedList: sortedFullList };
   }, [currentCitadosPlayers, selectedDate, athleteSearch]);
 
   const gpsRows = useMemo(() => {
@@ -287,7 +340,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
       if (!matchesSearch) return;
       dayGpsEntries.forEach((gps, idx) => {
         if (gps.duration < minDuration || gps.duration > maxDuration) return;
-        const intensity = (gps as any).intensity || (gps.totalDistance / Math.max(gps.duration, 1));
+        const intensity = gps.intensity || (gps.totalDistance / Math.max(gps.duration, 1));
         rows.push({ player: record.player, gps, intensity, sessionIndex: idx + 1 });
       });
     });
@@ -321,21 +374,21 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
       {/* <div className="bg-white/50 p-1.5 rounded-[24px] border border-slate-100 flex items-center gap-2 max-w-fit shadow-sm overflow-x-auto print:hidden"> ... </div> */}
 
       {/* 3. BARRA DE FILTROS UNIFICADA (Global) */}
-      <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm grid grid-cols-1 md:grid-cols-12 gap-8 items-end print:hidden">
+      <div className="bg-white rounded-[32px] md:rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-end print:hidden">
         <div className="md:col-span-2 space-y-2">
-          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic block">Selección de Fecha</label>
+          <label className="text-[9px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic block">Selección de Fecha</label>
           <input 
             type="date" 
-            className="w-full bg-slate-50 border-none rounded-2xl px-5 py-4 text-xs font-black outline-none focus:ring-4 focus:ring-red-500/10 shadow-inner transition-all appearance-none" 
+            className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-5 py-3 md:py-4 text-[10px] md:text-xs font-black outline-none focus:ring-4 focus:ring-red-500/10 shadow-inner transition-all appearance-none" 
             value={selectedDate} 
             onChange={e => setSelectedDate(e.target.value)} 
           />
         </div>
         <div className="md:col-span-3 space-y-2 relative">
-          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic block">Categoría Oficial</label>
+          <label className="text-[9px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic block">Categoría Oficial</label>
           <button 
             onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-            className="w-full bg-slate-50 border-none rounded-2xl px-5 py-4 text-xs font-black outline-none shadow-inner focus:ring-4 focus:ring-slate-100 transition-all flex justify-between items-center text-left"
+            className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-5 py-3 md:py-4 text-[10px] md:text-xs font-black outline-none shadow-inner focus:ring-4 focus:ring-slate-100 transition-all flex justify-between items-center text-left"
           >
             <span className="truncate">
               {selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories.map(c => c.replace('SUB_', 'SUB ')).join(', ')}
@@ -384,13 +437,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
           )}
         </div>
         <div className="md:col-span-4 space-y-2">
-          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic block">Buscador Global de Atleta</label>
+          <label className="text-[9px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic block">Buscador Global de Atleta</label>
           <div className="relative">
-            <i className="fa-solid fa-magnifying-glass absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+            <i className="fa-solid fa-magnifying-glass absolute left-4 md:left-5 top-1/2 -translate-y-1/2 text-slate-300 text-[10px] md:text-xs"></i>
             <input 
               type="text" 
               placeholder="Nombre, apellido, club..." 
-              className="w-full bg-slate-50 border-none rounded-2xl px-12 py-4 text-xs font-black outline-none focus:ring-4 focus:ring-red-500/10 shadow-inner transition-all" 
+              className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-10 md:px-12 py-3 md:py-4 text-[10px] md:text-xs font-black outline-none focus:ring-4 focus:ring-red-500/10 shadow-inner transition-all" 
               value={athleteSearch} 
               onChange={e => setAthleteSearch(e.target.value)} 
             />
@@ -398,25 +451,25 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
         </div>
         <div className="md:col-span-3">
           {activeMicrocycle ? (
-            <div className="bg-[#0b1220] border border-white/5 p-4 rounded-3xl flex items-center justify-between shadow-xl h-[54px]">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-red-600 rounded-xl flex items-center justify-center text-white text-[10px] shadow-lg">
+            <div className="bg-[#0b1220] border border-white/5 p-3 md:p-4 rounded-2xl md:rounded-3xl flex items-center justify-between shadow-xl h-[48px] md:h-[54px]">
+              <div className="flex items-center gap-2 md:gap-3">
+                <div className="w-7 h-7 md:w-8 md:h-8 bg-red-600 rounded-lg md:rounded-xl flex items-center justify-center text-white text-[9px] md:text-[10px] shadow-lg">
                   <i className="fa-solid fa-calendar-check"></i>
                 </div>
                 <div>
-                  <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none mb-0.5">MICROCICLO ACTIVO</p>
-                  <p className="text-[11px] font-black text-white italic truncate w-32 uppercase leading-none">{activeMicrocycle.city}</p>
+                  <p className="text-[7px] md:text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none mb-0.5">MICROCICLO ACTIVO</p>
+                  <p className="text-[10px] md:text-[11px] font-black text-white italic truncate w-24 md:w-32 uppercase leading-none">{activeMicrocycle.city}</p>
                 </div>
               </div>
-              <div className="text-right pr-2">
-                <p className="text-[8px] font-bold text-red-500 uppercase tracking-widest leading-none mb-0.5">CITADOS</p>
-                <p className="text-sm font-black text-white italic leading-none">{citedPlayerIds.length}</p>
+              <div className="text-right pr-1 md:pr-2">
+                <p className="text-[7px] md:text-[8px] font-bold text-red-500 uppercase tracking-widest leading-none mb-0.5">CITADOS</p>
+                <p className="text-xs md:text-sm font-black text-white italic leading-none">{citedPlayerIds.length}</p>
               </div>
             </div>
           ) : (
-            <div className="bg-red-50 border border-red-100 p-4 rounded-3xl flex items-center gap-3 h-[54px] justify-center">
-              <i className="fa-solid fa-triangle-exclamation text-red-500 text-xs"></i>
-              <p className="text-[9px] font-black text-red-600 uppercase tracking-tight leading-none">SIN MICROCICLO ACTIVO</p>
+            <div className="bg-red-50 border border-red-100 p-3 md:p-4 rounded-2xl md:rounded-3xl flex items-center gap-2 md:gap-3 h-[48px] md:h-[54px] justify-center">
+              <i className="fa-solid fa-triangle-exclamation text-red-500 text-[10px] md:text-xs"></i>
+              <p className="text-[8px] md:text-[9px] font-black text-red-600 uppercase tracking-tight leading-none">SIN MICROCICLO ACTIVO</p>
             </div>
           )}
         </div>
@@ -424,103 +477,195 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
 
       {/* 4. CONTENIDO DINÁMICO SEGÚN PESTAÑA */}
       {activeMainTab === 'carga_interna' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-in fade-in duration-300 print:hidden">
-           <div className="lg:col-span-4 space-y-4">
-              <h3 className="text-sm font-black text-red-600 uppercase tracking-[0.2em] px-2 italic flex items-center gap-2">
-                <i className="fa-solid fa-clock-rotate-left"></i> Pendientes de Reporte ({pending.length})
-              </h3>
-              <div className="bg-white rounded-[40px] border border-red-100 shadow-sm overflow-hidden divide-y divide-slate-50">
-                {pending.map(record => (
-                  <div key={record.player.id} className="p-5 flex items-center justify-between group hover:bg-red-50 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 font-black italic text-xs">{record.player.name.charAt(0)}</div>
-                      <p className="text-[11px] font-black uppercase text-slate-900 italic tracking-tight">{record.player.name}</p>
-                    </div>
-                    <i className="fa-solid fa-bell text-red-200"></i>
-                  </div>
-                ))}
+        <div className="space-y-6 animate-in fade-in duration-300 print:hidden">
+          
+          {/* SUMMARY CARDS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* CHECK-IN CARD */}
+            <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-xl shadow-inner">
+                  <i className="fa-solid fa-sun"></i>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Check-in (Wellness)</p>
+                  <p className="text-xl font-black text-slate-900 italic uppercase tracking-tighter">
+                    {stats.checkInDone} / {currentCitadosPlayers.length}
+                  </p>
+                </div>
               </div>
-           </div>
-           <div className="lg:col-span-8 space-y-4">
-              <h3 className="text-sm font-black text-emerald-600 uppercase tracking-[0.2em] px-2 italic flex items-center gap-2">
-                <i className="fa-solid fa-circle-check"></i> Atletas Reportados ({reported.length})
-              </h3>
-              <div className="bg-white rounded-[40px] border border-slate-100 shadow-xl overflow-hidden">
-                <table className="w-full text-center">
-                  <thead className="bg-[#0b1220] text-white font-black uppercase text-[10px]">
-                    <tr>
-                      <th className="px-8 py-5 text-left">Atleta</th>
-                      {(view === 'wellness' || view === 'report') && <th className="px-2 py-5">Wellness</th>}
-                      {(view === 'wellness' || view === 'report') && <th className="px-4 py-5">Zona Molestia</th>}
-                      {(view === 'wellness' || view === 'report') && <th className="px-4 py-5">Estado Salud</th>}
-                      {(view === 'pse' || view === 'report') && <th className="px-2 py-5">RPE</th>}
-                      {(view === 'pse' || view === 'report') && <th className="px-2 py-5">Carga</th>}
-                      <th className="px-8 py-5 text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {reported.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50 transition-colors font-black uppercase italic text-xs">
-                        <td className="px-8 py-5 text-left">{row.player.name}</td>
-                        {(view === 'wellness' || view === 'report') && (
-                          <td className="px-2 py-5">{row.wellness ? <span className={`px-3 py-1 rounded-lg ${getScoreColor((row.wellness.fatigue + row.wellness.sleep + row.wellness.mood)/3)}`}>{((row.wellness.fatigue + row.wellness.sleep + row.wellness.mood)/3).toFixed(1)}</span> : '-'}</td>
-                        )}
-                        {(view === 'wellness' || view === 'report') && (
-                          <td className="px-4 py-5">
+              <div className="text-right">
+                <p className="text-[8px] font-black text-amber-600 uppercase tracking-widest mb-1">Pendientes</p>
+                <p className="text-lg font-black text-slate-300 italic leading-none">{stats.checkInPending}</p>
+              </div>
+            </div>
+
+            {/* CHECK-OUT CARD */}
+            <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-xl shadow-inner">
+                  <i className="fa-solid fa-moon"></i>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Check-out (RPE)</p>
+                  <p className="text-xl font-black text-slate-900 italic uppercase tracking-tighter">
+                    {stats.checkOutDone} / {currentCitadosPlayers.length}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[8px] font-black text-blue-600 uppercase tracking-widest mb-1">Pendientes</p>
+                <p className="text-lg font-black text-slate-300 italic leading-none">{stats.checkOutPending}</p>
+              </div>
+            </div>
+
+            {/* MOLESTIAS CARD */}
+            <div className={`p-6 rounded-[32px] border shadow-sm flex items-center justify-between group hover:shadow-md transition-all ${stats.molestias > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-slate-100'}`}>
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner ${stats.molestias > 0 ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-50 text-slate-300'}`}>
+                  <i className="fa-solid fa-heart-pulse"></i>
+                </div>
+                <div>
+                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${stats.molestias > 0 ? 'text-red-600' : 'text-slate-400'}`}>Molestias Reportadas</p>
+                  <p className="text-xl font-black text-slate-900 italic uppercase tracking-tighter">
+                    {stats.molestias} ALERTAS
+                  </p>
+                </div>
+              </div>
+              {stats.molestias > 0 && (
+                <div className="w-2 h-2 bg-red-600 rounded-full animate-ping"></div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] italic flex items-center gap-2">
+              <i className="fa-solid fa-clipboard-list text-red-600"></i> CONTROL DETALLADO ({unifiedList.length})
+            </h3>
+          </div>
+
+          <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl overflow-hidden overflow-x-auto">
+            <table className="w-full text-center min-w-[1000px]">
+              <thead className="bg-[#0b1220] text-white font-black uppercase text-[9px] md:text-[10px]">
+                <tr>
+                  <th className="px-4 md:px-8 py-4 md:py-5 text-left">Atleta</th>
+                  {(view === 'wellness' || view === 'report') && (
+                    <>
+                      <th className="px-2 py-4 md:py-5">Fatiga</th>
+                      <th className="px-2 py-4 md:py-5">Sueño</th>
+                      <th className="px-2 py-4 md:py-5">Dolor</th>
+                      <th className="px-2 py-4 md:py-5">Estrés</th>
+                      <th className="px-2 py-4 md:py-5">Ánimo</th>
+                      <th className="px-2 py-4 md:py-5">Prom.</th>
+                      <th className="px-2 md:px-4 py-4 md:py-5">Zona Molestia</th>
+                      <th className="px-2 md:px-4 py-4 md:py-5">Estado Salud</th>
+                    </>
+                  )}
+                  {(view === 'pse' || view === 'report') && (
+                    <>
+                      <th className="px-2 py-4 md:py-5">RPE</th>
+                      <th className="px-2 py-4 md:py-5">Carga</th>
+                    </>
+                  )}
+                  <th className="px-4 md:px-8 py-4 md:py-5 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {unifiedList.map((row, idx) => {
+                  const isPending = !row.hasReported;
+                  const avg = row.wellness ? (row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3 : 0;
+                  
+                  return (
+                    <tr key={idx} className={`transition-colors font-black uppercase italic text-[10px] md:text-xs ${isPending ? 'bg-slate-50/50 text-slate-300' : 'hover:bg-slate-50 text-slate-900'}`}>
+                      <td className="px-4 md:px-8 py-4 md:py-5 text-left">
+                        <div className="flex flex-col">
+                          <span>{row.player.name}</span>
+                          <span className="text-[8px] opacity-50 not-italic">{row.player.club_name || row.player.club || 'SIN CLUB'}</span>
+                        </div>
+                      </td>
+                      
+                      {(view === 'wellness' || view === 'report') && (
+                        <>
+                          <td className="px-2 py-4 md:py-5">
+                            {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.fatigue)}`}>{row.wellness.fatigue}</span> : '-'}
+                          </td>
+                          <td className="px-2 py-4 md:py-5">
+                            {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.sleep)}`}>{row.wellness.sleep}</span> : '-'}
+                          </td>
+                          <td className="px-2 py-4 md:py-5">
+                            {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.soreness)}`}>{row.wellness.soreness}</span> : '-'}
+                          </td>
+                          <td className="px-2 py-4 md:py-5">
+                            {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.stress)}`}>{row.wellness.stress}</span> : '-'}
+                          </td>
+                          <td className="px-2 py-4 md:py-5">
+                            {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.mood)}`}>{row.wellness.mood}</span> : '-'}
+                          </td>
+                          <td className="px-2 py-4 md:py-5">
+                            {row.wellness ? <span className="font-black text-slate-900">{avg.toFixed(1)}</span> : '-'}
+                          </td>
+                          <td className="px-2 md:px-4 py-4 md:py-5">
                             {row.wellness?.soreness_areas && row.wellness.soreness_areas.length > 0 ? (
                               <div className="flex flex-wrap gap-1 justify-center">
                                 {row.wellness.soreness_areas.map((area, i) => (
-                                  <span key={i} className="bg-red-100 text-red-600 px-2 py-0.5 rounded text-[9px] font-bold uppercase">{area}</span>
+                                  <span key={i} className="bg-red-100 text-red-600 px-1.5 md:px-2 py-0.5 rounded text-[8px] md:text-[9px] font-bold uppercase">{area}</span>
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-slate-300 text-[10px] font-bold uppercase">SIN DOLOR</span>
+                              !isPending && <span className="text-slate-300 text-[9px] md:text-[10px] font-bold uppercase">SIN DOLOR</span>
                             )}
                           </td>
-                        )}
-                        {(view === 'wellness' || view === 'report') && (
-                          <td className="px-4 py-5">
+                          <td className="px-2 md:px-4 py-4 md:py-5">
                             {row.wellness?.illness_symptoms && row.wellness.illness_symptoms.length > 0 ? (
                               <div className="flex flex-wrap gap-1 justify-center">
                                 {row.wellness.illness_symptoms.map((sym, i) => (
-                                  <span key={i} className="bg-amber-100 text-amber-600 px-2 py-0.5 rounded text-[9px] font-bold uppercase">{sym}</span>
+                                  <span key={i} className="bg-amber-100 text-amber-600 px-1.5 md:px-2 py-0.5 rounded text-[8px] md:text-[9px] font-bold uppercase">{sym}</span>
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-emerald-500 text-[10px] font-bold uppercase">SANO</span>
+                              !isPending && <span className="text-emerald-500 text-[9px] md:text-[10px] font-bold uppercase">SANO</span>
                             )}
                           </td>
+                        </>
+                      )}
+
+                      {(view === 'pse' || view === 'report') && (
+                        <>
+                          <td className="px-2 py-4 md:py-5 text-base md:text-lg">{row.load?.rpe || '-'}</td>
+                          <td className="px-2 py-4 md:py-5">{row.load ? <span className="bg-slate-900 text-white px-2 md:px-3 py-1 rounded-lg">{row.load.load}</span> : '-'}</td>
+                        </>
+                      )}
+
+                      <td className="px-4 md:px-8 py-4 md:py-5 text-right">
+                        {isPending ? (
+                          <span className="text-slate-300 flex items-center justify-end gap-2"><i className="fa-solid fa-clock"></i> PENDIENTE</span>
+                        ) : (
+                          <span className="text-emerald-500 flex items-center justify-end gap-2"><i className="fa-solid fa-check-double"></i> OK</span>
                         )}
-                        {(view === 'pse' || view === 'report') && (
-                          <td className="px-2 py-5 text-lg">{row.load?.rpe || '-'}</td>
-                        )}
-                        {(view === 'pse' || view === 'report') && (
-                          <td className="px-2 py-5">{row.load ? <span className="bg-slate-900 text-white px-3 py-1 rounded-lg">{row.load.load}</span> : '-'}</td>
-                        )}
-                        <td className="px-8 py-5 text-right text-emerald-500"><i className="fa-solid fa-check-double"></i> OK</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-           </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {activeMainTab === 'carga_externa' && (
-        <div className="bg-white rounded-[40px] border border-slate-100 shadow-2xl overflow-hidden animate-in fade-in duration-300 print:hidden">
-           <table className="w-full text-center">
-             <thead className="bg-[#0b1220] text-white font-black uppercase text-[10px]">
-               <tr><th className="px-8 py-5 text-left">Atleta</th><th className="px-4 py-5">Tiempo</th><th className="px-4 py-5">Distancia</th><th className="px-4 py-5">HSR</th><th className="px-8 py-5 text-right">Intensidad</th></tr>
+        <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-2xl overflow-hidden overflow-x-auto animate-in fade-in duration-300 print:hidden">
+           <table className="w-full text-center min-w-[500px] md:min-w-full">
+             <thead className="bg-[#0b1220] text-white font-black uppercase text-[9px] md:text-[10px]">
+               <tr><th className="px-4 md:px-8 py-4 md:py-5 text-left">Atleta</th><th className="px-2 md:px-4 py-4 md:py-5">Tiempo</th><th className="px-2 md:px-4 py-4 md:py-5">Distancia</th><th className="px-2 md:px-4 py-4 md:py-5">HSR</th><th className="px-4 md:px-8 py-4 md:py-5 text-right">Intensidad</th></tr>
              </thead>
-             <tbody className="divide-y divide-slate-100 font-black italic uppercase text-xs">
+             <tbody className="divide-y divide-slate-100 font-black italic uppercase text-[10px] md:text-xs">
                {gpsRows.map((row, idx) => (
                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                   <td className="px-8 py-5 text-left">{row.player.name}</td>
-                   <td className="px-4 py-5">{row.gps.duration} min</td>
-                   <td className="px-4 py-5">{(row.gps.totalDistance / 1000).toFixed(2)} km</td>
-                   <td className="px-4 py-5">{row.gps.hsrDistance} m</td>
-                   <td className="px-8 py-5 text-right"><span className={`px-4 py-1.5 rounded-lg ${getIntensityStyle(row.intensity)}`}>{row.intensity.toFixed(1)}</span></td>
+                   <td className="px-4 md:px-8 py-4 md:py-5 text-left">{row.player.name}</td>
+                   <td className="px-2 md:px-4 py-4 md:py-5">{row.gps.duration} min</td>
+                   <td className="px-2 md:px-4 py-4 md:py-5">{(row.gps.totalDistance / 1000).toFixed(2)} km</td>
+                   <td className="px-2 md:px-4 py-4 md:py-5">{row.gps.hsrDistance} m</td>
+                   <td className="px-4 md:px-8 py-4 md:py-5 text-right"><span className={`px-3 md:px-4 py-1.5 rounded-lg ${getIntensityStyle(row.intensity)}`}>{row.intensity.toFixed(1)}</span></td>
                  </tr>
                ))}
              </tbody>

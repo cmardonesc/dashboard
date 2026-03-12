@@ -47,6 +47,7 @@ export const generateMockData = () => {
     nutrition.push({
       id: `n-${player.id}`,
       id_del_jugador: player.id_del_jugador || 0,
+      nombre_raw: player.name,
       fecha_medicion: dates[0],
       edad_cronologica: 16 + Math.floor(Math.random() * 8),
       masa_corporal_kg: 65 + Math.random() * 20,
@@ -98,7 +99,8 @@ export const generateMockData = () => {
         totalDistance: 6000 + Math.floor(Math.random() * 4000),
         hsrDistance: 400 + Math.floor(Math.random() * 600),
         sprintCount: 5 + Math.floor(Math.random() * 15),
-        maxSpeed: 8 + Math.random() * 2
+        maxSpeed: 8 + Math.random() * 2,
+        intensity: 80 + Math.random() * 40
       });
     });
   });

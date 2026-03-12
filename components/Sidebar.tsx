@@ -1,15 +1,16 @@
 
 import React, { useState } from 'react';
 
-type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios';
+type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios' | 'logs' | 'importar_datos';
 
 interface SidebarProps {
   activeMenu: MenuId;
   onMenuChange: (id: MenuId) => void;
   userRole?: string | null;
+  userEmail?: string | null;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, userEmail }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [logisticsOpen, setLogisticsOpen] = useState(activeMenu === 'citaciones' || activeMenu === 'desconvocatoria' || activeMenu === 'logistica_jugadores');
   
@@ -73,7 +74,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole })
           </div>
           {!isCollapsed && (
             <div className="flex flex-col overflow-hidden whitespace-nowrap">
-              <h1 className="text-white font-black text-lg tracking-tighter leading-none uppercase">La Roja</h1>
+              <h1 className="text-white font-black text-lg tracking-tighter leading-none uppercase">LA ROJA Performance</h1>
               <span className="text-slate-500 text-xs italic font-medium">Performance Hub</span>
             </div>
           )}
@@ -81,7 +82,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole })
         
         <button 
           onClick={toggleCollapse}
-          className={`w-6 h-6 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-all absolute ${isCollapsed ? '-right-3 top-10 shadow-md border border-slate-700' : 'right-4'}`}
+          className={`w-6 h-6 rounded-full bg-slate-800 text-slate-400 hover:text-white items-center justify-center transition-all absolute hidden lg:flex ${isCollapsed ? '-right-3 top-10 shadow-md border border-slate-700' : 'right-4'}`}
         >
           <i className={`fa-solid fa-chevron-${isCollapsed ? 'right' : 'left'} text-[10px]`}></i>
         </button>
@@ -360,6 +361,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole })
 
         {userRole === 'admin' && (
           <button
+            onClick={() => handleMenuClick('importar_datos')}
+            title={isCollapsed ? 'Importar Datos' : ''}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 group ${
+              activeMenu === 'importar_datos' ? 'bg-red-900/20 text-[#CF1B2B]' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <i className={`fa-solid fa-file-import text-xl ${isCollapsed ? '' : 'w-6'} ${activeMenu === 'importar_datos' ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
+            {!isCollapsed && <span className="font-bold text-sm tracking-tight">Importar Datos</span>}
+          </button>
+        )}
+
+        {userRole === 'admin' && (
+          <button
             onClick={() => handleMenuClick('usuarios')}
             title={isCollapsed ? 'Gestión Usuarios' : ''}
             className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 group ${
@@ -368,6 +382,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole })
           >
             <i className={`fa-solid fa-user-gear text-xl ${isCollapsed ? '' : 'w-6'} ${activeMenu === 'usuarios' ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
             {!isCollapsed && <span className="font-bold text-sm tracking-tight">Usuarios</span>}
+          </button>
+        )}
+
+        {userEmail === 'mardones.camilo@gmail.com' && (
+          <button
+            onClick={() => handleMenuClick('logs')}
+            title={isCollapsed ? 'Log de Actividad' : ''}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 group ${
+              activeMenu === 'logs' ? 'bg-red-900/20 text-[#CF1B2B]' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <i className={`fa-solid fa-clock-rotate-left text-xl ${isCollapsed ? '' : 'w-6'} ${activeMenu === 'logs' ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
+            {!isCollapsed && <span className="font-bold text-sm tracking-tight">Log de Actividad</span>}
           </button>
         )}
       </nav>

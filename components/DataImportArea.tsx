@@ -1,0 +1,590 @@
+
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import Papa from 'papaparse';
+import { supabase } from '../lib/supabase';
+import { User } from '../types';
+
+type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'velocidad' | 'aceleracion' | 'vo2max';
+
+interface ImportConfig {
+  label: string;
+  table: string;
+  icon: string;
+  description: string;
+  fields: { key: string; label: string; required: boolean; type: 'number' | 'string' | 'date' }[];
+}
+
+const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
+  gps_totales: {
+    label: 'GPS Totales',
+    table: 'gps_import',
+    icon: 'fa-solid fa-satellite-dish',
+    description: 'Carga de datos GPS acumulados por sesión.',
+    fields: [
+      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
+      { key: 'minutos', label: 'Min', required: false, type: 'number' },
+      { key: 'dist_total_m', label: 'Total Distance (m)', required: false, type: 'number' },
+      { key: 'm_por_min', label: 'Metros/min', required: false, type: 'number' },
+      { key: 'dist_ai_m_15_kmh', label: 'AInt >15 km/h', required: false, type: 'number' },
+      { key: 'dist_mai_m_20_kmh', label: 'MAInt >20km/h', required: false, type: 'number' },
+      { key: 'dist_sprint_m_25_kmh', label: 'Sprint >25 km/h', required: false, type: 'number' },
+      { key: 'sprints_n', label: '# SP', required: false, type: 'number' },
+      { key: 'vel_max_kmh', label: 'Max Vel (km/h)', required: false, type: 'number' },
+      { key: 'acc_decc_ai_n', label: '#Acc+Decc AI', required: false, type: 'number' },
+    ]
+  },
+  gps_tareas: {
+    label: 'GPS por Tarea',
+    table: 'gps_tareas',
+    icon: 'fa-solid fa-stopwatch-20',
+    description: 'Carga de datos GPS desglosados por ejercicio o tarea.',
+    fields: [
+      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'fecha', label: 'Date', required: true, type: 'date' },
+      { key: 'tarea', label: 'Name', required: true, type: 'string' },
+      { key: 'minutos', label: 'Min', required: false, type: 'number' },
+      { key: 'dist_total_m', label: 'Total Distance (m)', required: false, type: 'number' },
+      { key: 'm_por_min', label: 'Metros/min', required: false, type: 'number' },
+      { key: 'dist_ai_m_15_kmh', label: 'AInt >15 km/h', required: false, type: 'number' },
+      { key: 'dist_mai_m_20_kmh', label: 'MAInt >20km/h', required: false, type: 'number' },
+      { key: 'dist_sprint_m_25_kmh', label: 'Sprint >25 km/h', required: false, type: 'number' },
+      { key: 'sprints_n', label: '# SP', required: false, type: 'number' },
+      { key: 'vel_max_kmh', label: 'Max Vel (km/h)', required: false, type: 'number' },
+      { key: 'acc_decc_ai_n', label: '#Acc+Decc AI', required: false, type: 'number' },
+    ]
+  },
+  antropometria: {
+    label: 'Antropometría',
+    table: 'antropometria',
+    icon: 'fa-solid fa-ruler-combined',
+    description: 'Carga de mediciones corporales y composición.',
+    fields: [
+      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'fecha_medicion', label: 'Fecha Medición', required: true, type: 'date' },
+      { key: 'masa_corporal_kg', label: 'Masa Corporal (kg)', required: true, type: 'number' },
+      { key: 'talla_cm', label: 'Talla (cm)', required: true, type: 'number' },
+      { key: 'masa_muscular_pct', label: 'Masa Muscular (%)', required: false, type: 'number' },
+      { key: 'masa_adiposa_pct', label: 'Masa Adiposa (%)', required: false, type: 'number' },
+      { key: 'sum_pliegues_6_mm', label: 'Suma 6 Pliegues (mm)', required: false, type: 'number' },
+    ]
+  },
+  imtp: {
+    label: 'IMTP (Fuerza)',
+    table: 'physical_tests',
+    icon: 'fa-solid fa-dumbbell',
+    description: 'Isometric Mid-Thigh Pull - Test de fuerza máxima.',
+    fields: [
+      { key: 'id_del_jugador', label: 'JUGADOR', required: true, type: 'number' },
+      { key: 'fecha', label: 'FECHA TEST', required: true, type: 'date' },
+      { key: 'value', label: 'IMTP FUERZA (N)', required: true, type: 'number' },
+      { key: 'observation', label: 'IMTP DEBIL', required: false, type: 'string' },
+    ]
+  },
+  velocidad: {
+    label: 'Velocidad',
+    table: 'velocidad_tests',
+    icon: 'fa-solid fa-bolt',
+    description: 'Tests de velocidad con splits (10m, 20m, 30m).',
+    fields: [
+      { key: 'id_del_jugador', label: 'JUGADOR', required: true, type: 'number' },
+      { key: 'fecha', label: 'FECHA TEST', required: true, type: 'date' },
+      { key: 'tiempo_10m', label: 'TIEMPO 10mts', required: false, type: 'number' },
+      { key: 'vel_10m', label: 'VEL 10mts', required: false, type: 'number' },
+      { key: 'tiempo_10_20m', label: 'TIEMPO 10-20mts', required: false, type: 'number' },
+      { key: 'vel_10_20m', label: 'VEL 10-20mts', required: false, type: 'number' },
+      { key: 'tiempo_20_30m', label: 'TIEMPO 20-30mts', required: false, type: 'number' },
+      { key: 'vel_20_30m', label: 'VEL 20-30mts', required: false, type: 'number' },
+      { key: 'tiempo_total', label: 'TIEMPO TOTAL', required: true, type: 'number' },
+    ]
+  },
+  aceleracion: {
+    label: 'Aceleración',
+    table: 'physical_tests',
+    icon: 'fa-solid fa-gauge-high',
+    description: 'Tests de aceleración específica.',
+    fields: [
+      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
+      { key: 'value', label: 'Valor (m/s²)', required: true, type: 'number' },
+      { key: 'observation', label: 'Observación', required: false, type: 'string' },
+    ]
+  },
+  vo2max: {
+    label: 'Consumo Oxígeno',
+    table: 'physical_tests',
+    icon: 'fa-solid fa-lungs',
+    description: 'VO2 Max - Capacidad aeróbica.',
+    fields: [
+      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
+      { key: 'value', label: 'VO2 Max (ml/kg/min)', required: true, type: 'number' },
+      { key: 'observation', label: 'Observación', required: false, type: 'string' },
+    ]
+  }
+};
+
+export default function DataImportArea() {
+  const [selectedType, setSelectedType] = useState<ImportType | null>(null);
+  const [csvData, setCsvData] = useState<any[]>([]);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [importing, setImporting] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [players, setPlayers] = useState<User[]>([]);
+  const [unmatchedRows, setUnmatchedRows] = useState<any[]>([]);
+  const [resolvedIds, setResolvedIds] = useState<Record<number, number>>({}); // rowIndex -> playerId
+
+  useEffect(() => {
+    fetchPlayers();
+  }, []);
+
+  const fetchPlayers = async () => {
+    const { data } = await supabase.from('players').select('*');
+    if (data) setPlayers(data);
+  };
+
+  const extractName = (fullName: string) => {
+    if (!fullName) return '';
+    // Formato: "S15 Sesion 3 - Aaron Cornejo"
+    const parts = fullName.split(' - ');
+    return parts[parts.length - 1].trim();
+  };
+
+  const normalizeString = (str: string) => {
+    return str
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  };
+
+  const findPlayerByName = (name: string) => {
+    if (!name || !players.length) return null;
+    const searchName = normalizeString(name);
+    
+    return players.find(p => {
+      const nombre = normalizeString(p.nombre || '');
+      const apellido1 = normalizeString(p.apellido1 || '');
+      const apellido2 = normalizeString(p.apellido2 || '');
+      
+      const pFullName = `${nombre} ${apellido1} ${apellido2}`.trim();
+      const pShortName = `${nombre} ${apellido1}`.trim();
+      
+      // Check for exact match of normalized full name or short name
+      if (pFullName === searchName || pShortName === searchName) return true;
+      
+      // Check if search name contains both first name and first apellido
+      if (searchName.includes(nombre) && searchName.includes(apellido1)) return true;
+      
+      // Check if the system name is contained within the search name (handles extra middle names in CSV)
+      if (searchName.includes(pShortName)) return true;
+
+      return false;
+    });
+  };
+
+  const excelDateToJSDate = (serial: number) => {
+    const utc_days = Math.floor(serial - 25569);
+    const utc_value = utc_days * 86400;
+    const date_info = new Date(utc_value * 1000);
+    const fractional_day = serial - Math.floor(serial) + 0.0000001;
+    let total_seconds = Math.floor(86400 * fractional_day);
+    const seconds = total_seconds % 60;
+    total_seconds -= seconds;
+    const hours = Math.floor(total_seconds / (60 * 60));
+    const minutes = Math.floor(total_seconds / 60) % 60;
+    const d = new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
+    return d.toISOString().split('T')[0];
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: 'greedy',
+        delimiter: "", // auto-detect
+        complete: (results) => {
+          const data = results.data;
+          setCsvData(data);
+          if (results.meta.fields) {
+            setHeaders(results.meta.fields);
+            
+            const newMapping: Record<string, string> = {};
+            const unmatched: any[] = [];
+            const initialResolved: Record<number, number> = {};
+
+            if (selectedType) {
+              const config = IMPORT_CONFIGS[selectedType];
+              config.fields.forEach(field => {
+                const match = results.meta.fields?.find(h => 
+                  h.toLowerCase().includes(field.key.toLowerCase()) || 
+                  h.toLowerCase().includes(field.label.toLowerCase())
+                );
+                if (match) newMapping[field.key] = match;
+              });
+
+              // Special logic for name matching across different test types
+              const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
+              
+              if (needsNameMatching) {
+                const nameHeader = results.meta.fields.find(h => 
+                  h.toLowerCase() === 'name' || h.toLowerCase() === 'jugador'
+                );
+                if (nameHeader) {
+                  const seenNames = new Set<string>();
+                  data.forEach((row: any, index: number) => {
+                    const rawName = row[nameHeader];
+                    const cleanName = ['gps_totales', 'gps_tareas'].includes(selectedType) ? extractName(rawName) : rawName;
+                    const player = findPlayerByName(cleanName);
+                    if (player) {
+                      initialResolved[index] = player.id_del_jugador;
+                    } else if (cleanName && !seenNames.has(cleanName)) {
+                      unmatched.push({ ...row, Name: cleanName, _rowIndex: index, _cleanName: cleanName });
+                      seenNames.add(cleanName);
+                    }
+                  });
+                }
+              }
+            }
+            setMapping(newMapping);
+            setUnmatchedRows(unmatched);
+            setResolvedIds(initialResolved);
+            
+            if (unmatched.length > 0) {
+              setTimeout(() => {
+                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+              }, 100);
+            }
+          }
+        }
+      });
+    }
+  };
+
+  const handleImport = async () => {
+    if (!selectedType || csvData.length === 0) return;
+    
+    const config = IMPORT_CONFIGS[selectedType];
+    const requiredFields = config.fields.filter(f => f.required && f.key !== 'id_del_jugador');
+    const missingFields = requiredFields.filter(f => !mapping[f.key]);
+
+    if (missingFields.length > 0) {
+      setMessage({ type: 'error', text: `Faltan campos obligatorios: ${missingFields.map(f => f.label).join(', ')}` });
+      return;
+    }
+
+    // Check if all rows have an ID (either from CSV or resolved)
+    const allRowsResolved = csvData.every((row, index) => {
+      const csvId = row[mapping['id_del_jugador']];
+      const manualId = resolvedIds[index];
+      
+      // For GPS Tareas, also check shared IDs by name
+      const rawName = row[mapping['id_del_jugador'] || 'Name'];
+      const cleanName = extractName(rawName);
+      const sharedId = Object.entries(resolvedIds).find(([idx, id]) => {
+        const otherRow = csvData[Number(idx)];
+        return extractName(otherRow[mapping['id_del_jugador'] || 'Name']) === cleanName;
+      })?.[1];
+
+      return csvId || manualId || sharedId;
+    });
+
+    if (!allRowsResolved) {
+      setMessage({ type: 'error', text: 'Hay jugadores que no han sido asociados a un ID. Por favor, asócialos manualmente.' });
+      return;
+    }
+
+    setImporting(true);
+    setMessage(null);
+
+    try {
+      const dataToInsert = csvData.map((row, index) => {
+        const item: any = {};
+        const rawName = row[mapping['id_del_jugador'] || 'Name'];
+        const cleanName = extractName(rawName);
+
+        // Handle GPS Tareas specific logic: Split Name into tarea and jugador_nombre
+        if (selectedType === 'gps_tareas' && row.Name) {
+          const parts = row.Name.split(' - ');
+          if (parts.length >= 2) {
+            const playerName = parts.pop()?.trim();
+            const taskName = parts.join(' - ').trim();
+            item.tarea = taskName;
+            item.jugador_nombre = playerName;
+          } else {
+            item.tarea = row.Name;
+            item.jugador_nombre = row.Name;
+          }
+        }
+
+        config.fields.forEach(field => {
+          const csvHeader = mapping[field.key];
+          if (csvHeader && row[csvHeader] !== undefined && row[csvHeader] !== '') {
+            let val = row[csvHeader];
+            if (field.type === 'number') {
+              const numVal = Number(val.toString().replace(',', '.'));
+              val = isNaN(numVal) ? null : numVal;
+            }
+            if (field.type === 'date') {
+              if (val.includes('/') || val.includes('-')) {
+                const separator = val.includes('/') ? '/' : '-';
+                const parts = val.split(separator);
+                if (parts.length === 3) {
+                  const [d, m, y] = parts;
+                  const fullYear = y.length === 2 ? `20${y}` : y;
+                  val = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                }
+              } else if (!isNaN(Number(val)) && Number(val) > 30000) {
+                // Handle Excel serial date
+                val = excelDateToJSDate(Number(val));
+              }
+            }
+            item[field.key] = val;
+          }
+        });
+
+        // Override ID if resolved manually or automatically
+        // Check if this row's index is resolved, OR if another row with the same cleanName is resolved
+        const manualId = resolvedIds[index];
+        const sharedId = Object.entries(resolvedIds).find(([idx, id]) => {
+          const otherRow = csvData[Number(idx)];
+          return extractName(otherRow[mapping['id_del_jugador'] || 'Name']) === cleanName;
+        })?.[1];
+
+        if (manualId || sharedId) {
+          item.id_del_jugador = manualId || sharedId;
+        }
+
+        // Add test_type for physical_tests table
+        if (config.table === 'physical_tests') {
+          item.test_type = selectedType.toUpperCase();
+        }
+
+        return item;
+      }).filter(item => {
+        const currentConfig = IMPORT_CONFIGS[selectedType!];
+        return currentConfig.fields.every(f => !f.required || (item[f.key] !== undefined && item[f.key] !== null));
+      });
+
+      const { error } = await supabase.from(config.table).upsert(dataToInsert);
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: `Se han importado ${dataToInsert.length} registros correctamente.` });
+      setCsvData([]);
+      setHeaders([]);
+      setMapping({});
+      setUnmatchedRows([]);
+      setResolvedIds({});
+    } catch (err: any) {
+      console.error("Error importing data:", err);
+      setMessage({ type: 'error', text: `Error al importar: ${err.message}` });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const updateResolvedId = (rowIndex: number, playerId: number) => {
+    setResolvedIds(prev => ({ ...prev, [rowIndex]: playerId }));
+  };
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">Centro de Importación de Datos</h2>
+        <p className="text-slate-500 text-sm font-medium">Carga masiva de registros mediante archivos CSV.</p>
+      </div>
+
+      {!selectedType ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {(Object.keys(IMPORT_CONFIGS) as ImportType[]).map((type) => {
+            const config = IMPORT_CONFIGS[type];
+            return (
+              <button
+                key={type}
+                onClick={() => setSelectedType(type)}
+                className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:border-red-100 transition-all text-left group"
+              >
+                <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-red-50 group-hover:text-red-600 transition-colors mb-6">
+                  <i className={`${config.icon} text-2xl`}></i>
+                </div>
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">{config.label}</h3>
+                <p className="text-slate-500 text-xs font-medium leading-relaxed">{config.description}</p>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => { setSelectedType(null); setCsvData([]); setHeaders([]); }}
+                className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:border-red-100 transition-all"
+              >
+                <i className="fa-solid fa-arrow-left"></i>
+              </button>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">{IMPORT_CONFIGS[selectedType].label}</h3>
+                <p className="text-slate-500 text-xs font-medium italic">Configuración de mapeo de columnas</p>
+              </div>
+            </div>
+            {csvData.length > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{csvData.length} Filas detectadas</span>
+                <button
+                  onClick={handleImport}
+                  disabled={importing}
+                  className="bg-[#CF1B2B] text-white px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 shadow-lg shadow-red-900/20"
+                >
+                  {importing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : <i className="fa-solid fa-cloud-arrow-up mr-2"></i>}
+                  Procesar Importación
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="p-8">
+            {message && (
+              <div className={`mb-8 p-4 rounded-2xl border flex items-center gap-4 ${message.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
+                <i className={`fa-solid ${message.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'} text-lg`}></i>
+                <p className="text-xs font-bold">{message.text}</p>
+              </div>
+            )}
+
+            {csvData.length === 0 ? (
+              <div className="py-20 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-[32px] bg-slate-50/30">
+                <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-slate-300 mb-6 shadow-sm">
+                  <i className="fa-solid fa-file-csv text-4xl"></i>
+                </div>
+                <p className="text-slate-900 font-black uppercase tracking-widest text-xs mb-2">Selecciona un archivo CSV</p>
+                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-tighter mb-8">El archivo debe contener encabezados de columna</p>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileChange}
+                  className="hidden"
+                  id="csv-upload"
+                />
+                <label
+                  htmlFor="csv-upload"
+                  className="bg-white border border-slate-200 text-slate-900 px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest hover:border-red-600 hover:text-red-600 transition-all cursor-pointer shadow-sm"
+                >
+                  Explorar Archivos
+                </label>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-1.5 h-6 bg-red-600 rounded-full"></div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Mapeo de Columnas</h4>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    {IMPORT_CONFIGS[selectedType].fields.map((field) => (
+                      <div key={field.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-black text-slate-900 uppercase tracking-tight">
+                            {field.label} {field.required && <span className="text-red-500">*</span>}
+                          </span>
+                          <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{field.type}</span>
+                        </div>
+                        <select
+                          value={mapping[field.key] || ''}
+                          onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}
+                          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-bold text-slate-900 outline-none focus:border-red-600 transition-all min-w-[200px]"
+                        >
+                          <option value="">Seleccionar columna...</option>
+                          {headers.map(h => (
+                            <option key={h} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-1.5 h-6 bg-slate-900 rounded-full"></div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Previsualización (Primeras 5 filas)</h4>
+                  </div>
+                  <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50">
+                          {headers.map(h => (
+                            <th key={h} className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvData.slice(0, 5).map((row, i) => (
+                          <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                            {headers.map(h => (
+                              <td key={h} className="px-4 py-3 text-[10px] font-bold text-slate-600 border-b border-slate-50">{row[h]}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[9px] font-bold text-slate-400 italic">* Asegúrate de que los IDs de jugador coincidan con los registrados en el sistema.</p>
+                </div>
+              </div>
+            )}
+
+            {unmatchedRows.length > 0 && (
+              <div className="mt-12 p-8 bg-amber-50 rounded-[32px] border border-amber-100 animate-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white text-xl">
+                    <i className="fa-solid fa-user-slash"></i>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight">Jugadores no identificados</h4>
+                    <p className="text-amber-700 text-[10px] font-bold uppercase tracking-tighter">Asocia manualmente los nombres del CSV con los jugadores del sistema</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {unmatchedRows.map((row) => {
+                    const resolvedId = resolvedIds[row._rowIndex];
+                    const matchedPlayer = players.find(p => p.id_del_jugador === resolvedId);
+                    
+                    return (
+                      <div key={row._rowIndex} className="bg-white p-4 rounded-2xl border border-amber-200 shadow-sm flex flex-col gap-3">
+                        <div className="flex flex-col">
+                          <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Nombre en CSV</span>
+                          <span className="text-[11px] font-black text-slate-900 truncate">{row._cleanName || row.Name}</span>
+                        </div>
+                        <div className="space-y-2">
+                          <input
+                            type="number"
+                            placeholder="ID Jugador..."
+                            value={resolvedId || ''}
+                            onChange={(e) => updateResolvedId(row._rowIndex, Number(e.target.value))}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold text-slate-900 outline-none focus:border-amber-500 transition-all"
+                          />
+                          {matchedPlayer && (
+                            <div className="flex items-center gap-2 px-2 py-1 bg-emerald-50 rounded-lg border border-emerald-100 animate-in fade-in duration-300">
+                              <i className="fa-solid fa-check text-emerald-500 text-[8px]"></i>
+                              <span className="text-[9px] font-black text-emerald-700 uppercase truncate">
+                                {matchedPlayer.nombre} {matchedPlayer.apellido1}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { AthletePerformanceRecord } from '../types';
 
 interface GpsTarea {
   id: number;
@@ -38,7 +39,11 @@ type SortKey =
   | 'acc_decc_ai_n'
   | 'bloque';
 
-export default function CargaTareasArea() {
+interface CargaTareasAreaProps {
+  performanceRecords?: AthletePerformanceRecord[];
+}
+
+export default function CargaTareasArea({ performanceRecords }: CargaTareasAreaProps) {
   const [data, setData] = useState<GpsTarea[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);

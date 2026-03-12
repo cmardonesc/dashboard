@@ -6,6 +6,7 @@ import StaffDashboard from './components/StaffDashboard'
 import Sidebar from './components/Sidebar'
 import { AthletePerformanceRecord, User, UserRole, NutritionData } from './types'
 import { MOCK_PLAYERS } from './mockData'
+import { logActivity } from './lib/activityLogger'
 
 type Role = 'player' | 'staff' | 'admin' | null
 type MenuId =
@@ -23,6 +24,8 @@ type MenuId =
   | 'desconvocatoria'
   | 'logistica_jugadores'
   | 'usuarios'
+  | 'logs'
+  | 'importar_datos'
 
 export default function App() {
   const [loading, setLoading] = useState(true)
@@ -31,6 +34,7 @@ export default function App() {
   const [linkedPlayerId, setLinkedPlayerId] = useState<number | null>(null)
   const [sessionUser, setSessionUser] = useState<any>(null)
   const [activeMenu, setActiveMenu] = useState<MenuId>('inicio')
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   const [dbPlayers, setDbPlayers] = useState<User[]>([])
   const [allData, setAllData] = useState<{
@@ -49,7 +53,7 @@ export default function App() {
     try {
       let wellnessQuery = supabase.from('wellness_checkin').select('*');
       let loadsQuery = supabase.from('internal_load').select('*');
-      let gpsQuery = supabase.from('gps_import').select('*');
+      let gpsQuery = supabase.from('gps_tareas').select('*');
       let nutritionQuery = supabase.from('antropometria').select('*');
 
       const rangeDate = new Date();
@@ -62,19 +66,30 @@ export default function App() {
         gpsQuery = gpsQuery.eq('id_del_jugador', pId);
         nutritionQuery = nutritionQuery.eq('id_del_jugador', pId);
       } else {
+        // Intentamos usar checkin_date, si falla el backend lo reportará
         wellnessQuery = wellnessQuery.gte('checkin_date', dateStr);
         loadsQuery = loadsQuery.gte('session_date', dateStr);
-        gpsQuery = gpsQuery.gte('session_date', dateStr);
+        gpsQuery = gpsQuery.gte('fecha', dateStr);
         // Traer últimos registros nutricionales
         nutritionQuery = nutritionQuery.order('fecha_medicion', { ascending: false });
       }
 
-      const [wellnessRes, loadsRes, gpsRes, nutritionRes] = await Promise.all([
+      let [wellnessRes, loadsRes, gpsRes, nutritionRes] = await Promise.all([
         wellnessQuery.order('checkin_date', { ascending: true }),
         loadsQuery.order('session_date', { ascending: true }),
-        gpsQuery.order('session_date', { ascending: true }),
+        gpsQuery.order('fecha', { ascending: true }),
         nutritionQuery
       ]);
+
+      // Si falló por la columna checkin_date, reintentamos con checkin_dat
+      if (wellnessRes.error && wellnessRes.error.message.includes('checkin_date')) {
+        console.warn("Reintentando con checkin_dat...");
+        wellnessRes = await supabase
+          .from('wellness_checkin')
+          .select('*')
+          .gte('checkin_dat', dateStr)
+          .order('checkin_dat', { ascending: true });
+      }
 
       console.log("Supabase Data Counts:", {
         wellness: wellnessRes.data?.length || 0,
@@ -87,41 +102,61 @@ export default function App() {
         console.log("Sample Nutrition Record:", nutritionRes.data[0]);
       }
 
-      const mappedWellness = (wellnessRes.data || []).map((w: any) => ({
-        id: w.id.toString(),
-        playerId: `player-${w.id_del_jugador}`,
-        date: w.checkin_date,
-        fatigue: w.fatigue,
-        sleep: w.sleep_quality,
-        stress: w.stress,
-        soreness: w.soreness,
-        mood: w.mood,
-        soreness_areas: w.molestias ? w.molestias.split(', ') : [],
-        illness_symptoms: w.enfermedad ? w.enfermedad.split(', ') : []
-      }));
+      const mappedWellness = (wellnessRes.data || []).map((w: any) => {
+        const rawDate = w.checkin_date || w.checkin_dat || w.fecha || '';
+        const normalizedDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate.split(' ')[0];
+        
+        return {
+          id: w.id?.toString() || Math.random().toString(),
+          playerId: `player-${w.id_del_jugador || w.player_id || w.id_jugador}`,
+          id_del_jugador: w.id_del_jugador || w.player_id || w.id_jugador,
+          date: normalizedDate,
+          fatigue: w.fatigue || w.fatiga || 0,
+          sleep: w.sleep_quality || w.sleep_quali || w.sueno || 0,
+          stress: w.stress || w.estres || 0,
+          soreness: w.soreness || w.dolor || 0,
+          mood: w.mood || w.animo || 0,
+          soreness_areas: w.molestias ? w.molestias.split(', ') : (w.soreness_areas ? (Array.isArray(w.soreness_areas) ? w.soreness_areas : w.soreness_areas.split(',')) : []),
+          illness_symptoms: w.enfermedad ? w.enfermedad.split(', ') : (w.illness_symptoms ? (Array.isArray(w.illness_symptoms) ? w.illness_symptoms : w.illness_symptoms.split(',')) : []),
+          created_at: w.created_at
+        };
+      });
 
-      const mappedLoads = (loadsRes.data || []).map((l: any) => ({
-        id: l.id.toString(),
-        playerId: `player-${l.id_del_jugador}`,
-        date: l.session_date,
-        duration: l.duration_min,
-        rpe: l.rpe,
-        load: l.srpe || (l.rpe * l.duration_min), 
-        type: 'FIELD'
-      }));
+      const mappedLoads = (loadsRes.data || []).map((l: any) => {
+        const rawDate = l.session_date || l.fecha || '';
+        const normalizedDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate.split(' ')[0];
+        const rpe = l.rpe || l.esfuerzo || 0;
+        const duration = l.duration_min || l.duracion || l.minutos || 0;
+
+        return {
+          id: l.id?.toString() || Math.random().toString(),
+          playerId: `player-${l.id_del_jugador || l.player_id || l.id_jugador}`,
+          id_del_jugador: l.id_del_jugador || l.player_id || l.id_jugador,
+          date: normalizedDate,
+          duration: duration,
+          rpe: rpe,
+          load: l.srpe || l.carga || (rpe * duration), 
+          type: l.type || 'FIELD',
+          created_at: l.created_at
+        };
+      });
 
       const mappedGps = (gpsRes.data || []).map((g: any) => {
-        const duration = Number(g['Min'] || g['Duration'] || g['Duration (min)'] || 0);
+        const rawDate = g.fecha || g.session_date || '';
+        const normalizedDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate.split(' ')[0];
+        const duration = Number(g.minutos || g.duration || 0);
         return {
-          id: g.id.toString(),
-          playerId: `player-${g.id_del_jugador}`,
-          date: g.session_date,
+          id: g.id?.toString() || Math.random().toString(),
+          playerId: `player-${g.id_del_jugador || g.player_id || g.id_jugador}`,
+          id_del_jugador: g.id_del_jugador || g.player_id || g.id_jugador,
+          jugador_nombre: g.jugador_nombre, // Guardamos el nombre para descubrimiento
+          date: normalizedDate,
           duration: duration,
-          totalDistance: Number(g['Total Distance (m)'] || 0),
-          hsrDistance: Number(g['MAInt >20km/h'] || 0), 
-          sprintCount: Number(g['# SP'] || g['Sprint >25 km/h'] || 0),
-          maxSpeed: Number(g['Max Vel (km/h)'] || 0),
-          intensity: Number(g['Metros/min'] || 0)
+          totalDistance: Number(g.dist_total_m || g.totalDistance || 0),
+          hsrDistance: Number(g.dist_mai_m_20_kmh || g.hsrDistance || 0), 
+          sprintCount: Number(g.sprints_n || g.sprintCount || 0),
+          maxSpeed: Number(g.vel_max_kmh || g.maxSpeed || 0),
+          intensity: Number(g.m_por_min || g.intensity || 0)
         };
       });
 
@@ -294,6 +329,7 @@ export default function App() {
       setRole('admin');
       setLinkedPlayerId(null);
       fetchPerformanceData('admin', null).catch(console.error);
+      logActivity('Inicio de Sesión (Admin)', { email: emailLower });
       setLoading(false);
       return;
     }
@@ -304,6 +340,7 @@ export default function App() {
       setRole('staff');
       setLinkedPlayerId(null);
       fetchPerformanceData('staff', null).catch(console.error);
+      logActivity('Inicio de Sesión (Staff)', { email: emailLower });
       setLoading(false);
       return;
     }
@@ -325,10 +362,12 @@ export default function App() {
         setLinkedPlayerId(userData.id_del_jugador);
         // Cargar datos iniciales
         fetchPerformanceData(userData.role, userData.id_del_jugador).catch(console.error);
+        logActivity(`Inicio de Sesión (${userData.role})`, { email: emailLower, playerId: userData.id_del_jugador });
       } else {
         console.warn("Usuario sin rol en tabla profiles. Asignando rol 'player' por defecto.");
         // Fallback: si no tiene perfil, lo tratamos como jugador nuevo
         setRole('player'); 
+        logActivity('Inicio de Sesión (Nuevo Jugador)', { email: emailLower });
       }
     } catch (error) {
       console.error("Error en handleLoginSuccess:", error);
@@ -342,18 +381,25 @@ export default function App() {
     // 1. Empezamos con los jugadores reales de la tabla 'players'
     let playersToUse = [...dbPlayers];
     
-    // 2. "Descubrimiento" de jugadores: Si hay datos en antropometría para un ID que no está en 'players',
+    // 2. "Descubrimiento" de jugadores: Si hay datos en nutrición, wellness o loads para un ID que no está en 'players',
     // lo agregamos como un jugador virtual para que no se pierdan sus registros.
-    allData.nutrition.forEach((n: any) => {
-      const nId = n.id_del_jugador || n.id_jugador || n.player_id;
-      if (!nId) return;
-      const nIdStr = nId.toString();
-      const exists = playersToUse.some(p => p.id_del_jugador?.toString() === nIdStr);
+    const discoverFrom = [
+      ...allData.nutrition.map(n => ({ id: n.id_del_jugador || n.id_jugador || n.player_id, name: n.nombre_raw })),
+      ...allData.wellness.map(w => ({ id: w.id_del_jugador || w.player_id || w.playerId, name: null })),
+      ...allData.loads.map(l => ({ id: l.id_del_jugador || l.player_id || l.id_jugador, name: null })),
+      ...allData.gps.map((g: any) => ({ id: g.id_del_jugador, name: g.jugador_nombre }))
+    ];
+
+    discoverFrom.forEach((item: any) => {
+      const rawId = item.id?.toString().replace('player-', '');
+      if (!rawId) return;
+      
+      const exists = playersToUse.some(p => p.id_del_jugador?.toString() === rawId);
       if (!exists) {
         playersToUse.push({
-          id: `player-v-${nIdStr}`,
-          id_del_jugador: isNaN(Number(nIdStr)) ? undefined : Number(nIdStr),
-          name: n.nombre_raw || `Atleta #${nIdStr}`,
+          id: `player-v-${rawId}`,
+          id_del_jugador: isNaN(Number(rawId)) ? undefined : Number(rawId),
+          name: item.name || `Atleta #${rawId}`,
           role: UserRole.PLAYER,
           club: 'Registro Histórico',
           position: 'S/D'
@@ -366,31 +412,31 @@ export default function App() {
       playersToUse = MOCK_PLAYERS;
     }
 
-    console.log(`PerformanceRecords: ${playersToUse.length} jugadores, ${allData.nutrition.length} registros nutrición`);
+    console.log(`PerformanceRecords: ${playersToUse.length} jugadores`);
 
-    return (playersToUse as User[]).map((player) => ({
-      player,
-      wellness: allData.wellness.filter((w: any) => {
-        const wId = (w.id_del_jugador || w.player_id || w.playerId)?.toString().replace('player-', '');
-        const pId = player.id_del_jugador?.toString();
-        return wId && pId && wId === pId;
-      }),
-      loads: allData.loads.filter((l: any) => {
-        const lId = (l.id_del_jugador || l.player_id || l.playerId)?.toString().replace('player-', '');
-        const pId = player.id_del_jugador?.toString();
-        return lId && pId && lId === pId;
-      }),
-      gps: allData.gps.filter((g: any) => {
-        const gId = (g.id_del_jugador || g.player_id || g.playerId)?.toString().replace('player-', '');
-        const pId = player.id_del_jugador?.toString();
-        return gId && pId && gId === pId;
-      }),
-      nutrition: allData.nutrition.filter((n: any) => {
-        const nId = (n.id_del_jugador || n.id_jugador || n.player_id)?.toString();
-        const pId = player.id_del_jugador?.toString();
-        return nId && pId && nId === pId;
-      })
-    }))
+    return (playersToUse as User[]).map((player) => {
+      const pId = player.id_del_jugador?.toString();
+
+      return {
+        player,
+        wellness: allData.wellness.filter((w: any) => {
+          const wId = (w.id_del_jugador || w.player_id || w.playerId)?.toString().replace('player-', '');
+          return wId && pId && String(wId) === String(pId);
+        }),
+        loads: allData.loads.filter((l: any) => {
+          const lId = (l.id_del_jugador || l.player_id || l.playerId)?.toString().replace('player-', '');
+          return lId && pId && String(lId) === String(pId);
+        }),
+        gps: allData.gps.filter((g: any) => {
+          const gId = (g.id_del_jugador || g.player_id || g.playerId)?.toString().replace('player-', '');
+          return gId && pId && String(gId) === String(pId);
+        }),
+        nutrition: allData.nutrition.filter((n: any) => {
+          const nId = (n.id_del_jugador || n.id_jugador || n.player_id)?.toString();
+          return nId && pId && String(nId) === String(pId);
+        })
+      };
+    })
   }, [allData, dbPlayers, role])
 
   const currentPlayerRecord = useMemo(() => {
@@ -418,28 +464,73 @@ export default function App() {
           <div className="w-16 h-16 border-4 border-slate-800 border-t-red-600 rounded-full animate-spin"></div>
           <p className="text-white/40 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Sincronizando con La Roja...</p>
         </div>
+        {/* Watermark */}
+        <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none opacity-20">
+          <span className="text-[10px] font-black tracking-widest text-white uppercase">CMSPORTECH</span>
+        </div>
       </div>
     )
   }
 
-  if (!role) return <div className="min-h-screen flex items-center justify-center bg-[#0b1220] px-6"><LoginCard onLoginSuccess={handleLoginSuccess} /></div>
+  if (!role) return (
+    <div className="min-h-screen flex items-center justify-center bg-[#0b1220] px-6 relative">
+      <LoginCard onLoginSuccess={handleLoginSuccess} />
+      {/* Watermark */}
+      <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none opacity-20">
+        <span className="text-[10px] font-black tracking-widest text-white uppercase">CMSPORTECH</span>
+      </div>
+    </div>
+  )
 
   const menuTitle = activeMenu === 'citaciones' ? 'CITAS' : activeMenu === 'fisica_tareas' ? 'CARGA TAREAS' : activeMenu.toUpperCase().replace('_', ' ')
 
   if (role === 'staff' || role === 'admin') {
     return (
-      <div className="flex min-h-screen bg-[#f1f5f9]">
-        <Sidebar activeMenu={activeMenu} onMenuChange={setActiveMenu} userRole={role} />
-        <main className="flex-1 h-screen overflow-y-auto bg-slate-50">
-          <div className="bg-white px-8 py-4 border-b border-slate-200 flex justify-between items-center sticky top-0 z-40 shadow-sm">
-            <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">{menuTitle}</h2>
-            <div className="flex items-center gap-6">
-              <button onClick={async () => { await supabase.auth.signOut() }} className="text-slate-500 hover:text-red-500 transition-colors">
+      <div className="flex min-h-screen bg-[#f1f5f9] relative">
+        {/* Watermark */}
+        <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none opacity-20">
+          <span className="text-[10px] font-black tracking-widest text-slate-900 uppercase">CMSPORTECH</span>
+        </div>
+        {/* Mobile Sidebar Overlay */}
+        {isMobileMenuOpen && (
+          <div 
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+        
+        <div className={`${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 transition-transform duration-300`}>
+          <Sidebar 
+            activeMenu={activeMenu} 
+            onMenuChange={(id) => {
+              setActiveMenu(id);
+              setIsMobileMenuOpen(false);
+            }} 
+            userRole={role} 
+            userEmail={sessionUser?.email}
+          />
+        </div>
+
+        <main className="flex-1 h-screen overflow-y-auto bg-slate-50 w-full">
+          <div className="bg-white px-4 md:px-8 py-4 border-b border-slate-200 flex justify-between items-center sticky top-0 z-40 shadow-sm">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="lg:hidden w-10 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-50 rounded-xl transition-all"
+              >
+                <i className="fa-solid fa-bars"></i>
+              </button>
+              <h2 className="text-xs md:text-sm font-black text-slate-900 uppercase tracking-widest truncate max-w-[150px] md:max-w-none">
+                {menuTitle}
+              </h2>
+            </div>
+            <div className="flex items-center gap-3 md:gap-6">
+              <button onClick={async () => { await supabase.auth.signOut() }} className="text-slate-500 hover:text-red-500 transition-colors p-2">
                 <i className="fa-solid fa-arrow-right-from-bracket"></i>
               </button>
             </div>
           </div>
-          <div className="p-8">
+          <div className="p-4 md:p-8">
             <StaffDashboard performanceRecords={performanceRecords} activeMenu={activeMenu} onMenuChange={setActiveMenu} />
           </div>
         </main>
@@ -448,7 +539,11 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 relative">
+      {/* Watermark */}
+      <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none opacity-20">
+        <span className="text-[10px] font-black tracking-widest text-slate-900 uppercase">CMSPORTECH</span>
+      </div>
       {currentPlayerRecord ? (
         <PlayerDashboard 
           player={currentPlayerRecord.player} 
@@ -648,22 +743,22 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
   }
 
   return (
-    <div className="w-[440px] max-w-full animate-in fade-in zoom-in-95 duration-500">
-      <div className="bg-white rounded-[40px] overflow-hidden shadow-2xl border border-slate-100">
-        <div className="bg-[#CF1B2B] py-12 px-8 text-center">
-          <div className="text-white font-black text-4xl tracking-tighter uppercase italic">La Roja</div>
+    <div className="w-full max-w-[440px] px-4 animate-in fade-in zoom-in-95 duration-500">
+      <div className="bg-white rounded-[32px] md:rounded-[40px] overflow-hidden shadow-2xl border border-slate-100">
+        <div className="bg-[#CF1B2B] py-8 md:py-12 px-6 md:px-8 text-center">
+          <div className="text-white font-black text-3xl md:text-4xl tracking-tighter uppercase italic">La Roja</div>
         </div>
-        <div className="p-10 space-y-6">
+        <div className="p-6 md:p-10 space-y-4 md:space-y-6">
           <div className="flex gap-2 p-1 bg-slate-50 rounded-2xl">
-            <button onClick={() => setMode('login')} className={`flex-1 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${mode === 'login' ? 'bg-[#0b1220] text-white' : 'text-slate-400'}`}>Acceso</button>
-            <button onClick={() => setMode('signup')} className={`flex-1 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${mode === 'signup' ? 'bg-[#0b1220] text-white' : 'text-slate-400'}`}>Registro</button>
+            <button onClick={() => setMode('login')} className={`flex-1 py-3 rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all ${mode === 'login' ? 'bg-[#0b1220] text-white' : 'text-slate-400'}`}>Acceso</button>
+            <button onClick={() => setMode('signup')} className={`flex-1 py-3 rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all ${mode === 'signup' ? 'bg-[#0b1220] text-white' : 'text-slate-400'}`}>Registro</button>
           </div>
           <div className="space-y-3">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" placeholder="Email" />
-            <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" placeholder="Contraseña" />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" placeholder="Email" />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" placeholder="Contraseña" />
             {mode === 'signup' && (
               <>
-                <select value={signupRole} onChange={(e) => setSignupRole(e.target.value as any)} className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none">
+                <select value={signupRole} onChange={(e) => setSignupRole(e.target.value as any)} className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none">
                   <option value="">¿Quién eres?</option>
                   <option value="player">Jugador</option>
                   <option value="staff">Staff Técnico</option>
@@ -673,15 +768,15 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
                     value={playerId} 
                     onChange={(e) => setPlayerId(e.target.value)} 
                     type="text" 
-                    className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none animate-in slide-in-from-top-2 duration-300" 
+                    className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none animate-in slide-in-from-top-2 duration-300" 
                     placeholder="ID de Jugador (Asignado por Staff)" 
                   />
                 )}
               </>
             )}
           </div>
-          <button onClick={mode === 'login' ? handleLogin : handleSignUp} disabled={submitting} className="w-full py-5 rounded-2xl bg-[#0b1220] text-white font-black uppercase tracking-widest text-xs">{submitting ? 'VERIFICANDO...' : 'ENTRAR'}</button>
-          {msg && <div className="text-red-600 text-[10px] font-black uppercase text-center">{msg}</div>}
+          <button onClick={mode === 'login' ? handleLogin : handleSignUp} disabled={submitting} className="w-full py-4 md:py-5 rounded-2xl bg-[#0b1220] text-white font-black uppercase tracking-widest text-[10px] md:text-xs">{submitting ? 'VERIFICANDO...' : 'ENTRAR'}</button>
+          {msg && <div className="text-red-600 text-[9px] md:text-[10px] font-black uppercase text-center leading-tight">{msg}</div>}
         </div>
       </div>
     </div>

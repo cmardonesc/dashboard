@@ -6,9 +6,11 @@ import { Category } from '../types';
 interface AnnualActivity {
   id: string;
   fecha: string;
-  actividad: 'Entrenamiento' | 'Partido' | 'Evaluación' | 'Viaje' | 'Reunión' | 'Evento' | 'Regional' | 'Sudamericano' | 'Gira';
+  hora_inicio: string;
+  tipo_actividad: string;
   categoria?: string;
   observacion?: string;
+  lugar?: string;
 }
 
 const TIPO_COLORS: Record<string, string> = {
@@ -20,7 +22,14 @@ const TIPO_COLORS: Record<string, string> = {
   'Evento': 'bg-purple-600',
   'Regional': 'bg-orange-500',
   'Sudamericano': 'bg-yellow-500',
-  'Gira': 'bg-indigo-600'
+  'Gira': 'bg-indigo-600',
+  'Desayuno': 'bg-amber-400',
+  'Almuerzo': 'bg-orange-400',
+  'Cena': 'bg-orange-600',
+  'Charla': 'bg-cyan-600',
+  'Video': 'bg-violet-600',
+  'Gimnasio': 'bg-pink-600',
+  'Wellness': 'bg-teal-500'
 };
 
 const PlanificacionAnual: React.FC = () => {
@@ -30,12 +39,16 @@ const PlanificacionAnual: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [filterType, setFilterType] = useState<string | null>(null);
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [isCopying, setIsCopying] = useState(false);
 
   // Formulario para nueva actividad
   const [newActivity, setNewActivity] = useState({
-    type: 'Entrenamiento' as AnnualActivity['actividad'],
+    type: 'Entrenamiento',
     category: Category.SUB_16,
-    observation: ''
+    observation: '',
+    time: '10:00',
+    location: 'JUAN PINTO DURAN'
   });
 
   useEffect(() => {
@@ -49,7 +62,7 @@ const PlanificacionAnual: React.FC = () => {
 
     try {
       const { data, error } = await supabase
-        .from('anual_activities')
+        .from('annual_activities')
         .select('*')
         .gte('fecha', start)
         .lte('fecha', end);
@@ -70,16 +83,29 @@ const PlanificacionAnual: React.FC = () => {
     try {
       const payload = {
         fecha: selectedDay,
-        actividad: newActivity.type,
+        tipo_actividad: newActivity.type,
         categoria: newActivity.category,
-        observacion: newActivity.observation
+        observacion: newActivity.observation,
+        hora_inicio: newActivity.time,
+        lugar: newActivity.location
       };
 
-      const { error } = await supabase.from('anual_activities').insert([payload]);
-      if (error) throw error;
+      if (editingActivityId) {
+        const { error } = await supabase
+          .from('annual_activities')
+          .update(payload)
+          .eq('id', editingActivityId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('annual_activities')
+          .insert([payload]);
+        if (error) throw error;
+      }
 
       fetchMonthActivities();
       setNewActivity({ ...newActivity, observation: '' });
+      setEditingActivityId(null);
     } catch (err: any) {
       alert("Error al guardar: " + err.message);
     }
@@ -97,7 +123,7 @@ const PlanificacionAnual: React.FC = () => {
     
     try {
       const { error } = await supabase
-        .from('anual_activities')
+        .from('annual_activities')
         .delete()
         .eq('id', id);
 
@@ -132,18 +158,18 @@ const PlanificacionAnual: React.FC = () => {
     // Relleno días mes anterior
     for (let i = 0; i < offset; i++) days.push(null);
 
-    // Días mes actual
-    for (let i = 1; i <= daysInMonth; i++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-      days.push({
-        day: i,
-        date: dateStr,
-        activities: activities.filter(a => 
-          a.fecha === dateStr && 
-          (!filterType || a.actividad === filterType)
-        )
-      });
-    }
+        // Días mes actual
+        for (let i = 1; i <= daysInMonth; i++) {
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+          days.push({
+            day: i,
+            date: dateStr,
+            activities: activities.filter(a => 
+              a.fecha === dateStr && 
+              (!filterType || a.tipo_actividad === filterType)
+            )
+          });
+        }
 
     return days;
   }, [currentDate, activities, filterType]);
@@ -152,6 +178,61 @@ const PlanificacionAnual: React.FC = () => {
 
   const handleNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
   const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+
+  const handleCopyDay = async (targetDate: string) => {
+    const sourceDate = window.prompt("Ingresa la fecha de origen para copiar (AAAA-MM-DD):", targetDate);
+    if (!sourceDate || sourceDate === targetDate) return;
+
+    setIsCopying(true);
+    try {
+      // 1. Obtener actividades del día origen
+      const { data: sourceActivities, error: fetchError } = await supabase
+        .from('annual_activities')
+        .select('*')
+        .eq('fecha', sourceDate);
+
+      if (fetchError) throw fetchError;
+      if (!sourceActivities || sourceActivities.length === 0) {
+        alert("No se encontraron actividades en la fecha de origen.");
+        return;
+      }
+
+      // 2. Preparar nuevas actividades para el día destino
+      const newActivities = sourceActivities.map(act => ({
+        fecha: targetDate,
+        tipo_actividad: act.tipo_actividad,
+        categoria: act.categoria,
+        observacion: act.observacion,
+        hora_inicio: act.hora_inicio,
+        lugar: act.lugar
+      }));
+
+      // 3. Insertar
+      const { error: insertError } = await supabase
+        .from('annual_activities')
+        .insert(newActivities);
+
+      if (insertError) throw insertError;
+
+      alert(`Se copiaron ${newActivities.length} actividades con éxito.`);
+      fetchMonthActivities();
+    } catch (err: any) {
+      alert("Error al copiar día: " + err.message);
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
+  const startEditing = (act: AnnualActivity) => {
+    setEditingActivityId(act.id);
+    setNewActivity({
+      type: act.tipo_actividad,
+      category: act.categoria as Category || Category.SUB_16,
+      observation: act.observacion || '',
+      time: act.hora_inicio.substring(0, 5),
+      location: act.lugar || 'JUAN PINTO DURAN'
+    });
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 relative transform-gpu">
@@ -218,12 +299,12 @@ const PlanificacionAnual: React.FC = () => {
             const isSelected = selectedDay === dayObj.date;
             
             // Detectar eventos especiales para dar estilo al día completo
-            const specialEvent = dayObj.activities.find(a => a.actividad === 'Sudamericano' || a.actividad === 'Gira');
+            const specialEvent = dayObj.activities.find(a => a.tipo_actividad === 'Sudamericano' || a.tipo_actividad === 'Gira');
             let dayStyle = 'bg-white border-slate-50 hover:border-slate-200';
             
-            if (specialEvent?.actividad === 'Sudamericano') {
+            if (specialEvent?.tipo_actividad === 'Sudamericano') {
               dayStyle = 'bg-yellow-50 border-yellow-200 hover:border-yellow-300';
-            } else if (specialEvent?.actividad === 'Gira') {
+            } else if (specialEvent?.tipo_actividad === 'Gira') {
               dayStyle = 'bg-indigo-50 border-indigo-200 hover:border-indigo-300';
             } else if (isToday) {
               dayStyle = 'bg-red-50/10 border-slate-50';
@@ -232,21 +313,30 @@ const PlanificacionAnual: React.FC = () => {
             return (
               <div 
                 key={dayObj.date}
-                onClick={() => { setSelectedDay(dayObj.date); setIsDrawerOpen(true); }}
                 className={`relative rounded-[32px] border transition-all cursor-pointer p-4 group min-h-[110px] flex flex-col justify-between ${
                   isSelected ? 'border-red-500 ring-4 ring-red-500/5 shadow-xl bg-white' : `${dayStyle} hover:shadow-lg`
                 }`}
+                onClick={() => { setSelectedDay(dayObj.date); setIsDrawerOpen(true); }}
               >
                 <div className="flex justify-between items-start">
                   <span className={`text-lg font-black tracking-tighter ${isToday ? 'text-red-600' : 'text-slate-400'}`}>{dayObj.day}</span>
-                  {dayObj.activities.length > 0 && (
-                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                  )}
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleCopyDay(dayObj.date); }}
+                      className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-lg bg-slate-100 text-slate-400 hover:text-blue-600 transition-all flex items-center justify-center"
+                      title="Copiar de otro día"
+                    >
+                      <i className="fa-solid fa-copy text-[10px]"></i>
+                    </button>
+                    {dayObj.activities.length > 0 && (
+                      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                    )}
+                  </div>
                 </div>
                 
                 <div className="flex flex-wrap gap-1 mt-2">
                   {dayObj.activities.slice(0, 3).map(act => (
-                    <div key={act.id} className={`w-1.5 h-1.5 rounded-full ${TIPO_COLORS[act.actividad] || 'bg-slate-300'}`} title={act.actividad}></div>
+                    <div key={act.id} className={`w-1.5 h-1.5 rounded-full ${TIPO_COLORS[act.tipo_actividad] || 'bg-slate-300'}`} title={act.tipo_actividad}></div>
                   ))}
                   {dayObj.activities.length > 3 && (
                     <span className="text-[7px] font-black text-slate-400">+{dayObj.activities.length - 3}</span>
@@ -257,7 +347,7 @@ const PlanificacionAnual: React.FC = () => {
                   {dayObj.activities.slice(0, 2).map(act => (
                     <div key={act.id} className="flex items-center justify-between gap-1">
                       <p className="text-[8px] font-black uppercase text-slate-800 italic truncate leading-none flex-1">
-                        {act.actividad}
+                        {act.tipo_actividad}
                       </p>
                       {act.categoria && (
                         <span className="text-[7px] font-black text-slate-400 bg-slate-100 px-1 rounded uppercase">
@@ -276,30 +366,45 @@ const PlanificacionAnual: React.FC = () => {
       {/* PANEL LATERAL (DRAWER) */}
       {isDrawerOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-end animate-in fade-in duration-300 transform-gpu">
-          <div className="absolute inset-0 bg-[#0b1220]/60 backdrop-blur-sm" onClick={() => setIsDrawerOpen(false)}></div>
+          <div className="absolute inset-0 bg-[#0b1220]/60 backdrop-blur-sm" onClick={() => { setIsDrawerOpen(false); setEditingActivityId(null); }}></div>
           <div className="relative w-full max-w-md h-full bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 overflow-hidden">
             <div className="bg-[#0b1220] p-10 text-white relative">
-              <button onClick={() => setIsDrawerOpen(false)} className="absolute top-10 right-10 text-white/30 hover:text-white transition-colors">
+              <button onClick={() => { setIsDrawerOpen(false); setEditingActivityId(null); }} className="absolute top-10 right-10 text-white/30 hover:text-white transition-colors">
                 <i className="fa-solid fa-xmark text-xl"></i>
               </button>
-              <h3 className="text-2xl font-black uppercase italic tracking-tighter leading-none mb-1">GESTIÓN DEL DÍA</h3>
+              <h3 className="text-2xl font-black uppercase italic tracking-tighter leading-none mb-1">
+                {editingActivityId ? 'EDITAR ACTIVIDAD' : 'GESTIÓN DEL DÍA'}
+              </h3>
               <p className="text-red-500 text-[10px] font-black uppercase tracking-[0.3em]">{selectedDay}</p>
             </div>
 
             <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
               {/* Formulario rápido */}
               <section className="space-y-6">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Programar Actividad</h4>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">
+                  {editingActivityId ? 'Modificar Datos' : 'Programar Actividad'}
+                </h4>
                 <form onSubmit={handleAddActivity} className="space-y-4">
-                  <div className="w-full">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Tipo de Actividad</label>
-                    <select 
-                      className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner"
-                      value={newActivity.type}
-                      onChange={e => setNewActivity({...newActivity, type: e.target.value as any})}
-                    >
-                      {Object.keys(TIPO_COLORS).map(tipo => <option key={tipo} value={tipo}>{tipo.toUpperCase()}</option>)}
-                    </select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="w-full">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Tipo</label>
+                      <select 
+                        className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner"
+                        value={newActivity.type}
+                        onChange={e => setNewActivity({...newActivity, type: e.target.value as any})}
+                      >
+                        {Object.keys(TIPO_COLORS).map(tipo => <option key={tipo} value={tipo}>{tipo.toUpperCase()}</option>)}
+                      </select>
+                    </div>
+                    <div className="w-full">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Hora</label>
+                      <input 
+                        type="time"
+                        className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner"
+                        value={newActivity.time}
+                        onChange={e => setNewActivity({...newActivity, time: e.target.value})}
+                      />
+                    </div>
                   </div>
 
                   <div className="w-full">
@@ -314,18 +419,40 @@ const PlanificacionAnual: React.FC = () => {
                   </div>
 
                   <div className="w-full">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Lugar</label>
+                    <input 
+                      type="text"
+                      placeholder="Lugar de la actividad..."
+                      className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner"
+                      value={newActivity.location}
+                      onChange={e => setNewActivity({...newActivity, location: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="w-full">
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Observación</label>
                     <textarea 
                       placeholder="Escribe una observación..." 
-                      className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner min-h-[100px] resize-none"
+                      className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner min-h-[80px] resize-none"
                       value={newActivity.observation}
                       onChange={e => setNewActivity({...newActivity, observation: e.target.value})}
                     />
                   </div>
 
-                  <button type="submit" className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-900/20 hover:bg-red-700 transition-all active:scale-95">
-                    AGREGAR AL CALENDARIO
-                  </button>
+                  <div className="flex gap-3">
+                    {editingActivityId && (
+                      <button 
+                        type="button"
+                        onClick={() => { setEditingActivityId(null); setNewActivity({...newActivity, observation: ''}); }}
+                        className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all"
+                      >
+                        CANCELAR
+                      </button>
+                    )}
+                    <button type="submit" className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-900/20 hover:bg-red-700 transition-all active:scale-95">
+                      {editingActivityId ? 'ACTUALIZAR DATOS' : 'AGREGAR AL CALENDARIO'}
+                    </button>
+                  </div>
                 </form>
               </section>
 
@@ -337,22 +464,40 @@ const PlanificacionAnual: React.FC = () => {
                     <p className="text-[10px] text-slate-300 font-bold uppercase italic text-center py-10">Sin actividades agendadas.</p>
                   ) : (
                     calendarDays.find(d => d?.date === selectedDay)?.activities.map(act => (
-                      <div key={act.id} className="bg-slate-50 p-4 rounded-[24px] border border-slate-100 flex items-center justify-between group hover:bg-white hover:shadow-lg transition-all">
+                      <div 
+                        key={act.id} 
+                        className={`bg-slate-50 p-4 rounded-[24px] border flex items-center justify-between group cursor-pointer transition-all ${editingActivityId === act.id ? 'border-blue-500 bg-blue-50' : 'border-slate-100 hover:bg-white hover:shadow-lg'}`}
+                        onClick={() => startEditing(act)}
+                      >
                         <div className="flex items-center gap-4">
-                          <div className={`w-2 h-10 rounded-full ${TIPO_COLORS[act.actividad]}`}></div>
+                          <div className={`w-2 h-10 rounded-full ${TIPO_COLORS[act.tipo_actividad]}`}></div>
                           <div>
-                            <p className="text-[11px] font-black text-slate-900 uppercase italic tracking-tight">{act.actividad} - {act.categoria?.toUpperCase().replace('_', ' ')}</p>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{act.observacion || 'Sin observación'}</p>
+                            <p className="text-[11px] font-black text-slate-900 uppercase italic tracking-tight">
+                              {act.hora_inicio.substring(0, 5)} - {act.tipo_actividad}
+                            </p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                              {act.categoria?.toUpperCase().replace('_', ' ')} | {act.lugar}
+                            </p>
                           </div>
                         </div>
-                        <button 
-                          type="button"
-                          onClick={(e) => handleDeleteActivity(act.id, e)} 
-                          className="w-8 h-8 rounded-xl bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
-                          title="Eliminar actividad"
-                        >
-                          <i className="fa-solid fa-trash-can text-[10px]"></i>
-                        </button>
+                        <div className="flex gap-2">
+                          <button 
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); startEditing(act); }} 
+                            className="w-8 h-8 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                            title="Editar"
+                          >
+                            <i className="fa-solid fa-pen text-[10px]"></i>
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={(e) => handleDeleteActivity(act.id, e)} 
+                            className="w-8 h-8 rounded-xl bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                            title="Eliminar"
+                          >
+                            <i className="fa-solid fa-trash-can text-[10px]"></i>
+                          </button>
+                        </div>
                       </div>
                     ))
                   )}
