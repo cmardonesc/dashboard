@@ -895,8 +895,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                   />
                   
                   {chunkIdx === 0 && (
-                    <section className="mb-10">
-                      <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-4 uppercase tracking-widest italic">1. RESUMEN GRUPAL DE RENDIMIENTO</h3>
+                    <section className="mb-6">
+                      <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-3 uppercase tracking-widest italic">1. RESUMEN GRUPAL DE RENDIMIENTO</h3>
                       <div className="grid grid-cols-4 gap-3">
                         <KPIReportCard label="Distancia Media" value={`${reportData.gpsKPIs.dist.toFixed(0)}m`} icon="fa-arrows-left-right" />
                         <KPIReportCard label="HSR Promedio" value={`${reportData.gpsKPIs.hsr.toFixed(0)}m`} icon="fa-fire" />
@@ -907,7 +907,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                   )}
 
                   <section>
-                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-4 uppercase tracking-widest italic">
+                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-3 uppercase tracking-widest italic">
                       2. BIENESTAR INDIVIDUAL {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}
                     </h3>
                     <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
@@ -1012,7 +1012,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                     total={totalPages} 
                   />
                   <section>
-                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-4 uppercase tracking-widest italic">
+                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-3 uppercase tracking-widest italic">
                       3. CONTROL DE CARGA INTERNA {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}
                     </h3>
                     <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
@@ -1084,7 +1084,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                     total={totalPages} 
                   />
                   <section>
-                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-4 uppercase tracking-widest italic">
+                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-3 uppercase tracking-widest italic">
                       4. RENDIMIENTO INDIVIDUAL GPS {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}
                     </h3>
                     <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
@@ -1160,8 +1160,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                 page={currentPageNum} 
                 total={totalPages} 
               />
-              <section className="mb-8">
-                <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-blue-500 pl-4 mb-4 uppercase tracking-widest italic">5. ANÁLISIS DE INTENSIDAD POR TAREA (MIN / AVG / MAX)</h3>
+              <section className="mb-6">
+                <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-blue-500 pl-4 mb-3 uppercase tracking-widest italic">5. ANÁLISIS DE INTENSIDAD POR TAREA (MIN / AVG / MAX)</h3>
                 <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
                   <table className="w-full text-center border-collapse bg-white">
                     <thead className="bg-[#0b1220] text-white text-[6px] font-black uppercase tracking-[0.1em]">
@@ -1243,21 +1243,20 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
           }
 
           .print-page-section {
-            page-break-after: always !important;
             break-after: page !important;
             position: relative !important;
-            height: 297mm !important;
+            height: 296mm !important;
             width: 210mm !important;
             margin: 0 auto !important;
             background: white !important;
             border: none !important;
-            padding: 15mm 15mm 20mm 15mm !important;
+            padding: 10mm 15mm !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
+            display: block !important;
           }
 
           .print-page-section:last-child { 
-            page-break-after: auto !important; 
             break-after: auto !important; 
           }
           
@@ -1285,7 +1284,7 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
   };
 
   return (
-    <div className="hidden print:block mb-4">
+    <div className="hidden print:block mb-2">
       <div className="flex justify-between items-center border-b-2 border-slate-900 pb-2">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-slate-900 text-white flex items-center justify-center font-black text-xl italic rounded-lg shadow-md">LR</div>
@@ -1313,7 +1312,7 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
 
 function PrintFooter({ page }: { page: number }) {
   return (
-    <div className="hidden print:block absolute bottom-4 left-8 right-8 border-t border-slate-100 pt-2">
+    <div className="hidden print:block absolute bottom-2 left-8 right-8 border-t border-slate-100 pt-1">
       <div className="flex justify-between items-center">
         <p className="text-[5px] font-black text-slate-300 uppercase tracking-[0.2em]">Documento Confidencial • Área Física Selección Nacional • © 2026</p>
         <p className="text-[6px] font-black text-slate-900">Pág {page}</p>
