@@ -326,30 +326,35 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
   // LOGICA DE PAGINACION Y CHUNKING PARA PDF
   const wellnessChunks = useMemo(() => {
     const list = reportData.wellnessList;
+    if (list.length === 0) return [];
     const chunks = [];
-    // Con h-10 (40px) y menos padding, caben más filas.
-    // Primera página tiene resumen grupal, caben menos.
-    chunks.push(list.slice(0, 18)); 
-    for (let i = 18; i < list.length; i += 28) {
-      chunks.push(list.slice(i, i + 28));
+    // Página 1: Header + KPIs + Margins.
+    // Usamos 14 filas para asegurar que quepa con holgura.
+    chunks.push(list.slice(0, 14)); 
+    for (let i = 14; i < list.length; i += 20) {
+      chunks.push(list.slice(i, i + 20));
     }
     return chunks;
   }, [reportData.wellnessList]);
 
   const loadChunks = useMemo(() => {
     const list = reportData.loadList;
+    if (list.length === 0) return [];
     const chunks = [];
-    for (let i = 0; i < list.length; i += 28) {
-      chunks.push(list.slice(i, i + 28));
+    // Páginas sin KPIs: Header + Margins.
+    // 20 filas es seguro.
+    for (let i = 0; i < list.length; i += 20) {
+      chunks.push(list.slice(i, i + 20));
     }
     return chunks;
   }, [reportData.loadList]);
 
   const gpsChunks = useMemo(() => {
     const list = reportData.gpsImportReport;
+    if (list.length === 0) return [];
     const chunks = [];
-    for (let i = 0; i < list.length; i += 32) {
-      chunks.push(list.slice(i, i + 32));
+    for (let i = 0; i < list.length; i += 20) {
+      chunks.push(list.slice(i, i + 20));
     }
     return chunks;
   }, [reportData.gpsImportReport]);
@@ -875,12 +880,12 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
           </div>
 
           {/* VISTA PREVIA DEL PDF (Solo visible en pantalla o impresión) */}
-          <div className="space-y-0 print:bg-white">
+          <div className="space-y-0 print:bg-white print:m-0 print:p-0">
             {/* PÁGINAS DE WELLNESS (Chunked) */}
             {wellnessChunks.map((chunk, chunkIdx) => {
               currentPageNum++;
               return (
-                <div key={`well-${chunkIdx}`} className="print-page-section print:p-12">
+                <div key={`well-${chunkIdx}`} className="print-page-section">
                   <PrintHeader 
                     selectedDate={selectedDate} 
                     selectedCategory={selectedCategories[0]} 
@@ -998,7 +1003,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
             {loadChunks.map((chunk, chunkIdx) => {
               currentPageNum++;
               return (
-                <div key={`load-${chunkIdx}`} className="print-page-section print:p-12">
+                <div key={`load-${chunkIdx}`} className="print-page-section">
                   <PrintHeader 
                     selectedDate={selectedDate} 
                     selectedCategory={selectedCategories[0]} 
@@ -1070,7 +1075,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
             {gpsChunks.map((chunk, chunkIdx) => {
               currentPageNum++;
               return (
-                <div key={`gps-${chunkIdx}`} className="print-page-section print:p-12">
+                <div key={`gps-${chunkIdx}`} className="print-page-section">
                   <PrintHeader 
                     selectedDate={selectedDate} 
                     selectedCategory={selectedCategories[0]} 
@@ -1146,7 +1151,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
             })}
 
             {/* PÁGINA FINAL: TAREAS Y FIRMAS */}
-            <div className="print-page-section print:p-12">
+            <div className="print-page-section">
               {(() => { currentPageNum++; return null; })()}
               <PrintHeader 
                 selectedDate={selectedDate} 
@@ -1241,17 +1246,20 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
             page-break-after: always !important;
             break-after: page !important;
             position: relative !important;
-            min-height: 296mm !important;
+            height: 297mm !important;
             width: 210mm !important;
             margin: 0 auto !important;
             background: white !important;
             border: none !important;
-            padding-top: 15mm !important;
-            padding-bottom: 25mm !important;
+            padding: 15mm 15mm 20mm 15mm !important;
             box-sizing: border-box !important;
+            overflow: hidden !important;
           }
 
-          .print-page-section:last-child { page-break-after: auto !important; break-after: auto !important; }
+          .print-page-section:last-child { 
+            page-break-after: auto !important; 
+            break-after: auto !important; 
+          }
           
           * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }
           
