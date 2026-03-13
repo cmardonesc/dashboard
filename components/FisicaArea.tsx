@@ -329,10 +329,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
     if (list.length === 0) return [];
     const chunks = [];
     // Página 1: Header + KPIs + Margins.
-    // Usamos 14 filas para asegurar que quepa con holgura.
-    chunks.push(list.slice(0, 14)); 
-    for (let i = 14; i < list.length; i += 20) {
-      chunks.push(list.slice(i, i + 20));
+    // Usamos 8 filas para asegurar que quepa con holgura.
+    chunks.push(list.slice(0, 8)); 
+    for (let i = 8; i < list.length; i += 14) {
+      chunks.push(list.slice(i, i + 14));
     }
     return chunks;
   }, [reportData.wellnessList]);
@@ -342,9 +342,9 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
     if (list.length === 0) return [];
     const chunks = [];
     // Páginas sin KPIs: Header + Margins.
-    // 20 filas es seguro.
-    for (let i = 0; i < list.length; i += 20) {
-      chunks.push(list.slice(i, i + 20));
+    // 14 filas es seguro.
+    for (let i = 0; i < list.length; i += 14) {
+      chunks.push(list.slice(i, i + 14));
     }
     return chunks;
   }, [reportData.loadList]);
@@ -353,8 +353,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
     const list = reportData.gpsImportReport;
     if (list.length === 0) return [];
     const chunks = [];
-    for (let i = 0; i < list.length; i += 20) {
-      chunks.push(list.slice(i, i + 20));
+    for (let i = 0; i < list.length; i += 14) {
+      chunks.push(list.slice(i, i + 14));
     }
     return chunks;
   }, [reportData.gpsImportReport]);
@@ -1245,16 +1245,19 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
           .print-page-section {
             break-after: page !important;
             position: relative !important;
-            height: 296mm !important;
+            height: 280mm !important;
             width: 210mm !important;
-            margin: 0 auto !important;
+            margin: 0 !important;
+            padding: 10mm 15mm !important;
             background: white !important;
             border: none !important;
-            padding: 10mm 15mm !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
             display: block !important;
           }
+
+          table { page-break-inside: avoid !important; }
+          tr { page-break-inside: avoid !important; break-inside: avoid !important; }
 
           .print-page-section:last-child { 
             break-after: auto !important; 
@@ -1284,8 +1287,8 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
   };
 
   return (
-    <div className="hidden print:block mb-2">
-      <div className="flex justify-between items-center border-b-2 border-slate-900 pb-2">
+    <div className="hidden print:block pb-2 border-b-2 border-slate-900 mb-2">
+      <div className="flex justify-between items-center pb-2">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-slate-900 text-white flex items-center justify-center font-black text-xl italic rounded-lg shadow-md">LR</div>
           <div>
@@ -1312,7 +1315,7 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
 
 function PrintFooter({ page }: { page: number }) {
   return (
-    <div className="hidden print:block absolute bottom-2 left-8 right-8 border-t border-slate-100 pt-1">
+    <div className="hidden print:block absolute bottom-4 left-10 right-10 border-t border-slate-100 pt-1">
       <div className="flex justify-between items-center">
         <p className="text-[5px] font-black text-slate-300 uppercase tracking-[0.2em]">Documento Confidencial • Área Física Selección Nacional • © 2026</p>
         <p className="text-[6px] font-black text-slate-900">Pág {page}</p>
