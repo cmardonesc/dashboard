@@ -323,6 +323,13 @@ export default function DataImportArea() {
           const csvHeader = mapping[field.key];
           if (csvHeader && row[csvHeader] !== undefined && row[csvHeader] !== '') {
             let val = row[csvHeader];
+            // Clean 'tarea' field for GPS Tasks (remove " - Player Name")
+            if (selectedType === 'gps_tareas' && field.key === 'tarea' && typeof val === 'string') {
+              if (val.includes(' - ')) {
+                val = val.split(' - ')[0].trim();
+              }
+            }
+
             if (field.type === 'number') {
               const numVal = Number(val.toString().replace(',', '.'));
               val = isNaN(numVal) ? null : numVal;
