@@ -327,9 +327,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
   const wellnessChunks = useMemo(() => {
     const list = reportData.wellnessList;
     const chunks = [];
-    chunks.push(list.slice(0, 14));
-    for (let i = 14; i < list.length; i += 22) {
-      chunks.push(list.slice(i, i + 22));
+    // Con h-10 (40px) y menos padding, caben más filas.
+    // Primera página tiene resumen grupal, caben menos.
+    chunks.push(list.slice(0, 18)); 
+    for (let i = 18; i < list.length; i += 28) {
+      chunks.push(list.slice(i, i + 28));
     }
     return chunks;
   }, [reportData.wellnessList]);
@@ -337,8 +339,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
   const loadChunks = useMemo(() => {
     const list = reportData.loadList;
     const chunks = [];
-    for (let i = 0; i < list.length; i += 22) {
-      chunks.push(list.slice(i, i + 22));
+    for (let i = 0; i < list.length; i += 28) {
+      chunks.push(list.slice(i, i + 28));
     }
     return chunks;
   }, [reportData.loadList]);
@@ -346,8 +348,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
   const gpsChunks = useMemo(() => {
     const list = reportData.gpsImportReport;
     const chunks = [];
-    for (let i = 0; i < list.length; i += 26) {
-      chunks.push(list.slice(i, i + 26));
+    for (let i = 0; i < list.length; i += 32) {
+      chunks.push(list.slice(i, i + 32));
     }
     return chunks;
   }, [reportData.gpsImportReport]);
@@ -889,8 +891,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                   
                   {chunkIdx === 0 && (
                     <section className="mb-10">
-                      <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-6 uppercase tracking-widest italic">1. RESUMEN GRUPAL DE RENDIMIENTO</h3>
-                      <div className="grid grid-cols-4 gap-4">
+                      <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-4 uppercase tracking-widest italic">1. RESUMEN GRUPAL DE RENDIMIENTO</h3>
+                      <div className="grid grid-cols-4 gap-3">
                         <KPIReportCard label="Distancia Media" value={`${reportData.gpsKPIs.dist.toFixed(0)}m`} icon="fa-arrows-left-right" />
                         <KPIReportCard label="HSR Promedio" value={`${reportData.gpsKPIs.hsr.toFixed(0)}m`} icon="fa-fire" />
                         <KPIReportCard label="Vel. Máxima" value={`${reportData.gpsKPIs.velMax.toFixed(1)}km/h`} icon="fa-bolt" />
@@ -900,69 +902,69 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                   )}
 
                   <section>
-                    <h3 className="text-xs font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-6 uppercase tracking-widest italic">
+                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-4 uppercase tracking-widest italic">
                       2. BIENESTAR INDIVIDUAL {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}
                     </h3>
-                    <div className="overflow-hidden rounded-[40px] border border-slate-100 shadow-sm">
+                    <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
                       <table className="w-full text-center border-collapse bg-white">
-                        <thead className="bg-[#0b1220] text-white text-[9px] font-black uppercase tracking-[0.2em]">
+                        <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.2em]">
                           <tr>
-                            <th className="px-8 py-6 text-left">ATLETA</th>
-                            <th className="px-2 py-6">FATIGA</th>
-                            <th className="px-2 py-6">SUEÑO</th>
-                            <th className="px-2 py-6">DOLOR</th>
-                            <th className="px-2 py-6">ESTRÉS</th>
-                            <th className="px-2 py-6">ÁNIMO</th>
-                            <th className="px-2 py-6">PROM.</th>
-                            <th className="px-4 py-6">ZONA MOLESTIA</th>
-                            <th className="px-4 py-6">ESTADO SALUD</th>
-                            <th className="px-6 py-6 text-right">STATUS</th>
+                            <th className="px-4 py-2 text-left">ATLETA</th>
+                            <th className="px-1 py-2">FATIGA</th>
+                            <th className="px-1 py-2">SUEÑO</th>
+                            <th className="px-1 py-2">DOLOR</th>
+                            <th className="px-1 py-2">ESTRÉS</th>
+                            <th className="px-1 py-2">ÁNIMO</th>
+                            <th className="px-1 py-2">PROM.</th>
+                            <th className="px-2 py-2">ZONA MOLESTIA</th>
+                            <th className="px-2 py-2">ESTADO SALUD</th>
+                            <th className="px-4 py-2 text-right">STATUS</th>
                           </tr>
                         </thead>
-                        <tbody className="text-[10px] font-bold text-slate-900">
+                        <tbody className="text-[8px] font-bold text-slate-900">
                           {chunk.map(({ player, data }) => {
                             const avg = data ? (data.fatigue + data.sleep + data.mood) / 3 : 0;
                             const isSano = !data?.illness_symptoms || data.illness_symptoms.length === 0;
                             const hasPain = data?.soreness_areas && data.soreness_areas.length > 0;
 
                             return (
-                              <tr key={player.id} className="border-b border-slate-50 h-20 hover:bg-slate-50/50 transition-colors">
-                                <td className="px-8 py-2 text-left">
-                                   <span className="text-sm font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
-                                   <span className="text-[8px] font-bold uppercase text-slate-400 mt-1.5 block tracking-widest">{player.club_name || player.club || 'SIN CLUB'}</span>
+                              <tr key={player.id} className="border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors">
+                                <td className="px-4 py-0.5 text-left">
+                                   <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
+                                   <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player.club_name || player.club || 'SIN CLUB'}</span>
                                 </td>
-                                <td className="px-2 py-2">
-                                  {data ? <span className={`w-10 h-10 flex items-center justify-center mx-auto rounded-full text-white font-black shadow-sm ${getScoreColor(data.fatigue)}`}>{data.fatigue}</span> : '-'}
+                                <td className="px-1 py-0.5">
+                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.fatigue)}`}>{data.fatigue}</span> : '-'}
                                 </td>
-                                <td className="px-2 py-2">
-                                  {data ? <span className={`w-10 h-10 flex items-center justify-center mx-auto rounded-full text-white font-black shadow-sm ${getScoreColor(data.sleep)}`}>{data.sleep}</span> : '-'}
+                                <td className="px-1 py-0.5">
+                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.sleep)}`}>{data.sleep}</span> : '-'}
                                 </td>
-                                <td className="px-2 py-2">
-                                  {data ? <span className={`w-10 h-10 flex items-center justify-center mx-auto rounded-full text-white font-black shadow-sm ${getScoreColor(data.soreness)}`}>{data.soreness}</span> : '-'}
+                                <td className="px-1 py-0.5">
+                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.soreness)}`}>{data.soreness}</span> : '-'}
                                 </td>
-                                <td className="px-2 py-2">
-                                  {data ? <span className={`w-10 h-10 flex items-center justify-center mx-auto rounded-full text-white font-black shadow-sm ${getScoreColor(data.stress)}`}>{data.stress}</span> : '-'}
+                                <td className="px-1 py-0.5">
+                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.stress)}`}>{data.stress}</span> : '-'}
                                 </td>
-                                <td className="px-2 py-2">
-                                  {data ? <span className={`w-10 h-10 flex items-center justify-center mx-auto rounded-full text-white font-black shadow-sm ${getScoreColor(data.mood)}`}>{data.mood}</span> : '-'}
+                                <td className="px-1 py-0.5">
+                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.mood)}`}>{data.mood}</span> : '-'}
                                 </td>
-                                <td className="px-2 py-2 text-sm font-black italic text-[#0b1220]">{avg ? avg.toFixed(1) : '-'}</td>
-                                <td className="px-4 py-2">
-                                  <span className={`text-[9px] font-black italic uppercase px-4 py-1.5 rounded-full ${hasPain ? 'text-amber-600 bg-amber-50 border border-amber-100' : 'text-slate-300'}`}>
+                                <td className="px-1 py-0.5 text-[8px] font-black italic text-[#0b1220]">{avg ? avg.toFixed(1) : '-'}</td>
+                                <td className="px-2 py-0.5">
+                                  <span className={`text-[6px] font-black italic uppercase px-1.5 py-0.5 rounded-full ${hasPain ? 'text-amber-600 bg-amber-50 border border-amber-100' : 'text-slate-300'}`}>
                                     {hasPain ? data?.soreness_areas?.join(', ') : 'SIN DOLOR'}
                                   </span>
                                 </td>
-                                <td className="px-4 py-2">
-                                  <span className={`text-[9px] font-black italic uppercase px-4 py-1.5 rounded-full ${isSano ? 'text-emerald-600 bg-emerald-50 border border-emerald-100' : 'text-amber-600 bg-amber-50 border border-amber-100'}`}>
+                                <td className="px-2 py-0.5">
+                                  <span className={`text-[6px] font-black italic uppercase px-1.5 py-0.5 rounded-full ${isSano ? 'text-emerald-600 bg-emerald-50 border border-emerald-100' : 'text-amber-600 bg-amber-50 border border-amber-100'}`}>
                                     {isSano ? 'SANO' : data?.illness_symptoms?.join(', ')}
                                   </span>
                                 </td>
-                                <td className="px-6 py-2 text-right">
-                                  <div className="flex items-center justify-end gap-2 text-emerald-500 font-black italic">
-                                    <div className="w-6 h-6 bg-emerald-50 rounded-full flex items-center justify-center">
-                                      <i className="fa-solid fa-check text-[10px]"></i>
+                                <td className="px-4 py-0.5 text-right">
+                                  <div className="flex items-center justify-end gap-1 text-emerald-500 font-black italic">
+                                    <div className="w-3 h-3 bg-emerald-50 rounded-full flex items-center justify-center">
+                                      <i className="fa-solid fa-check text-[6px]"></i>
                                     </div>
-                                    <span className="text-[10px] uppercase tracking-widest">OK</span>
+                                    <span className="text-[7px] uppercase tracking-widest">OK</span>
                                   </div>
                                 </td>
                               </tr>
@@ -970,14 +972,14 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                           })}
                           {/* FILA DE PROMEDIOS */}
                           {chunkIdx === wellnessChunks.length - 1 && reportData.wellAvg && (
-                            <tr className="bg-[#0b1220] text-white font-black italic h-20">
-                              <td className="px-8 py-2 text-left uppercase tracking-[0.2em] text-xs">Promedio Grupal</td>
-                              <td className="px-2 py-2 text-emerald-400 text-xl">{reportData.wellAvg.fatigue.toFixed(1)}</td>
-                              <td className="px-2 py-2 text-emerald-400 text-xl">{reportData.wellAvg.sleep.toFixed(1)}</td>
-                              <td className="px-2 py-2 text-emerald-400 text-xl">{reportData.wellAvg.soreness.toFixed(1)}</td>
-                              <td className="px-2 py-2 text-emerald-400 text-xl">{reportData.wellAvg.stress.toFixed(1)}</td>
-                              <td className="px-2 py-2 text-emerald-400 text-xl">{reportData.wellAvg.mood.toFixed(1)}</td>
-                              <td className="px-2 py-2 text-red-500 text-2xl">
+                            <tr className="bg-[#0b1220] text-white font-black italic h-8">
+                              <td className="px-4 py-0.5 text-left uppercase tracking-[0.2em] text-[8px]">Promedio Grupal</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.fatigue.toFixed(1)}</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.sleep.toFixed(1)}</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.soreness.toFixed(1)}</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.stress.toFixed(1)}</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.mood.toFixed(1)}</td>
+                              <td className="px-1 py-0.5 text-red-500 text-base">
                                 {((reportData.wellAvg.fatigue + reportData.wellAvg.sleep + reportData.wellAvg.mood) / 3).toFixed(1)}
                               </td>
                               <td colSpan={3} className="bg-[#0b1220]"></td>
@@ -1005,39 +1007,39 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                     total={totalPages} 
                   />
                   <section>
-                    <h3 className="text-xs font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-6 uppercase tracking-widest italic">
+                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-4 uppercase tracking-widest italic">
                       3. CONTROL DE CARGA INTERNA {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}
                     </h3>
-                    <div className="overflow-hidden rounded-[40px] border border-slate-100 shadow-sm">
+                    <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
                       <table className="w-full text-center border-collapse bg-white">
-                        <thead className="bg-[#0b1220] text-white text-[9px] font-black uppercase tracking-[0.2em]">
+                        <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.2em]">
                           <tr>
-                            <th className="px-8 py-6 text-left">ATLETA</th>
-                            <th className="px-4 py-6">SESIONES</th>
-                            <th className="px-4 py-6">RPE MEDIA</th>
-                            <th className="px-4 py-6">MINUTOS TOT</th>
-                            <th className="px-4 py-6">CARGA (UA)</th>
-                            <th className="px-8 py-6 text-right">ESTADO</th>
+                            <th className="px-4 py-2 text-left">ATLETA</th>
+                            <th className="px-2 py-2">SESIONES</th>
+                            <th className="px-2 py-2">RPE MEDIA</th>
+                            <th className="px-2 py-2">MINUTOS TOT</th>
+                            <th className="px-2 py-2">CARGA (UA)</th>
+                            <th className="px-4 py-2 text-right">ESTADO</th>
                           </tr>
                         </thead>
-                        <tbody className="text-[10px] font-bold text-slate-900">
+                        <tbody className="text-[8px] font-bold text-slate-900">
                           {chunk.map(({ player, sessions }) => {
                             const rpeAvg = sessions.length ? sessions.reduce((acc, c) => acc + c.rpe, 0) / sessions.length : 0;
                             const totalMin = sessions.reduce((acc, c) => acc + c.duration, 0);
                             const totalLoad = sessions.reduce((acc, c) => acc + c.load, 0);
                             const status = getLoadStatus(totalLoad);
                             return (
-                              <tr key={player.id} className="border-b border-slate-50 h-20 hover:bg-slate-50/50 transition-colors">
-                                <td className="px-8 py-2 text-left">
-                                   <span className="text-sm font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
-                                   <span className="text-[8px] font-bold uppercase text-slate-400 mt-1.5 block tracking-widest">{player.club_name || player.club || 'SIN CLUB'}</span>
+                              <tr key={player.id} className="border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors">
+                                <td className="px-4 py-0.5 text-left">
+                                   <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
+                                   <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player.club_name || player.club || 'SIN CLUB'}</span>
                                 </td>
-                                <td className="px-4 py-2 text-slate-400 font-black italic text-sm">{sessions.length}</td>
-                                <td className="px-4 py-2 font-black text-lg italic text-[#0b1220]">{rpeAvg ? rpeAvg.toFixed(1) : '—'}</td>
-                                <td className="px-4 py-2 text-slate-500 font-black italic">{totalMin}'</td>
-                                <td className="px-4 py-2 font-black text-lg italic text-red-600">{totalLoad}</td>
-                                <td className="px-8 py-2 text-right">
-                                  <span className={`px-4 py-1.5 rounded-full text-[9px] font-black italic tracking-widest border ${status.color.replace('text-', 'border-').replace('600', '200')} ${status.color.replace('text-', 'bg-').replace('600', '50')} ${status.color}`}>
+                                <td className="px-2 py-0.5 text-slate-400 font-black italic text-[8px]">{sessions.length}</td>
+                                <td className="px-2 py-0.5 font-black text-[10px] italic text-[#0b1220]">{rpeAvg ? rpeAvg.toFixed(1) : '—'}</td>
+                                <td className="px-2 py-0.5 text-slate-500 font-black italic text-[8px]">{totalMin}'</td>
+                                <td className="px-2 py-0.5 font-black text-[10px] italic text-red-600">{totalLoad}</td>
+                                <td className="px-4 py-0.5 text-right">
+                                  <span className={`px-1.5 py-0.5 rounded-full text-[6px] font-black italic tracking-widest border ${status.color.replace('text-', 'border-').replace('600', '200')} ${status.color.replace('text-', 'bg-').replace('600', '50')} ${status.color}`}>
                                     {status.label}
                                   </span>
                                 </td>
@@ -1046,13 +1048,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                           })}
                           {/* FILA DE PROMEDIOS */}
                           {chunkIdx === loadChunks.length - 1 && reportData.loadAvg && (
-                            <tr className="bg-[#0b1220] text-white font-black italic h-20">
-                              <td className="px-8 py-2 text-left uppercase tracking-[0.2em] text-xs">Promedio Grupal</td>
-                              <td className="px-4 py-2">—</td>
-                              <td className="px-4 py-2 text-emerald-400 text-2xl">{reportData.loadAvg.rpe.toFixed(1)}</td>
-                              <td className="px-4 py-2 text-emerald-400 text-lg">{reportData.loadAvg.duration.toFixed(0)}'</td>
-                              <td className="px-4 py-2 text-red-500 text-2xl">{reportData.loadAvg.load.toFixed(0)}</td>
-                              <td className="px-8 py-2 text-right text-slate-400 text-[10px] tracking-widest bg-[#0b1220]">UA TOTAL</td>
+                            <tr className="bg-[#0b1220] text-white font-black italic h-8">
+                              <td className="px-4 py-0.5 text-left uppercase tracking-[0.2em] text-[8px]">Promedio Grupal</td>
+                              <td className="px-2 py-0.5">—</td>
+                              <td className="px-2 py-0.5 text-emerald-400 text-sm">{reportData.loadAvg.rpe.toFixed(1)}</td>
+                              <td className="px-2 py-0.5 text-emerald-400 text-xs">{reportData.loadAvg.duration.toFixed(0)}'</td>
+                              <td className="px-2 py-0.5 text-red-500 text-sm">{reportData.loadAvg.load.toFixed(0)}</td>
+                              <td className="px-4 py-0.5 text-right text-slate-400 text-[7px] tracking-widest bg-[#0b1220]">UA TOTAL</td>
                             </tr>
                           )}
                         </tbody>
@@ -1077,61 +1079,61 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                     total={totalPages} 
                   />
                   <section>
-                    <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-6 uppercase tracking-widest italic">
+                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-4 uppercase tracking-widest italic">
                       4. RENDIMIENTO INDIVIDUAL GPS {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}
                     </h3>
-                    <div className="overflow-hidden rounded-[40px] border border-slate-100 shadow-sm">
+                    <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
                       <table className="w-full text-center border-collapse bg-white">
-                        <thead className="bg-[#0b1220] text-white text-[9px] font-black uppercase tracking-[0.2em]">
+                        <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.2em]">
                           <tr>
-                            <th className="px-8 py-6 text-left">ATLETA</th>
-                            <th className="px-2 py-6">MIN</th>
-                            <th className="px-2 py-6">DIST (M)</th>
-                            <th className="px-2 py-6">M/MIN</th>
-                            <th className="px-2 py-6">HSR</th>
-                            <th className="px-2 py-6">AI</th>
-                            <th className="px-2 py-6">SPRINT</th>
-                            <th className="px-2 py-6">VEL MAX</th>
-                            <th className="px-6 py-6 text-right">ACC/DECC</th>
+                            <th className="px-4 py-2 text-left">ATLETA</th>
+                            <th className="px-1 py-2">MIN</th>
+                            <th className="px-1 py-2">DIST (M)</th>
+                            <th className="px-1 py-2">M/MIN</th>
+                            <th className="px-1 py-2">HSR</th>
+                            <th className="px-1 py-2">AI</th>
+                            <th className="px-1 py-2">SPRINT</th>
+                            <th className="px-1 py-2">VEL MAX</th>
+                            <th className="px-4 py-2 text-right">ACC/DECC</th>
                           </tr>
                         </thead>
-                        <tbody className="text-[10px] font-mono font-black text-slate-900">
+                        <tbody className="text-[8px] font-mono font-black text-slate-900">
                           {chunk.map((row) => {
                             const player = row.players;
                             const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.id_del_jugador}`;
                             return (
-                              <tr key={row.id} className="border-b border-slate-50 h-20 hover:bg-slate-50/50 transition-colors">
-                                <td className="px-8 py-2 text-left font-sans">
-                                   <span className="text-sm font-black italic uppercase block leading-none text-[#0b1220]">{playerName}</span>
-                                   <span className="text-[8px] font-bold uppercase text-slate-400 mt-1.5 block tracking-widest">{player?.club_name || player?.club || 'SIN CLUB'}</span>
+                              <tr key={row.id} className="border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors">
+                                <td className="px-4 py-0.5 text-left font-sans">
+                                   <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{playerName}</span>
+                                   <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player?.club_name || player?.club || 'SIN CLUB'}</span>
                                 </td>
-                                <td className="px-2 py-2 text-slate-400 italic">{row.minutos?.toFixed(0) || '0'}</td>
-                                <td className="px-2 py-2 text-[#0b1220] italic text-sm">{row.dist_total_m?.toFixed(0) || '0'}</td>
-                                <td className="px-2 py-2">
-                                  <span className={`px-3 py-1 rounded-full text-xs ${getIntensityStyle(row.m_por_min || 0)}`}>
+                                <td className="px-1 py-0.5 text-slate-400 italic text-[8px]">{row.minutos?.toFixed(0) || '0'}</td>
+                                <td className="px-1 py-0.5 text-[#0b1220] italic text-[8px]">{row.dist_total_m?.toFixed(0) || '0'}</td>
+                                <td className="px-1 py-0.5">
+                                  <span className={`px-1 py-0.5 rounded-full text-[7px] ${getIntensityStyle(row.m_por_min || 0)}`}>
                                     {row.m_por_min?.toFixed(1) || '0.0'}
                                   </span>
                                 </td>
-                                <td className="px-2 py-2 text-slate-500 italic">{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
-                                <td className="px-2 py-2 text-slate-500 italic">{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
-                                <td className="px-2 py-2 text-blue-600 italic">{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
-                                <td className="px-2 py-2 text-red-600 text-lg italic">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
-                                <td className="px-6 py-2 text-right text-[#0b1220] italic">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
+                                <td className="px-1 py-0.5 text-slate-500 italic text-[8px]">{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
+                                <td className="px-1 py-0.5 text-slate-500 italic text-[8px]">{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
+                                <td className="px-1 py-0.5 text-blue-600 italic text-[8px]">{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
+                                <td className="px-1 py-0.5 text-red-600 text-[10px] italic">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
+                                <td className="px-4 py-0.5 text-right text-[#0b1220] italic text-[8px]">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
                               </tr>
                             );
                           })}
                           {/* FILA DE PROMEDIOS */}
                           {chunkIdx === gpsChunks.length - 1 && reportData.gpsAvg && (
-                            <tr className="bg-[#0b1220] text-white font-black italic h-20">
-                              <td className="px-8 py-2 text-left uppercase font-sans tracking-[0.2em] text-xs">Promedio Grupal</td>
-                              <td className="px-2 py-2 text-emerald-400 text-lg">{reportData.gpsAvg.minutos.toFixed(0)}</td>
-                              <td className="px-2 py-2 text-emerald-400 text-lg">{reportData.gpsAvg.dist.toFixed(0)}</td>
-                              <td className="px-2 py-2 text-red-500 text-2xl">{reportData.gpsAvg.mpm.toFixed(1)}</td>
-                              <td className="px-2 py-2 text-emerald-400 text-lg">{reportData.gpsAvg.hsr.toFixed(0)}</td>
-                              <td className="px-2 py-2 text-emerald-400 text-lg">{reportData.gpsAvg.ai.toFixed(0)}</td>
-                              <td className="px-2 py-2 text-emerald-400 text-lg">{reportData.gpsAvg.sprint.toFixed(0)}</td>
-                              <td className="px-2 py-2 text-red-500 text-2xl">{reportData.gpsAvg.vmax.toFixed(1)}</td>
-                              <td className="px-6 py-2 text-right text-emerald-400 text-lg bg-[#0b1220]">{reportData.gpsAvg.acc.toFixed(1)}</td>
+                            <tr className="bg-[#0b1220] text-white font-black italic h-8">
+                              <td className="px-4 py-0.5 text-left uppercase font-sans tracking-[0.2em] text-[8px]">Promedio Grupal</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.minutos.toFixed(0)}</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.dist.toFixed(0)}</td>
+                              <td className="px-1 py-0.5 text-red-500 text-sm">{reportData.gpsAvg.mpm.toFixed(1)}</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.hsr.toFixed(0)}</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.ai.toFixed(0)}</td>
+                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.sprint.toFixed(0)}</td>
+                              <td className="px-1 py-0.5 text-red-500 text-sm">{reportData.gpsAvg.vmax.toFixed(1)}</td>
+                              <td className="px-4 py-0.5 text-right text-emerald-400 text-xs bg-[#0b1220]">{reportData.gpsAvg.acc.toFixed(1)}</td>
                             </tr>
                           )}
                         </tbody>
@@ -1153,43 +1155,43 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                 page={currentPageNum} 
                 total={totalPages} 
               />
-              <section className="mb-12">
-                <h3 className="text-xs font-black text-slate-900 border-l-4 border-blue-500 pl-4 mb-6 uppercase tracking-widest italic">5. ANÁLISIS DE INTENSIDAD POR TAREA (MIN / AVG / MAX)</h3>
-                <div className="overflow-hidden rounded-[40px] border border-slate-100 shadow-sm">
+              <section className="mb-8">
+                <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-blue-500 pl-4 mb-4 uppercase tracking-widest italic">5. ANÁLISIS DE INTENSIDAD POR TAREA (MIN / AVG / MAX)</h3>
+                <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
                   <table className="w-full text-center border-collapse bg-white">
-                    <thead className="bg-[#0b1220] text-white text-[8px] font-black uppercase tracking-[0.1em]">
+                    <thead className="bg-[#0b1220] text-white text-[6px] font-black uppercase tracking-[0.1em]">
                       <tr>
-                        <th className="px-6 py-5 text-left">TAREA / BLOQUE</th>
-                        <th className="px-4 py-5">DISTANCIA (m)</th>
-                        <th className="px-4 py-5">INTENSIDAD (m/min)</th>
-                        <th className="px-4 py-5">HSR (&gt;20 km/h)</th>
-                        <th className="px-4 py-5">VEL MAX (km/h)</th>
-                        <th className="px-6 py-5 text-right">ACC/DECC AI</th>
+                        <th className="px-4 py-2 text-left">TAREA / BLOQUE</th>
+                        <th className="px-2 py-2">DISTANCIA (m)</th>
+                        <th className="px-2 py-2">INTENSIDAD (m/min)</th>
+                        <th className="px-2 py-2">HSR (&gt;20 km/h)</th>
+                        <th className="px-2 py-2">VEL MAX (km/h)</th>
+                        <th className="px-4 py-2 text-right">ACC/DECC AI</th>
                       </tr>
                     </thead>
-                    <tbody className="text-[9px] font-bold text-slate-900 italic uppercase">
+                    <tbody className="text-[7px] font-bold text-slate-900 italic uppercase">
                       {reportData.taskSummary.map((task, idx) => (
-                        <tr key={idx} className="border-b border-slate-50 h-16">
-                          <td className="px-6 py-3 text-left font-black bg-slate-50/50 text-[#0b1220]">{task.name}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex justify-between text-[7px] opacity-40 px-2"><span>{task.dist.min.toFixed(0)}</span><span>{task.dist.max.toFixed(0)}</span></div>
-                            <div className="text-[11px] font-black">{task.dist.avg.toFixed(0)}</div>
+                        <tr key={idx} className="border-b border-slate-50 h-9">
+                          <td className="px-4 py-1 text-left font-black bg-slate-50/50 text-[#0b1220]">{task.name}</td>
+                          <td className="px-2 py-1">
+                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.dist.min.toFixed(0)}</span><span>{task.dist.max.toFixed(0)}</span></div>
+                            <div className="text-[9px] font-black">{task.dist.avg.toFixed(0)}</div>
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex justify-between text-[7px] opacity-40 px-2"><span>{task.mpm.min.toFixed(1)}</span><span>{task.mpm.max.toFixed(1)}</span></div>
-                            <div className={`text-[10px] font-black px-4 py-1 rounded-full inline-block shadow-sm ${getIntensityStyle(task.mpm.avg)}`}>{task.mpm.avg.toFixed(1)}</div>
+                          <td className="px-2 py-1">
+                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.mpm.min.toFixed(1)}</span><span>{task.mpm.max.toFixed(1)}</span></div>
+                            <div className={`text-[8px] font-black px-2 py-0.5 rounded-full inline-block shadow-sm ${getIntensityStyle(task.mpm.avg)}`}>{task.mpm.avg.toFixed(1)}</div>
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex justify-between text-[7px] opacity-40 px-2"><span>{task.hsr.min.toFixed(0)}</span><span>{task.hsr.max.toFixed(0)}</span></div>
-                            <div className="text-[11px] font-black">{task.hsr.avg.toFixed(0)}</div>
+                          <td className="px-2 py-1">
+                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.hsr.min.toFixed(0)}</span><span>{task.hsr.max.toFixed(0)}</span></div>
+                            <div className="text-[9px] font-black">{task.hsr.avg.toFixed(0)}</div>
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex justify-between text-[7px] opacity-40 px-2"><span>{task.vmax.min.toFixed(1)}</span><span>{task.vmax.max.toFixed(1)}</span></div>
-                            <div className="text-[11px] font-black text-red-600">{task.vmax.avg.toFixed(1)}</div>
+                          <td className="px-2 py-1">
+                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.vmax.min.toFixed(1)}</span><span>{task.vmax.max.toFixed(1)}</span></div>
+                            <div className="text-[9px] font-black text-red-600">{task.vmax.avg.toFixed(1)}</div>
                           </td>
-                          <td className="px-6 py-3 text-right">
-                            <div className="flex justify-between text-[7px] opacity-40 px-2"><span>{task.acc.min.toFixed(1)}</span><span>{task.acc.max.toFixed(1)}</span></div>
-                            <div className="text-[11px] font-black">{task.acc.avg.toFixed(1)}</div>
+                          <td className="px-4 py-1 text-right">
+                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.acc.min.toFixed(1)}</span><span>{task.acc.max.toFixed(1)}</span></div>
+                            <div className="text-[9px] font-black">{task.acc.avg.toFixed(1)}</div>
                           </td>
                         </tr>
                       ))}
@@ -1275,27 +1277,27 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
   };
 
   return (
-    <div className="hidden print:block mb-8">
-      <div className="flex justify-between items-center border-b-4 border-slate-900 pb-6">
-        <div className="flex items-center gap-6">
-          <div className="w-16 h-16 bg-slate-900 text-white flex items-center justify-center font-black text-3xl italic rounded-2xl shadow-lg">LR</div>
+    <div className="hidden print:block mb-4">
+      <div className="flex justify-between items-center border-b-2 border-slate-900 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-slate-900 text-white flex items-center justify-center font-black text-xl italic rounded-lg shadow-md">LR</div>
           <div>
-            <h1 className="text-2xl font-black text-slate-900 leading-none uppercase tracking-tighter italic">REPORTE TÉCNICO DE RENDIMIENTO</h1>
-            <p className="text-[8px] font-bold text-slate-500 uppercase tracking-[0.5em] mt-2 opacity-60">PERFORMANCE HUB • SELECCIÓN NACIONAL • ÁREA FÍSICA</p>
+            <h1 className="text-lg font-black text-slate-900 leading-none uppercase tracking-tighter italic">REPORTE TÉCNICO DE RENDIMIENTO</h1>
+            <p className="text-[6px] font-bold text-slate-500 uppercase tracking-[0.4em] mt-1 opacity-60">PERFORMANCE HUB • SELECCIÓN NACIONAL • ÁREA FÍSICA</p>
           </div>
         </div>
-        <div className="bg-slate-50 p-4 rounded-[24px] border border-slate-200 flex flex-col items-end min-w-[240px] shadow-sm">
-           <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Contexto de Proceso</span>
-           <p className="text-sm font-black text-slate-900 uppercase italic tracking-tighter">FECHA: {selectedDate}</p>
-           <p className="text-xs font-black text-red-600 uppercase tracking-widest mt-0.5">CATEGORÍA: {formatCategoryLabel(selectedCategory)}</p>
+        <div className="bg-slate-50 p-1.5 rounded-[12px] border border-slate-200 flex flex-col items-end min-w-[120px] shadow-sm">
+           <span className="text-[4px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Contexto de Proceso</span>
+           <p className="text-[8px] font-black text-slate-900 uppercase italic tracking-tighter">FECHA: {selectedDate}</p>
+           <p className="text-[7px] font-black text-red-600 uppercase tracking-widest mt-0.5">CATEGORÍA: {formatCategoryLabel(selectedCategory)}</p>
         </div>
       </div>
-      <div className="mt-4 flex justify-between items-center text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] px-2">
+      <div className="mt-1.5 flex justify-between items-center text-[7px] font-black text-slate-400 uppercase tracking-[0.15em] px-2">
         <span className="flex items-center gap-2">
           <i className="fa-solid fa-location-dot text-red-600"></i>
           Sede: {activeMicrocycle?.city || 'SANTIAGO'} — {activeMicrocycle ? `Microciclo #${activeMicrocycle.id}` : 'SIN MICROCICLO'}
         </span>
-        <span className="text-slate-900 bg-slate-100 px-3 py-1 rounded-full">HOJA {page} / {total}</span>
+        <span className="text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded-full">HOJA {page} / {total}</span>
       </div>
     </div>
   );
@@ -1303,10 +1305,10 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
 
 function PrintFooter({ page }: { page: number }) {
   return (
-    <div className="hidden print:block absolute bottom-8 left-8 right-8 border-t border-slate-100 pt-4">
+    <div className="hidden print:block absolute bottom-4 left-8 right-8 border-t border-slate-100 pt-2">
       <div className="flex justify-between items-center">
-        <p className="text-[7px] font-black text-slate-300 uppercase tracking-[0.3em]">Documento Confidencial • Área Física Selección Nacional • © 2026</p>
-        <p className="text-[8px] font-black text-slate-900">Pág {page}</p>
+        <p className="text-[5px] font-black text-slate-300 uppercase tracking-[0.2em]">Documento Confidencial • Área Física Selección Nacional • © 2026</p>
+        <p className="text-[6px] font-black text-slate-900">Pág {page}</p>
       </div>
     </div>
   );
@@ -1314,13 +1316,13 @@ function PrintFooter({ page }: { page: number }) {
 
 function KPIReportCard({ label, value, icon }: { label: string, value: string | number, icon: string }) {
   return (
-    <div className="bg-slate-50 p-5 rounded-[40px] border border-slate-100 flex items-center gap-4 transition-all print:h-24 shadow-sm">
-      <div className="w-12 h-12 bg-white text-red-600 rounded-full flex items-center justify-center text-lg shadow-sm border border-slate-50">
+    <div className="bg-slate-50 p-1.5 rounded-[15px] border border-slate-100 flex items-center gap-2 transition-all print:h-10 shadow-sm">
+      <div className="w-5 h-5 bg-white text-red-600 rounded-full flex items-center justify-center text-[10px] shadow-sm border border-slate-50">
         <i className={`fa-solid ${icon}`}></i>
       </div>
       <div>
-        <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none mb-1.5">{label}</p>
-        <p className="text-xl font-black italic tracking-tighter text-[#0b1220]">{value}</p>
+        <p className="text-[4px] font-black text-slate-400 uppercase tracking-[0.15em] leading-none mb-0.5">{label}</p>
+        <p className="text-[10px] font-black italic tracking-tighter text-[#0b1220] leading-none">{value}</p>
       </div>
     </div>
   );
