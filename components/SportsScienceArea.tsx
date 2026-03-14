@@ -8,7 +8,7 @@ import {
   ReferenceLine, ErrorBar
 } from 'recharts';
 
-type TabId = 'individual' | 'grupal' | 'laboratorio' | 'salud' | 'tabla';
+type TabId = 'individual' | 'grupal' | 'laboratorio' | 'salud' | 'tabla' | 'categorias' | 'insights';
 
 interface PlayerData {
   id_del_jugador: number;
@@ -219,6 +219,8 @@ const SportsScienceArea: React.FC = () => {
             <TabButton active={activeTab === 'individual'} label="Huella del Atleta" icon="fa-fingerprint" onClick={() => setActiveTab('individual')} />
             <TabButton active={activeTab === 'grupal'} label="Análisis Grupal" icon="fa-users-rays" onClick={() => setActiveTab('grupal')} />
             <TabButton active={activeTab === 'laboratorio'} label="Laboratorio" icon="fa-flask-vial" onClick={() => setActiveTab('laboratorio')} />
+            <TabButton active={activeTab === 'categorias'} label="Categorías" icon="fa-layer-group" onClick={() => setActiveTab('categorias')} />
+            <TabButton active={activeTab === 'insights'} label="Insights" icon="fa-lightbulb" onClick={() => setActiveTab('insights')} />
             <TabButton active={activeTab === 'salud'} label="Salud y Carga" icon="fa-heart-pulse" onClick={() => setActiveTab('salud')} />
             <TabButton active={activeTab === 'tabla'} label="Tabla de Datos" icon="fa-table" onClick={() => setActiveTab('tabla')} />
           </div>
@@ -363,6 +365,28 @@ const SportsScienceArea: React.FC = () => {
         )}
         {activeTab === 'laboratorio' && (
           <Laboratorio 
+            players={players}
+            imtp={imtpData}
+            speed={speedData}
+            vo2max={vo2maxData}
+            antropometria={antropometria}
+            selectedAnios={selectedAnios}
+            selectedPosiciones={selectedPosiciones}
+          />
+        )}
+        {activeTab === 'categorias' && (
+          <Categorias 
+            players={players}
+            imtp={imtpData}
+            speed={speedData}
+            vo2max={vo2maxData}
+            antropometria={antropometria}
+            selectedAnios={selectedAnios}
+            selectedPosiciones={selectedPosiciones}
+          />
+        )}
+        {activeTab === 'insights' && (
+          <CorrelationsInsights 
             players={players}
             imtp={imtpData}
             speed={speedData}
@@ -1222,6 +1246,320 @@ const SquadAnalytics = ({ anios, players, gps, speed, imtp, vo2max, antropometri
           ))}
         </div>
       </div>
+    </div>
+  );
+};
+
+const CorrelationsInsights = ({ players, imtp, speed, vo2max, antropometria, selectedAnios, selectedPosiciones }: { 
+  players: PlayerData[], 
+  imtp: IMTPData[], 
+  speed: SpeedTestData[], 
+  vo2max: VO2MaxData[], 
+  antropometria: AntropometriaData[],
+  selectedAnios: number[],
+  selectedPosiciones: string[]
+}) => {
+  const topCorrelations = useMemo(() => {
+    const filteredPlayers = players.filter(p => {
+      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(new Date(p.fecha_nacimiento).getFullYear());
+      const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
+      return yearMatch && posMatch;
+    });
+
+    const playersData = filteredPlayers.map(p => {
+      const pImtp = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
+      const pSpeed = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+      const pVo2 = vo2max.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+      const pAntro = antropometria.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
+      
+      return {
+        ...pImtp,
+        ...pSpeed,
+        ...pVo2,
+        ...pAntro
+      };
+    });
+
+    const correlations: { m1: any, m2: any, r: number, count: number }[] = [];
+
+    for (let i = 0; i < METRICS_OPTIONS.length; i++) {
+      for (let j = i + 1; j < METRICS_OPTIONS.length; j++) {
+        const m1 = METRICS_OPTIONS[i];
+        const m2 = METRICS_OPTIONS[j];
+
+        const pairs = playersData
+          .map(p => ({ x: Number(p[m1.key as keyof typeof p]), y: Number(p[m2.key as keyof typeof p]) }))
+          .filter(p => !isNaN(p.x) && !isNaN(p.y) && p.x !== null && p.y !== null);
+
+        if (pairs.length > 5) {
+          const n = pairs.length;
+          let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+          for (const p of pairs) {
+            sumX += p.x;
+            sumY += p.y;
+            sumXY += p.x * p.y;
+            sumX2 += p.x * p.x;
+            sumY2 += p.y * p.y;
+          }
+          const num = (n * sumXY - sumX * sumY);
+          const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+          if (den !== 0) {
+            correlations.push({ m1, m2, r: num / den, count: n });
+          }
+        }
+      }
+    }
+
+    return correlations
+      .sort((a, b) => Math.abs(b.r) - Math.abs(a.r))
+      .slice(0, 10);
+  }, [players, imtp, speed, vo2max, antropometria, selectedAnios, selectedPosiciones]);
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-700">
+      <div className="bg-white rounded-[40px] p-8 md:p-12 shadow-sm border border-slate-100">
+        <div className="flex items-center gap-4 mb-10">
+          <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
+            <i className="fa-solid fa-wand-magic-sparkles text-xl"></i>
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">Top 10 Correlaciones</h2>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Descubrimientos automáticos basados en datos actuales</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {topCorrelations.map((corr, idx) => (
+            <div key={idx} className="group bg-slate-50 hover:bg-white hover:shadow-xl hover:scale-[1.02] transition-all duration-300 rounded-[32px] p-6 border border-transparent hover:border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-5">
+                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 font-black text-xs shadow-sm group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                  {idx + 1}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{corr.m1.label}</span>
+                    <i className="fa-solid fa-link text-[8px] text-slate-300"></i>
+                    <span className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{corr.m2.label}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="h-1.5 w-24 bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full ${Math.abs(corr.r) > 0.7 ? 'bg-emerald-500' : Math.abs(corr.r) > 0.4 ? 'bg-amber-500' : 'bg-slate-400'}`}
+                        style={{ width: `${Math.abs(corr.r) * 100}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">n={corr.count}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className={`text-xl font-black italic tracking-tighter ${Math.abs(corr.r) > 0.7 ? 'text-emerald-600' : Math.abs(corr.r) > 0.4 ? 'text-amber-600' : 'text-slate-600'}`}>
+                  {corr.r.toFixed(3)}
+                </p>
+                <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Coef. Pearson (R)</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {topCorrelations.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-[32px] border border-dashed border-slate-200">
+            <i className="fa-solid fa-magnifying-glass-chart text-slate-200 text-5xl mb-6"></i>
+            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No hay datos suficientes para generar insights</p>
+            <p className="text-[10px] text-slate-300 uppercase tracking-widest mt-2">Se requieren al menos 6 jugadores con datos cruzados</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios, selectedPosiciones }: { 
+  players: PlayerData[], 
+  imtp: IMTPData[], 
+  speed: SpeedTestData[], 
+  vo2max: VO2MaxData[], 
+  antropometria: AntropometriaData[],
+  selectedAnios: number[],
+  selectedPosiciones: string[]
+}) => {
+  const [metric1, setMetric1] = useState('imtp_fuerza_n');
+  const [metric2, setMetric2] = useState('vel_max_kmh');
+
+  const calculateStats = (metricKey: string) => {
+    const filteredPlayers = players.filter(p => {
+      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(new Date(p.fecha_nacimiento).getFullYear());
+      const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
+      return yearMatch && posMatch;
+    });
+
+    const values = filteredPlayers.map(p => {
+      let val: any = null;
+      if (metricKey === 'imtp_fuerza_n') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.imtp_fuerza_n;
+      else if (metricKey === 'vel_max_kmh') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_max_kmh;
+      else {
+        const option = METRICS_OPTIONS.find(o => o.key === metricKey);
+        if (option?.table === 'imtp') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
+        else if (option?.table === 'speed') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
+        else if (option?.table === 'vo2max') val = vo2max.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
+        else if (option?.table === 'antropometria') val = antropometria.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0]?.[metricKey as keyof AntropometriaData];
+      }
+      return Number(val);
+    }).filter(v => v !== null && !isNaN(v));
+
+    if (values.length === 0) return null;
+
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const std = Math.sqrt(values.map(x => Math.pow(x - avg, 2)).reduce((a, b) => a + b, 0) / values.length);
+
+    const distribution = {
+      elite: values.filter(v => v > avg + std).length,
+      competitive: values.filter(v => v > avg && v <= avg + std).length,
+      development: values.filter(v => v >= avg - std && v <= avg).length,
+      attention: values.filter(v => v < avg - std).length
+    };
+
+    return { avg, std, count: values.length, distribution };
+  };
+
+  const renderCategoryBox = (metricKey: string, setMetric: (val: string) => void, title: string) => {
+    const stats = calculateStats(metricKey);
+    const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
+
+    return (
+      <div className="bg-white rounded-[40px] p-8 md:p-12 shadow-sm border border-slate-100 flex flex-col">
+        <div className="flex flex-wrap items-center justify-between gap-6 mb-12">
+          <div className="flex items-center gap-4">
+            <div className="w-3 h-10 bg-red-600 rounded-full"></div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">{title}</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Benchmarks Estadísticos</p>
+            </div>
+          </div>
+          <select 
+            value={metricKey}
+            onChange={(e) => setMetric(e.target.value)}
+            className="bg-slate-50 border-none rounded-2xl px-6 py-3 text-xs font-black text-slate-600 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest transition-all"
+          >
+            {METRICS_OPTIONS.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+          </select>
+        </div>
+
+        {!stats ? (
+          <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-[32px] border border-dashed border-slate-200">
+            <i className="fa-solid fa-chart-line text-slate-300 text-4xl mb-4"></i>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sin datos suficientes para calcular</p>
+          </div>
+        ) : (
+          <div className="space-y-10">
+            {/* RESUMEN BASE */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-900 rounded-3xl p-6 text-white">
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Promedio (μ)</p>
+                  <p className="text-3xl font-black italic tracking-tighter">{stats.avg.toFixed(2)}</p>
+                </div>
+                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Desv. Estándar (σ)</p>
+                  <p className="text-3xl font-black italic tracking-tighter text-slate-900">±{stats.std.toFixed(2)}</p>
+                </div>
+              </div>
+              <div className="flex justify-center">
+                <div className="bg-slate-100/50 px-4 py-1.5 rounded-full flex items-center gap-2">
+                  <i className="fa-solid fa-users text-[10px] text-slate-400"></i>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Muestra Total: {stats.count} Jugadores</span>
+                </div>
+              </div>
+            </div>
+
+            {/* CATEGORÍAS */}
+            <div className="space-y-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Distribución por Niveles</p>
+              
+              <div className="grid grid-cols-1 gap-3">
+                {/* ELITE */}
+                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-200">
+                      <i className="fa-solid fa-crown text-sm"></i>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Nivel Élite</p>
+                      <p className="text-xs font-bold text-slate-500">Superior a +1σ ({stats.distribution.elite} jug.)</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-emerald-700 italic tracking-tighter">
+                      {'>'} {(stats.avg + stats.std).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* COMPETITIVO */}
+                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                      <i className="fa-solid fa-bolt text-sm"></i>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Nivel Competitivo</p>
+                      <p className="text-xs font-bold text-slate-500">Entre Promedio y +1σ ({stats.distribution.competitive} jug.)</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-blue-700 italic tracking-tighter">
+                      {stats.avg.toFixed(2)} - {(stats.avg + stats.std).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* DESARROLLO */}
+                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
+                      <i className="fa-solid fa-seedling text-sm"></i>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Nivel en Desarrollo</p>
+                      <p className="text-xs font-bold text-slate-500">Entre -1σ y Promedio ({stats.distribution.development} jug.)</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-amber-700 italic tracking-tighter">
+                      {(stats.avg - stats.std).toFixed(2)} - {stats.avg.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* ATENCION */}
+                <div className="bg-red-50 border border-red-100 rounded-2xl p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-200">
+                      <i className="fa-solid fa-triangle-exclamation text-sm"></i>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Nivel de Atención</p>
+                      <p className="text-xs font-bold text-slate-500">Inferior a -1σ ({stats.distribution.attention} jug.)</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-red-700 italic tracking-tighter">
+                      {'<'} {(stats.avg - stats.std).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+      {renderCategoryBox(metric1, setMetric1, "Caja de Análisis 1")}
+      {renderCategoryBox(metric2, setMetric2, "Caja de Análisis 2")}
     </div>
   );
 };
