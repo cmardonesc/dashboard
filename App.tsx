@@ -18,6 +18,7 @@ type MenuId =
   | 'fisica_carga_externa_total'
   | 'fisica_carga_externa_tareas'
   | 'fisica_reporte'
+  | 'fisica_vo2max'
   | 'medica'
   | 'nutricion'
   | 'citaciones'
@@ -26,6 +27,7 @@ type MenuId =
   | 'usuarios'
   | 'logs'
   | 'importar_datos'
+  | 'sports_science'
 
 export default function App() {
   const [loading, setLoading] = useState(true)

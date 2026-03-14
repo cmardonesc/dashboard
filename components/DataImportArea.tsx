@@ -12,6 +12,7 @@ interface ImportConfig {
   icon: string;
   description: string;
   fields: { key: string; label: string; required: boolean; type: 'number' | 'string' | 'date' }[];
+  conflictColumns: string[];
 }
 
 const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
@@ -20,6 +21,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'gps_import',
     icon: 'fa-solid fa-satellite-dish',
     description: 'Carga de datos GPS acumulados por sesión.',
+    conflictColumns: ['id_del_jugador', 'fecha'],
     fields: [
       { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
@@ -39,6 +41,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'gps_tareas',
     icon: 'fa-solid fa-stopwatch-20',
     description: 'Carga de datos GPS desglosados por ejercicio o tarea.',
+    conflictColumns: ['id_del_jugador', 'fecha', 'tarea'],
     fields: [
       { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Date', required: true, type: 'date' },
@@ -59,26 +62,70 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'antropometria',
     icon: 'fa-solid fa-ruler-combined',
     description: 'Carga de mediciones corporales y composición.',
+    conflictColumns: ['id_del_jugador', 'fecha_medicion'],
     fields: [
       { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha_medicion', label: 'Fecha Medición', required: true, type: 'date' },
       { key: 'masa_corporal_kg', label: 'Masa Corporal (kg)', required: true, type: 'number' },
       { key: 'talla_cm', label: 'Talla (cm)', required: true, type: 'number' },
+      { key: 'talla_sentada_cm', label: 'Talla Sentada (cm)', required: false, type: 'number' },
+      { key: 'masa_muscular_kg', label: 'Masa Muscular (kg)', required: false, type: 'number' },
       { key: 'masa_muscular_pct', label: 'Masa Muscular (%)', required: false, type: 'number' },
+      { key: 'masa_adiposa_kg', label: 'Masa Adiposa (kg)', required: false, type: 'number' },
       { key: 'masa_adiposa_pct', label: 'Masa Adiposa (%)', required: false, type: 'number' },
+      { key: 'masa_osea_kg', label: 'Masa Ósea (kg)', required: false, type: 'number' },
+      { key: 'masa_osea_pct', label: 'Masa Ósea (%)', required: false, type: 'number' },
+      { key: 'indice_imo', label: 'Índice IMO', required: false, type: 'number' },
+      { key: 'indice_imc', label: 'Índice IMC', required: false, type: 'number' },
       { key: 'sum_pliegues_6_mm', label: 'Suma 6 Pliegues (mm)', required: false, type: 'number' },
+      { key: 'sum_pliegues_8_mm', label: 'Suma 8 Pliegues (mm)', required: false, type: 'number' },
+      { key: 'somatotipo_endo', label: 'Somatotipo Endo', required: false, type: 'number' },
+      { key: 'somatotipo_meso', label: 'Somatotipo Meso', required: false, type: 'number' },
+      { key: 'somatotipo_ecto', label: 'Somatotipo Ecto', required: false, type: 'number' },
+      { key: 'maduracion_media', label: 'Maduración Media', required: false, type: 'number' },
+      { key: 'phv_media', label: 'PHV Media', required: false, type: 'number' },
+      { key: 'estatura_proy_media_cm', label: 'Estatura Proy Media (cm)', required: false, type: 'number' },
     ]
   },
   imtp: {
     label: 'IMTP (Fuerza)',
-    table: 'physical_tests',
+    table: 'evaluaciones_imtp_salto',
     icon: 'fa-solid fa-dumbbell',
     description: 'Isometric Mid-Thigh Pull - Test de fuerza máxima.',
+    conflictColumns: ['id_del_jugador', 'fecha_test'],
     fields: [
-      { key: 'id_del_jugador', label: 'JUGADOR', required: true, type: 'number' },
-      { key: 'fecha', label: 'FECHA TEST', required: true, type: 'date' },
-      { key: 'value', label: 'IMTP FUERZA (N)', required: true, type: 'number' },
-      { key: 'observation', label: 'IMTP DEBIL', required: false, type: 'string' },
+      { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
+      { key: 'id_del_jugador', label: 'ID JUGADOR', required: true, type: 'number' },
+      { key: 'fecha_test', label: 'FECHA TEST', required: true, type: 'date' },
+      { key: 'peso', label: 'PESO (kg)', required: false, type: 'number' },
+      { key: 'imtp_fuerza_n', label: 'IMTP FUERZA (N)', required: true, type: 'number' },
+      { key: 'imtp_f_relativa_n_kg', label: 'IMTP F. RELATIVA', required: false, type: 'number' },
+      { key: 'imtp_asimetria', label: 'IMTP ASIMETRIA', required: false, type: 'number' },
+      { key: 'imtp_debil', label: 'IMTP DEBIL', required: false, type: 'string' },
+      { key: 'fuerza_cmj', label: 'FUERZA CMJ', required: false, type: 'number' },
+      { key: 'cmj_rsi_mod', label: 'CMJ RSI MOD', required: false, type: 'number' },
+      { key: 'cmj_altura_salto_im', label: 'CMJ ALTURA IM (cm)', required: false, type: 'number' },
+      { key: 'cmj_salto_tv', label: 'CMJ SALTO TV', required: false, type: 'number' },
+      { key: 'cmj_peak_pot_relativa', label: 'CMJ POT. RELATIVA', required: false, type: 'number' },
+      { key: 'cmj_asimetria_aterrizaje', label: 'CMJ ASIM. ATERRIZAJE', required: false, type: 'number' },
+      { key: 'landing_n', label: 'LANDING (N)', required: false, type: 'number' },
+      { key: 'landing_relativo', label: 'LANDING RELATIVO', required: false, type: 'number' },
+      { key: 'cmj_pierna_debil', label: 'CMJ PIERNA DEBIL', required: false, type: 'string' },
+      { key: 'dsi_valor', label: 'DSI VALOR', required: false, type: 'number' },
+      { key: 'avk_peak_pot_relativa', label: 'AVK POT. RELATIVA', required: false, type: 'number' },
+      { key: 'avk_indice_uso_brazos_tv', label: 'AVK INDICE BRAZOS TV', required: false, type: 'number' },
+      { key: 'avk_x_tv', label: 'AVK X TV', required: false, type: 'number' },
+      { key: 'avk_x_im', label: 'AVK X IM', required: false, type: 'number' },
+      { key: 'avk_indice_uso_brazos_im', label: 'AVK INDICE BRAZOS IM', required: false, type: 'number' },
+      { key: 'avk_indice_brazos_im', label: 'AVK INDICE BRAZOS IM (Alt)', required: false, type: 'number' },
+      { key: 'slcmj_izq_altura_im', label: 'SLCJ IZQ ALTURA IM', required: false, type: 'number' },
+      { key: 'slcmj_izq_altura_tv', label: 'SLCJ IZQ ALTURA TV', required: false, type: 'number' },
+      { key: 'slcmj_der_altura_im', label: 'SLCJ DER ALTURA IM', required: false, type: 'number' },
+      { key: 'slcmj_der_altura_tv', label: 'SLCJ DER ALTURA TV', required: false, type: 'number' },
+      { key: 'slcmj_diferencia_pct_im', label: 'SLCJ DIFERENCIA % IM', required: false, type: 'number' },
+      { key: 'slcmj_diferencia_pct_tv', label: 'SLCJ DIFERENCIA % TV', required: false, type: 'number' },
+      { key: 'deficit_bilateral', label: 'DEFICIT BILATERAL', required: false, type: 'number' },
+      { key: 'altura_x_rsi_mod', label: 'ALTURA X RSI MOD', required: false, type: 'number' },
     ]
   },
   velocidad: {
@@ -86,8 +133,10 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'velocidad_tests',
     icon: 'fa-solid fa-bolt',
     description: 'Tests de velocidad con splits (10m, 20m, 30m).',
+    conflictColumns: ['id_del_jugador', 'fecha'],
     fields: [
-      { key: 'id_del_jugador', label: 'JUGADOR', required: true, type: 'number' },
+      { key: 'id_del_jugador', label: 'ID JUGADOR', required: true, type: 'number' },
+      { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
       { key: 'fecha', label: 'FECHA TEST', required: true, type: 'date' },
       { key: 'tiempo_10m', label: 'TIEMPO 10mts', required: false, type: 'number' },
       { key: 'vel_10m', label: 'VEL 10mts', required: false, type: 'number' },
@@ -95,6 +144,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'vel_10_20m', label: 'VEL 10-20mts', required: false, type: 'number' },
       { key: 'tiempo_20_30m', label: 'TIEMPO 20-30mts', required: false, type: 'number' },
       { key: 'vel_20_30m', label: 'VEL 20-30mts', required: false, type: 'number' },
+      { key: 'vel_max_kmh', label: 'VEL MAX (km/h)', required: false, type: 'number' },
       { key: 'tiempo_total', label: 'TIEMPO TOTAL', required: true, type: 'number' },
     ]
   },
@@ -103,6 +153,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'physical_tests',
     icon: 'fa-solid fa-gauge-high',
     description: 'Tests de aceleración específica.',
+    conflictColumns: ['id_del_jugador', 'fecha'],
     fields: [
       { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
@@ -112,14 +163,29 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
   },
   vo2max: {
     label: 'Consumo Oxígeno',
-    table: 'physical_tests',
+    table: 'vo2max_tests',
     icon: 'fa-solid fa-lungs',
-    description: 'VO2 Max - Capacidad aeróbica.',
+    description: 'VO2 Max - Capacidad aeróbica detallada.',
+    conflictColumns: ['id_del_jugador', 'fecha'],
     fields: [
-      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
-      { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
-      { key: 'value', label: 'VO2 Max (ml/kg/min)', required: true, type: 'number' },
-      { key: 'observation', label: 'Observación', required: false, type: 'string' },
+      { key: 'id_del_jugador', label: 'ID JUGADOR', required: true, type: 'number' },
+      { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
+      { key: 'fecha', label: 'FECHA TEST', required: true, type: 'date' },
+      { key: 'peso', label: 'PESO (kg)', required: false, type: 'number' },
+      { key: 'vt1_vel', label: 'VT1 VEL', required: false, type: 'number' },
+      { key: 'vt1_pct', label: 'VT1 %', required: false, type: 'number' },
+      { key: 'vt1_fc', label: 'VT1 FC', required: false, type: 'number' },
+      { key: 'vt2_vel', label: 'VT2 VEL', required: false, type: 'number' },
+      { key: 'vt2_pct', label: 'VT2 %', required: false, type: 'number' },
+      { key: 'vt2_fc', label: 'VT2 FC', required: false, type: 'number' },
+      { key: 'vo2_max', label: 'VO2 MAX', required: true, type: 'number' },
+      { key: 'vam', label: 'VMA (km/h)', required: false, type: 'number' },
+      { key: 'fc_max', label: 'FC MAX', required: false, type: 'number' },
+      { key: 'nivel', label: 'NIVEL', required: false, type: 'number' },
+      { key: 'pasada', label: 'PASADA', required: false, type: 'number' },
+      { key: 'mts', label: 'DISTANCIA (m)', required: false, type: 'number' },
+      { key: 'vfa', label: 'VFA', required: false, type: 'number' },
+      { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
     ]
   }
 };
@@ -134,6 +200,7 @@ export default function DataImportArea() {
   const [players, setPlayers] = useState<User[]>([]);
   const [unmatchedRows, setUnmatchedRows] = useState<any[]>([]);
   const [resolvedIds, setResolvedIds] = useState<Record<number, number>>({}); // rowIndex -> playerId
+  const [nameHeader, setNameHeader] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPlayers();
@@ -151,13 +218,20 @@ export default function DataImportArea() {
     return parts[parts.length - 1].trim();
   };
 
-  const normalizeString = (str: string) => {
-    return str
+  const normalizeString = (str: any) => {
+    if (!str) return '';
+    return String(str)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
       .trim();
   };
+
+  const getRowName = useCallback((row: any) => {
+    if (!row) return '';
+    const rawName = row[nameHeader || ''] || row['Name'] || row['Jugador'] || row['nombre'] || row['JUGADOR'] || '';
+    return ['gps_totales', 'gps_tareas'].includes(selectedType!) ? extractName(rawName) : rawName;
+  }, [nameHeader, selectedType]);
 
   const findPlayerByName = (name: string) => {
     if (!name || !players.length) return null;
@@ -217,6 +291,12 @@ export default function DataImportArea() {
 
             if (selectedType) {
               const config = IMPORT_CONFIGS[selectedType];
+              const detectedNameHeader = results.meta.fields.find(h => {
+                const low = h.toLowerCase();
+                return low === 'name' || low === 'jugador' || low === 'nombre' || low === 'atleta' || low.includes('jugador');
+              });
+              setNameHeader(detectedNameHeader || null);
+
               config.fields.forEach(field => {
                 const match = results.meta.fields?.find(h => 
                   h.toLowerCase().includes(field.key.toLowerCase()) || 
@@ -228,24 +308,18 @@ export default function DataImportArea() {
               // Special logic for name matching across different test types
               const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
               
-              if (needsNameMatching) {
-                const nameHeader = results.meta.fields.find(h => 
-                  h.toLowerCase() === 'name' || h.toLowerCase() === 'jugador'
-                );
-                if (nameHeader) {
-                  const seenNames = new Set<string>();
-                  data.forEach((row: any, index: number) => {
-                    const rawName = row[nameHeader];
-                    const cleanName = ['gps_totales', 'gps_tareas'].includes(selectedType) ? extractName(rawName) : rawName;
-                    const player = findPlayerByName(cleanName);
-                    if (player) {
-                      initialResolved[index] = player.id_del_jugador;
-                    } else if (cleanName && !seenNames.has(cleanName)) {
-                      unmatched.push({ ...row, Name: cleanName, _rowIndex: index, _cleanName: cleanName });
-                      seenNames.add(cleanName);
-                    }
-                  });
-                }
+              if (needsNameMatching && detectedNameHeader) {
+                const seenNames = new Set<string>();
+                data.forEach((row: any, index: number) => {
+                  const cleanName = ['gps_totales', 'gps_tareas'].includes(selectedType) ? extractName(row[detectedNameHeader]) : row[detectedNameHeader];
+                  const player = findPlayerByName(cleanName);
+                  if (player) {
+                    initialResolved[index] = player.id_del_jugador;
+                  } else if (cleanName && !seenNames.has(normalizeString(cleanName))) {
+                    unmatched.push({ ...row, _rowIndex: index, _cleanName: cleanName });
+                    seenNames.add(normalizeString(cleanName));
+                  }
+                });
               }
             }
             setMapping(newMapping);
@@ -275,47 +349,27 @@ export default function DataImportArea() {
       return;
     }
 
-    // Check if all rows have an ID (either from CSV or resolved)
-    const allRowsResolved = csvData.every((row, index) => {
-      const csvId = row[mapping['id_del_jugador']];
-      const manualId = resolvedIds[index];
-      
-      // For GPS Tareas, also check shared IDs by name
-      const rawName = row[mapping['id_del_jugador'] || 'Name'];
-      const cleanName = extractName(rawName);
-      const sharedId = Object.entries(resolvedIds).find(([idx, id]) => {
-        const otherRow = csvData[Number(idx)];
-        return extractName(otherRow[mapping['id_del_jugador'] || 'Name']) === cleanName;
-      })?.[1];
-
-      return csvId || manualId || sharedId;
-    });
-
-    if (!allRowsResolved) {
-      setMessage({ type: 'error', text: 'Hay jugadores que no han sido asociados a un ID. Por favor, asócialos manualmente.' });
-      return;
-    }
-
     setImporting(true);
     setMessage(null);
 
     try {
-      const dataToInsert = csvData.map((row, index) => {
+      // 1. Map all rows
+      const mappedData = csvData.map((row, index) => {
         const item: any = {};
-        const rawName = row[mapping['id_del_jugador'] || 'Name'];
-        const cleanName = extractName(rawName);
+        const cleanName = getRowName(row);
 
         // Handle GPS Tareas specific logic: Split Name into tarea and jugador_nombre
-        if (selectedType === 'gps_tareas' && row.Name) {
-          const parts = row.Name.split(' - ');
+        const nameVal = row[nameHeader || 'Name'] || row['Name'] || '';
+        if (selectedType === 'gps_tareas' && nameVal) {
+          const parts = String(nameVal).split(' - ');
           if (parts.length >= 2) {
             const playerName = parts.pop()?.trim();
             const taskName = parts.join(' - ').trim();
             item.tarea = taskName;
             item.jugador_nombre = playerName;
           } else {
-            item.tarea = row.Name;
-            item.jugador_nombre = row.Name;
+            item.tarea = nameVal;
+            item.jugador_nombre = nameVal;
           }
         }
 
@@ -353,15 +407,23 @@ export default function DataImportArea() {
         });
 
         // Override ID if resolved manually or automatically
-        // Check if this row's index is resolved, OR if another row with the same cleanName is resolved
         const manualId = resolvedIds[index];
+        const normalizedCleanName = normalizeString(cleanName);
         const sharedId = Object.entries(resolvedIds).find(([idx, id]) => {
           const otherRow = csvData[Number(idx)];
-          return extractName(otherRow[mapping['id_del_jugador'] || 'Name']) === cleanName;
+          const otherCleanName = getRowName(otherRow);
+          return normalizeString(otherCleanName) === normalizedCleanName;
         })?.[1];
 
         if (manualId || sharedId) {
-          item.id_del_jugador = manualId || sharedId;
+          const pId = manualId || sharedId;
+          item.id_del_jugador = pId;
+          
+          // Auto-populate 'jugador' name if missing but we have the player
+          const player = players.find(p => (p as any).id_del_jugador === pId);
+          if (player && !item.jugador) {
+            item.jugador = `${(player as any).nombre} ${(player as any).apellido1}`;
+          }
         }
 
         // Add test_type for physical_tests table
@@ -370,12 +432,30 @@ export default function DataImportArea() {
         }
 
         return item;
-      }).filter(item => {
-        const currentConfig = IMPORT_CONFIGS[selectedType!];
-        return currentConfig.fields.every(f => !f.required || (item[f.key] !== undefined && item[f.key] !== null));
       });
 
-      const { error } = await supabase.from(config.table).upsert(dataToInsert);
+      // 2. Filter out invalid rows (missing required fields like date)
+      const dataToInsert = mappedData.filter(item => {
+        return config.fields.every(f => !f.required || (item[f.key] !== undefined && item[f.key] !== null));
+      });
+
+      if (dataToInsert.length === 0) {
+        setMessage({ type: 'error', text: 'No se encontraron datos válidos para importar. Verifica el mapeo de columnas.' });
+        setImporting(false);
+        return;
+      }
+
+      // 3. Check if any row to be inserted is missing id_del_jugador
+      const missingIds = dataToInsert.some(item => !item.id_del_jugador);
+      if (missingIds) {
+        setMessage({ type: 'error', text: 'Hay jugadores que no han sido asociados a un ID. Por favor, asócialos manualmente.' });
+        setImporting(false);
+        return;
+      }
+
+      const { error } = await supabase.from(config.table).upsert(dataToInsert, {
+        onConflict: config.conflictColumns.join(',')
+      });
 
       if (error) throw error;
 
@@ -394,7 +474,21 @@ export default function DataImportArea() {
   };
 
   const updateResolvedId = (rowIndex: number, playerId: number) => {
-    setResolvedIds(prev => ({ ...prev, [rowIndex]: playerId }));
+    const row = csvData[rowIndex];
+    const cleanName = getRowName(row);
+
+    const newResolved = { ...resolvedIds };
+    const normalizedCleanName = normalizeString(cleanName);
+    
+    // Update all rows that share this clean name
+    csvData.forEach((r, idx) => {
+      const rCleanName = getRowName(r);
+      if (normalizeString(rCleanName) === normalizedCleanName) {
+        newResolved[idx] = playerId;
+      }
+    });
+
+    setResolvedIds(newResolved);
   };
 
   return (
@@ -564,7 +658,7 @@ export default function DataImportArea() {
                       <div key={row._rowIndex} className="bg-white p-4 rounded-2xl border border-amber-200 shadow-sm flex flex-col gap-3">
                         <div className="flex flex-col">
                           <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Nombre en CSV</span>
-                          <span className="text-[11px] font-black text-slate-900 truncate">{row._cleanName || row.Name}</span>
+                          <span className="text-[11px] font-black text-slate-900 truncate">{row._cleanName}</span>
                         </div>
                         <div className="space-y-2">
                           <input

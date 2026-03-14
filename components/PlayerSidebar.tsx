@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type PlayerMenuId = 'inicio' | 'reportes_wellness' | 'reportes_load' | 'reportes_match' | 'nutricion_antropometria' | 'nutricion_recomendaciones' | 'nutricion_formularios' | 'nutricion_chef' | 'gym_trainer' | 'perfil';
+export type PlayerMenuId = 'inicio' | 'reportes_wellness' | 'reportes_load' | 'reportes_match' | 'nutricion_antropometria' | 'nutricion_recomendaciones' | 'nutricion_formularios' | 'nutricion_chef' | 'gym_trainer' | 'rendimiento_vo2max' | 'perfil';
 
 interface PlayerSidebarProps {
   activeMenu: PlayerMenuId;
@@ -104,6 +104,17 @@ const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange,
             </div>
           )}
         </div>
+
+        {/* RENDIMIENTO */}
+        <button
+          onClick={() => handleMenuClick('rendimiento_vo2max')}
+          className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-6'} py-4 rounded-2xl transition-all ${
+            activeMenu === 'rendimiento_vo2max' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+          }`}
+        >
+          <i className="fa-solid fa-gauge-high text-lg"></i>
+          {!isCollapsed && <span className="font-bold text-sm">Rendimiento</span>}
+        </button>
 
         {/* GYM */}
         <button

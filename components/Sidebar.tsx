@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 
-type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios' | 'logs' | 'importar_datos';
+type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'fisica_vo2max' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios' | 'logs' | 'importar_datos' | 'sports_science';
 
 interface SidebarProps {
   activeMenu: MenuId;
@@ -212,6 +212,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                 <span className="text-xs font-bold tracking-tight">Reporte Sesión</span>
               </button>
 
+              {/* CONSUMO DE OXÍGENO */}
+              <button
+                onClick={() => onMenuChange('fisica_vo2max')}
+                className={`w-full flex items-center gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
+                  activeMenu === 'fisica_vo2max' 
+                    ? 'bg-red-600 text-white shadow-lg' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_vo2max' ? 'bg-white' : 'bg-slate-700'}`}></div>
+                <span className="text-xs font-bold tracking-tight">Consumo Oxígeno</span>
+              </button>
+
             </div>
           )}
         </div>
@@ -358,6 +371,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
             </div>
           )}
         </div>
+
+        <button
+          onClick={() => handleMenuClick('sports_science')}
+          title={isCollapsed ? 'Sports Science' : ''}
+          className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 group ${
+            activeMenu === 'sports_science' ? 'bg-red-900/20 text-[#CF1B2B]' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+          }`}
+        >
+          <i className={`fa-solid fa-microscope text-xl ${isCollapsed ? '' : 'w-6'} ${activeMenu === 'sports_science' ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
+          {!isCollapsed && <span className="font-bold text-sm tracking-tight">Sports Science</span>}
+        </button>
 
         {userRole === 'admin' && (
           <button

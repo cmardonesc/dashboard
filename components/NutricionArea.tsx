@@ -28,6 +28,28 @@ interface NutricionAreaProps {
 
 type TabId = 'general' | 'individual' | 'top10' | 'crecimiento';
 
+const ORDERED_POSITIONS = [
+  'Portero',
+  'Defensa Central',
+  'Defensa Lateral',
+  'Volante',
+  'Delantero Extremo',
+  'Centro Delantero',
+  'Media Punta',
+  'Sin definir'
+];
+
+const POSITION_ABBR: { [key: string]: string } = {
+  'Portero': 'POR',
+  'Defensa Central': 'DEF C',
+  'Defensa Lateral': 'DEF L',
+  'Volante': 'VOL',
+  'Delantero Extremo': 'EXT',
+  'Centro Delantero': 'CEN',
+  'Media Punta': 'M P',
+  'Sin definir': 'S/D',
+};
+
 const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initialTab = 'general' }) => {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
@@ -45,9 +67,9 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
 
   // State para Dashboard Comparativo (Grupo A vs Grupo B)
   const [groupAYear, setGroupAYear] = useState<string>('2008');
-  const [groupAPosition, setGroupAPosition] = useState<string>('Defensa');
+  const [groupAPosition, setGroupAPosition] = useState<string>('Defensa Central');
   const [groupBYear, setGroupBYear] = useState<string>('2009');
-  const [groupBPosition, setGroupBPosition] = useState<string>('Defensa');
+  const [groupBPosition, setGroupBPosition] = useState<string>('Defensa Central');
 
   // State para el Drawer de Nuevo Registro
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -366,14 +388,28 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
                   </div>
                   <div>
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Posición</label>
-                    <select 
-                      value={groupAPosition} 
-                      onChange={e => setGroupAPosition(e.target.value)}
-                      className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-black text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="TODAS">Todas</option>
-                      {availablePositions.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      <button
+                        onClick={() => setGroupAPosition('TODAS')}
+                        className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all ${
+                          groupAPosition === 'TODAS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                        }`}
+                      >
+                        Todas
+                      </button>
+                      {ORDERED_POSITIONS.map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setGroupAPosition(p)}
+                          className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all ${
+                            groupAPosition === p ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                          }`}
+                          title={p}
+                        >
+                          {POSITION_ABBR[p] || p}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -416,14 +452,28 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
                   </div>
                   <div>
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Posición</label>
-                    <select 
-                      value={groupBPosition} 
-                      onChange={e => setGroupBPosition(e.target.value)}
-                      className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-black text-slate-700 outline-none focus:ring-2 focus:ring-red-500"
-                    >
-                      <option value="TODAS">Todas</option>
-                      {availablePositions.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      <button
+                        onClick={() => setGroupBPosition('TODAS')}
+                        className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all ${
+                          groupBPosition === 'TODAS' ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                        }`}
+                      >
+                        Todas
+                      </button>
+                      {ORDERED_POSITIONS.map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setGroupBPosition(p)}
+                          className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all ${
+                            groupBPosition === p ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                          }`}
+                          title={p}
+                        >
+                          {POSITION_ABBR[p] || p}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -683,56 +733,47 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
               </div>
 
               {/* Position Filter */}
-              <div className="relative">
-                <button 
-                  onClick={() => setShowPosDropdown(!showPosDropdown)}
-                  className="bg-slate-50 border border-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl py-3 pl-4 pr-10 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer min-w-[180px] text-left flex justify-between items-center"
-                >
-                  <span className="truncate">
-                    {selectedPositions.includes('TODAS') ? 'TODAS LAS POSICIONES' : `POS: ${selectedPositions.join(', ')}`}
-                  </span>
-                  <i className={`fa-solid fa-chevron-down text-slate-400 text-[10px] transition-transform ${showPosDropdown ? 'rotate-180' : ''}`}></i>
-                </button>
-                
-                {showPosDropdown && (
-                  <div className="absolute top-full left-0 mt-2 w-full min-w-[200px] bg-white rounded-xl shadow-xl border border-slate-100 z-50 max-h-60 overflow-y-auto p-1">
-                    <button
-                      onClick={() => {
-                        setSelectedPositions(['TODAS']);
-                        setShowPosDropdown(false);
-                      }}
-                      className={`w-full text-left px-4 py-2 text-xs font-bold uppercase hover:bg-slate-50 rounded-lg flex justify-between items-center ${selectedPositions.includes('TODAS') ? 'text-red-600 bg-red-50' : 'text-slate-600'}`}
-                    >
-                      TODAS LAS POSICIONES
-                      {selectedPositions.includes('TODAS') && <i className="fa-solid fa-check"></i>}
-                    </button>
-                    {availablePositions.map(pos => {
-                      const isSelected = selectedPositions.includes(pos);
-                      return (
-                        <button
-                          key={pos}
-                          onClick={() => {
-                            setSelectedPositions(prev => {
-                              if (pos === 'TODAS') return ['TODAS'];
-                              const newSelection = prev.includes('TODAS') ? [] : [...prev];
-                              
-                              if (newSelection.includes(pos)) {
-                                const filtered = newSelection.filter(p => p !== pos);
-                                return filtered.length === 0 ? ['TODAS'] : filtered;
-                              } else {
-                                return [...newSelection, pos];
-                              }
-                            });
-                          }}
-                          className={`w-full text-left px-4 py-2 text-xs font-bold uppercase hover:bg-slate-50 rounded-lg flex justify-between items-center ${isSelected ? 'text-red-600 bg-red-50' : 'text-slate-600'}`}
-                        >
-                          {pos}
-                          {isSelected && <i className="fa-solid fa-check"></i>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+              <div className="flex flex-col gap-2">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Filtrar por Posición</label>
+                <div className="flex flex-wrap gap-1">
+                  <button
+                    onClick={() => {
+                      setSelectedPositions(['TODAS']);
+                    }}
+                    className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-tighter transition-all ${
+                      selectedPositions.includes('TODAS') ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                    }`}
+                  >
+                    Todas
+                  </button>
+                  {ORDERED_POSITIONS.map(pos => {
+                    const isSelected = selectedPositions.includes(pos);
+                    return (
+                      <button
+                        key={pos}
+                        onClick={() => {
+                          setSelectedPositions(prev => {
+                            if (pos === 'TODAS') return ['TODAS'];
+                            const newSelection = prev.includes('TODAS') ? [] : [...prev];
+                            
+                            if (newSelection.includes(pos)) {
+                              const filtered = newSelection.filter(p => p !== pos);
+                              return filtered.length === 0 ? ['TODAS'] : filtered;
+                            } else {
+                              return [...newSelection, pos];
+                            }
+                          });
+                        }}
+                        className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-tighter transition-all ${
+                          isSelected ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                        }`}
+                        title={pos}
+                      >
+                        {POSITION_ABBR[pos] || pos}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>

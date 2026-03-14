@@ -328,10 +328,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
     const list = reportData.wellnessList;
     if (list.length === 0) return [];
     const chunks = [];
-    // Página 1: Header + KPIs + Margins.
-    // Usamos 8 filas para asegurar que quepa con holgura.
-    chunks.push(list.slice(0, 8)); 
-    for (let i = 8; i < list.length; i += 14) {
+    // Sin KPIs en la primera página, podemos usar el mismo tamaño para todas.
+    for (let i = 0; i < list.length; i += 14) {
       chunks.push(list.slice(i, i + 14));
     }
     return chunks;
@@ -473,9 +471,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
           <p className="text-slate-400 text-sm font-bold uppercase tracking-widest italic opacity-70">Monitoreo dinámico de rendimiento institucional</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={handleTriggerPrint} className="bg-[#0b1220] text-white px-8 py-4 rounded-[20px] text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-red-600 transition-all shadow-xl active:scale-95">
-            <i className="fa-solid fa-file-pdf"></i> Exportar Reporte PDF
-          </button>
+          {/* Botón negro removido por redundancia con el rojo en reporte */}
         </div>
       </div>
 
@@ -545,19 +541,21 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
             </div>
           )}
         </div>
-        <div className="md:col-span-4 space-y-2">
-          <label className="text-[9px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic block">Buscador Global de Atleta</label>
-          <div className="relative">
-            <i className="fa-solid fa-magnifying-glass absolute left-4 md:left-5 top-1/2 -translate-y-1/2 text-slate-300 text-[10px] md:text-xs"></i>
-            <input 
-              type="text" 
-              placeholder="Nombre, apellido, club..." 
-              className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-10 md:px-12 py-3 md:py-4 text-[10px] md:text-xs font-black outline-none focus:ring-4 focus:ring-red-500/10 shadow-inner transition-all" 
-              value={athleteSearch} 
-              onChange={e => setAthleteSearch(e.target.value)} 
-            />
+        {activeMainTab !== 'reporte_diario' && (
+          <div className="md:col-span-4 space-y-2">
+            <label className="text-[9px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic block">Buscador Global de Atleta</label>
+            <div className="relative">
+              <i className="fa-solid fa-magnifying-glass absolute left-4 md:left-5 top-1/2 -translate-y-1/2 text-slate-300 text-[10px] md:text-xs"></i>
+              <input 
+                type="text" 
+                placeholder="Nombre, apellido, club..." 
+                className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-10 md:px-12 py-3 md:py-4 text-[10px] md:text-xs font-black outline-none focus:ring-4 focus:ring-red-500/10 shadow-inner transition-all" 
+                value={athleteSearch} 
+                onChange={e => setAthleteSearch(e.target.value)} 
+              />
+            </div>
           </div>
-        </div>
+        )}
         <div className="md:col-span-3">
           {activeMicrocycle ? (
             <div className="bg-[#0b1220] border border-white/5 p-3 md:p-4 rounded-2xl md:rounded-3xl flex items-center justify-between shadow-xl h-[48px] md:h-[54px]">
@@ -672,6 +670,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                   )}
                   {(view === 'pse' || view === 'report') && (
                     <>
+                      <th className="px-2 py-4 md:py-5">Duración</th>
                       <th className="px-2 py-4 md:py-5">RPE</th>
                       <th className="px-2 py-4 md:py-5">Carga</th>
                     </>
@@ -740,6 +739,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
 
                       {(view === 'pse' || view === 'report') && (
                         <>
+                          <td className="px-2 py-4 md:py-5 text-base md:text-lg">{row.load?.duration || '-'}</td>
                           <td className="px-2 py-4 md:py-5 text-base md:text-lg">{row.load?.rpe || '-'}</td>
                           <td className="px-2 py-4 md:py-5">{row.load ? <span className="bg-slate-900 text-white px-2 md:px-3 py-1 rounded-lg">{row.load.load}</span> : '-'}</td>
                         </>
@@ -894,18 +894,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                     total={totalPages} 
                   />
                   
-                  {chunkIdx === 0 && (
-                    <section className="mb-6">
-                      <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-3 uppercase tracking-widest italic">1. RESUMEN GRUPAL DE RENDIMIENTO</h3>
-                      <div className="grid grid-cols-4 gap-3">
-                        <KPIReportCard label="Distancia Media" value={`${reportData.gpsKPIs.dist.toFixed(0)}m`} icon="fa-arrows-left-right" />
-                        <KPIReportCard label="HSR Promedio" value={`${reportData.gpsKPIs.hsr.toFixed(0)}m`} icon="fa-fire" />
-                        <KPIReportCard label="Vel. Máxima" value={`${reportData.gpsKPIs.velMax.toFixed(1)}km/h`} icon="fa-bolt" />
-                        <KPIReportCard label="Intensidad" value={`${reportData.gpsKPIs.int.toFixed(1)} m/m`} icon="fa-gauge-high" />
-                      </div>
-                    </section>
-                  )}
-
                   <section>
                     <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-3 uppercase tracking-widest italic">
                       2. BIENESTAR INDIVIDUAL {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}

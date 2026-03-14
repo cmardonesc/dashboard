@@ -7,7 +7,16 @@ const PLAYER_NAMES = [
   "Eduardo Vargas", "Ben Brereton", "Gary Medel", "Arturo Vidal", "Marcelino Nuñez", "Darío Osorio"
 ];
 
-const POSITIONS = ['DEL', 'VOL', 'DEF', 'ARQ'];
+const POSITIONS = [
+  'Portero',
+  'Defensa Central',
+  'Defensa Lateral',
+  'Volante',
+  'Delantero Extremo',
+  'Centro Delantero',
+  'Media Punta',
+  'Sin definir'
+];
 
 export const MOCK_PLAYERS: User[] = PLAYER_NAMES.map((name, idx) => ({
   id: `p-${idx + 1}`,

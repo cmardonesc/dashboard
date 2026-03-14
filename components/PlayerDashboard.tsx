@@ -56,6 +56,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   const [profileData, setProfileData] = useState<Partial<User>>({})
   const [realActivities, setRealActivities] = useState<any[]>([])
   const [loadingActivities, setLoadingActivities] = useState(false)
+  const [vo2maxHistory, setVo2maxHistory] = useState<any[]>([])
+  const [loadingVo2, setLoadingVo2] = useState(false)
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const todayWellness = useMemo(() => wellness.find(w => w.date === todayStr), [wellness, todayStr]);
@@ -104,8 +106,28 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         celular: player.celular
       });
       fetchRealActivities();
+      fetchVo2MaxHistory();
     }
   }, [player]);
+
+  const fetchVo2MaxHistory = async () => {
+    if (!player?.id_del_jugador) return;
+    setLoadingVo2(true);
+    try {
+      const { data, error } = await supabase
+        .from('vo2max_tests')
+        .select('*')
+        .eq('id_del_jugador', player.id_del_jugador)
+        .order('fecha', { ascending: false });
+
+      if (error) throw error;
+      setVo2maxHistory(data || []);
+    } catch (err) {
+      console.error('Error fetching VO2 Max history:', err);
+    } finally {
+      setLoadingVo2(false);
+    }
+  };
 
   const fetchRealActivities = async () => {
     if (!player?.category) return;
@@ -593,6 +615,164 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         );
       case 'nutricion_chef':
         return <ChefAssistant />;
+      case 'rendimiento_vo2max':
+        return (
+          <div className="w-full max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="bg-[#0b1220] rounded-[40px] p-10 text-white shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
+              <div className="relative z-10">
+                <h2 className="text-3xl font-black italic uppercase tracking-tighter mb-2">Rendimiento Aeróbico</h2>
+                <p className="text-white/50 text-xs font-bold uppercase tracking-widest">Historial de Consumo de Oxígeno (VO2 Max)</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-8">
+                {/* Gráfico de Evolución */}
+                <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm">
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-8 flex items-center gap-3">
+                    <span className="w-2 h-6 bg-red-600 rounded-full"></span>
+                    Evolución VO2 Max
+                  </h3>
+                  <div className="h-64 w-full">
+                    {vo2maxHistory.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={[...vo2maxHistory].reverse()}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis 
+                            dataKey="fecha" 
+                            stroke="#94a3b8" 
+                            fontSize={10} 
+                            fontWeight={900} 
+                            axisLine={false} 
+                            tickLine={false}
+                            tickFormatter={(val) => new Date(val + 'T12:00:00').toLocaleDateString('es-ES', { month: 'short', year: '2-digit' }).toUpperCase()}
+                          />
+                          <YAxis stroke="#94a3b8" fontSize={10} fontWeight={900} axisLine={false} tickLine={false} domain={['dataMin - 5', 'dataMax + 5']} />
+                          <Tooltip 
+                            contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                            labelFormatter={(label) => new Date(label + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })}
+                          />
+                          <Line type="monotone" dataKey="vo2_max" stroke="#ef4444" strokeWidth={4} dot={{ r: 6, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
+                        <i className="fa-solid fa-chart-line text-4xl"></i>
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">Sin datos históricos suficientes</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tabla de Resultados */}
+                <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm overflow-hidden">
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-8 flex items-center gap-3">
+                    <span className="w-2 h-6 bg-blue-500 rounded-full"></span>
+                    Detalle de Pruebas
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          <th className="text-left py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
+                          <th className="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">VO2 Max</th>
+                          <th className="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">VAM (km/h)</th>
+                          <th className="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">FC Máx</th>
+                          <th className="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Peso (kg)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {vo2maxHistory.map((test, idx) => (
+                          <tr key={idx} className="group hover:bg-slate-50 transition-colors">
+                            <td className="py-4">
+                              <p className="text-[11px] font-black text-slate-900 uppercase italic">
+                                {new Date(test.fecha + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </p>
+                            </td>
+                            <td className="py-4 text-center">
+                              <span className="text-sm font-black text-red-600 italic">{test.vo2_max}</span>
+                            </td>
+                            <td className="py-4 text-center">
+                              <span className="text-[11px] font-bold text-slate-600">{test.vam || '-'}</span>
+                            </td>
+                            <td className="py-4 text-center">
+                              <span className="text-[11px] font-bold text-slate-600">{test.fc_max || '-'}</span>
+                            </td>
+                            <td className="py-4 text-center">
+                              <span className="text-[11px] font-bold text-slate-600">{test.peso || '-'}</span>
+                            </td>
+                          </tr>
+                        ))}
+                        {vo2maxHistory.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="py-12 text-center text-slate-400 text-[10px] font-black uppercase italic">
+                              No se encontraron registros
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-8">
+                {/* Último Resultado */}
+                <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Último Test</h3>
+                  {vo2maxHistory[0] ? (
+                    <div className="space-y-6">
+                      <div className="text-center">
+                        <p className="text-5xl font-black text-red-600 italic tracking-tighter leading-none mb-2">{vo2maxHistory[0].vo2_max}</p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ml/kg/min</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-100">
+                        <div>
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">VAM</p>
+                          <p className="text-sm font-black text-slate-900 italic">{vo2maxHistory[0].vam || '-'} <span className="text-[8px] font-bold text-slate-400">km/h</span></p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">FC Máx</p>
+                          <p className="text-sm font-black text-slate-900 italic">{vo2maxHistory[0].fc_max || '-'} <span className="text-[8px] font-bold text-slate-400">bpm</span></p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] font-black text-slate-300 uppercase italic text-center py-4">Sin datos</p>
+                  )}
+                </div>
+
+                {/* Información Educativa */}
+                <div className="bg-blue-50 rounded-[40px] p-8 border border-blue-100">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-blue-500 text-white rounded-2xl flex items-center justify-center text-lg">
+                      <i className="fa-solid fa-circle-info"></i>
+                    </div>
+                    <h3 className="text-sm font-black text-blue-900 uppercase italic tracking-tighter">¿Qué es el VO2 Max?</h3>
+                  </div>
+                  <p className="text-[11px] font-bold text-blue-800/70 leading-relaxed mb-4">
+                    Es la cantidad máxima de oxígeno que tu cuerpo puede utilizar durante el ejercicio intenso. Es el mejor indicador de tu potencia aeróbica y capacidad de recuperación entre esfuerzos de alta intensidad.
+                  </p>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-[9px] font-black text-blue-900 uppercase tracking-tight">
+                      <i className="fa-solid fa-check text-blue-500"></i>
+                      <span>Mayor resistencia</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[9px] font-black text-blue-900 uppercase tracking-tight">
+                      <i className="fa-solid fa-check text-blue-500"></i>
+                      <span>Recuperación más rápida</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[9px] font-black text-blue-900 uppercase tracking-tight">
+                      <i className="fa-solid fa-check text-blue-500"></i>
+                      <span>Mejor rendimiento en 90'</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
       case 'gym_trainer':
         return <AITrainer />;
       case 'perfil':

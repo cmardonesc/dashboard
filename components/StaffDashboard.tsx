@@ -16,12 +16,14 @@ import NutricionResumenGrupal from './NutricionResumenGrupal'
 import LogisticaJugadores from './LogisticaJugadores'
 import ActivityLogArea from './ActivityLogArea'
 import DataImportArea from './DataImportArea'
+import VO2MaxArea from './VO2MaxArea'
+import SportsScienceArea from './SportsScienceArea'
 import ClubDashboard from './ClubDashboard'
 import { logActivity } from '../lib/activityLogger'
 import { getPerformanceInsights, getWeatherForecast, queryCoachAssistant, WeatherData } from '../services/geminiService'
 import { AreaChart, Area, XAxis, ResponsiveContainer, Tooltip, BarChart, Bar, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
 
-type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios' | 'logs' | 'importar_datos';
+type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'fisica_vo2max' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios' | 'logs' | 'importar_datos' | 'sports_science';
 
 interface StaffDashboardProps {
   performanceRecords: AthletePerformanceRecord[];
@@ -589,6 +591,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         return <CargaTareasArea />;
       case 'fisica_reporte':
         return <FisicaArea performanceRecords={performanceRecords} view="report" />;
+      case 'fisica_vo2max':
+        return <VO2MaxArea />;
       case 'nutricion_resumen_grupal':
         return <NutricionResumenGrupal performanceRecords={performanceRecords} />;
       case 'nutricion_comparativo':
@@ -605,6 +609,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         return <ActivityLogArea />;
       case 'importar_datos':
         return <DataImportArea />;
+      case 'sports_science':
+        return <SportsScienceArea />;
       default:
         const ContentComponent = {
           planificacion_anual: PlanificacionAnual,

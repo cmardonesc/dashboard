@@ -8,7 +8,33 @@ interface MedicaAreaProps {
   onMenuChange?: (id: any) => void;
 }
 
-type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar';
+type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar' | 'daily_report' | 'treatments';
+
+interface DailyReport {
+  id: string;
+  player_id: number;
+  category_id: number;
+  microcycle_id: number;
+  report_date: string;
+  observation: string;
+  severity: 'low' | 'medium' | 'high';
+  players?: {
+    nombre: string;
+    apellido1: string;
+  };
+}
+
+interface Treatment {
+  id: string;
+  player_id: number;
+  category_id: number;
+  treatment_date: string;
+  description: string;
+  players?: {
+    nombre: string;
+    apellido1: string;
+  };
+}
 
 interface DBInjury {
   id: string;
@@ -56,6 +82,16 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
   const [dbInjuries, setDbInjuries] = useState<DBInjury[]>([]);
   const searchRef = useRef<HTMLDivElement>(null);
 
+  const [dailyReports, setDailyReports] = useState<DailyReport[]>([]);
+  const [treatments, setTreatments] = useState<Treatment[]>([]);
+  const [dailyReportForm, setDailyReportForm] = useState({
+    observation: '',
+    severity: 'low' as 'low' | 'medium' | 'high'
+  });
+  const [treatmentForm, setTreatmentForm] = useState({
+    description: ''
+  });
+
   const [exams, setExams] = useState<MedicalExam[]>([]);
   const [newExam, setNewExam] = useState<MedicalExam>({
     id: '',
@@ -84,6 +120,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
   useEffect(() => {
     fetchInjuredPlayers();
+    fetchDailyReports();
+    fetchTreatments();
     
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -127,6 +165,77 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       if (data) setDbInjuries(data);
     } catch (err) {
       console.error("Error cargando lesionados:", err);
+    }
+  };
+
+  const fetchDailyReports = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('medical_daily_reports')
+        .select('*, players(nombre, apellido1)')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) setDailyReports(data);
+    } catch (err) {
+      console.error("Error cargando reportes diarios:", err);
+    }
+  };
+
+  const fetchTreatments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('medical_treatments')
+        .select('*, players(nombre, apellido1)')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) setTreatments(data);
+    } catch (err) {
+      console.error("Error cargando atenciones:", err);
+    }
+  };
+
+  const handleSaveDailyReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reportingPlayer || !dailyReportForm.observation) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('medical_daily_reports').insert([{
+        player_id: reportingPlayer.id_del_jugador,
+        category_id: CATEGORY_ID_MAP[reportingPlayer.club as Category] || 1,
+        observation: dailyReportForm.observation,
+        severity: dailyReportForm.severity
+      }]);
+      if (error) throw error;
+      alert("Reporte médico guardado.");
+      setDailyReportForm({ observation: '', severity: 'low' });
+      setReportingPlayer(null);
+      fetchDailyReports();
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveTreatment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reportingPlayer || !treatmentForm.description) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('medical_treatments').insert([{
+        player_id: reportingPlayer.id_del_jugador,
+        category_id: CATEGORY_ID_MAP[reportingPlayer.club as Category] || 1,
+        description: treatmentForm.description
+      }]);
+      if (error) throw error;
+      alert("Atención registrada.");
+      setTreatmentForm({ description: '' });
+      setReportingPlayer(null);
+      fetchTreatments();
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -325,6 +434,18 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
             className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'dashboard' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
           >
             Tablero Médico
+          </button>
+          <button 
+            onClick={() => setView('daily_report')}
+            className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'daily_report' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
+          >
+            Reporte Diario
+          </button>
+          <button 
+            onClick={() => setView('treatments')}
+            className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'treatments' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
+          >
+            Atenciones
           </button>
           <button 
             onClick={() => setView('calendar')}
@@ -774,6 +895,202 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
              <i className="fa-solid fa-chart-line text-4xl md:text-5xl mb-6 text-slate-200"></i>
              <p className="text-slate-400 font-black uppercase text-[9px] md:text-[10px] tracking-widest">Funcionalidad en desarrollo</p>
           </div>
+        </div>
+      )}
+
+      {(view === 'daily_report' || view === 'treatments') && (
+        <div className="space-y-8 animate-in fade-in duration-300">
+          <section className="bg-white p-6 md:p-10 rounded-[32px] md:rounded-[48px] border border-slate-100 shadow-sm space-y-6">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
+              <span className={`w-2 h-6 rounded-full ${view === 'daily_report' ? 'bg-blue-600' : 'bg-emerald-600'}`}></span>
+              {view === 'daily_report' ? 'Reporte Médico Diario (Doctor)' : 'Registro de Atenciones (Kinesiólogo)'}
+            </h3>
+
+            {!reportingPlayer ? (
+              <div className="relative" ref={searchRef}>
+                <div className="relative group">
+                  <i className="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 text-lg group-focus-within:text-red-500"></i>
+                  <input 
+                    type="text" 
+                    placeholder="Seleccione un jugador para el registro..."
+                    className="w-full bg-slate-50 border-none rounded-3xl px-16 py-6 text-sm font-black text-slate-900 outline-none focus:ring-4 focus:ring-red-500/10 shadow-inner transition-all"
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    autoComplete="off"
+                  />
+                  {hasSearched && foundPlayers.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-3 bg-white rounded-[32px] shadow-2xl border border-slate-100 overflow-hidden z-50">
+                      <div className="p-3 space-y-1">
+                        {foundPlayers.map(p => (
+                          <button 
+                            key={p.id}
+                            onClick={() => setReportingPlayer(p)}
+                            className="w-full flex items-center gap-4 p-4 hover:bg-red-50 rounded-2xl transition-all text-left group"
+                          >
+                            <div className="w-10 h-10 bg-[#0b1220] text-white rounded-xl flex items-center justify-center font-black italic text-xs group-hover:bg-red-600 transition-colors">
+                              {p.name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{p.club} • {p.position}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-50 p-8 rounded-[32px] border border-slate-100 animate-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-[#0b1220] text-white rounded-2xl flex items-center justify-center font-black italic text-lg shadow-lg">
+                      {reportingPlayer.name.charAt(0)}
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter leading-none">{reportingPlayer.name}</h4>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{reportingPlayer.club} • {reportingPlayer.position}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setReportingPlayer(null)} className="text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest">Cambiar Jugador</button>
+                </div>
+
+                {view === 'daily_report' ? (
+                  <form onSubmit={handleSaveDailyReport} className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Gravedad del Caso</label>
+                      <div className="flex gap-3">
+                        {(['low', 'medium', 'high'] as const).map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setDailyReportForm({...dailyReportForm, severity: s})}
+                            className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
+                              dailyReportForm.severity === s 
+                                ? s === 'low' ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : s === 'medium' ? 'bg-amber-50 border-amber-500 text-amber-600' : 'bg-red-50 border-red-500 text-red-600'
+                                : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
+                            }`}
+                          >
+                            {s === 'low' ? 'Leve (Verde)' : s === 'medium' ? 'Medio (Amarillo)' : 'Grave (Rojo)'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Observación Médica</label>
+                      <textarea 
+                        required
+                        rows={4}
+                        className="w-full bg-white border-none rounded-3xl p-6 text-sm font-bold text-slate-700 shadow-inner resize-none focus:ring-4 focus:ring-blue-500/10 transition-all"
+                        placeholder="Escriba el diagnóstico o novedades del día..."
+                        value={dailyReportForm.observation}
+                        onChange={e => setDailyReportForm({...dailyReportForm, observation: e.target.value})}
+                      />
+                    </div>
+                    <button type="submit" disabled={loading} className="w-full bg-[#0b1220] text-white py-6 rounded-3xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-600 transition-all active:scale-95 flex items-center justify-center gap-3">
+                      {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
+                      Guardar Reporte Diario
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleSaveTreatment} className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Atención Realizada</label>
+                      <textarea 
+                        required
+                        rows={4}
+                        className="w-full bg-white border-none rounded-3xl p-6 text-sm font-bold text-slate-700 shadow-inner resize-none focus:ring-4 focus:ring-emerald-500/10 transition-all"
+                        placeholder="Detalle el tratamiento, masaje, vendaje o atención kinésica..."
+                        value={treatmentForm.description}
+                        onChange={e => setTreatmentForm({...treatmentForm, description: e.target.value})}
+                      />
+                    </div>
+                    <button type="submit" disabled={loading} className="w-full bg-[#0b1220] text-white py-6 rounded-3xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-emerald-600 transition-all active:scale-95 flex items-center justify-center gap-3">
+                      {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
+                      Registrar Atención
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
+                <span className={`w-2 h-6 rounded-full ${view === 'daily_report' ? 'bg-blue-600' : 'bg-emerald-600'}`}></span>
+                Historial Reciente
+              </h3>
+            </div>
+            
+            <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl overflow-hidden overflow-x-auto">
+              <table className="w-full text-[10px] text-center border-collapse min-w-[600px]">
+                <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest">
+                  <tr>
+                    <th className="px-6 py-4 text-left">Atleta</th>
+                    <th className="px-4 py-4">Fecha</th>
+                    {view === 'daily_report' && <th className="px-4 py-4">Gravedad</th>}
+                    <th className="px-6 py-4 text-left">{view === 'daily_report' ? 'Observación' : 'Atención Realizada'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                  {view === 'daily_report' ? (
+                    dailyReports.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay reportes registrados</td>
+                      </tr>
+                    ) : (
+                      dailyReports.map(report => (
+                        <tr key={report.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4 text-left">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center font-black italic text-[10px] text-slate-900">
+                                {report.players?.nombre.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-slate-400">{formatDate(report.report_date)}</td>
+                          <td className="px-4 py-4">
+                            <div className="flex justify-center">
+                              <div className={`w-3 h-3 rounded-full shadow-sm ${report.severity === 'low' ? 'bg-emerald-500' : report.severity === 'medium' ? 'bg-amber-500' : 'bg-red-500'}`}></div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-left italic text-slate-500 max-w-md truncate">"{report.observation}"</td>
+                        </tr>
+                      ))
+                    )
+                  ) : (
+                    treatments.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay atenciones registradas</td>
+                      </tr>
+                    ) : (
+                      treatments.map(t => (
+                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4 text-left">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center font-black italic text-[10px] text-slate-900">
+                                {t.players?.nombre.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{t.players?.nombre} {t.players?.apellido1}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-slate-400">{formatDate(t.treatment_date)}</td>
+                          <td className="px-6 py-4 text-left italic text-slate-500 max-w-md truncate">"{t.description}"</td>
+                        </tr>
+                      ))
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       )}
     </div>
