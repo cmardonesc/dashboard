@@ -41,7 +41,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
   const [kinesicTreatmentsToday, setKinesicTreatmentsToday] = useState<any[]>([]);
   const [activeTasks, setActiveTasks] = useState<any[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
   const [selectedJornada, setSelectedJornada] = useState<'AM' | 'PM'>('AM');
@@ -222,45 +221,32 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
   };
 
   const filteredTasks = useMemo(() => {
-    let tasks = activeTasks;
-    if (selectedCategoryId) {
-      tasks = tasks.filter(t => {
-        const mc = realMicrocycles.find(m => m.id === t.id_microcycles);
-        return mc && mc.category_id === selectedCategoryId;
-      });
-    }
-    return tasks.filter(t => (t.jornada || 'AM') === selectedJornada);
-  }, [activeTasks, selectedCategoryId, realMicrocycles, selectedJornada]);
+    return activeTasks.filter(t => (t.jornada || 'AM') === selectedJornada);
+  }, [activeTasks, selectedJornada]);
 
   const filteredPending = useMemo(() => {
-    if (!selectedCategoryId) return pendingCheckins;
-    return pendingCheckins.filter(p => p.category_id === selectedCategoryId);
-  }, [pendingCheckins, selectedCategoryId]);
+    return pendingCheckins;
+  }, [pendingCheckins]);
 
   const filteredDiscomfort = useMemo(() => {
-    if (!selectedCategoryId) return discomfortReports;
-    return discomfortReports.filter(w => w.players?.category_id === selectedCategoryId);
-  }, [discomfortReports, selectedCategoryId]);
+    return discomfortReports;
+  }, [discomfortReports]);
 
   const filteredCheckouts = useMemo(() => {
-    if (!selectedCategoryId) return pendingCheckouts;
-    return pendingCheckouts.filter(p => p.category_id === selectedCategoryId);
-  }, [pendingCheckouts, selectedCategoryId]);
+    return pendingCheckouts;
+  }, [pendingCheckouts]);
 
   const filteredActivities = useMemo(() => {
-    if (!selectedCategoryId) return dailyActivities;
-    return dailyActivities.filter(a => a.id_categoria === selectedCategoryId);
-  }, [dailyActivities, selectedCategoryId]);
+    return dailyActivities;
+  }, [dailyActivities]);
 
   const filteredMedical = useMemo(() => {
-    if (!selectedCategoryId) return medicalReportsToday;
-    return medicalReportsToday.filter(m => m.category_id === selectedCategoryId);
-  }, [medicalReportsToday, selectedCategoryId]);
+    return medicalReportsToday;
+  }, [medicalReportsToday]);
 
   const filteredKinesic = useMemo(() => {
-    if (!selectedCategoryId) return kinesicTreatmentsToday;
-    return kinesicTreatmentsToday.filter(k => k.category_id === selectedCategoryId);
-  }, [kinesicTreatmentsToday, selectedCategoryId]);
+    return kinesicTreatmentsToday;
+  }, [kinesicTreatmentsToday]);
 
   const renderContent = () => {
     const todayStr = new Date().toISOString().split('T')[0];
@@ -288,37 +274,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                     <span className="text-red-600">SELECCIONES JUVENILES DE CHILE</span>
                   </h1>
 
-                  {/* NUEVA BARRA DE FILTROS RÁPIDOS */}
-                  <div className="flex flex-wrap gap-2 mt-6">
-                    <button 
-                      onClick={() => setSelectedCategoryId(null)}
-                      className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${!selectedCategoryId ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-900/20' : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
-                    >
-                      TODOS
-                    </button>
-                    {Object.entries(CATEGORY_ID_MAP).map(([label, id]) => (
-                      <button 
-                        key={id}
-                        onClick={() => setSelectedCategoryId(id)}
-                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${selectedCategoryId === id ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-900/20' : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
-                      >
-                        {label.replace('_', ' ')}
-                      </button>
-                    ))}
-                  </div>
+                  {/* NUEVA BARRA DE FILTROS RÁPIDOS ELIMINADA */}
                 </div>
 
                 <div className="w-full lg:w-80 bg-white/5 backdrop-blur-md border border-white/10 rounded-[32px] md:rounded-[40px] p-6 md:p-8 space-y-4 md:space-y-6">
                    <div className="flex items-center justify-between border-b border-white/5 pb-3 md:pb-4">
                      <p className="text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest">Series Activas</p>
-                     {selectedCategoryId && (
-                       <button 
-                         onClick={() => setSelectedCategoryId(null)}
-                         className="text-[8px] font-black text-red-500 uppercase tracking-widest hover:text-white transition-colors"
-                       >
-                         Limpiar Filtro
-                       </button>
-                     )}
                    </div>
                    <div className="space-y-2">
                      {activeMicrocycles.length === 0 ? (
@@ -327,24 +288,22 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                        activeMicrocycles.map((mc, idx) => {
                          const categoryEntry = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === mc.category_id);
                          const categoryLabel = categoryEntry ? categoryEntry[0].replace('_', ' ').toUpperCase() : 'Selección';
-                         const isActive = selectedCategoryId === mc.category_id;
                          
                          return (
                            <div 
                              key={idx} 
-                             onClick={() => setSelectedCategoryId(isActive ? null : mc.category_id)}
-                             className={`flex items-center justify-between group/mc cursor-pointer p-3 rounded-2xl transition-all border ${isActive ? 'bg-red-600/20 border-red-500/50 shadow-[0_0_15px_rgba(220,38,38,0.2)]' : 'bg-white/5 border-transparent hover:bg-white/10'}`}
+                             className={`flex items-center justify-between group/mc p-3 rounded-2xl transition-all border bg-white/5 border-transparent hover:bg-white/10`}
                            >
                              <div>
                                <div className="flex items-center gap-2 mb-1">
-                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${isActive ? 'bg-red-600 text-white' : 'bg-red-600/20 text-red-500'}`}>
+                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest bg-red-600/20 text-red-500`}>
                                    {categoryLabel}
                                  </span>
                                  <p className="text-white text-sm font-black italic tracking-tighter leading-none uppercase">{mc.name}</p>
                                </div>
                                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">{mc.city}, {mc.country}</p>
                              </div>
-                             <div className={`w-2 h-2 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] ${isActive ? 'bg-white animate-ping' : 'bg-emerald-500 animate-pulse'}`}></div>
+                             <div className={`w-2 h-2 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] bg-emerald-500 animate-pulse`}></div>
                            </div>
                          );
                        })

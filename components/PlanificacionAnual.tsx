@@ -12,23 +12,20 @@ interface AnnualActivity {
 }
 
 const TIPO_COLORS: Record<string, string> = {
-  'Entrenamiento': 'bg-blue-600',
-  'Partido': 'bg-red-600',
-  'Evaluación': 'bg-emerald-600',
-  'Viaje': 'bg-amber-500',
-  'Reunión': 'bg-slate-700',
-  'Evento': 'bg-purple-600',
-  'Regional': 'bg-orange-500',
-  'Sudamericano': 'bg-yellow-500',
-  'Gira': 'bg-indigo-600',
-  'Desayuno': 'bg-amber-400',
-  'Almuerzo': 'bg-orange-400',
-  'Cena': 'bg-orange-600',
-  'Charla': 'bg-cyan-600',
-  'Video': 'bg-violet-600',
-  'Gimnasio': 'bg-pink-600',
-  'Wellness': 'bg-teal-500'
+  'ENTRENAMIENTO': 'bg-blue-600',
+  'PARTIDO AMISTOSO': 'bg-red-500',
+  'PARTIDO OFICIAL': 'bg-red-700',
+  'EVALUACION FISICA': 'bg-emerald-600',
+  'REUNION': 'bg-slate-700',
+  'VISITA A CLUB': 'bg-amber-600',
+  'VISITA PARTIDO CLUBES': 'bg-orange-500',
+  'SUDAMERICANO': 'bg-yellow-500',
+  'GIRA': 'bg-indigo-600',
+  'MUNDIAL': 'bg-purple-700',
+  'REGIONALES': 'bg-orange-600'
 };
+
+const MULTI_DAY_TYPES = ['SUDAMERICANO', 'GIRA', 'MUNDIAL', 'REGIONALES'];
 
 const PlanificacionAnual: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 1));
@@ -43,9 +40,10 @@ const PlanificacionAnual: React.FC = () => {
 
   // Formulario para nueva actividad
   const [newActivity, setNewActivity] = useState({
-    type: 'Entrenamiento',
+    type: 'ENTRENAMIENTO',
     category: Category.SUB_16,
-    observation: ''
+    observation: '',
+    endDate: ''
   });
 
   const [showConfirmDelete, setShowConfirmDelete] = useState<string | null>(null);
@@ -81,9 +79,11 @@ const PlanificacionAnual: React.FC = () => {
     e.preventDefault();
     if (!selectedDay) return;
 
+    setLoading(true);
     try {
-      const payload = {
-        fecha: selectedDay,
+      const isMultiDay = MULTI_DAY_TYPES.includes(newActivity.type) && newActivity.endDate && newActivity.endDate > selectedDay;
+      
+      const basePayload = {
         actividad: newActivity.type,
         categoria: CATEGORY_ID_MAP[newActivity.category],
         observacion: newActivity.observation
@@ -92,23 +92,45 @@ const PlanificacionAnual: React.FC = () => {
       if (editingActivityId) {
         const { error } = await supabase
           .from('anual_activities')
-          .update(payload)
+          .update({ ...basePayload, fecha: selectedDay })
           .eq('id', editingActivityId);
+        if (error) throw error;
+      } else if (isMultiDay) {
+        // Generar rango de fechas
+        const start = new Date(selectedDay + 'T12:00:00');
+        const end = new Date(newActivity.endDate + 'T12:00:00');
+        const payloads = [];
+        
+        let current = new Date(start);
+        while (current <= end) {
+          payloads.push({
+            ...basePayload,
+            fecha: current.toISOString().split('T')[0]
+          });
+          current.setDate(current.getDate() + 1);
+        }
+
+        const { error } = await supabase
+          .from('anual_activities')
+          .insert(payloads);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('anual_activities')
-          .insert([payload]);
+          .insert([{ ...basePayload, fecha: selectedDay }]);
         if (error) throw error;
       }
 
-      fetchMonthActivities();
-      setSuccessMessage(editingActivityId ? "Actividad actualizada" : "Actividad agregada");
-      setNewActivity({ ...newActivity, observation: '' });
+      await fetchMonthActivities();
+      setSuccessMessage(editingActivityId ? "Actividad actualizada" : (isMultiDay ? "Evento multi-día programado" : "Actividad agregada"));
+      setNewActivity({ ...newActivity, observation: '', endDate: '' });
       setEditingActivityId(null);
     } catch (err: any) {
+      console.error("Error al guardar:", err);
       setErrorMessage("Error al guardar: " + err.message);
       setTimeout(() => setErrorMessage(null), 5000);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -147,11 +169,17 @@ const PlanificacionAnual: React.FC = () => {
 
   const getCategoryDisplay = (cat?: number | string) => {
     if (!cat) return '';
-    if (typeof cat === 'number') {
-      const entry = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === cat);
-      return entry ? entry[0].replace('_', ' ').toUpperCase() : `ID: ${cat}`;
+    
+    // Intentar convertir a número si es string
+    const catNum = typeof cat === 'string' ? parseInt(cat, 10) : cat;
+    
+    if (typeof catNum === 'number' && !isNaN(catNum)) {
+      const entry = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === catNum);
+      if (entry) return entry[0].replace('_', ' ').toUpperCase();
     }
-    return cat.replace('_', ' ').toUpperCase();
+    
+    // Si no es un ID numérico conocido, devolver el string formateado
+    return String(cat).replace('_', ' ').toUpperCase();
   };
 
   const calendarDays = useMemo(() => {
@@ -375,23 +403,29 @@ const PlanificacionAnual: React.FC = () => {
             const isToday = dayObj.date === new Date().toISOString().split('T')[0];
             const isSelected = selectedDay === dayObj.date;
             
-            // Detectar eventos especiales para dar estilo al día completo
-            const specialEvent = dayObj.activities.find(a => a.actividad === 'Sudamericano' || a.actividad === 'Gira');
-            let dayStyle = 'bg-white border-slate-50 hover:border-slate-200';
+            // Detectar eventos especiales para dar estilo al día completo (independiente del filtro de tipo de actividad)
+            const dayActivitiesForStyle = activities.filter(a => a.fecha === dayObj.date && (!selectedCategoryId || a.categoria === selectedCategoryId));
+            const specialEvent = dayActivitiesForStyle.find(a => MULTI_DAY_TYPES.includes(a.actividad.toUpperCase()));
             
-            if (specialEvent?.actividad === 'Sudamericano') {
-              dayStyle = 'bg-yellow-50 border-yellow-200 hover:border-yellow-300';
-            } else if (specialEvent?.actividad === 'Gira') {
-              dayStyle = 'bg-indigo-50 border-indigo-200 hover:border-indigo-300';
+            let bgColor = 'bg-white';
+            let borderColor = 'border-slate-50';
+            let hoverBorder = 'hover:border-slate-200';
+            
+            if (specialEvent) {
+              const type = specialEvent.actividad.toUpperCase();
+              if (type === 'SUDAMERICANO') { bgColor = 'bg-yellow-50'; borderColor = 'border-yellow-200'; hoverBorder = 'hover:border-yellow-300'; }
+              else if (type === 'GIRA') { bgColor = 'bg-indigo-50'; borderColor = 'border-indigo-200'; hoverBorder = 'hover:border-indigo-300'; }
+              else if (type === 'MUNDIAL') { bgColor = 'bg-purple-50'; borderColor = 'border-purple-200'; hoverBorder = 'hover:border-purple-300'; }
+              else if (type === 'REGIONALES') { bgColor = 'bg-orange-50'; borderColor = 'border-orange-200'; hoverBorder = 'hover:border-orange-300'; }
             } else if (isToday) {
-              dayStyle = 'bg-red-50/10 border-slate-50';
+              bgColor = 'bg-red-50/10';
             }
 
             return (
               <div 
                 key={dayObj.date}
                 className={`relative rounded-[32px] border transition-all cursor-pointer p-4 group min-h-[110px] flex flex-col justify-between ${
-                  isSelected ? 'border-red-500 ring-4 ring-red-500/5 shadow-xl bg-white' : `${dayStyle} hover:shadow-lg`
+                  isSelected ? `border-red-500 ring-4 ring-red-500/5 shadow-xl ${bgColor}` : `${bgColor} ${borderColor} ${hoverBorder} hover:shadow-lg`
                 }`}
                 onClick={() => { setSelectedDay(dayObj.date); setIsDrawerOpen(true); }}
               >
@@ -411,28 +445,33 @@ const PlanificacionAnual: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {dayObj.activities.slice(0, 3).map(act => (
-                    <div key={act.id} className={`w-1.5 h-1.5 rounded-full ${TIPO_COLORS[act.actividad] || 'bg-slate-300'}`} title={act.actividad}></div>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {dayObj.activities.slice(0, 5).map(act => (
+                    <div key={act.id} className={`w-1.5 h-1.5 rounded-full ${TIPO_COLORS[act.actividad.toUpperCase()] || 'bg-slate-300'}`} title={act.actividad}></div>
                   ))}
-                  {dayObj.activities.length > 3 && (
-                    <span className="text-[7px] font-black text-slate-400">+{dayObj.activities.length - 3}</span>
+                  {dayObj.activities.length > 5 && (
+                    <span className="text-[7px] font-black text-slate-400">+{dayObj.activities.length - 5}</span>
                   )}
                 </div>
 
-                <div className="mt-2 space-y-1 overflow-hidden">
-                  {dayObj.activities.slice(0, 2).map(act => (
+                <div className="mt-1.5 space-y-1 overflow-hidden">
+                  {dayObj.activities.slice(0, 4).map(act => (
                     <div key={act.id} className="flex items-center justify-between gap-1">
-                      <p className="text-[8px] font-black uppercase text-slate-800 italic truncate leading-none flex-1">
+                      <p className="text-[7px] font-black uppercase text-slate-800 italic truncate leading-none flex-1">
                         {act.actividad}
                       </p>
                       {act.categoria && (
-                        <span className="text-[7px] font-black text-white bg-slate-900 px-1.5 py-0.5 rounded uppercase tracking-tighter">
+                        <span className="text-[6px] font-black text-white bg-slate-900 px-1 py-0.5 rounded uppercase tracking-tighter shrink-0">
                           {getCategoryDisplay(act.categoria)}
                         </span>
                       )}
                     </div>
                   ))}
+                  {dayObj.activities.length > 4 && (
+                    <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest text-center pt-1 border-t border-slate-50">
+                      + {dayObj.activities.length - 4} más
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -463,15 +502,43 @@ const PlanificacionAnual: React.FC = () => {
                 </h4>
                 <form onSubmit={handleAddActivity} className="space-y-4">
                   <div className="w-full">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Tipo</label>
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Tipo de Actividad</label>
                     <select 
                       className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner"
                       value={newActivity.type}
-                      onChange={e => setNewActivity({...newActivity, type: e.target.value as any})}
+                      onChange={e => setNewActivity({...newActivity, type: e.target.value})}
                     >
-                      {Object.keys(TIPO_COLORS).map(tipo => <option key={tipo} value={tipo}>{tipo.toUpperCase()}</option>)}
+                      <optgroup label="Actividades Diarias">
+                        <option value="ENTRENAMIENTO">ENTRENAMIENTO</option>
+                        <option value="PARTIDO AMISTOSO">PARTIDO AMISTOSO</option>
+                        <option value="PARTIDO OFICIAL">PARTIDO OFICIAL</option>
+                        <option value="EVALUACION FISICA">EVALUACION FISICA</option>
+                        <option value="REUNION">REUNION</option>
+                        <option value="VISITA A CLUB">VISITA A CLUB</option>
+                        <option value="VISITA PARTIDO CLUBES">VISITA PARTIDO CLUBES</option>
+                      </optgroup>
+                      <optgroup label="Eventos Multi-día">
+                        <option value="SUDAMERICANO">SUDAMERICANO</option>
+                        <option value="GIRA">GIRA</option>
+                        <option value="MUNDIAL">MUNDIAL</option>
+                        <option value="REGIONALES">REGIONALES</option>
+                      </optgroup>
                     </select>
                   </div>
+
+                  {MULTI_DAY_TYPES.includes(newActivity.type) && !editingActivityId && (
+                    <div className="w-full animate-in slide-in-from-top-2 duration-300">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Fecha de Término (Opcional)</label>
+                      <input 
+                        type="date"
+                        min={selectedDay}
+                        className="w-full bg-blue-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner text-blue-600"
+                        value={newActivity.endDate}
+                        onChange={e => setNewActivity({...newActivity, endDate: e.target.value})}
+                      />
+                      <p className="text-[8px] font-bold text-blue-400 uppercase mt-2 px-2 italic">Se crearán registros automáticos para cada día del rango.</p>
+                    </div>
+                  )}
 
                   <div className="w-full">
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Categoría</label>
@@ -525,7 +592,7 @@ const PlanificacionAnual: React.FC = () => {
                         onClick={() => startEditing(act)}
                       >
                         <div className="flex items-center gap-4">
-                          <div className={`w-2 h-10 rounded-full ${TIPO_COLORS[act.actividad]}`}></div>
+                          <div className={`w-2 h-10 rounded-full ${TIPO_COLORS[act.actividad.toUpperCase()] || 'bg-slate-300'}`}></div>
                           <div>
                             <p className="text-[11px] font-black text-slate-900 uppercase italic tracking-tight">
                               {act.actividad}

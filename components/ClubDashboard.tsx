@@ -7,6 +7,7 @@ import MedicaArea from './MedicaArea';
 import TecnicaArea from './TecnicaArea';
 import CargaTareasArea from './CargaTareasArea';
 import NutricionResumenGrupal from './NutricionResumenGrupal';
+import { useIFR, GPSData as IFRGPSData } from '../hooks/useIFR';
 
 interface ClubDashboardProps {
   userClub?: string;
@@ -20,6 +21,50 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
   const [subSection, setSubSection] = useState<string>('wellness');
   const [selectedClub, setSelectedClub] = useState<string>(userClub || 'Chile');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+
+  // IFR Hook and References
+  const { fetchReference, calcularIFR } = useIFR();
+  const [ifrReferences, setIfrReferences] = useState<Record<string, IFRGPSData>>({});
+
+  // Efecto: Cargar referencias IFR cuando cambian los registros o la sección
+  useEffect(() => {
+    const loadIfrRefs = async () => {
+      const needed = new Set<string>();
+      performanceRecords.forEach(r => {
+        if (r.player.category && r.player.position) {
+          const cat = r.player.category.toUpperCase();
+          let pos = r.player.position.toUpperCase();
+          
+          // Normalización de posición
+          if (pos.includes('DELANTERO') || pos.includes('EXTREMO') || pos.includes('PUNTA')) pos = 'DELANTERO';
+          else if (pos.includes('VOLANTE') || pos.includes('MEDIO') || pos.includes('CENTRAL') && !pos.includes('DEFENSA')) pos = 'MEDIO';
+          else if (pos.includes('DEFENSA') || pos.includes('LATERAL') || pos.includes('ZAGUERO')) pos = 'DEFENSA';
+          else if (pos.includes('PORTERO') || pos.includes('ARQUERO')) pos = 'PORTERO';
+          else pos = 'MEDIO';
+
+          needed.add(`${cat}|${pos}`);
+        }
+      });
+
+      const newRefs = { ...ifrReferences };
+      let changed = false;
+      for (const key of needed) {
+        if (!newRefs[key]) {
+          const [cat, pos] = key.split('|');
+          const ref = await fetchReference(cat, pos);
+          if (ref) {
+            newRefs[key] = ref;
+            changed = true;
+          }
+        }
+      }
+      if (changed) setIfrReferences(newRefs);
+    };
+
+    if (performanceRecords.length > 0 && activeSection === 'carga' && subSection === 'gps') {
+      loadIfrRefs();
+    }
+  }, [performanceRecords, activeSection, subSection]);
 
   const clubs = useMemo(() => {
     const uniqueClubs = new Set<string>();
@@ -93,6 +138,7 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">HSR (&gt;20km/h)</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sprints</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vel. Max</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">IFR (%)</th>
                   </>
                 )}
               </tr>
@@ -108,8 +154,46 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
                 filteredByDate.map((record, idx) => {
                   const isExternal = record.player.club?.toLowerCase() !== selectedClub.toLowerCase();
                   
+                  // Cálculo de IFR (para pintar la fila si es GPS)
+                  let ifrInfo = null;
+                    if (subSection === 'gps' && record.player.category && record.player.position) {
+                      const dateOnly = selectedDate.substring(0, 10);
+                      const g = record.gps.find(x => x.date.substring(0, 10) === dateOnly);
+                      if (g) {
+                        const cat = record.player.category.toUpperCase();
+                        let pos = record.player.position.toUpperCase();
+
+                        // Normalización de posición
+                        if (pos.includes('DELANTERO') || pos.includes('EXTREMO') || pos.includes('PUNTA')) pos = 'DELANTERO';
+                        else if (pos.includes('VOLANTE') || pos.includes('MEDIO') || pos.includes('CENTRAL') && !pos.includes('DEFENSA')) pos = 'MEDIO';
+                        else if (pos.includes('DEFENSA') || pos.includes('LATERAL') || pos.includes('ZAGUERO')) pos = 'DEFENSA';
+                        else if (pos.includes('PORTERO') || pos.includes('ARQUERO')) pos = 'PORTERO';
+                        else pos = 'MEDIO';
+
+                        const refKey = `${cat}|${pos}`;
+                        const reference = ifrReferences[refKey];
+                        if (reference) {
+                        const mappedGps: any = {
+                          dist_total_m: g.totalDistance,
+                          m_por_min: g.intensity || (g.totalDistance / (g.duration || 1)),
+                          dist_ai_m_15_kmh: g.dist_ai_m_15_kmh || 0,
+                          dist_mai_m_20_kmh: g.hsrDistance,
+                          dist_sprint_m_25_kmh: g.dist_sprint_m_25_kmh || 0,
+                          acc_decc_ai_n: g.acc_decc_ai_n || 0
+                        };
+                        ifrInfo = calcularIFR(mappedGps, reference);
+                      }
+                    }
+                  }
+
                   return (
-                    <tr key={idx} className={`hover:bg-slate-50/50 transition-colors ${isExternal ? 'opacity-60' : ''}`}>
+                    <tr 
+                      key={idx} 
+                      className={`transition-colors border-b border-slate-50 ${isExternal ? 'opacity-60' : ''}`}
+                      style={{ 
+                        backgroundColor: ifrInfo ? `${ifrInfo.color}15` : 'transparent' 
+                      }}
+                    >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black italic border ${isExternal ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
@@ -162,12 +246,25 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
                           {(() => {
                             const dateOnly = selectedDate.substring(0, 10);
                             const g = record.gps.find(x => x.date.substring(0, 10) === dateOnly);
+                            
                             return (
                               <>
                                 <td className="px-6 py-4 text-xs font-bold text-slate-700">{g?.totalDistance || '-'}</td>
                                 <td className="px-6 py-4 text-xs font-bold text-slate-700">{g?.hsrDistance || '-'}</td>
                                 <td className="px-6 py-4 text-xs font-bold text-slate-700">{g?.sprintCount || '-'}</td>
                                 <td className="px-6 py-4 text-xs font-bold text-slate-700">{g?.maxSpeed || '-'}</td>
+                                <td className="px-6 py-4 text-right">
+                                  {ifrInfo ? (
+                                    <div 
+                                      className="inline-block px-3 py-1 rounded-full text-white font-black text-[10px] shadow-sm"
+                                      style={{ backgroundColor: ifrInfo.color }}
+                                    >
+                                      {ifrInfo.score.toFixed(1)}%
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-300">-</span>
+                                  )}
+                                </td>
                               </>
                             );
                           })()}

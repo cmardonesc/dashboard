@@ -50,6 +50,62 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // NUEVO: Estado para datos de gps_import (Totales)
   const [gpsImportData, setGpsImportData] = useState<any[]>([]);
   const [loadingGpsImport, setLoadingGpsImport] = useState(false);
+  const [gpsReferences, setGpsReferences] = useState<any[]>([]);
+
+  // Fetch GPS References
+  useEffect(() => {
+    const fetchReferences = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('referencias_gps')
+          .select('*');
+        if (error) throw error;
+        setGpsReferences(data || []);
+      } catch (err) {
+        console.error("Error fetching gps references:", err);
+      }
+    };
+    fetchReferences();
+  }, []);
+
+  const getIFRColor = (ifr: number) => {
+    if (ifr < 50) return '#2ecc71'; // Verde
+    if (ifr < 85) return '#f1c40f'; // Amarillo
+    if (ifr < 110) return '#e67e22'; // Naranja
+    return '#e74c3c'; // Rojo
+  };
+
+  const calcularIFR = (gpsData: any, player: any) => {
+    if (!gpsReferences.length || !player) return null;
+
+    // Find reference for player category and position
+    const ref = gpsReferences.find(r => 
+      r.categoria?.toLowerCase() === player.categoria?.toLowerCase() && 
+      r.posicion?.toLowerCase() === player.posicion?.toLowerCase()
+    );
+
+    if (!ref) return null;
+
+    // Weights: 0.2 Volumen, 0.3 Intensidad, 0.5 Neuromuscular
+    
+    // 1. Volumen (20%): Distancia Total y Metros/min
+    const volDT = (gpsData.dist_total_m / (ref.distancia_total || 1)) * 100;
+    const volMM = (gpsData.m_por_min / (ref.metros_minuto || 1)) * 100;
+    const volumen = (volDT + volMM) / 2;
+
+    // 2. Intensidad (30%): >15km/h (Dist. AI) y >20km/h (Dist. MAI)
+    const intAI = (gpsData.dist_ai_m_15_kmh / (ref.distancia_ai || 1)) * 100;
+    const intMAI = (gpsData.dist_mai_m_20_kmh / (ref.distancia_mai || 1)) * 100;
+    const intensidad = (intAI + intMAI) / 2;
+
+    // 3. Neuromuscular (50%): Sprint >25km/h y #Acc+Decc AI
+    const neuroSprint = (gpsData.dist_sprint_m_25_kmh / (ref.distancia_sprint || 1)) * 100;
+    const neuroAccDecc = (gpsData.acc_decc_ai_n / (ref.acc_decc_ai || 1)) * 100;
+    const neuromuscular = (neuroSprint + neuroAccDecc) / 2;
+
+    const ifr = (volumen * 0.2) + (intensidad * 0.3) + (neuromuscular * 0.5);
+    return ifr;
+  };
 
   // Efecto: Sincronizar Microciclo y Nómina
   useEffect(() => {
@@ -149,21 +205,50 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           
           if (playersError) throw playersError;
 
+          // Fetch active microcycles and citations for the day to determine "real" category
+          const { data: activeMicros } = await supabase
+            .from('microcycles')
+            .select('id, category_id')
+            .lte('start_date', selectedDate)
+            .gte('end_date', selectedDate);
+
+          const microIds = activeMicros?.map(m => m.id) || [];
+          const { data: activeCitaciones } = await supabase
+            .from('citaciones')
+            .select('player_id, microcycle_id')
+            .in('microcycle_id', microIds);
+
+          const playerCategoryMap: Record<number, string> = {};
+          activeCitaciones?.forEach(cit => {
+            const mc = activeMicros?.find(m => m.id === cit.microcycle_id);
+            if (mc) {
+              const catName = Object.entries(CATEGORY_ID_MAP).find(([_, id]) => id === mc.category_id)?.[0];
+              if (catName) {
+                playerCategoryMap[cit.player_id] = catName;
+              }
+            }
+          });
+
           // Join in memory
           const joinedData = gpsData.map(gps => {
             const player = playersData?.find(p => p.id_del_jugador === gps.id_del_jugador) as any;
-            if (player && !player.categoria && player.anio) {
-              const age = 2026 - player.anio;
-              if (age <= 13) player.categoria = 'sub_13';
-              else if (age === 14) player.categoria = 'sub_14';
-              else if (age === 15) player.categoria = 'sub_15';
-              else if (age === 16) player.categoria = 'sub_16';
-              else if (age === 17) player.categoria = 'sub_17';
-              else if (age === 18) player.categoria = 'sub_18';
-              else if (age <= 20) player.categoria = 'sub_20';
-              else if (age <= 21) player.categoria = 'sub_21';
-              else if (age <= 23) player.categoria = 'sub_23';
-              else player.categoria = 'adulta';
+            if (player) {
+              // Prioritize category from active citation
+              if (playerCategoryMap[gps.id_del_jugador]) {
+                player.categoria = playerCategoryMap[gps.id_del_jugador];
+              } else if (!player.categoria && player.anio) {
+                const age = 2026 - player.anio;
+                if (age <= 13) player.categoria = 'sub_13';
+                else if (age === 14) player.categoria = 'sub_14';
+                else if (age === 15) player.categoria = 'sub_15';
+                else if (age === 16) player.categoria = 'sub_16';
+                else if (age === 17) player.categoria = 'sub_17';
+                else if (age === 18) player.categoria = 'sub_18';
+                else if (age <= 20) player.categoria = 'sub_20';
+                else if (age <= 21) player.categoria = 'sub_21';
+                else if (age <= 23) player.categoria = 'sub_23';
+                else player.categoria = 'adulta';
+              }
             }
             return {
               ...gps,

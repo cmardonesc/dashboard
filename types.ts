@@ -140,6 +140,7 @@ export interface TrainingLoadData {
 export interface GPSData {
   id?: string;
   playerId: string;
+  id_del_jugador?: number;
   date: string;
   duration: number; 
   totalDistance: number; 
@@ -147,6 +148,12 @@ export interface GPSData {
   sprintCount: number;
   maxSpeed: number; 
   intensity: number;
+  // Nuevos campos para IFR
+  m_por_min?: number;
+  dist_ai_m_15_kmh?: number;
+  dist_mai_m_20_kmh?: number;
+  dist_sprint_m_25_kmh?: number;
+  acc_decc_ai_n?: number;
 }
 
 export interface NutritionData {

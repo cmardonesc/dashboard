@@ -118,6 +118,7 @@ create table if not exists public.players (
   club text,
   id_club int,
   posicion text,
+  categoria text,
   anio int
 );
 
@@ -389,6 +390,39 @@ create policy "Enable all access for velocidad_tests" on public.velocidad_tests 
 -- Enable RLS for vo2max_tests
 alter table public.vo2max_tests enable row level security;
 create policy "Enable all access for vo2max_tests" on public.vo2max_tests for all using (true) with check (true);
+
+-- Create referencias_gps table
+create table if not exists public.referencias_gps (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  "Tipo" text not null, -- 'PROMEDIO'
+  "Categoria" text not null,
+  "Posicion" text not null,
+  dist_total_m float8 default 0,
+  m_por_min float8 default 0,
+  dist_ai_m_15_kmh float8 default 0,
+  dist_mai_m_20_kmh float8 default 0,
+  dist_sprint_m_25_kmh float8 default 0,
+  acc_decc_ai_n float8 default 0
+);
+
+alter table public.referencias_gps enable row level security;
+create policy "Enable all access for referencias_gps" on public.referencias_gps for all using (true) with check (true);
+
+-- Seed some default references
+insert into public.referencias_gps ("Tipo", "Categoria", "Posicion", dist_total_m, m_por_min, dist_ai_m_15_kmh, dist_mai_m_20_kmh, dist_sprint_m_25_kmh, acc_decc_ai_n)
+values 
+('PROMEDIO', 'SUB_17', 'DELANTERO', 4500, 70, 500, 100, 10, 100),
+('PROMEDIO', 'SUB_17', 'MEDIO', 5000, 75, 600, 120, 5, 120),
+('PROMEDIO', 'SUB_17', 'DEFENSA', 4200, 65, 400, 80, 8, 90),
+('PROMEDIO', 'SUB_17', 'PORTERO', 1500, 25, 50, 10, 2, 30),
+('PROMEDIO', 'SUB_20', 'DELANTERO', 4800, 75, 550, 110, 12, 110),
+('PROMEDIO', 'SUB_20', 'MEDIO', 5300, 80, 650, 130, 6, 130),
+('PROMEDIO', 'SUB_20', 'DEFENSA', 4500, 70, 450, 90, 10, 100),
+('PROMEDIO', 'ADULTA', 'DELANTERO', 5000, 80, 600, 120, 15, 120),
+('PROMEDIO', 'ADULTA', 'MEDIO', 5500, 85, 700, 140, 8, 140),
+('PROMEDIO', 'ADULTA', 'DEFENSA', 4800, 75, 500, 100, 12, 110)
+on conflict do nothing;
 
 -- Function to safely create microcycles with unique code
 create or replace function public.create_microcycle_safe(

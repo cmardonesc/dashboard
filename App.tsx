@@ -160,7 +160,13 @@ export default function App() {
           hsrDistance: Number(g.dist_mai_m_20_kmh || g.hsrDistance || 0), 
           sprintCount: Number(g.sprints_n || g.sprintCount || 0),
           maxSpeed: Number(g.vel_max_kmh || g.maxSpeed || 0),
-          intensity: Number(g.m_por_min || g.intensity || 0)
+          intensity: Number(g.m_por_min || g.intensity || 0),
+          // Mapeo para IFR
+          m_por_min: Number(g.m_por_min || 0),
+          dist_ai_m_15_kmh: Number(g.dist_ai_m_15_kmh || 0),
+          dist_mai_m_20_kmh: Number(g.dist_mai_m_20_kmh || 0),
+          dist_sprint_m_25_kmh: Number(g.dist_sprint_m_25_kmh || 0),
+          acc_decc_ai_n: Number(g.acc_decc_ai_n || 0)
         };
       });
 
@@ -186,6 +192,25 @@ export default function App() {
 
       const mappedPlayers: User[] = (data || []).map((p: any) => {
         const pid = p.id_del_jugador || p.id;
+        
+        // Inferir categoría si falta
+        let category = p.categoria;
+        if (!category && p.anio) {
+          const age = 2026 - p.anio;
+          if (age <= 13) category = 'SUB_13';
+          else if (age === 14) category = 'SUB_14';
+          else if (age === 15) category = 'SUB_15';
+          else if (age === 16) category = 'SUB_16';
+          else if (age === 17) category = 'SUB_17';
+          else if (age === 18) category = 'SUB_18';
+          else if (age <= 20) category = 'SUB_20';
+          else if (age <= 21) category = 'SUB_21';
+          else if (age <= 23) category = 'SUB_23';
+          else category = 'ADULTA';
+        } else if (!category) {
+          category = 'SUB_17';
+        }
+
         return {
           id: `player-${pid}`,
           id_del_jugador: pid ? Number(pid) : undefined,
@@ -196,6 +221,7 @@ export default function App() {
           role: UserRole.PLAYER,
           club: p.club,
           position: p.posicion,
+          category: category,
           anio: p.anio
         };
       })
@@ -420,6 +446,39 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const seedIfrReferences = async () => {
+      try {
+        const { count } = await supabase
+          .from('referencias_gps')
+          .select('*', { count: 'exact', head: true });
+
+        if (count === 0) {
+          console.log("Seeding referencias_gps table...");
+          const defaultRefs = [
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'DELANTERO', dist_total_m: 4500, m_por_min: 70, dist_ai_m_15_kmh: 500, dist_mai_m_20_kmh: 100, dist_sprint_m_25_kmh: 10, acc_decc_ai_n: 100 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'MEDIO', dist_total_m: 5000, m_por_min: 75, dist_ai_m_15_kmh: 600, dist_mai_m_20_kmh: 120, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 120 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'DEFENSA', dist_total_m: 4200, m_por_min: 65, dist_ai_m_15_kmh: 400, dist_mai_m_20_kmh: 80, dist_sprint_m_25_kmh: 8, acc_decc_ai_n: 90 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'PORTERO', dist_total_m: 1500, m_por_min: 25, dist_ai_m_15_kmh: 50, dist_mai_m_20_kmh: 10, dist_sprint_m_25_kmh: 2, acc_decc_ai_n: 30 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_20', Posicion: 'DELANTERO', dist_total_m: 4800, m_por_min: 75, dist_ai_m_15_kmh: 550, dist_mai_m_20_kmh: 110, dist_sprint_m_25_kmh: 12, acc_decc_ai_n: 110 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_20', Posicion: 'MEDIO', dist_total_m: 5300, m_por_min: 80, dist_ai_m_15_kmh: 650, dist_mai_m_20_kmh: 130, dist_sprint_m_25_kmh: 6, acc_decc_ai_n: 130 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_20', Posicion: 'DEFENSA', dist_total_m: 4500, m_por_min: 70, dist_ai_m_15_kmh: 450, dist_mai_m_20_kmh: 90, dist_sprint_m_25_kmh: 10, acc_decc_ai_n: 100 },
+            { Tipo: 'PROMEDIO', Categoria: 'ADULTA', Posicion: 'DELANTERO', dist_total_m: 5000, m_por_min: 80, dist_ai_m_15_kmh: 600, dist_mai_m_20_kmh: 120, dist_sprint_m_25_kmh: 15, acc_decc_ai_n: 120 },
+            { Tipo: 'PROMEDIO', Categoria: 'ADULTA', Posicion: 'MEDIO', dist_total_m: 5500, m_por_min: 85, dist_ai_m_15_kmh: 700, dist_mai_m_20_kmh: 140, dist_sprint_m_25_kmh: 8, acc_decc_ai_n: 140 },
+            { Tipo: 'PROMEDIO', Categoria: 'ADULTA', Posicion: 'DEFENSA', dist_total_m: 4800, m_por_min: 75, dist_ai_m_15_kmh: 500, dist_mai_m_20_kmh: 100, dist_sprint_m_25_kmh: 12, acc_decc_ai_n: 110 }
+          ];
+          await supabase.from('referencias_gps').insert(defaultRefs);
+        }
+      } catch (err) {
+        console.error("Error seeding references:", err);
+      }
+    };
+
+    if (role === 'admin') {
+      seedIfrReferences();
+    }
+  }, [role]);
 
   const performanceRecords: AthletePerformanceRecord[] = useMemo(() => {
     // 1. Empezamos con los jugadores reales de la tabla 'players'
