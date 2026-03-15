@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { normalizeClub } from '../lib/utils';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Cell, BarChart, Bar, LineChart, Line, Legend,
@@ -18,6 +19,8 @@ interface PlayerData {
   category_id: number;
   posicion: string;
   fecha_nacimiento: string;
+  club?: string;
+  club_name?: string;
   phv_status?: 'Pre-Peak' | 'Peak' | 'Post-Peak';
   injury_status?: 'Disponible' | 'RTP' | 'Lesionado';
 }
@@ -66,7 +69,6 @@ interface SpeedTestData {
   vel_10_20m?: number;
   tiempo_20_30m?: number;
   vel_20_30m?: number;
-  vel_max_kmh?: number;
   tiempo_total: number;
   observaciones?: string;
 }
@@ -130,7 +132,12 @@ interface VO2MaxData {
   jugador?: string;
 }
 
-const SportsScienceArea: React.FC = () => {
+interface SportsScienceAreaProps {
+  userRole?: string;
+  userClub?: string;
+}
+
+const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClub }) => {
   const [activeTab, setActiveTab] = useState<TabId>('individual');
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedAnios, setSelectedAnios] = useState<number[]>([]);
@@ -186,15 +193,46 @@ const SportsScienceArea: React.FC = () => {
   };
 
   const availableAnios = useMemo(() => {
-    const years = players
-      .map(p => p.fecha_nacimiento ? new Date(p.fecha_nacimiento).getFullYear() : null)
+    let filteredPlayers = players;
+    if (userRole === 'club' && userClub) {
+      const uClubNorm = normalizeClub(userClub);
+      filteredPlayers = players.filter(p => {
+        const pClub = p.club || p.club_name || '';
+        return pClub && normalizeClub(pClub) === uClubNorm;
+      });
+    }
+
+    const years = filteredPlayers
+      .map(p => {
+        if ((p as any).anio) return Number((p as any).anio);
+        return p.fecha_nacimiento ? new Date(p.fecha_nacimiento).getFullYear() : null;
+      })
       .filter((y): y is number => y !== null && !isNaN(y));
     return Array.from(new Set(years)).sort((a: number, b: number) => b - a);
-  }, [players]);
+  }, [players, userRole, userClub]);
+
+  const anonymizedPlayers = useMemo(() => {
+    if (userRole === 'club' && userClub) {
+      const uClubNorm = normalizeClub(userClub);
+      return players.map(p => {
+        const pClub = (p as any).club || (p as any).club_name || '';
+        if (pClub && normalizeClub(pClub) !== uClubNorm) {
+          return {
+            ...p,
+            nombre: 'Jugador',
+            apellido1: `[${p.id_del_jugador}]`,
+            apellido2: ''
+          };
+        }
+        return p;
+      });
+    }
+    return players;
+  }, [players, userRole, userClub]);
 
   const selectedPlayer = useMemo(() => 
-    players.find(p => p.id_del_jugador === selectedPlayerId), 
-  [players, selectedPlayerId]);
+    anonymizedPlayers.find(p => p.id_del_jugador === selectedPlayerId), 
+  [anonymizedPlayers, selectedPlayerId]);
 
   return (
     <div className="space-y-8 pb-20 animate-in fade-in duration-500">
@@ -219,9 +257,13 @@ const SportsScienceArea: React.FC = () => {
             <TabButton active={activeTab === 'individual'} label="Huella del Atleta" icon="fa-fingerprint" onClick={() => setActiveTab('individual')} />
             <TabButton active={activeTab === 'grupal'} label="Análisis Grupal" icon="fa-users-rays" onClick={() => setActiveTab('grupal')} />
             <TabButton active={activeTab === 'laboratorio'} label="Laboratorio" icon="fa-flask-vial" onClick={() => setActiveTab('laboratorio')} />
-            <TabButton active={activeTab === 'categorias'} label="Categorías" icon="fa-layer-group" onClick={() => setActiveTab('categorias')} />
-            <TabButton active={activeTab === 'insights'} label="Insights" icon="fa-lightbulb" onClick={() => setActiveTab('insights')} />
-            <TabButton active={activeTab === 'salud'} label="Salud y Carga" icon="fa-heart-pulse" onClick={() => setActiveTab('salud')} />
+            {userRole !== 'club' && (
+              <>
+                <TabButton active={activeTab === 'categorias'} label="Categorías" icon="fa-layer-group" onClick={() => setActiveTab('categorias')} />
+                <TabButton active={activeTab === 'insights'} label="Insights" icon="fa-lightbulb" onClick={() => setActiveTab('insights')} />
+                <TabButton active={activeTab === 'salud'} label="Salud y Carga" icon="fa-heart-pulse" onClick={() => setActiveTab('salud')} />
+              </>
+            )}
             <TabButton active={activeTab === 'tabla'} label="Tabla de Datos" icon="fa-table" onClick={() => setActiveTab('tabla')} />
           </div>
         </div>
@@ -331,8 +373,19 @@ const SportsScienceArea: React.FC = () => {
               className="bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-red-500"
             >
               <option value="">Seleccionar Atleta</option>
-              {players
-                .filter(p => selectedAnios.length === 0 || selectedAnios.includes(new Date(p.fecha_nacimiento).getFullYear()))
+              {anonymizedPlayers
+                .filter(p => {
+                  const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+                  const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
+                  const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
+                  
+                  if (userRole === 'club' && userClub) {
+                    const uClubNorm = normalizeClub(userClub);
+                    const pClub = p.club || p.club_name || '';
+                    return yearMatch && posMatch && pClub && normalizeClub(pClub) === uClubNorm;
+                  }
+                  return yearMatch && posMatch;
+                })
                 .map(p => (
                   <option key={p.id_del_jugador} value={p.id_del_jugador}>{p.nombre} {p.apellido1}</option>
                 ))}
@@ -355,7 +408,8 @@ const SportsScienceArea: React.FC = () => {
         {activeTab === 'grupal' && (
           <SquadAnalytics 
             anios={selectedAnios} 
-            players={players}
+            posiciones={selectedPosiciones}
+            players={anonymizedPlayers}
             gps={gpsData}
             speed={speedData}
             imtp={imtpData}
@@ -365,7 +419,7 @@ const SportsScienceArea: React.FC = () => {
         )}
         {activeTab === 'laboratorio' && (
           <Laboratorio 
-            players={players}
+            players={anonymizedPlayers}
             imtp={imtpData}
             speed={speedData}
             vo2max={vo2maxData}
@@ -374,9 +428,9 @@ const SportsScienceArea: React.FC = () => {
             selectedPosiciones={selectedPosiciones}
           />
         )}
-        {activeTab === 'categorias' && (
+        {activeTab === 'categorias' && userRole !== 'club' && (
           <Categorias 
-            players={players}
+            players={anonymizedPlayers}
             imtp={imtpData}
             speed={speedData}
             vo2max={vo2maxData}
@@ -385,9 +439,9 @@ const SportsScienceArea: React.FC = () => {
             selectedPosiciones={selectedPosiciones}
           />
         )}
-        {activeTab === 'insights' && (
+        {activeTab === 'insights' && userRole !== 'club' && (
           <CorrelationsInsights 
-            players={players}
+            players={anonymizedPlayers}
             imtp={imtpData}
             speed={speedData}
             vo2max={vo2maxData}
@@ -396,7 +450,7 @@ const SportsScienceArea: React.FC = () => {
             selectedPosiciones={selectedPosiciones}
           />
         )}
-        {activeTab === 'salud' && (
+        {activeTab === 'salud' && userRole !== 'club' && (
           <HealthLoad 
             player={selectedPlayer} 
             injury={injuries.find(i => i.player_id === selectedPlayerId)}
@@ -410,7 +464,7 @@ const SportsScienceArea: React.FC = () => {
             speed={speedData} 
             vo2max={vo2maxData} 
             antropometria={antropometria}
-            players={players} 
+            players={anonymizedPlayers} 
           />
         )}
       </div>
@@ -446,7 +500,6 @@ const METRICS_OPTIONS = [
   { label: 'SLCMJ Dif % TV', key: 'slcmj_diferencia_pct_tv', table: 'imtp' },
   { label: 'Déficit Bilateral', key: 'deficit_bilateral', table: 'imtp' },
   { label: 'Altura x RSI Mod', key: 'altura_x_rsi_mod', table: 'imtp' },
-  { label: 'Velocidad Máxima', key: 'vel_max_kmh', table: 'speed' },
   { label: 'Tiempo 10m', key: 'tiempo_10m', table: 'speed' },
   { label: 'Velocidad 10m', key: 'vel_10m', table: 'speed' },
   { label: 'Tiempo 10-20m', key: 'tiempo_10_20m', table: 'speed' },
@@ -506,7 +559,7 @@ const IndividualDashboard = ({
 
   const [selectedSpeedMetrics, setSelectedSpeedMetrics] = useState<string[]>([
     'tiempo_total',
-    'vel_max_kmh',
+    'vel_10m',
     'tiempo_10m',
     'tiempo_20_30m'
   ]);
@@ -606,7 +659,7 @@ const IndividualDashboard = ({
               </span>
               <span className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <i className="fa-solid fa-building text-emerald-500"></i>
-                Club: CMSportech
+                Club: {player.club || player.club_name || 'S/D'}
               </span>
             </div>
           </div>
@@ -963,19 +1016,24 @@ const ORDERED_POSITIONS = [
   'Volante',
   'Delantero Extremo',
   'Centro Delantero',
-  'Media Punta',
-  'Sin definir'
+  'Media Punta'
 ];
 
-const SquadAnalytics = ({ anios, players, gps, speed, imtp, vo2max, antropometria }: { anios: number[], players: PlayerData[], gps: GPSData[], speed: SpeedTestData[], imtp: IMTPData[], vo2max: VO2MaxData[], antropometria: AntropometriaData[] }) => {
+const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, antropometria }: { anios: number[], posiciones: string[], players: PlayerData[], gps: GPSData[], speed: SpeedTestData[], imtp: IMTPData[], vo2max: VO2MaxData[], antropometria: AntropometriaData[] }) => {
   const [selectedImtpMetrics, setSelectedImtpMetrics] = useState<string[]>(['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'dsi_valor', 'fuerza_cmj']);
-  const [selectedSpeedMetrics, setSelectedSpeedMetrics] = useState<string[]>(['tiempo_total', 'vel_max_kmh', 'tiempo_10m', 'tiempo_20_30m']);
+  const [selectedSpeedMetrics, setSelectedSpeedMetrics] = useState<string[]>(['tiempo_total', 'vel_10m', 'tiempo_10m', 'tiempo_20_30m']);
   const [selectedVo2Metrics, setSelectedVo2Metrics] = useState<string[]>(['vo2_max', 'vam', 'fc_max', 'mts']);
   const [selectedAntroMetrics, setSelectedAntroMetrics] = useState<string[]>(['masa_adiposa_pct', 'masa_muscular_pct', 'sumatoria_6_pliegues', 'peso']);
+  const [selectedSquadPosiciones, setSelectedSquadPosiciones] = useState<string[]>([]);
 
   const filteredPlayers = useMemo(() => 
-    players.filter(p => anios.length === 0 || anios.includes(new Date(p.fecha_nacimiento).getFullYear())),
-  [players, anios]);
+    players.filter(p => {
+      const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+      const yearMatch = anios.length === 0 || anios.includes(pYear);
+      const posMatch = posiciones.length === 0 || posiciones.includes(p.posicion);
+      return yearMatch && posMatch;
+    }),
+  [players, anios, posiciones]);
 
   const getBoxPlotData = (metricKey: string, table: string) => {
     let sourceData: any[] = [];
@@ -1010,9 +1068,12 @@ const SquadAnalytics = ({ anios, players, gps, speed, imtp, vo2max, antropometri
 
     const statsByPosition = ORDERED_POSITIONS.map(pos => {
       const posPlayerIds = filteredPlayers.filter(p => p.posicion === pos).map(p => p.id_del_jugador);
-      const posValues = relevantData.filter(d => posPlayerIds.includes(d.id_del_jugador)).map(d => d[metricKey]).filter(v => v != null);
+      const posValues = relevantData
+        .filter(d => posPlayerIds.includes(d.id_del_jugador))
+        .map(d => d[metricKey])
+        .filter(v => v != null && v > 0);
       return { name: pos, stats: calculateStats(posValues) };
-    }).filter(p => p.stats != null);
+    }).filter(p => p.stats !== null);
 
     return statsByPosition.map(p => ({
       name: p.name,
@@ -1033,36 +1094,51 @@ const SquadAnalytics = ({ anios, players, gps, speed, imtp, vo2max, antropometri
 
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+        <ComposedChart 
+          layout="vertical"
+          data={data} 
+          margin={{ top: 10, right: 40, left: 20, bottom: 20 }}
+          barCategoryGap="25%"
+        >
+          <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
           <XAxis 
-            dataKey="name" 
+            type="number"
             stroke="#94a3b8" 
-            fontSize={8} 
+            fontSize={10} 
             fontWeight={900} 
             axisLine={false} 
             tickLine={false}
-            angle={-25}
-            textAnchor="end"
-            interval={0}
-            height={60}
-            tickFormatter={(value) => POSITION_ABBR[value] || value}
+            domain={['auto', 'auto']}
+            tickFormatter={(val) => val.toLocaleString()}
           />
-          <YAxis stroke="#94a3b8" fontSize={10} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+          <YAxis 
+            dataKey="name" 
+            type="category"
+            stroke="#94a3b8" 
+            fontSize={9} 
+            fontWeight={900} 
+            axisLine={false} 
+            tickLine={false}
+            width={80}
+            tickFormatter={(value) => POSITION_ABBR[value] || value}
+            allowDuplicatedCategory={false}
+          />
           <Tooltip 
             content={({ active, payload }) => {
               if (active && payload && payload.length) {
                 const d = payload[0].payload;
+                // Si es un punto de outlier, buscamos el objeto de la posición
+                const posData = data.find(p => p.name === d.name) || d;
                 return (
                   <div className="bg-white p-4 rounded-2xl shadow-xl border border-slate-100 text-[10px] font-black uppercase tracking-widest space-y-1">
-                    <p className="text-slate-900 border-b border-slate-50 pb-1 mb-1">{d.name}</p>
-                    <p className="text-slate-400">Max (Whisker): <span className="text-slate-900">{d.max.toFixed(2)}</span></p>
-                    <p className="text-slate-400">Q3: <span className="text-slate-900">{d.q3.toFixed(2)}</span></p>
-                    <p className="text-slate-400">Mediana: <span className="text-red-600">{d.median.toFixed(2)}</span></p>
-                    <p className="text-slate-400">Q1: <span className="text-slate-900">{d.q1.toFixed(2)}</span></p>
-                    <p className="text-slate-400">Min (Whisker): <span className="text-slate-900">{d.min.toFixed(2)}</span></p>
-                    {d.outliers.length > 0 && (
-                      <p className="text-red-500 pt-1 border-t border-slate-50 mt-1">Outliers: {d.outliers.length}</p>
+                    <p className="text-slate-900 border-b border-slate-50 pb-1 mb-1">{posData.name}</p>
+                    <p className="text-slate-400">Max (Whisker): <span className="text-slate-900">{posData.max.toFixed(2)}</span></p>
+                    <p className="text-slate-400">Q3: <span className="text-slate-900">{posData.q3.toFixed(2)}</span></p>
+                    <p className="text-red-600 font-bold">Mediana: <span>{posData.median.toFixed(2)}</span></p>
+                    <p className="text-slate-400">Q1: <span className="text-slate-900">{posData.q1.toFixed(2)}</span></p>
+                    <p className="text-slate-400">Min (Whisker): <span className="text-slate-900">{posData.min.toFixed(2)}</span></p>
+                    {posData.outliers.length > 0 && (
+                      <p className="text-red-500 pt-1 border-t border-slate-50 mt-1">Outliers: {posData.outliers.length}</p>
                     )}
                   </div>
                 );
@@ -1071,16 +1147,34 @@ const SquadAnalytics = ({ anios, players, gps, speed, imtp, vo2max, antropometri
             }}
           />
           
-          {/* Whiskers */}
-          <Bar dataKey="lowWhisker" fill="none">
-            <ErrorBar dataKey="lowWhisker" width={8} strokeWidth={1.5} stroke="#94a3b8" />
-          </Bar>
-          <Bar dataKey="highWhisker" fill="none">
-            <ErrorBar dataKey="highWhisker" width={8} strokeWidth={1.5} stroke="#94a3b8" />
-          </Bar>
+          {/* Whiskers Low */}
+          <Scatter data={data} dataKey="min" shape={(props: any) => {
+            const { cx, cy, payload, xAxis } = props;
+            if (!payload || payload.min === undefined || !xAxis || !xAxis.scale) return null;
+            const q1X = xAxis.scale(payload.q1);
+            return (
+              <g>
+                <line x1={cx} y1={cy} x2={q1X} y2={cy} stroke="#94a3b8" strokeWidth={1.5} />
+                <line x1={cx} y1={cy - 6} x2={cx} y2={cy + 6} stroke="#94a3b8" strokeWidth={1.5} />
+              </g>
+            );
+          }} />
+
+          {/* Whiskers High */}
+          <Scatter data={data} dataKey="max" shape={(props: any) => {
+            const { cx, cy, payload, xAxis } = props;
+            if (!payload || payload.max === undefined || !xAxis || !xAxis.scale) return null;
+            const q3X = xAxis.scale(payload.q3);
+            return (
+              <g>
+                <line x1={cx} y1={cy} x2={q3X} y2={cy} stroke="#94a3b8" strokeWidth={1.5} />
+                <line x1={cx} y1={cy - 6} x2={cx} y2={cy + 6} stroke="#94a3b8" strokeWidth={1.5} />
+              </g>
+            );
+          }} />
           
           {/* Box (IQR) */}
-          <Bar dataKey="range" radius={[2, 2, 2, 2]}>
+          <Bar dataKey="range" barSize={20}>
             {data.map((entry, index) => (
               <Cell 
                 key={`cell-${index}`} 
@@ -1096,7 +1190,7 @@ const SquadAnalytics = ({ anios, players, gps, speed, imtp, vo2max, antropometri
           <Scatter data={data} dataKey="median" shape={(props: any) => {
             const { cx, cy } = props;
             return (
-              <line x1={cx - 15} y1={cy} x2={cx + 15} y2={cy} stroke="#fff" strokeWidth={2} />
+              <line x1={cx} y1={cy - 10} x2={cx} y2={cy + 10} stroke="#fff" strokeWidth={2.5} />
             );
           }} />
 
@@ -1107,6 +1201,7 @@ const SquadAnalytics = ({ anios, players, gps, speed, imtp, vo2max, antropometri
       </ResponsiveContainer>
     );
   };
+
 
   const imtpOptions = METRICS_OPTIONS.filter(m => m.table === 'imtp');
   const speedOptions = METRICS_OPTIONS.filter(m => m.table === 'speed');
@@ -1261,7 +1356,8 @@ const CorrelationsInsights = ({ players, imtp, speed, vo2max, antropometria, sel
 }) => {
   const topCorrelations = useMemo(() => {
     const filteredPlayers = players.filter(p => {
-      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(new Date(p.fecha_nacimiento).getFullYear());
+      const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
       const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
       return yearMatch && posMatch;
     });
@@ -1384,11 +1480,12 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
   selectedPosiciones: string[]
 }) => {
   const [metric1, setMetric1] = useState('imtp_fuerza_n');
-  const [metric2, setMetric2] = useState('vel_max_kmh');
+  const [metric2, setMetric2] = useState('vel_10m');
 
   const calculateStats = (metricKey: string) => {
     const filteredPlayers = players.filter(p => {
-      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(new Date(p.fecha_nacimiento).getFullYear());
+      const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
       const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
       return yearMatch && posMatch;
     });
@@ -1396,7 +1493,7 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     const values = filteredPlayers.map(p => {
       let val: any = null;
       if (metricKey === 'imtp_fuerza_n') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.imtp_fuerza_n;
-      else if (metricKey === 'vel_max_kmh') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_max_kmh;
+      else if (metricKey === 'vel_10m') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_10m;
       else {
         const option = METRICS_OPTIONS.find(o => o.key === metricKey);
         if (option?.table === 'imtp') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
@@ -1576,14 +1673,15 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
   const [axes, setAxes] = useState([
     { x: 'imtp_fuerza_n', y: 'fuerza_cmj' },
     { x: 'masa_corporal_kg', y: 'imtp_f_relativa_n_kg' },
-    { x: 'vel_max_kmh', y: 'tiempo_total' },
+    { x: 'vel_10m', y: 'tiempo_total' },
     { x: 'vo2_max', y: 'vam' }
   ]);
 
   const mergedData = useMemo(() => {
     return players
       .filter(p => {
-        const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(new Date(p.fecha_nacimiento).getFullYear());
+        const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+        const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
         const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
         return yearMatch && posMatch;
       })
@@ -1961,7 +2059,6 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
         { label: 'Vel 10-20m', key: 'vel_10_20m' },
         { label: 'Tiempo 20-30m', key: 'tiempo_20_30m' },
         { label: 'Vel 20-30m', key: 'vel_20_30m' },
-        { label: 'Vel Máx (km/h)', key: 'vel_max_kmh' },
         { label: 'Tiempo Total', key: 'tiempo_total' },
         { label: 'Observaciones', key: 'observaciones' },
       ];

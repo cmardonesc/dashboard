@@ -271,11 +271,17 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
               </button>
             </div>
             {subSection === 'resumen' ? (
-              <NutricionResumenGrupal performanceRecords={clubRecords} />
+              <NutricionResumenGrupal 
+                performanceRecords={performanceRecords} 
+                userRole="club"
+                userClub={userClub}
+              />
             ) : (
               <NutricionArea 
-                performanceRecords={clubRecords} 
+                performanceRecords={performanceRecords} 
                 initialTab={subSection === 'grupal' ? 'general' : 'individual'} 
+                userRole="club"
+                userClub={userClub}
               />
             )}
           </div>

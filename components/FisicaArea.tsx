@@ -2,15 +2,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AthletePerformanceRecord, Category, CATEGORY_ID_MAP } from '../types';
 import { supabase } from '../lib/supabase';
+import { normalizeClub } from '../lib/utils';
 
 interface FisicaAreaProps {
   performanceRecords: AthletePerformanceRecord[];
   view?: 'wellness' | 'pse' | 'external_total' | 'report';
+  userRole?: string;
+  userClub?: string;
 }
 
 type MainTab = 'carga_interna' | 'carga_externa' | 'reporte_diario';
 
-export default function FisicaArea({ performanceRecords, view = 'wellness' }: FisicaAreaProps) {
+export default function FisicaArea({ performanceRecords, view = 'wellness', userRole, userClub }: FisicaAreaProps) {
   const activeMainTab: MainTab = useMemo(() => {
     if (view === 'external_total') return 'carga_externa';
     if (view === 'report') return 'reporte_diario';
@@ -33,7 +36,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
 
   // Filtro de minutos para Carga Externa
   const [minDuration, setMinDuration] = useState<number>(0);
-  const [maxDuration, setMaxDuration] = useState<number>(120);
+  const [maxDuration, setMaxDuration] = useState<number>(240);
 
   // Estados de Contexto
   const [activeMicrocycle, setActiveMicrocycle] = useState<any>(null);
@@ -119,24 +122,56 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
 
   // Efecto: Cargar datos de gps_import para Carga Externa Totales y Reporte
   useEffect(() => {
-    if ((view === 'external_total' || activeMainTab === 'reporte_diario') && selectedDate) {
+    if ((view === 'external_total' || activeMainTab === 'carga_externa' || activeMainTab === 'reporte_diario') && selectedDate) {
       const fetchGpsImport = async () => {
         setLoadingGpsImport(true);
         try {
-          const { data, error } = await supabase
+          // Fetch GPS data
+          const { data: gpsData, error: gpsError } = await supabase
             .from('gps_import')
-            .select(`
-              *,
-              players (
-                nombre,
-                apellido1,
-                apellido2
-              )
-            `)
-            .eq('fecha', selectedDate);
+            .select('*')
+            .eq('fecha', selectedDate)
+            .order('minutos', { ascending: false });
           
-          if (error) throw error;
-          setGpsImportData(data || []);
+          if (gpsError) throw gpsError;
+          
+          if (!gpsData || gpsData.length === 0) {
+            setGpsImportData([]);
+            return;
+          }
+
+          // Fetch Players data
+          const playerIds = Array.from(new Set(gpsData.map(d => d.id_del_jugador)));
+          const { data: playersData, error: playersError } = await supabase
+            .from('players')
+            .select('id_del_jugador, nombre, apellido1, apellido2, club, posicion, anio')
+            .in('id_del_jugador', playerIds);
+          
+          if (playersError) throw playersError;
+
+          // Join in memory
+          const joinedData = gpsData.map(gps => {
+            const player = playersData?.find(p => p.id_del_jugador === gps.id_del_jugador) as any;
+            if (player && !player.categoria && player.anio) {
+              const age = 2026 - player.anio;
+              if (age <= 13) player.categoria = 'sub_13';
+              else if (age === 14) player.categoria = 'sub_14';
+              else if (age === 15) player.categoria = 'sub_15';
+              else if (age === 16) player.categoria = 'sub_16';
+              else if (age === 17) player.categoria = 'sub_17';
+              else if (age === 18) player.categoria = 'sub_18';
+              else if (age <= 20) player.categoria = 'sub_20';
+              else if (age <= 21) player.categoria = 'sub_21';
+              else if (age <= 23) player.categoria = 'sub_23';
+              else player.categoria = 'adulta';
+            }
+            return {
+              ...gps,
+              players: player || null
+            };
+          });
+
+          setGpsImportData(joinedData);
         } catch (err) {
           console.error("Error fetching gps_import:", err);
         } finally {
@@ -145,7 +180,34 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
       };
       fetchGpsImport();
     }
-  }, [view, selectedDate]);
+  }, [view, activeMainTab, selectedDate]);
+
+  const anonymizedGpsImport = useMemo(() => {
+    if (userRole !== 'club' || !userClub) return gpsImportData;
+    
+    const uClubNorm = normalizeClub(userClub);
+    
+    return gpsImportData.map(row => {
+      const player = row.players;
+      const pClub = player?.club_name || player?.club || '';
+      const pClubNorm = normalizeClub(pClub);
+      
+      if (pClubNorm !== uClubNorm) {
+        return {
+          ...row,
+          players: {
+            ...player,
+            nombre: 'Jugador',
+            apellido1: `[${row.id_del_jugador}]`,
+            apellido2: '',
+            club_name: 'OTRO CLUB',
+            club: 'OTRO CLUB'
+          }
+        };
+      }
+      return row;
+    });
+  }, [gpsImportData, userRole, userClub]);
 
   const togglePlayerInReport = (id: number) => {
     const next = new Set(selectedPlayersReport);
@@ -181,8 +243,48 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
 
   // DERIVED DATA
   const currentCitadosPlayers = useMemo(() => {
-    return performanceRecords.filter(r => r.player.id_del_jugador && citedPlayerIds.includes(r.player.id_del_jugador));
-  }, [performanceRecords, citedPlayerIds]);
+    // 1. Jugadores citados (siempre visibles, para club de forma anonimizada)
+    const cited = performanceRecords.filter(r => r.player.id_del_jugador && citedPlayerIds.includes(r.player.id_del_jugador));
+    
+    // 2. Si es CLUB, asegurar que sus propios jugadores estén incluidos, incluso si no hay microciclo
+    if (userRole === 'club' && userClub) {
+      const uClubNorm = normalizeClub(userClub);
+      const myPlayers = performanceRecords.filter(r => {
+        const pClub = r.player.club_name || r.player.club || '';
+        const pClubNorm = normalizeClub(pClub);
+        const isMyPlayer = pClubNorm === uClubNorm;
+        
+        if (!isMyPlayer) return false;
+        
+        // Si hay categorías seleccionadas, intentamos filtrar por ellas para mantener coherencia con la UI
+        if (selectedCategories.length > 0 && r.player.anio) {
+          const currentYear = new Date().getFullYear();
+          const age = currentYear - r.player.anio;
+          const playerCat = `sub_${age}`;
+          
+          // Verificamos si la categoría del jugador coincide con alguna seleccionada
+          const matchesCategory = selectedCategories.some(cat => 
+            cat === playerCat || cat === r.player.anio?.toString() || cat === r.player.category
+          );
+          
+          if (!matchesCategory) return false;
+        }
+        
+        return true;
+      });
+      
+      // Combinar citados con jugadores propios sin duplicados
+      const combined = [...cited];
+      myPlayers.forEach(p => {
+        if (!combined.some(c => c.player.id_del_jugador === p.player.id_del_jugador)) {
+          combined.push(p);
+        }
+      });
+      return combined;
+    }
+
+    return cited;
+  }, [performanceRecords, citedPlayerIds, userRole, userClub, selectedCategories]);
 
   const reportData = useMemo(() => {
     const filteredRecords = currentCitadosPlayers.filter(r => selectedPlayersReport.has(r.player.id_del_jugador!));
@@ -264,7 +366,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
     });
 
     // NUEVO: Datos de gps_import para el reporte (Totales Reales)
-    const gpsImportReport = gpsImportData.filter(row => selectedPlayersReport.has(row.id_del_jugador));
+    const gpsImportReport = anonymizedGpsImport.filter(row => selectedPlayersReport.has(row.id_del_jugador));
 
     // NUEVO: Cálculo de Promedios para Wellness
     const wellValid = wellnessList.filter(w => w.data);
@@ -321,7 +423,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
     }));
 
     return { wellnessList, loadList, gpsKPIs, taskSummary: taskSummaryDetailed, athleteGpsTotals, gpsImportReport, wellAvg, loadAvg, gpsAvg };
-  }, [currentCitadosPlayers, selectedPlayersReport, selectedDate, dailyTaskGps, gpsImportData]);
+  }, [currentCitadosPlayers, selectedPlayersReport, selectedDate, dailyTaskGps, anonymizedGpsImport]);
 
   // LOGICA DE PAGINACION Y CHUNKING PARA PDF
   const wellnessChunks = useMemo(() => {
@@ -444,15 +546,22 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
   }, [currentCitadosPlayers, selectedDate, athleteSearch, minDuration, maxDuration]);
 
   const filteredGpsImport = useMemo(() => {
-    return gpsImportData.filter(row => {
+    return anonymizedGpsImport.filter(row => {
       const player = row.players;
+      
+      // Filtro por Categoría
+      if (selectedCategories.length > 0 && player?.categoria) {
+        const matchesCategory = selectedCategories.some(cat => cat.toLowerCase() === player.categoria.toLowerCase());
+        if (!matchesCategory) return false;
+      }
+
       const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim().toLowerCase() : 'atleta desconocido';
       const matchesSearch = playerName.includes(athleteSearch.toLowerCase());
       const duration = row.minutos || 0;
       const matchesDuration = duration >= minDuration && duration <= maxDuration;
       return matchesSearch && matchesDuration;
     });
-  }, [gpsImportData, athleteSearch, minDuration, maxDuration]);
+  }, [anonymizedGpsImport, athleteSearch, minDuration, maxDuration, selectedCategories]);
 
   let currentPageNum = 0;
 
@@ -684,7 +793,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                   const avg = row.wellness ? (row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3 : 0;
                   
                   return (
-                    <tr key={idx} className={`transition-colors font-black uppercase italic text-[10px] md:text-xs ${isPending ? 'bg-slate-50/50 text-slate-300' : 'hover:bg-slate-50 text-slate-900'}`}>
+                    <tr key={idx} className={`transition-colors font-black uppercase italic text-[10px] md:text-xs ${isPending ? 'bg-slate-50/50 text-slate-300' : (row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '') ? 'bg-slate-100/80 hover:bg-slate-100' : 'hover:bg-slate-50 text-slate-900')}`}>
                       <td className="px-4 md:px-8 py-4 md:py-5 text-left">
                         <div className="flex flex-col">
                           <span>{row.player.name}</span>
@@ -794,9 +903,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                  {filteredGpsImport.map((row, idx) => {
                    const player = row.players;
                    const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim() : `ID: ${row.id_del_jugador}`;
+                   const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
+                   
                    return (
-                     <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                       <td className="px-4 md:px-8 py-4 md:py-5 text-left sticky left-0 bg-white group-hover:bg-slate-50 border-r border-slate-50">{playerName}</td>
+                     <tr key={idx} className={`hover:bg-slate-50 transition-colors ${isOwnPlayer ? 'bg-slate-100/80' : ''}`}>
+                       <td className={`px-4 md:px-8 py-4 md:py-5 text-left sticky left-0 group-hover:bg-slate-50 border-r border-slate-50 ${isOwnPlayer ? 'bg-slate-100/80' : 'bg-white'}`}>{playerName}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.minutos?.toFixed(1) || '0.0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.dist_total_m?.toFixed(0) || '0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">
@@ -919,9 +1030,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                             const avg = data ? (data.fatigue + data.sleep + data.mood) / 3 : 0;
                             const isSano = !data?.illness_symptoms || data.illness_symptoms.length === 0;
                             const hasPain = data?.soreness_areas && data.soreness_areas.length > 0;
+                            const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
 
                             return (
-                              <tr key={player.id} className="border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors">
+                              <tr key={player.id} className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}>
                                 <td className="px-4 py-0.5 text-left">
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
                                    <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player.club_name || player.club || 'SIN CLUB'}</span>
@@ -1021,8 +1133,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                             const totalMin = sessions.reduce((acc, c) => acc + c.duration, 0);
                             const totalLoad = sessions.reduce((acc, c) => acc + c.load, 0);
                             const status = getLoadStatus(totalLoad);
+                            const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
+                            
                             return (
-                              <tr key={player.id} className="border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors">
+                              <tr key={player.id} className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}>
                                 <td className="px-4 py-0.5 text-left">
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
                                    <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player.club_name || player.club || 'SIN CLUB'}</span>
@@ -1094,8 +1208,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness' }: Fi
                           {chunk.map((row) => {
                             const player = row.players;
                             const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.id_del_jugador}`;
+                            const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
+                            
                             return (
-                              <tr key={row.id} className="border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors">
+                              <tr key={row.id} className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}>
                                 <td className="px-4 py-0.5 text-left font-sans">
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{playerName}</span>
                                    <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player?.club_name || player?.club || 'SIN CLUB'}</span>

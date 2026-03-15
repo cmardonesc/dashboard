@@ -82,3 +82,26 @@ export const BODY_PARTS = {
     { id: 'aquiles_izq', label: 'TALÓN AQUILES I.', category: 'INFERIOR' },
   ]
 };
+
+export const CLUB_LOGOS: Record<string, string> = {
+  'colo colo': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/Logo_Colo-Colo.svg/1200px-Logo_Colo-Colo.svg.png',
+  'universidad de chile': 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Logo_Universidad_de_Chile.svg/1200px-Logo_Universidad_de_Chile.svg.png',
+  'universidad catolica': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/Logo_Universidad_Cat%C3%B3lica.svg/1200px-Logo_Universidad_Cat%C3%B3lica.svg.png',
+  'palestino': 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b2/Logo_Club_Deportivo_Palestino.svg/1200px-Logo_Club_Deportivo_Palestino.svg.png',
+  'union espanola': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Logo_Uni%C3%B3n_Espa%C3%B1ola.svg/1200px-Logo_Uni%C3%B3n_Espa%C3%B1ola.svg.png',
+  'audax italiano': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/Logo_Audax_Italiano.svg/1200px-Logo_Audax_Italiano.svg.png',
+  'everton': 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Logo_Everton_de_Vi%C3%B1a_del_Mar.svg/1200px-Logo_Everton_de_Vi%C3%B1a_del_Mar.svg.png',
+  'santiago wanderers': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/03/Logo_Santiago_Wanderers.svg/1200px-Logo_Santiago_Wanderers.svg.png',
+  'ohiggins': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Logo_O%27Higgins_FC.svg/1200px-Logo_O%27Higgins_FC.svg.png',
+  'cobresal': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Logo_Cobresal.svg/1200px-Logo_Cobresal.svg.png',
+  'coquimbo unido': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/Logo_Coquimbo_Unido.svg/1200px-Logo_Coquimbo_Unido.svg.png',
+  'huachipato': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Logo_Huachipato.svg/1200px-Logo_Huachipato.svg.png',
+  'nublense': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Logo_Ñublense.svg/1200px-Logo_Ñublense.svg.png',
+  'cobreloa': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Logo_Cobreloa.svg/1200px-Logo_Cobreloa.svg.png',
+  'curico unido': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/Logo_Curicó_Unido.svg/1200px-Logo_Curicó_Unido.svg.png',
+  'deportes antofagasta': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Logo_Deportes_Antofagasta.svg/1200px-Logo_Deportes_Antofagasta.svg.png',
+  'deportes iquique': 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Logo_Deportes_Iquique.svg/1200px-Logo_Deportes_Iquique.svg.png',
+  'deportes la serena': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Logo_Deportes_La_Serena.svg/1200px-Logo_Deportes_La_Serena.svg.png',
+  'magallanes': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Logo_Club_Deportivo_Magallanes.svg/1200px-Logo_Club_Deportivo_Magallanes.svg.png',
+  'union la calera': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Logo_Uni%C3%B3n_La_Calera.svg/1200px-Logo_Uni%C3%B3n_La_Calera.svg.png'
+};

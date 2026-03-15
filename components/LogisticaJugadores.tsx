@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { User, UserRole } from '../types';
+import { useClubs } from '../lib/useClubs';
 
 const LogisticaJugadores: React.FC = () => {
   const [players, setPlayers] = useState<User[]>([]);
@@ -14,19 +15,16 @@ const LogisticaJugadores: React.FC = () => {
   const [editingPlayer, setEditingPlayer] = useState<Partial<User> | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const CLUBS = [
-    'Colo-Colo', 'Universidad de Chile', 'Universidad Católica', 'Unión Española', 
-    'Audax Italiano', 'Palestino', 'Everton', 'Santiago Wanderers', 'O\'Higgins', 
-    'Huachipato', 'Coquimbo Unido', 'Cobresal', 'Cobreloa', 'Ñublense', 
-    'Unión La Calera', 'Curicó Unido', 'Magallanes', 'Deportes Iquique', 
-    'Deportes Antofagasta', 'Deportes Temuco', 'Rangers', 'San Luis', 
-    'Santiago Morning', 'Recoleta', 'Limache', 'Barnechea', 'Santa Cruz', 
-    'San Marcos', 'Universidad de Concepción', 'La Serena', 'Unión San Felipe', 
-    'Puerto Montt', 'Concepción', 'Fernández Vial', 'San Antonio Unido', 
-    'General Velásquez', 'Real San Joaquín', 'Lautaro de Buin', 'Trasandino', 
-    'Melipilla', 'Provincial Osorno', 'Deportes Rengo', 'Concón National', 
-    'Provincial Ovalle', 'Linares', 'Extranjero', 'S/C'
-  ].sort();
+  const { clubs: dbClubs, loading: loadingClubs } = useClubs();
+
+  const CLUBS = useMemo(() => {
+    if (loadingClubs) return [];
+    const names = dbClubs.map(c => c.nombre);
+    // Asegurar que 'Extranjero' y 'S/C' estén si no vienen de la DB
+    if (!names.includes('Extranjero')) names.push('Extranjero');
+    if (!names.includes('S/C')) names.push('S/C');
+    return names.sort();
+  }, [dbClubs, loadingClubs]);
 
   const POSITIONS = [
     'Portero', 

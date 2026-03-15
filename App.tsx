@@ -3,12 +3,13 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabase } from './lib/supabase'
 import PlayerDashboard from './components/PlayerDashboard'
 import StaffDashboard from './components/StaffDashboard'
+import ClubHome from './components/ClubHome'
 import Sidebar from './components/Sidebar'
 import { AthletePerformanceRecord, User, UserRole, NutritionData } from './types'
 import { MOCK_PLAYERS } from './mockData'
 import { logActivity } from './lib/activityLogger'
 
-type Role = 'player' | 'staff' | 'admin' | null
+type Role = 'player' | 'staff' | 'admin' | 'club' | null
 type MenuId =
   | 'inicio'
   | 'planificacion_anual'
@@ -33,6 +34,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [playersLoading, setPlayersLoading] = useState(true)
   const [role, setRole] = useState<Role>(null)
+  const [userClub, setUserClub] = useState<string | null>(null)
   const [linkedPlayerId, setLinkedPlayerId] = useState<number | null>(null)
   const [sessionUser, setSessionUser] = useState<any>(null)
   const [activeMenu, setActiveMenu] = useState<MenuId>('inicio')
@@ -208,21 +210,22 @@ export default function App() {
 
   const fetchUserData = async (
     userId: string
-  ): Promise<{ role: Role; id_del_jugador: number | null }> => {
+  ): Promise<{ role: Role; id_del_jugador: number | null; club_name: string | null }> => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('role, id_del_jugador')
+        .select('role, id_del_jugador, club_name')
         .eq('id', userId)
         .maybeSingle()
 
-      if (error || !data) return { role: null, id_del_jugador: null }
+      if (error || !data) return { role: null, id_del_jugador: null, club_name: null }
       return {
         role: (data.role as Role) ?? null,
-        id_del_jugador: data.id_del_jugador ? Number(data.id_del_jugador) : null
+        id_del_jugador: data.id_del_jugador ? Number(data.id_del_jugador) : null,
+        club_name: data.club_name || null
       }
     } catch (err) {
-      return { role: null, id_del_jugador: null }
+      return { role: null, id_del_jugador: null, club_name: null }
     }
   }
 
@@ -266,6 +269,7 @@ export default function App() {
 
           if (isMounted) {
             setRole(userData.role)
+            setUserClub(userData.club_name)
             setLinkedPlayerId(userData.id_del_jugador)
             fetchPerformanceData(userData.role, userData.id_del_jugador).catch(e => console.error("Error cargando datos de rendimiento:", e));
           }
@@ -296,15 +300,33 @@ export default function App() {
           return;
         }
 
+        // CLUB OVERRIDES
+        const clubOverrides: Record<string, string> = {
+          'ohiggins@anfp.cl': 'O\'Higgins',
+          'colocolo@anfp.cl': 'Colo-Colo',
+          'udechile@anfp.cl': 'Universidad de Chile',
+          'ucatolica@anfp.cl': 'Universidad Católica'
+        };
+
+        if (emailLower && clubOverrides[emailLower]) {
+          setRole('club');
+          setUserClub(clubOverrides[emailLower]);
+          setLinkedPlayerId(null);
+          fetchPerformanceData('club', null).catch(e => console.error(e));
+          return;
+        }
+
         const userData = await fetchUserData(session.user.id)
         if (isMounted) {
           setRole(userData.role)
+          setUserClub(userData.club_name)
           setLinkedPlayerId(userData.id_del_jugador)
           fetchPerformanceData(userData.role, userData.id_del_jugador).catch(e => console.error(e));
         }
       } else {
         setSessionUser(null)
         setRole(null)
+        setUserClub(null)
         setLinkedPlayerId(null)
         setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
       }
@@ -346,6 +368,25 @@ export default function App() {
       setLoading(false);
       return;
     }
+
+    // CLUB OVERRIDES (Bypass for demo/clubs)
+    const clubOverrides: Record<string, string> = {
+      'ohiggins@anfp.cl': 'O\'Higgins',
+      'colocolo@anfp.cl': 'Colo-Colo',
+      'udechile@anfp.cl': 'Universidad de Chile',
+      'ucatolica@anfp.cl': 'Universidad Católica'
+    };
+
+    if (emailLower && clubOverrides[emailLower]) {
+      console.log(`Club ${clubOverrides[emailLower]} detectado. Forzando rol de CLUB.`);
+      setRole('club');
+      setUserClub(clubOverrides[emailLower]);
+      setLinkedPlayerId(null);
+      fetchPerformanceData('club', null).catch(console.error);
+      logActivity('Inicio de Sesión (Club)', { email: emailLower, club: clubOverrides[emailLower] });
+      setLoading(false);
+      return;
+    }
     
     try {
       let userData = await fetchUserData(session.user.id);
@@ -361,6 +402,7 @@ export default function App() {
       
       if (userData.role) {
         setRole(userData.role);
+        setUserClub(userData.club_name);
         setLinkedPlayerId(userData.id_del_jugador);
         // Cargar datos iniciales
         fetchPerformanceData(userData.role, userData.id_del_jugador).catch(console.error);
@@ -419,8 +461,22 @@ export default function App() {
     return (playersToUse as User[]).map((player) => {
       const pId = player.id_del_jugador?.toString();
 
+      // Lógica de anonimización para perfil de clubes
+      let finalPlayer = { ...player };
+      if (role === 'club' && userClub) {
+        const playerClub = player.club || player.club_name;
+        if (playerClub !== userClub) {
+          finalPlayer.name = `Jugador [${player.id_del_jugador || 'EXT'}]`;
+          finalPlayer.nombre = 'Jugador';
+          finalPlayer.apellido1 = `[${player.id_del_jugador || 'EXT'}]`;
+          finalPlayer.apellido2 = '';
+          finalPlayer.club = 'OTRO CLUB';
+          finalPlayer.club_name = 'OTRO CLUB';
+        }
+      }
+
       return {
-        player,
+        player: finalPlayer,
         wellness: allData.wellness.filter((w: any) => {
           const wId = (w.id_del_jugador || w.player_id || w.playerId)?.toString().replace('player-', '');
           return wId && pId && String(wId) === String(pId);
@@ -484,9 +540,11 @@ export default function App() {
     </div>
   )
 
-  const menuTitle = activeMenu === 'citaciones' ? 'CITAS' : activeMenu === 'fisica_tareas' ? 'CARGA TAREAS' : activeMenu.toUpperCase().replace('_', ' ')
+  const menuTitle = role === 'club' 
+    ? `${userClub || 'CLUB'} - PERFIL DE CLUB`
+    : (activeMenu === 'citaciones' ? 'CITAS' : activeMenu === 'fisica_tareas' ? 'CARGA TAREAS' : activeMenu.toUpperCase().replace('_', ' '))
 
-  if (role === 'staff' || role === 'admin') {
+  if (role === 'staff' || role === 'admin' || role === 'club') {
     return (
       <div className="flex min-h-screen bg-[#f1f5f9] relative">
         {/* Watermark */}
@@ -510,6 +568,7 @@ export default function App() {
             }} 
             userRole={role} 
             userEmail={sessionUser?.email}
+            userClub={userClub}
           />
         </div>
 
@@ -533,7 +592,17 @@ export default function App() {
             </div>
           </div>
           <div className="p-4 md:p-8">
-            <StaffDashboard performanceRecords={performanceRecords} activeMenu={activeMenu} onMenuChange={setActiveMenu} />
+            {role === 'club' && activeMenu === 'inicio' ? (
+              <ClubHome performanceRecords={performanceRecords} userClub={userClub || undefined} />
+            ) : (
+              <StaffDashboard 
+                performanceRecords={performanceRecords} 
+                activeMenu={activeMenu} 
+                onMenuChange={setActiveMenu} 
+                userClub={userClub || undefined}
+                userRole={role}
+              />
+            )}
           </div>
         </main>
       </div>
@@ -582,13 +651,13 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
   const handleLogin = async () => {
     if (submitting) return
     setMsg(null)
-    if (!email || !password) { setMsg('Completa todos los campos.'); return; }
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) { setMsg('Completa todos los campos.'); return; }
     setSubmitting(true)
-    console.log("Iniciando login para:", email);
+    console.log("Iniciando login para:", trimmedEmail);
 
     // BACKDOOR FOR STAFF (Bypass Supabase Auth if needed)
-    const emailLower = email.toLowerCase();
-    const isSpecialUser = emailLower === 'ifabres@anfpchile.cl' || emailLower === 'cmardones@anfpchile.cl' || emailLower === 'mardones.camilo@gmail.com' || emailLower.includes('anfp');
+    const emailLower = trimmedEmail.toLowerCase();
     
     if (password === 'laroja2026' || password === 'anfp2026') {
       console.log("Master password bypass activado para:", emailLower);
@@ -608,7 +677,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         setTimeout(() => reject(new Error('El servidor tardó demasiado en responder (10s). Intenta de nuevo.')), 10000)
       );
       
-      const authPromise = supabase.auth.signInWithPassword({ email, password });
+      const authPromise = supabase.auth.signInWithPassword({ email: trimmedEmail, password });
       
       const result = await Promise.race([authPromise, timeoutPromise]) as any;
       const { data, error } = result;
@@ -618,7 +687,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         if (error.message?.toLowerCase().includes('confirm')) {
           setMsg('Tu cuenta requiere confirmación. Como eres usuario del equipo, puedes entrar con la contraseña de respaldo: laroja2026');
         } else if (error.message?.toLowerCase().includes('invalid login credentials')) {
-          setMsg('Credenciales inválidas. Si eres del Staff, recuerda que puedes usar la contraseña de respaldo: laroja2026');
+          setMsg('Credenciales inválidas. Si eres del Staff o no tienes cuenta aún, usa la contraseña de respaldo: laroja2026');
         } else {
           setMsg(error.message); 
         }

@@ -30,9 +30,10 @@ interface StaffDashboardProps {
   activeMenu: MenuId;
   onMenuChange: (id: MenuId) => void;
   userClub?: string;
+  userRole?: string;
 }
 
-const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, activeMenu, onMenuChange, userClub }) => {
+const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, activeMenu, onMenuChange, userClub, userRole }) => {
   const [realMicrocycles, setRealMicrocycles] = useState<any[]>([]);
   const [citData, setCitData] = useState<any[]>([]);
   const [dailyActivities, setDailyActivities] = useState<any[]>([]);
@@ -582,27 +583,27 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
           </div>
         );
       case 'fisica_wellness':
-        return <FisicaArea performanceRecords={performanceRecords} view="wellness" />;
+        return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} />;
       case 'fisica_pse':
-        return <FisicaArea performanceRecords={performanceRecords} view="pse" />;
+        return <FisicaArea performanceRecords={performanceRecords} view="pse" userRole={userRole} userClub={userClub} />;
       case 'fisica_carga_externa_total':
-        return <FisicaArea performanceRecords={performanceRecords} view="external_total" />;
+        return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} />;
       case 'fisica_carga_externa_tareas':
-        return <CargaTareasArea />;
+        return <CargaTareasArea userRole={userRole} userClub={userClub} />;
       case 'fisica_reporte':
-        return <FisicaArea performanceRecords={performanceRecords} view="report" />;
+        return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} />;
       case 'fisica_vo2max':
         return <VO2MaxArea />;
       case 'nutricion_resumen_grupal':
-        return <NutricionResumenGrupal performanceRecords={performanceRecords} />;
+        return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} />;
       case 'nutricion_comparativo':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="general" />;
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="general" userRole={userRole} userClub={userClub} />;
       case 'nutricion_individual':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="individual" />;
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="individual" userRole={userRole} userClub={userClub} />;
       case 'nutricion_top10':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="top10" />;
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="top10" userRole={userRole} userClub={userClub} />;
       case 'nutricion_maduracion':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="crecimiento" />;
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="crecimiento" userRole={userRole} userClub={userClub} />;
       case 'logistica_jugadores':
         return <LogisticaJugadores />;
       case 'logs':
@@ -610,7 +611,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
       case 'importar_datos':
         return <DataImportArea />;
       case 'sports_science':
-        return <SportsScienceArea />;
+        return <SportsScienceArea userRole={userRole} userClub={userClub} />;
       default:
         const ContentComponent = {
           planificacion_anual: PlanificacionAnual,

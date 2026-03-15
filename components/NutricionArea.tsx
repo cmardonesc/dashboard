@@ -24,6 +24,8 @@ import {
 interface NutricionAreaProps {
   performanceRecords: AthletePerformanceRecord[];
   initialTab?: TabId;
+  userRole?: string;
+  userClub?: string;
 }
 
 type TabId = 'general' | 'individual' | 'top10' | 'crecimiento';
@@ -50,7 +52,7 @@ const POSITION_ABBR: { [key: string]: string } = {
   'Sin definir': 'S/D',
 };
 
-const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initialTab = 'general' }) => {
+const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initialTab = 'general', userRole, userClub }) => {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
   const [searchTerm, setSearchTerm] = useState('');
@@ -113,14 +115,22 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
   });
 
   const nutritionList = useMemo(() => {
-    return performanceRecords
-      .filter(r => r.nutrition && r.nutrition.length > 0)
-      .map(r => ({
+    let base = performanceRecords.filter(r => r.nutrition && r.nutrition.length > 0);
+    
+    // Si es rol club, solo mostramos sus propios jugadores en las listas
+    if (userRole === 'club' && userClub) {
+      base = base.filter(r => {
+        const pClub = r.player.club || r.player.club_name;
+        return pClub === userClub;
+      });
+    }
+
+    return base.map(r => ({
         player: r.player,
         data: r.nutrition![0], // El más reciente para tablas generales
         history: r.nutrition || [] // Todos los registros para individual
       }));
-  }, [performanceRecords]);
+  }, [performanceRecords, userRole, userClub]);
 
   // Función para obtener IMO real (Calculado si es 0)
   const getIMORal = (data: NutritionData) => {
@@ -308,9 +318,11 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
           >
             <i className="fa-solid fa-rotate text-sm md:text-base"></i>
           </button>
-          <button onClick={() => setIsDrawerOpen(true)} className="flex-1 md:flex-none bg-[#0b1220] text-white px-4 md:px-8 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-xl">
-            <i className="fa-solid fa-plus"></i> Ingreso Manual ISAK
-          </button>
+          {userRole !== 'club' && (
+            <button onClick={() => setIsDrawerOpen(true)} className="flex-1 md:flex-none bg-[#0b1220] text-white px-4 md:px-8 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-xl">
+              <i className="fa-solid fa-plus"></i> Ingreso Manual ISAK
+            </button>
+          )}
         </div>
       </div>
 
@@ -582,10 +594,16 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
               {searchTerm.length > 0 && !selectedIndividual && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden max-h-60 overflow-y-auto">
                    {performanceRecords
-                    .filter(r => 
-                      r.player.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                      r.player.id_del_jugador?.toString().includes(searchTerm)
-                    )
+                    .filter(r => {
+                      // Filtro por club si es necesario
+                      if (userRole === 'club' && userClub) {
+                        const pClub = r.player.club || r.player.club_name;
+                        if (pClub !== userClub) return false;
+                      }
+                      
+                      return r.player.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                             r.player.id_del_jugador?.toString().includes(searchTerm);
+                    })
                     .map(r => (
                       <button key={r.player.id} onClick={() => { setSelectedIndividual(r.player); setSearchTerm(''); }} className="w-full p-4 hover:bg-red-50 text-left border-b border-slate-50 flex items-center justify-between group">
                         <div>

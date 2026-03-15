@@ -7,6 +7,7 @@ import WellnessForm from './WellnessForm'
 import TrainingLoadForm from './TrainingLoadForm'
 import MatchReportForm from './MatchReportForm'
 import NutritionReport from './NutritionReport'
+import { useClubs } from '../lib/useClubs'
 import {
   LineChart,
   Line,
@@ -54,6 +55,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     subtitle: ''
   })
   const [profileData, setProfileData] = useState<Partial<User>>({})
+  const [customClub, setCustomClub] = useState('')
+  const [isOtherClub, setIsOtherClub] = useState(false)
   const [realActivities, setRealActivities] = useState<any[]>([])
   const [loadingActivities, setLoadingActivities] = useState(false)
   const [vo2maxHistory, setVo2maxHistory] = useState<any[]>([])
@@ -74,19 +77,15 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     }
   };
 
-  const CLUBS = [
-    'Colo-Colo', 'Universidad de Chile', 'Universidad Católica', 'Unión Española', 
-    'Audax Italiano', 'Palestino', 'Everton', 'Santiago Wanderers', 'O\'Higgins', 
-    'Huachipato', 'Coquimbo Unido', 'Cobresal', 'Cobreloa', 'Ñublense', 
-    'Unión La Calera', 'Curicó Unido', 'Magallanes', 'Deportes Iquique', 
-    'Deportes Antofagasta', 'Deportes Temuco', 'Rangers', 'San Luis', 
-    'Santiago Morning', 'Recoleta', 'Limache', 'Barnechea', 'Santa Cruz', 
-    'San Marcos', 'Universidad de Concepción', 'La Serena', 'Unión San Felipe', 
-    'Puerto Montt', 'Concepción', 'Fernández Vial', 'San Antonio Unido', 
-    'General Velásquez', 'Real San Joaquín', 'Lautaro de Buin', 'Trasandino', 
-    'Melipilla', 'Provincial Osorno', 'Deportes Rengo', 'Concón National', 
-    'Provincial Ovalle', 'Linares', 'Extranjero', 'S/C'
-  ].sort();
+  const { clubs: dbClubs, loading: loadingClubs } = useClubs();
+
+  const CLUBS = useMemo(() => {
+    if (loadingClubs) return [];
+    const names = dbClubs.map(c => c.nombre);
+    if (!names.includes('Extranjero')) names.push('Extranjero');
+    if (!names.includes('S/C')) names.push('S/C');
+    return names.sort();
+  }, [dbClubs, loadingClubs]);
 
   const POSITIONS = [
     'Portero', 'Defensa Central', 'Defensa Lateral', 'Volante', 
@@ -105,6 +104,16 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         fecha_nacimiento: player.fecha_nacimiento,
         celular: player.celular
       });
+      
+      // Verificar si el club actual está en la lista oficial
+      if (player.club && !CLUBS.includes(player.club) && player.club !== 'Extranjero' && player.club !== 'S/C') {
+        setIsOtherClub(true);
+        setCustomClub(player.club);
+      } else {
+        setIsOtherClub(false);
+        setCustomClub('');
+      }
+
       fetchRealActivities();
       fetchVo2MaxHistory();
     }
@@ -259,11 +268,21 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     
     setSubmitting(true);
     try {
+      const finalClub = isOtherClub ? customClub : profileData.club;
+      
+      // Buscar si el club existe en la tabla maestra para asignar id_club
+      let idClubToAssign = null;
+      if (!isOtherClub && profileData.club) {
+        const foundClub = dbClubs.find(c => c.nombre === profileData.club);
+        if (foundClub) idClubToAssign = foundClub.id_club;
+      }
+
       const payload = {
         nombre: profileData.nombre,
         apellido1: profileData.apellido1,
         apellido2: profileData.apellido2,
-        club: profileData.club,
+        club: finalClub,
+        id_club: idClubToAssign,
         posicion: profileData.position,
         fecha_nacimiento: profileData.fecha_nacimiento,
         celular: profileData.celular
@@ -817,14 +836,35 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                   <div className="space-y-1.5 md:space-y-2">
                     <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Club</label>
                     <select 
-                      value={profileData.club || ''}
-                      onChange={e => setProfileData(prev => ({ ...prev, club: e.target.value }))}
+                      value={isOtherClub ? 'OTRO' : (profileData.club || '')}
+                      onChange={e => {
+                        if (e.target.value === 'OTRO') {
+                          setIsOtherClub(true);
+                        } else {
+                          setIsOtherClub(false);
+                          setProfileData(prev => ({ ...prev, club: e.target.value }));
+                        }
+                      }}
                       className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-5 md:px-6 py-3.5 md:py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
                     >
                       <option value="">Seleccionar Club</option>
                       {CLUBS.map(c => <option key={c} value={c}>{c}</option>)}
+                      <option value="OTRO">+ OTRO / NO APARECE</option>
                     </select>
                   </div>
+                  {isOtherClub && (
+                    <div className="space-y-1.5 md:space-y-2 animate-in slide-in-from-top-2 duration-300">
+                      <label className="text-[9px] md:text-[10px] font-black text-red-500 uppercase tracking-widest ml-2">Escribe el nombre de tu Club</label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="Ej: Universidad de Concepción"
+                        value={customClub}
+                        onChange={e => setCustomClub(e.target.value)}
+                        className="w-full bg-red-50 border border-red-100 rounded-xl md:rounded-2xl px-5 md:px-6 py-3.5 md:py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                    </div>
+                  )}
                   <div className="space-y-1.5 md:space-y-2">
                     <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Posición</label>
                     <select 

@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { AthletePerformanceRecord } from '../types';
+import { normalizeClub } from '../lib/utils';
 
 interface GpsTarea {
   id: number;
@@ -41,9 +42,11 @@ type SortKey =
 
 interface CargaTareasAreaProps {
   performanceRecords?: AthletePerformanceRecord[];
+  userRole?: string;
+  userClub?: string;
 }
 
-export default function CargaTareasArea({ performanceRecords }: CargaTareasAreaProps) {
+export default function CargaTareasArea({ performanceRecords, userRole, userClub }: CargaTareasAreaProps) {
   const [data, setData] = useState<GpsTarea[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -81,22 +84,55 @@ export default function CargaTareasArea({ performanceRecords }: CargaTareasAreaP
   const fetchTasksForDate = async () => {
     setLoading(true);
     try {
-      const { data: res, error } = await supabase
+      // Fetch GPS tasks data
+      const { data: gpsData, error: gpsError } = await supabase
         .from('gps_tareas')
-        .select('*, players(nombre, apellido1, posicion, club)')
+        .select('*')
         .eq('fecha', selectedDate)
         .order('tarea', { ascending: true });
 
-      if (error) throw error;
+      if (gpsError) throw gpsError;
       
-      if (res) {
-        setData(res);
-        const currentTasks = res.map(t => t.tarea);
-        if (selectedTask !== 'TODAS' && !currentTasks.includes(selectedTask)) {
-          setSelectedTask('TODAS');
-        }
-      } else {
+      if (!gpsData || gpsData.length === 0) {
         setData([]);
+        return;
+      }
+
+      // Fetch Players data
+      const playerIds = Array.from(new Set(gpsData.map(d => d.id_del_jugador)));
+      const { data: playersData, error: playersError } = await supabase
+        .from('players')
+        .select('id_del_jugador, nombre, apellido1, posicion, club, anio')
+        .in('id_del_jugador', playerIds);
+      
+      if (playersError) throw playersError;
+
+      // Join in memory
+      const joinedData = gpsData.map(gps => {
+        const player = playersData?.find(p => p.id_del_jugador === gps.id_del_jugador) as any;
+        if (player && !player.categoria && player.anio) {
+          const age = 2026 - player.anio;
+          if (age <= 13) player.categoria = 'sub_13';
+          else if (age === 14) player.categoria = 'sub_14';
+          else if (age === 15) player.categoria = 'sub_15';
+          else if (age === 16) player.categoria = 'sub_16';
+          else if (age === 17) player.categoria = 'sub_17';
+          else if (age === 18) player.categoria = 'sub_18';
+          else if (age <= 20) player.categoria = 'sub_20';
+          else if (age <= 21) player.categoria = 'sub_21';
+          else if (age <= 23) player.categoria = 'sub_23';
+          else player.categoria = 'adulta';
+        }
+        return {
+          ...gps,
+          players: player || null
+        };
+      });
+
+      setData(joinedData);
+      const currentTasks = joinedData.map(t => t.tarea);
+      if (selectedTask !== 'TODAS' && !currentTasks.includes(selectedTask)) {
+        setSelectedTask('TODAS');
       }
     } catch (err: any) {
       console.error("Error en sincronización gps_tareas:", err);
@@ -105,8 +141,35 @@ export default function CargaTareasArea({ performanceRecords }: CargaTareasAreaP
     }
   };
 
+  const anonymizedData = useMemo(() => {
+    if (userRole !== 'club' || !userClub) return data;
+    
+    const uClubNorm = normalizeClub(userClub);
+    
+    return data.map(row => {
+      const player = row.players;
+      const pClub = player?.club_name || player?.club || '';
+      const pClubNorm = normalizeClub(pClub);
+      
+      if (pClubNorm !== uClubNorm) {
+        return {
+          ...row,
+          jugador_nombre: 'Jugador',
+          players: player ? {
+            ...player,
+            nombre: 'Jugador',
+            apellido1: `[${row.id_del_jugador}]`,
+            club: 'OTRO CLUB',
+            club_name: 'OTRO CLUB'
+          } : undefined
+        };
+      }
+      return row;
+    });
+  }, [data, userRole, userClub]);
+
   const taskStats = useMemo(() => {
-    if (!data.length) return [];
+    if (!anonymizedData.length) return [];
     
     const tasksMap: Record<string, { 
       count: number, 
@@ -120,7 +183,7 @@ export default function CargaTareasArea({ performanceRecords }: CargaTareasAreaP
       totalAccDec: number
     }> = {};
     
-    data.forEach(row => {
+    anonymizedData.forEach(row => {
       if (!tasksMap[row.tarea]) {
         tasksMap[row.tarea] = { 
           count: 0, 
@@ -169,7 +232,7 @@ export default function CargaTareasArea({ performanceRecords }: CargaTareasAreaP
   }, [taskStats]);
 
   const filteredData = useMemo(() => {
-    let items = [...data];
+    let items = [...anonymizedData];
     
     if (selectedTask !== 'TODAS') {
       items = items.filter(item => item.tarea === selectedTask);
@@ -454,11 +517,13 @@ export default function CargaTareasArea({ performanceRecords }: CargaTareasAreaP
             ) : filteredData.length === 0 ? (
               <tr><td colSpan={12} className="py-32 text-slate-400 font-black uppercase tracking-widest text-[10px] italic">No hay registros para {selectedDate}</td></tr>
             ) : (
-              filteredData.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50 transition-colors group">
-                  <td className="px-4 py-6 border-r border-slate-50 font-black text-slate-400 italic">
-                    {Array.isArray(row.bloque) ? row.bloque.join(', ') : row.bloque || '-'}
-                  </td>
+              filteredData.map((row) => {
+                const isOwnPlayer = row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '');
+                return (
+                  <tr key={row.id} className={`hover:bg-slate-50 transition-colors group ${isOwnPlayer ? 'bg-slate-100/80' : ''}`}>
+                    <td className="px-4 py-6 border-r border-slate-50 font-black text-slate-400 italic">
+                      {Array.isArray(row.bloque) ? row.bloque.join(', ') : row.bloque || '-'}
+                    </td>
                   <td className="px-6 py-6 border-r border-slate-50 text-left">
                     <span className="text-[10px] font-black px-4 py-1.5 rounded-xl bg-[#0b1220] text-white italic truncate inline-block max-w-[180px] shadow-sm">
                       {row.tarea}
@@ -509,8 +574,8 @@ export default function CargaTareasArea({ performanceRecords }: CargaTareasAreaP
                     {Number(row.acc_decc_ai_n || 0).toFixed(0)} <span className="text-[9px] text-slate-400 not-italic font-bold">act.</span>
                   </td>
                 </tr>
-              ))
-            )}
+              );
+            }))}
           </tbody>
         </table>
       </div>

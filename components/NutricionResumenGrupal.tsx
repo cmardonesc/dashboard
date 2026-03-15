@@ -3,15 +3,18 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { AthletePerformanceRecord, NutritionData } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
+import { normalizeClub } from '../lib/utils';
 
 interface NutricionResumenGrupalProps {
   performanceRecords: AthletePerformanceRecord[];
+  userRole?: string;
+  userClub?: string;
 }
 
-const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ performanceRecords }) => {
+const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ performanceRecords, userRole, userClub }) => {
   const [startDate, setStartDate] = useState<string>('2020-01-01');
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [selectedClub, setSelectedClub] = useState<string>('TODOS');
+  const [selectedClub, setSelectedClub] = useState<string>(userRole === 'club' && userClub ? userClub : 'TODOS');
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -82,7 +85,11 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
           const start = new Date(startDate);
           const end = new Date(endDate);
           const matchesDate = date >= start && date <= end;
+          
+          // If user is a club, we show ALL players for comparison (anonymized later)
+          // If user is admin, we respect the selectedClub filter
           const matchesClub = selectedClub === 'TODOS' || record.player.club === selectedClub;
+          
           const matchesCategory = selectedCategory === 'TODAS' || record.player.anio?.toString() === selectedCategory;
           return matchesDate && matchesClub && matchesCategory;
         })
@@ -239,7 +246,11 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
               className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
             >
               <option value="TODOS">Todos los Clubes</option>
-              {clubs.map(club => <option key={club} value={club}>{club}</option>)}
+              {userRole === 'club' ? (
+                userClub && <option value={userClub}>{userClub}</option>
+              ) : (
+                clubs.map(club => <option key={club} value={club}>{club}</option>)
+              )}
             </select>
           </div>
 
@@ -268,6 +279,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100">
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
+                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Masa Muscular %</th>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Masa Grasa %</th>
@@ -277,18 +289,26 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
             <tbody className="divide-y divide-slate-50">
               {filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-8 py-20 text-center text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">No se encontraron registros para los filtros seleccionados</td>
+                  <td colSpan={6} className="px-8 py-20 text-center text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">No se encontraron registros para los filtros seleccionados</td>
                 </tr>
               ) : (
-                filteredData.map((item, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-8 py-4">
-                      <p className="text-xs font-black text-slate-900 uppercase italic">{item.player.name}</p>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase">{item.player.club || 'S/C'} • Cat {item.player.anio}</p>
-                    </td>
-                    <td className="px-8 py-4">
-                      <span className="text-[10px] font-bold text-slate-500">{new Date(item.data.fecha_medicion).toLocaleDateString('es-CL')}</span>
-                    </td>
+                filteredData.map((item, i) => {
+                  const isMyClub = userRole !== 'club' || (userClub && normalizeClub(item.player.club || '') === normalizeClub(userClub));
+                  const displayName = isMyClub ? item.player.name : `Jugador [${item.player.id_del_jugador || i}]`;
+                  const displayClub = isMyClub ? (item.player.club || 'S/C') : 'OTRO CLUB';
+
+                  return (
+                    <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-8 py-4">
+                        <p className="text-xs font-black text-slate-900 uppercase italic">{displayName}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase">{displayClub} • Cat {item.player.anio}</p>
+                      </td>
+                      <td className="px-8 py-4">
+                        <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{item.player.position || 'N/A'}</p>
+                      </td>
+                      <td className="px-8 py-4">
+                        <span className="text-[10px] font-bold text-slate-500">{new Date(item.data.fecha_medicion).toLocaleDateString('es-CL')}</span>
+                      </td>
                     <td className="px-8 py-4 text-center">
                       <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_muscular_pct || 0, 'muscular', item.player.anio || 0)}`}>
                         {item.data.masa_muscular_pct?.toFixed(1)}%
@@ -305,7 +325,8 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
                       </span>
                     </td>
                   </tr>
-                ))
+                );
+              })
               )}
             </tbody>
           </table>
