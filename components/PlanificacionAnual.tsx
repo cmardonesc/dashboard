@@ -37,6 +37,7 @@ const PlanificacionAnual: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [filterType, setFilterType] = useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [isCopying, setIsCopying] = useState(false);
 
@@ -174,7 +175,8 @@ const PlanificacionAnual: React.FC = () => {
             date: dateStr,
             activities: activities.filter(a => 
               a.fecha === dateStr && 
-              (!filterType || a.actividad === filterType)
+              (!filterType || a.actividad === filterType) &&
+              (!selectedCategoryId || a.categoria === selectedCategoryId)
             )
           });
         }
@@ -317,13 +319,13 @@ const PlanificacionAnual: React.FC = () => {
         </div>
       </div>
 
-      {/* FILTROS DE CATEGORÍA */}
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-6 custom-scrollbar">
+      {/* FILTROS DE ACTIVIDAD */}
+      <div className="flex gap-2 overflow-x-auto pb-2 mb-2 custom-scrollbar">
         <button
           onClick={() => setFilterType(null)}
           className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all whitespace-nowrap ${!filterType ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}
         >
-          TODOS
+          TODOS LOS TIPOS
         </button>
         {Object.entries(TIPO_COLORS).map(([type, colorClass]) => (
           <button
@@ -333,6 +335,25 @@ const PlanificacionAnual: React.FC = () => {
           >
             <div className={`w-2 h-2 rounded-full ${colorClass}`}></div>
             {type}
+          </button>
+        ))}
+      </div>
+
+      {/* FILTROS DE CATEGORÍA */}
+      <div className="flex gap-2 overflow-x-auto pb-2 mb-6 custom-scrollbar">
+        <button
+          onClick={() => setSelectedCategoryId(null)}
+          className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all whitespace-nowrap ${!selectedCategoryId ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}
+        >
+          TODAS LAS CATEGORÍAS
+        </button>
+        {Object.entries(CATEGORY_ID_MAP).map(([label, id]) => (
+          <button
+            key={id}
+            onClick={() => setSelectedCategoryId(id === selectedCategoryId ? null : id)}
+            className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all whitespace-nowrap ${selectedCategoryId === id ? 'bg-red-600 text-white border-red-600 shadow-md' : 'bg-white text-slate-400 border-slate-200 opacity-60 hover:opacity-100 hover:bg-slate-50'}`}
+          >
+            {label.replace('_', ' ')}
           </button>
         ))}
       </div>
@@ -406,7 +427,7 @@ const PlanificacionAnual: React.FC = () => {
                         {act.actividad}
                       </p>
                       {act.categoria && (
-                        <span className="text-[7px] font-black text-slate-400 bg-slate-100 px-1 rounded uppercase">
+                        <span className="text-[7px] font-black text-white bg-slate-900 px-1.5 py-0.5 rounded uppercase tracking-tighter">
                           {getCategoryDisplay(act.categoria)}
                         </span>
                       )}
@@ -510,7 +531,7 @@ const PlanificacionAnual: React.FC = () => {
                               {act.actividad}
                             </p>
                             <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                              {act.categoria?.toUpperCase().replace('_', ' ')}
+                              {getCategoryDisplay(act.categoria)}
                             </p>
                           </div>
                         </div>
