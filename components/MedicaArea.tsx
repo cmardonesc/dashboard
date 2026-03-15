@@ -118,6 +118,18 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     observaciones: ''
   });
 
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [showConfirmDelete, setShowConfirmDelete] = useState<{ id: string, name: string } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const [selectedGpsPlayer, setSelectedGpsPlayer] = useState<DBInjury | null>(null);
+
+  const filteredInjuries = useMemo(() => {
+    if (!selectedCategoryId) return dbInjuries;
+    return dbInjuries.filter(i => i.category_id === selectedCategoryId);
+  }, [dbInjuries, selectedCategoryId]);
+
   useEffect(() => {
     fetchInjuredPlayers();
     fetchDailyReports();
@@ -206,12 +218,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         severity: dailyReportForm.severity
       }]);
       if (error) throw error;
-      alert("Reporte médico guardado.");
+      setSuccessMessage("Reporte médico guardado.");
       setDailyReportForm({ observation: '', severity: 'low' });
       setReportingPlayer(null);
       fetchDailyReports();
     } catch (err: any) {
-      alert("Error: " + err.message);
+      setErrorMessage("Error: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -228,12 +240,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         description: treatmentForm.description
       }]);
       if (error) throw error;
-      alert("Atención registrada.");
+      setSuccessMessage("Atención registrada.");
       setTreatmentForm({ description: '' });
       setReportingPlayer(null);
       fetchTreatments();
     } catch (err: any) {
-      alert("Error: " + err.message);
+      setErrorMessage("Error: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -315,19 +327,18 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     setView('report_injury');
   };
 
-  const handleDeleteInjury = async (id: string, name: string) => {
-    if (!confirm(`¿Está seguro de eliminar permanentemente el registro clínico de ${name.toUpperCase()}?`)) return;
-    
+  const handleDeleteInjury = async (id: string) => {
     setLoading(true);
     try {
       const { error } = await supabase.from('lesionados').delete().eq('id', id);
       if (error) throw error;
-      alert("Registro clínico eliminado.");
+      setSuccessMessage("Registro clínico eliminado.");
       fetchInjuredPlayers();
     } catch (err: any) {
-      alert("Error al eliminar: " + err.message);
+      setErrorMessage("Error al eliminar: " + err.message);
     } finally {
       setLoading(false);
+      setShowConfirmDelete(null);
     }
   };
 
@@ -373,11 +384,11 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       if (editingInjuryId) {
         const { error } = await supabase.from('lesionados').update(payload).eq('id', editingInjuryId);
         if (error) throw error;
-        alert("Ficha clínica actualizada con éxito.");
+        setSuccessMessage("Ficha clínica actualizada con éxito.");
       } else {
         const { error } = await supabase.from('lesionados').insert([payload]);
         if (error) throw error;
-        alert("Ficha médica guardada y sincronizada.");
+        setSuccessMessage("Ficha médica guardada y sincronizada.");
       }
 
       fetchInjuredPlayers();
@@ -385,7 +396,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       setEditingInjuryId(null);
       setView('dashboard');
     } catch (err: any) {
-      alert("Error: " + err.message);
+      setErrorMessage("Error: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -428,6 +439,26 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
           </h2>
           <p className="text-slate-500 text-[10px] md:text-sm font-medium">Gestión clínica y disponibilidad de jugadores.</p>
         </div>
+        
+        {/* Filtro de Categoría */}
+        <div className="flex flex-wrap gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-100">
+          <button 
+            onClick={() => setSelectedCategoryId(null)}
+            className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${!selectedCategoryId ? 'bg-[#0b1220] text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            TODOS
+          </button>
+          {Object.entries(CATEGORY_ID_MAP).map(([label, id]) => (
+            <button 
+              key={id}
+              onClick={() => setSelectedCategoryId(id)}
+              className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${selectedCategoryId === id ? 'bg-red-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              {label.replace('_', ' ')}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-wrap gap-2 md:gap-3">
           <button 
             onClick={() => setView('dashboard')}
@@ -542,7 +573,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                 Atletas Lesionados (Sincronizado)
               </h3>
               <div className="bg-amber-50 px-5 py-2 rounded-full text-[9px] font-black text-amber-600 uppercase italic">
-                {dbInjuries.length} REGISTROS ACTIVOS
+                {filteredInjuries.length} REGISTROS ACTIVOS
               </div>
             </div>
             
@@ -560,15 +591,15 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-                  {dbInjuries.length === 0 ? (
+                  {filteredInjuries.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-16 md:py-24 text-slate-300 font-black uppercase tracking-widest italic opacity-50 text-center">
                         <i className="fa-solid fa-notes-medical text-3xl md:text-4xl mb-4 block"></i>
-                        No hay reportes clínicos activos.
+                        No hay reportes clínicos activos{selectedCategoryId ? ' para esta categoría' : ''}.
                       </td>
                     </tr>
                   ) : (
-                    dbInjuries.map(injury => {
+                    filteredInjuries.map(injury => {
                       const athleteName = `${injury.players?.nombre} ${injury.players?.apellido1}`;
                       return (
                         <tr key={injury.id} className="hover:bg-slate-50 transition-colors group">
@@ -606,7 +637,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                                    <i className="fa-solid fa-pen-to-square text-[10px] md:text-xs"></i>
                                 </button>
                                 <button 
-                                  onClick={() => handleDeleteInjury(injury.id, athleteName)}
+                                  onClick={() => setShowConfirmDelete({ id: injury.id, name: athleteName })}
                                   className="w-8 h-8 md:w-10 md:h-10 bg-slate-100 text-slate-400 rounded-lg md:rounded-xl flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90"
                                   title="Eliminar Registro"
                                 >
@@ -886,15 +917,121 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       )}
 
       {view === 'reintegro_gps' && (
-        <div className="space-y-6 md:space-y-8 animate-in fade-in duration-300">
-          <div className="bg-[#0b1220] rounded-[32px] md:rounded-[48px] p-8 md:p-12 shadow-2xl relative overflow-hidden text-white">
-            <h3 className="text-2xl md:text-4xl font-black italic tracking-tighter uppercase mb-2">Monitoreo GPS <span className="text-blue-500">Reintegro</span></h3>
-            <p className="text-slate-400 text-[10px] md:text-xs font-medium uppercase tracking-[0.2em]">Análisis de carga progresiva para deportistas en fase de RTP.</p>
-          </div>
-          <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm overflow-hidden p-12 md:p-20 text-center opacity-50">
-             <i className="fa-solid fa-chart-line text-4xl md:text-5xl mb-6 text-slate-200"></i>
-             <p className="text-slate-400 font-black uppercase text-[9px] md:text-[10px] tracking-widest">Funcionalidad en desarrollo</p>
-          </div>
+        <div className="space-y-6 md:space-y-8 animate-in zoom-in-95 duration-300">
+           <div className="bg-[#0b1220] rounded-[32px] md:rounded-[48px] p-8 md:p-12 shadow-2xl relative overflow-hidden text-white">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 rounded-full -mr-32 -mt-32 blur-3xl"></div>
+              <h3 className="text-2xl md:text-4xl font-black italic tracking-tighter uppercase mb-2 relative z-10">Monitoreo GPS <span className="text-blue-500">Reintegro</span></h3>
+              <p className="text-slate-400 font-black uppercase tracking-widest text-[10px] md:text-xs mb-4 relative z-10">Módulo de seguimiento de carga en fase de retorno deportivo</p>
+           </div>
+
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
+              <div className="lg:col-span-1 space-y-6 bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
+                <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest border-b border-slate-100 pb-2">Jugadores en Fase de Reintegro</h4>
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                  {dbInjuries.filter(i => i.estado === 'Reintegro' || i.estado === 'Readaptación').length === 0 ? (
+                    <div className="py-20 text-center">
+                      <i className="fa-solid fa-user-clock text-4xl text-slate-100 mb-4"></i>
+                      <p className="text-slate-400 text-[10px] font-black uppercase italic">Sin jugadores en esta fase</p>
+                    </div>
+                  ) : (
+                    dbInjuries.filter(i => i.estado === 'Reintegro' || i.estado === 'Readaptación').map(injury => (
+                      <div 
+                        key={injury.id} 
+                        onClick={() => setSelectedGpsPlayer(injury)}
+                        className={`p-4 rounded-2xl border transition-all cursor-pointer group ${selectedGpsPlayer?.id === injury.id ? 'bg-blue-600 border-blue-600 shadow-lg shadow-blue-900/20' : 'bg-slate-50 border-slate-100 hover:bg-white hover:shadow-md'}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black italic text-xs ${selectedGpsPlayer?.id === injury.id ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'}`}>
+                            {injury.players?.nombre.charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-[11px] font-black uppercase italic leading-none truncate ${selectedGpsPlayer?.id === injury.id ? 'text-white' : 'text-slate-900'}`}>{injury.players?.nombre} {injury.players?.apellido1}</p>
+                            <p className={`text-[8px] font-bold uppercase tracking-widest mt-1 truncate ${selectedGpsPlayer?.id === injury.id ? 'text-blue-100' : 'text-slate-400'}`}>{injury.localizacion}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <button onClick={() => setView('dashboard')} className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all">
+                  Volver al Dashboard
+                </button>
+              </div>
+
+              <div className="lg:col-span-2 bg-white rounded-[32px] p-8 md:p-12 border border-slate-100 shadow-sm flex flex-col items-center justify-center min-h-[600px]">
+                {!selectedGpsPlayer ? (
+                  <div className="text-center">
+                    <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-100">
+                      <i className="fa-solid fa-satellite-dish text-4xl text-slate-200"></i>
+                    </div>
+                    <p className="text-slate-400 font-black uppercase tracking-widest italic text-xs">Selecciona un jugador para ver su progresión de carga</p>
+                  </div>
+                ) : (
+                  <div className="w-full space-y-8 animate-in fade-in duration-500">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-8">
+                      <div className="flex items-center gap-6">
+                        <div className="w-16 h-16 bg-blue-600 text-white rounded-[24px] flex items-center justify-center font-black italic text-2xl shadow-xl shadow-blue-900/20">
+                          {selectedGpsPlayer.players?.nombre.charAt(0)}
+                        </div>
+                        <div>
+                          <h4 className="text-2xl md:text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">{selectedGpsPlayer.players?.nombre} {selectedGpsPlayer.players?.apellido1}</h4>
+                          <div className="flex items-center gap-3 mt-2">
+                            <span className="bg-blue-100 text-blue-600 font-black uppercase text-[8px] tracking-widest px-2 py-1 rounded-md">Fase: {selectedGpsPlayer.estado}</span>
+                            <span className="text-slate-400 font-black uppercase text-[8px] tracking-widest">{selectedGpsPlayer.localizacion}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right hidden md:block">
+                        <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest">Inicio Lesión</p>
+                        <p className="text-slate-900 font-black">{formatDate(selectedGpsPlayer.fecha_inicio)}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                        <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mb-2">Carga Actual vs Baseline</p>
+                        <div className="flex items-end gap-2">
+                          <p className="text-3xl font-black text-slate-900 italic tracking-tighter leading-none">65%</p>
+                          <p className="text-[10px] font-bold text-slate-400 mb-1">/ 100%</p>
+                        </div>
+                        <div className="w-full bg-slate-200 h-2 rounded-full mt-4 overflow-hidden">
+                          <div className="bg-blue-600 h-full w-[65%]"></div>
+                        </div>
+                      </div>
+                      <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                        <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mb-2">HSR (m) Última Sesión</p>
+                        <p className="text-3xl font-black text-slate-900 italic tracking-tighter leading-none">420m</p>
+                        <p className="text-[8px] font-bold text-emerald-500 uppercase mt-2 flex items-center gap-1">
+                          <i className="fa-solid fa-arrow-trend-up"></i> +12% vs sesión anterior
+                        </p>
+                      </div>
+                      <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                        <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mb-2">Días en Reintegro</p>
+                        <p className="text-3xl font-black text-slate-900 italic tracking-tighter leading-none">12</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase mt-2">Est. Alta: 8 días</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-12 rounded-[40px] border border-slate-100 h-80 flex flex-col items-center justify-center relative overflow-hidden">
+                      <div className="absolute inset-0 opacity-[0.03]" style={{backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
+                      <i className="fa-solid fa-chart-line text-5xl text-slate-200 mb-4 relative z-10"></i>
+                      <p className="text-slate-400 font-black uppercase tracking-widest italic text-[10px] relative z-10">Gráfico de Progresión de Carga (Próximamente)</p>
+                      <p className="text-slate-300 text-[8px] font-medium mt-2 relative z-10 max-w-xs text-center">Integración con API de Catapult / Wimu en desarrollo para sincronización automática.</p>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sincronización en tiempo real activa</p>
+                      </div>
+                      <button className="w-full md:w-auto px-8 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-900/20 active:scale-95">
+                        Generar Reporte de Alta Deportiva
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+           </div>
         </div>
       )}
 
@@ -1091,6 +1228,60 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
               </table>
             </div>
           </section>
+        </div>
+      )}
+      {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN */}
+      {showConfirmDelete && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-[32px] p-8 max-w-md w-full shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 mb-6 mx-auto">
+              <i className="fa-solid fa-triangle-exclamation text-2xl"></i>
+            </div>
+            <h3 className="text-xl font-black text-slate-900 text-center mb-2 uppercase italic tracking-tight">Confirmar Eliminación</h3>
+            <p className="text-slate-500 text-center mb-8 text-sm">
+              ¿Estás seguro de que deseas eliminar el registro médico de <span className="font-bold text-slate-900">{showConfirmDelete.name}</span>? Esta acción no se puede deshacer.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowConfirmDelete(null)}
+                className="flex-1 px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => handleDeleteInjury(showConfirmDelete.id)}
+                className="flex-1 px-6 py-3 rounded-xl bg-red-600 text-white font-black uppercase text-[10px] tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-900/20"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE ERROR */}
+      {errorMessage && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[700] animate-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-red-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-red-500">
+            <i className="fa-solid fa-circle-exclamation text-lg"></i>
+            <p className="text-xs font-black uppercase tracking-widest">{errorMessage}</p>
+            <button onClick={() => setErrorMessage(null)} className="hover:scale-110 transition-transform">
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE ÉXITO */}
+      {successMessage && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[700] animate-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-emerald-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-emerald-500">
+            <i className="fa-solid fa-circle-check text-lg"></i>
+            <p className="text-xs font-black uppercase tracking-widest">{successMessage}</p>
+            <button onClick={() => setSuccessMessage(null)} className="hover:scale-110 transition-transform">
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+          </div>
         </div>
       )}
     </div>

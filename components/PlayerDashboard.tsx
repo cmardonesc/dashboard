@@ -144,11 +144,10 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     try {
       const today = new Date().toISOString().split('T')[0];
       const { data, error } = await supabase
-        .from('annual_activities')
+        .from('anual_activities')
         .select('*')
         .eq('fecha', today)
-        .eq('categoria', player.category)
-        .order('hora_inicio', { ascending: true });
+        .eq('categoria', player.category);
 
       if (error) throw error;
       setRealActivities(data || []);
@@ -425,25 +424,20 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                     ) : realActivities.length > 0 ? (
                       realActivities.map((item, i) => (
                         <div key={i} className="flex gap-3 md:gap-4 group">
-                          <div className="text-center w-10 md:w-12 pt-1">
-                            <span className="text-[9px] md:text-xs font-black text-slate-900 block leading-none">
-                              {item.hora_inicio.substring(0, 5)}
-                            </span>
-                          </div>
                           <div className="flex-1 bg-slate-50 p-3 md:p-4 rounded-xl md:rounded-2xl border border-transparent group-hover:border-slate-200 transition-all">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-sm md:text-base">
-                                {item.tipo_actividad.toLowerCase().includes('entrenamiento') ? '⚽' : 
-                                 item.tipo_actividad.toLowerCase().includes('almuerzo') ? '🍽️' :
-                                 item.tipo_actividad.toLowerCase().includes('video') ? '📹' :
-                                 item.tipo_actividad.toLowerCase().includes('wellness') ? '☀️' : '📋'}
+                                {item.actividad.toLowerCase().includes('entrenamiento') ? '⚽' : 
+                                 item.actividad.toLowerCase().includes('almuerzo') ? '🍽️' :
+                                 item.actividad.toLowerCase().includes('video') ? '📹' :
+                                 item.actividad.toLowerCase().includes('wellness') ? '☀️' : '📋'}
                               </span>
                               <span className="text-[9px] md:text-[11px] font-black text-slate-900 uppercase italic tracking-tight">
-                                {item.tipo_actividad}
+                                {item.actividad}
                               </span>
                             </div>
                             <p className="text-[7px] md:text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                              {item.lugar} {item.observacion ? `| ${item.observacion}` : ''}
+                              {item.observacion || 'Sin observaciones'}
                             </p>
                           </div>
                         </div>

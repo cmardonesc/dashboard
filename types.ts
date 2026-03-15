@@ -39,6 +39,11 @@ export const CATEGORY_ID_MAP: Record<string, number> = {
   [Category.ADULTA]: 10,
 };
 
+export const REVERSE_CATEGORY_ID_MAP: Record<number, Category> = Object.entries(CATEGORY_ID_MAP).reduce((acc, [key, value]) => {
+  acc[value] = key as Category;
+  return acc;
+}, {} as Record<number, Category>);
+
 export const CATEGORY_COLORS: Record<number, string> = {
   10: 'bg-red-600',
   9: 'bg-blue-800',

@@ -1,3 +1,100 @@
+-- Create anual_activities table (Simplified version)
+create table if not exists public.anual_activities (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  fecha date not null,
+  actividad text not null,
+  categoria text,
+  observacion text
+);
+
+-- Create lesionados table
+create table if not exists public.lesionados (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  player_id int not null references public.players(id_del_jugador),
+  microcycle_id uuid references public.microcycles(id),
+  category_id int,
+  fecha_inicio date not null,
+  estado text default 'Activo',
+  disponibilidad text default 'No Disponible',
+  localizacion text,
+  tipo_lesion text,
+  momento_lesion text,
+  lado text,
+  mecanismo text,
+  diagnostico_clinico text,
+  diagnostico_funcional text,
+  restricciones text,
+  fecha_estimada_retorno date,
+  fecha_alta date,
+  observaciones text,
+  ultimo_control date
+);
+
+-- Create medical_daily_reports table
+create table if not exists public.medical_daily_reports (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  player_id int not null references public.players(id_del_jugador),
+  category_id int,
+  microcycle_id uuid references public.microcycles(id),
+  report_date date default current_date,
+  observation text not null,
+  severity text default 'low'
+);
+
+-- Create medical_treatments table
+create table if not exists public.medical_treatments (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  player_id int not null references public.players(id_del_jugador),
+  category_id int,
+  treatment_date date default current_date,
+  description text not null
+);
+
+-- Create cronograma_semanal table
+create table if not exists public.cronograma_semanal (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  id_microcycles uuid references public.microcycles(id),
+  fecha date not null,
+  hora time not null,
+  actividad text not null,
+  lugar text,
+  id_categoria int
+);
+
+-- Create tareas_semanales table
+create table if not exists public.tareas_semanales (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  id_microcycles uuid references public.microcycles(id),
+  fecha date not null,
+  dinamica text,
+  jornada text default 'AM',
+  nombre text not null,
+  observacion text
+);
+
+-- Enable RLS for new tables
+alter table public.anual_activities enable row level security;
+alter table public.lesionados enable row level security;
+alter table public.medical_daily_reports enable row level security;
+alter table public.medical_treatments enable row level security;
+alter table public.cronograma_semanal enable row level security;
+alter table public.tareas_semanales enable row level security;
+
+-- Create policies for new tables
+create policy "Enable all access for anual_activities" on public.anual_activities for all using (true) with check (true);
+create policy "Enable all access for lesionados" on public.lesionados for all using (true) with check (true);
+create policy "Enable all access for medical_daily_reports" on public.medical_daily_reports for all using (true) with check (true);
+create policy "Enable all access for medical_treatments" on public.medical_treatments for all using (true) with check (true);
+create policy "Enable all access for cronograma_semanal" on public.cronograma_semanal for all using (true) with check (true);
+create policy "Enable all access for tareas_semanales" on public.tareas_semanales for all using (true) with check (true);
+
 -- Create annual_activities table
 create table if not exists public.annual_activities (
   id uuid default gen_random_uuid() primary key,

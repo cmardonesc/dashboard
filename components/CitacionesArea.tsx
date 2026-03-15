@@ -25,8 +25,11 @@ export default function CitacionesArea() {
   const [selectedMicro, setSelectedMicro] = useState<MicrocicloUI | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedYear, setSelectedYear] = useState('TODOS')
+  const [selectedCategoryPlayer, setSelectedCategoryPlayer] = useState<string>('TODOS')
   const [selectedPositions, setSelectedPositions] = useState<string[]>(['TODAS'])
   const [showPosDropdown, setShowPosDropdown] = useState(false)
+  
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('TODOS')
   
   const [loadingMicros, setLoadingMicros] = useState(false)
   const [loadingPlayers, setLoadingPlayers] = useState(false)
@@ -98,7 +101,7 @@ export default function CitacionesArea() {
     try {
       const { data, error } = await supabase
         .from('players')
-        .select(`id_del_jugador, nombre, apellido1, club, posicion, anio`);
+        .select(`id_del_jugador, nombre, apellido1, club, posicion, anio, category`);
       
       if (error) throw error;
       
@@ -110,7 +113,8 @@ export default function CitacionesArea() {
           role: UserRole.PLAYER, 
           anio: p.anio,
           club: p.club || 'SIN CLUB',
-          position: p.posicion || 'N/A'
+          position: p.posicion || 'N/A',
+          category: p.category
         }));
         setAllPlayers(mapped);
       }
@@ -374,9 +378,16 @@ export default function CitacionesArea() {
       const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesYear = selectedYear === 'TODOS' || p.anio?.toString() === selectedYear;
       const matchesPos = selectedPositions.includes('TODAS') || selectedPositions.some(pos => p.position.includes(pos));
-      return matchesSearch && matchesYear && matchesPos;
+      const matchesCat = selectedCategoryPlayer === 'TODOS' || p.category === selectedCategoryPlayer;
+      return matchesSearch && matchesYear && matchesPos && matchesCat;
     });
-  }, [allPlayers, searchTerm, selectedYear, selectedPositions]);
+  }, [allPlayers, searchTerm, selectedYear, selectedPositions, selectedCategoryPlayer]);
+
+  const filteredMicrociclos = useMemo(() => {
+    if (selectedCategoryFilter === 'TODOS') return microciclos;
+    const catId = CATEGORY_ID_MAP[selectedCategoryFilter as Category];
+    return microciclos.filter(mc => mc.category_id === catId);
+  }, [microciclos, selectedCategoryFilter]);
 
   const handleCite = (playerId: number) => {
     if (citadosIds.includes(playerId)) return;
@@ -419,6 +430,14 @@ export default function CitacionesArea() {
     setSelectedMicro(mc);
     setCitadosIds([]);
     fetchCitadosIds(mc.id);
+    
+    const catEntry = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === mc.category_id);
+    if (catEntry) {
+      setSelectedCategoryPlayer(catEntry[0]);
+    } else {
+      setSelectedCategoryPlayer('TODOS');
+    }
+    
     setViewMode('selection');
   };
 
@@ -464,6 +483,33 @@ export default function CitacionesArea() {
           </div>
         </div>
 
+        {/* Filtros de Categoría */}
+        <div className="flex items-center gap-3 overflow-x-auto pb-4 custom-scrollbar">
+          <button
+            onClick={() => setSelectedCategoryFilter('TODOS')}
+            className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shadow-sm ${
+              selectedCategoryFilter === 'TODOS'
+                ? 'bg-slate-900 text-white shadow-xl scale-105'
+                : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'
+            }`}
+          >
+            TODOS
+          </button>
+          {Object.values(Category).map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategoryFilter(cat)}
+              className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shadow-sm ${
+                selectedCategoryFilter === cat
+                  ? 'bg-[#CF1B2B] text-white shadow-xl scale-105'
+                  : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'
+              }`}
+            >
+              {formatCategoryLabel(cat)}
+            </button>
+          ))}
+        </div>
+
         {errorMsg && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-2xl mb-6">
             <p className="font-bold text-sm">Error: {errorMsg}</p>
@@ -476,15 +522,15 @@ export default function CitacionesArea() {
             <i className="fa-solid fa-spinner fa-spin text-slate-200 text-5xl mb-6"></i>
             <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest italic">Sincronizando procesos...</p>
           </div>
-        ) : microciclos.length === 0 ? (
+        ) : filteredMicrociclos.length === 0 ? (
           <div className="py-32 text-center opacity-40">
             <i className="fa-solid fa-folder-open text-slate-300 text-6xl mb-6"></i>
             <p className="text-slate-500 font-black uppercase text-xs tracking-widest">No hay microciclos registrados</p>
-            <p className="text-slate-400 text-[10px] mt-2">Crea uno nuevo para comenzar.</p>
+            <p className="text-slate-400 text-[10px] mt-2">Crea uno nuevo o cambia el filtro para comenzar.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {microciclos.map((mc) => (
+            {filteredMicrociclos.map((mc) => (
               <div key={mc.id} onClick={() => handleSelectMicro(mc)} className="group bg-white rounded-[40px] p-10 border-2 border-slate-50 transition-all cursor-pointer hover:shadow-2xl hover:border-red-200 relative overflow-hidden flex flex-col justify-between min-h-[360px]">
                 <div className="flex justify-between items-start mb-6">
                   <span className="bg-blue-600 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm">
@@ -686,11 +732,19 @@ export default function CitacionesArea() {
       <div className="flex-1 bg-[#f8fafc] rounded-[48px] border border-slate-200 shadow-sm flex flex-col overflow-hidden relative">
         <div className="p-10 bg-white border-b border-slate-200">
            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-             <div className="md:col-span-6 relative">
+             <div className="md:col-span-4 relative">
                <i className="fa-solid fa-magnifying-glass absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
                <input type="text" placeholder="BUSCAR ATLETA..." className="w-full bg-slate-50 p-5 pl-14 rounded-[24px] font-black text-[11px] uppercase tracking-widest outline-none focus:ring-4 focus:ring-red-500/10 border-none transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
              </div>
              <div className="md:col-span-3">
+               <select className="w-full bg-slate-50 p-5 rounded-[24px] font-black text-[10px] uppercase tracking-widest outline-none appearance-none cursor-pointer border-none shadow-sm" value={selectedCategoryPlayer} onChange={e => setSelectedCategoryPlayer(e.target.value)}>
+                 <option value="TODOS">CAT: TODAS</option>
+                 {Object.values(Category).map(cat => (
+                   <option key={cat} value={cat}>{formatCategoryLabel(cat)}</option>
+                 ))}
+               </select>
+             </div>
+             <div className="md:col-span-2">
                <select className="w-full bg-slate-50 p-5 rounded-[24px] font-black text-[10px] uppercase tracking-widest outline-none appearance-none cursor-pointer border-none shadow-sm" value={selectedYear} onChange={e => setSelectedYear(e.target.value)}>
                  <option value="TODOS">CLASE: TODAS</option>
                  {availableYears.map(y => <option key={y} value={y.toString()}>{y}</option>)}

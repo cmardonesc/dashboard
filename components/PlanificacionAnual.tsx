@@ -1,16 +1,14 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Category } from '../types';
+import { Category, CATEGORY_ID_MAP, REVERSE_CATEGORY_ID_MAP } from '../types';
 
 interface AnnualActivity {
   id: string;
   fecha: string;
-  hora_inicio: string;
-  tipo_actividad: string;
-  categoria?: string;
+  actividad: string;
+  categoria?: number;
   observacion?: string;
-  lugar?: string;
 }
 
 const TIPO_COLORS: Record<string, string> = {
@@ -46,10 +44,12 @@ const PlanificacionAnual: React.FC = () => {
   const [newActivity, setNewActivity] = useState({
     type: 'Entrenamiento',
     category: Category.SUB_16,
-    observation: '',
-    time: '10:00',
-    location: 'JUAN PINTO DURAN'
+    observation: ''
   });
+
+  const [showConfirmDelete, setShowConfirmDelete] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMonthActivities();
@@ -62,7 +62,7 @@ const PlanificacionAnual: React.FC = () => {
 
     try {
       const { data, error } = await supabase
-        .from('annual_activities')
+        .from('anual_activities')
         .select('*')
         .gte('fecha', start)
         .lte('fecha', end);
@@ -83,31 +83,31 @@ const PlanificacionAnual: React.FC = () => {
     try {
       const payload = {
         fecha: selectedDay,
-        tipo_actividad: newActivity.type,
-        categoria: newActivity.category,
-        observacion: newActivity.observation,
-        hora_inicio: newActivity.time,
-        lugar: newActivity.location
+        actividad: newActivity.type,
+        categoria: CATEGORY_ID_MAP[newActivity.category],
+        observacion: newActivity.observation
       };
 
       if (editingActivityId) {
         const { error } = await supabase
-          .from('annual_activities')
+          .from('anual_activities')
           .update(payload)
           .eq('id', editingActivityId);
         if (error) throw error;
       } else {
         const { error } = await supabase
-          .from('annual_activities')
+          .from('anual_activities')
           .insert([payload]);
         if (error) throw error;
       }
 
       fetchMonthActivities();
+      setSuccessMessage(editingActivityId ? "Actividad actualizada" : "Actividad agregada");
       setNewActivity({ ...newActivity, observation: '' });
       setEditingActivityId(null);
     } catch (err: any) {
-      alert("Error al guardar: " + err.message);
+      setErrorMessage("Error al guardar: " + err.message);
+      setTimeout(() => setErrorMessage(null), 5000);
     }
   };
 
@@ -117,31 +117,39 @@ const PlanificacionAnual: React.FC = () => {
       e.stopPropagation();
     }
     
-    console.log("Intentando borrar actividad ID:", id);
+    setShowConfirmDelete(String(id));
+  };
 
-    if (!window.confirm("¿Estás seguro de que quieres eliminar esta actividad?")) return;
+  const confirmDelete = async () => {
+    if (!showConfirmDelete) return;
+    const id = showConfirmDelete;
     
     try {
       const { error } = await supabase
-        .from('annual_activities')
+        .from('anual_activities')
         .delete()
         .eq('id', id);
 
       if (error) throw error;
       
-      // Actualizar estado localmente (comparando como string para seguridad)
+      setSuccessMessage("Actividad eliminada");
       setActivities(prev => prev.filter(a => String(a.id) !== String(id)));
-      
-      // Recargar datos
       await fetchMonthActivities();
+      setShowConfirmDelete(null);
     } catch (err: any) {
       console.error("Error al eliminar:", err);
-      alert("Error al eliminar: " + err.message);
+      setErrorMessage("Error al eliminar: " + err.message);
+      setTimeout(() => setErrorMessage(null), 5000);
+      setShowConfirmDelete(null);
     }
   };
 
-  const getCategoryDisplay = (cat?: string) => {
+  const getCategoryDisplay = (cat?: number | string) => {
     if (!cat) return '';
+    if (typeof cat === 'number') {
+      const entry = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === cat);
+      return entry ? entry[0].replace('_', ' ').toUpperCase() : `ID: ${cat}`;
+    }
     return cat.replace('_', ' ').toUpperCase();
   };
 
@@ -166,7 +174,7 @@ const PlanificacionAnual: React.FC = () => {
             date: dateStr,
             activities: activities.filter(a => 
               a.fecha === dateStr && 
-              (!filterType || a.tipo_actividad === filterType)
+              (!filterType || a.actividad === filterType)
             )
           });
         }
@@ -187,7 +195,7 @@ const PlanificacionAnual: React.FC = () => {
     try {
       // 1. Obtener actividades del día origen
       const { data: sourceActivities, error: fetchError } = await supabase
-        .from('annual_activities')
+        .from('anual_activities')
         .select('*')
         .eq('fecha', sourceDate);
 
@@ -200,24 +208,23 @@ const PlanificacionAnual: React.FC = () => {
       // 2. Preparar nuevas actividades para el día destino
       const newActivities = sourceActivities.map(act => ({
         fecha: targetDate,
-        tipo_actividad: act.tipo_actividad,
+        actividad: act.actividad,
         categoria: act.categoria,
-        observacion: act.observacion,
-        hora_inicio: act.hora_inicio,
-        lugar: act.lugar
+        observacion: act.observacion
       }));
 
       // 3. Insertar
       const { error: insertError } = await supabase
-        .from('annual_activities')
+        .from('anual_activities')
         .insert(newActivities);
 
       if (insertError) throw insertError;
 
-      alert(`Se copiaron ${newActivities.length} actividades con éxito.`);
+      setSuccessMessage(`Se copiaron ${newActivities.length} actividades con éxito.`);
       fetchMonthActivities();
     } catch (err: any) {
-      alert("Error al copiar día: " + err.message);
+      setErrorMessage("Error al copiar día: " + err.message);
+      setTimeout(() => setErrorMessage(null), 5000);
     } finally {
       setIsCopying(false);
     }
@@ -225,18 +232,67 @@ const PlanificacionAnual: React.FC = () => {
 
   const startEditing = (act: AnnualActivity) => {
     setEditingActivityId(act.id);
+    const categoryEnum = typeof act.categoria === 'number' 
+      ? REVERSE_CATEGORY_ID_MAP[act.categoria] 
+      : (act.categoria as Category);
+      
     setNewActivity({
-      type: act.tipo_actividad,
-      category: act.categoria as Category || Category.SUB_16,
-      observation: act.observacion || '',
-      time: act.hora_inicio.substring(0, 5),
-      location: act.lugar || 'JUAN PINTO DURAN'
+      type: act.actividad,
+      category: categoryEnum || Category.SUB_16,
+      observation: act.observacion || ''
     });
   };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 relative transform-gpu">
       {/* HEADER DE CALENDARIO */}
+      {errorMessage && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[700] animate-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-red-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-red-500">
+            <i className="fa-solid fa-circle-exclamation text-lg"></i>
+            <p className="text-xs font-black uppercase tracking-widest">{errorMessage}</p>
+            <button onClick={() => setErrorMessage(null)} className="hover:scale-110 transition-transform">
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[700] animate-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-emerald-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-emerald-500">
+            <i className="fa-solid fa-circle-check text-lg"></i>
+            <p className="text-xs font-black uppercase tracking-widest">{successMessage}</p>
+            <button onClick={() => setSuccessMessage(null)} className="hover:scale-110 transition-transform">
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showConfirmDelete && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-[#0b1220]/80 backdrop-blur-md" onClick={() => setShowConfirmDelete(null)}></div>
+          <div className="relative bg-white p-10 rounded-[40px] shadow-2xl max-w-sm w-full text-center space-y-6 animate-in zoom-in-95 duration-300">
+            <div className="w-20 h-20 bg-red-50 text-red-600 rounded-3xl flex items-center justify-center mx-auto text-3xl">
+              <i className="fa-solid fa-trash-can"></i>
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">¿ELIMINAR ACTIVIDAD?</h3>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">Esta acción no se puede deshacer.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowConfirmDelete(null)} className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all">
+                CANCELAR
+              </button>
+              <button onClick={confirmDelete} className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-900/20 hover:bg-red-700 transition-all">
+                ELIMINAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
         <div className="flex items-center gap-6">
           <div className="w-14 h-14 bg-[#0b1220] rounded-2xl flex items-center justify-center text-white shadow-xl">
@@ -299,12 +355,12 @@ const PlanificacionAnual: React.FC = () => {
             const isSelected = selectedDay === dayObj.date;
             
             // Detectar eventos especiales para dar estilo al día completo
-            const specialEvent = dayObj.activities.find(a => a.tipo_actividad === 'Sudamericano' || a.tipo_actividad === 'Gira');
+            const specialEvent = dayObj.activities.find(a => a.actividad === 'Sudamericano' || a.actividad === 'Gira');
             let dayStyle = 'bg-white border-slate-50 hover:border-slate-200';
             
-            if (specialEvent?.tipo_actividad === 'Sudamericano') {
+            if (specialEvent?.actividad === 'Sudamericano') {
               dayStyle = 'bg-yellow-50 border-yellow-200 hover:border-yellow-300';
-            } else if (specialEvent?.tipo_actividad === 'Gira') {
+            } else if (specialEvent?.actividad === 'Gira') {
               dayStyle = 'bg-indigo-50 border-indigo-200 hover:border-indigo-300';
             } else if (isToday) {
               dayStyle = 'bg-red-50/10 border-slate-50';
@@ -336,7 +392,7 @@ const PlanificacionAnual: React.FC = () => {
                 
                 <div className="flex flex-wrap gap-1 mt-2">
                   {dayObj.activities.slice(0, 3).map(act => (
-                    <div key={act.id} className={`w-1.5 h-1.5 rounded-full ${TIPO_COLORS[act.tipo_actividad] || 'bg-slate-300'}`} title={act.tipo_actividad}></div>
+                    <div key={act.id} className={`w-1.5 h-1.5 rounded-full ${TIPO_COLORS[act.actividad] || 'bg-slate-300'}`} title={act.actividad}></div>
                   ))}
                   {dayObj.activities.length > 3 && (
                     <span className="text-[7px] font-black text-slate-400">+{dayObj.activities.length - 3}</span>
@@ -347,7 +403,7 @@ const PlanificacionAnual: React.FC = () => {
                   {dayObj.activities.slice(0, 2).map(act => (
                     <div key={act.id} className="flex items-center justify-between gap-1">
                       <p className="text-[8px] font-black uppercase text-slate-800 italic truncate leading-none flex-1">
-                        {act.tipo_actividad}
+                        {act.actividad}
                       </p>
                       {act.categoria && (
                         <span className="text-[7px] font-black text-slate-400 bg-slate-100 px-1 rounded uppercase">
@@ -385,26 +441,15 @@ const PlanificacionAnual: React.FC = () => {
                   {editingActivityId ? 'Modificar Datos' : 'Programar Actividad'}
                 </h4>
                 <form onSubmit={handleAddActivity} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="w-full">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Tipo</label>
-                      <select 
-                        className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner"
-                        value={newActivity.type}
-                        onChange={e => setNewActivity({...newActivity, type: e.target.value as any})}
-                      >
-                        {Object.keys(TIPO_COLORS).map(tipo => <option key={tipo} value={tipo}>{tipo.toUpperCase()}</option>)}
-                      </select>
-                    </div>
-                    <div className="w-full">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Hora</label>
-                      <input 
-                        type="time"
-                        className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner"
-                        value={newActivity.time}
-                        onChange={e => setNewActivity({...newActivity, time: e.target.value})}
-                      />
-                    </div>
+                  <div className="w-full">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Tipo</label>
+                    <select 
+                      className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner"
+                      value={newActivity.type}
+                      onChange={e => setNewActivity({...newActivity, type: e.target.value as any})}
+                    >
+                      {Object.keys(TIPO_COLORS).map(tipo => <option key={tipo} value={tipo}>{tipo.toUpperCase()}</option>)}
+                    </select>
                   </div>
 
                   <div className="w-full">
@@ -419,21 +464,10 @@ const PlanificacionAnual: React.FC = () => {
                   </div>
 
                   <div className="w-full">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Lugar</label>
-                    <input 
-                      type="text"
-                      placeholder="Lugar de la actividad..."
-                      className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner"
-                      value={newActivity.location}
-                      onChange={e => setNewActivity({...newActivity, location: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="w-full">
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Observación</label>
                     <textarea 
                       placeholder="Escribe una observación..." 
-                      className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner min-h-[80px] resize-none"
+                      className="w-full bg-slate-50 p-4 rounded-2xl font-black text-xs outline-none border-none shadow-inner min-h-[120px] resize-none"
                       value={newActivity.observation}
                       onChange={e => setNewActivity({...newActivity, observation: e.target.value})}
                     />
@@ -470,13 +504,13 @@ const PlanificacionAnual: React.FC = () => {
                         onClick={() => startEditing(act)}
                       >
                         <div className="flex items-center gap-4">
-                          <div className={`w-2 h-10 rounded-full ${TIPO_COLORS[act.tipo_actividad]}`}></div>
+                          <div className={`w-2 h-10 rounded-full ${TIPO_COLORS[act.actividad]}`}></div>
                           <div>
                             <p className="text-[11px] font-black text-slate-900 uppercase italic tracking-tight">
-                              {act.hora_inicio.substring(0, 5)} - {act.tipo_actividad}
+                              {act.actividad}
                             </p>
                             <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                              {act.categoria?.toUpperCase().replace('_', ' ')} | {act.lugar}
+                              {act.categoria?.toUpperCase().replace('_', ' ')}
                             </p>
                           </div>
                         </div>

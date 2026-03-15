@@ -37,6 +37,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
   const [realMicrocycles, setRealMicrocycles] = useState<any[]>([]);
   const [citData, setCitData] = useState<any[]>([]);
   const [dailyActivities, setDailyActivities] = useState<any[]>([]);
+  const [medicalReportsToday, setMedicalReportsToday] = useState<any[]>([]);
+  const [kinesicTreatmentsToday, setKinesicTreatmentsToday] = useState<any[]>([]);
   const [activeTasks, setActiveTasks] = useState<any[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
@@ -172,6 +174,19 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
       } else {
         setDailyActivities([]);
       }
+
+      // 4. Fetch Medical and Kinesic data
+      const { data: medData } = await supabase
+        .from('medical_daily_reports')
+        .select('*, players(nombre, apellido1)')
+        .eq('report_date', todayStr);
+      if (medData) setMedicalReportsToday(medData);
+
+      const { data: kinData } = await supabase
+        .from('medical_treatments')
+        .select('*, players(nombre, apellido1)')
+        .eq('treatment_date', todayStr);
+      if (kinData) setKinesicTreatmentsToday(kinData);
     };
 
     if (activeMenu === 'inicio') {
@@ -237,6 +252,16 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
     return dailyActivities.filter(a => a.id_categoria === selectedCategoryId);
   }, [dailyActivities, selectedCategoryId]);
 
+  const filteredMedical = useMemo(() => {
+    if (!selectedCategoryId) return medicalReportsToday;
+    return medicalReportsToday.filter(m => m.category_id === selectedCategoryId);
+  }, [medicalReportsToday, selectedCategoryId]);
+
+  const filteredKinesic = useMemo(() => {
+    if (!selectedCategoryId) return kinesicTreatmentsToday;
+    return kinesicTreatmentsToday.filter(k => k.category_id === selectedCategoryId);
+  }, [kinesicTreatmentsToday, selectedCategoryId]);
+
   const renderContent = () => {
     const todayStr = new Date().toISOString().split('T')[0];
     const activeMicrocycles = realMicrocycles.filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
@@ -262,6 +287,25 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                     DASHBOARD <br/>
                     <span className="text-red-600">SELECCIONES JUVENILES DE CHILE</span>
                   </h1>
+
+                  {/* NUEVA BARRA DE FILTROS RÁPIDOS */}
+                  <div className="flex flex-wrap gap-2 mt-6">
+                    <button 
+                      onClick={() => setSelectedCategoryId(null)}
+                      className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${!selectedCategoryId ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-900/20' : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
+                    >
+                      TODOS
+                    </button>
+                    {Object.entries(CATEGORY_ID_MAP).map(([label, id]) => (
+                      <button 
+                        key={id}
+                        onClick={() => setSelectedCategoryId(id)}
+                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${selectedCategoryId === id ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-900/20' : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
+                      >
+                        {label.replace('_', ' ')}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="w-full lg:w-80 bg-white/5 backdrop-blur-md border border-white/10 rounded-[32px] md:rounded-[40px] p-6 md:p-8 space-y-4 md:space-y-6">
@@ -522,6 +566,87 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                         </div>
                       );
                     })
+                  )}
+                </div>
+              </div>
+
+              {/* ATENCIONES MÉDICAS DIARIAS */}
+              <div className="bg-white rounded-[32px] md:rounded-[48px] p-6 md:p-10 border border-slate-100 shadow-sm flex flex-col">
+                <div className="flex items-center justify-between mb-6 md:mb-8">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-blue-600/20 flex items-center justify-center text-blue-500">
+                      <i className="fa-solid fa-user-md text-xs"></i>
+                    </div>
+                    <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] italic">Atenciones Médicas Diarias</h3>
+                  </div>
+                  <button 
+                    onClick={() => onMenuChange('medica')}
+                    className="text-[9px] font-black text-blue-500 uppercase tracking-widest hover:text-slate-900 transition-colors flex items-center gap-1"
+                  >
+                    Ver Área <i className="fa-solid fa-chevron-right text-[7px]"></i>
+                  </button>
+                </div>
+                <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
+                  {filteredMedical.length === 0 ? (
+                    <div className="text-center py-10">
+                      <p className="text-slate-400 text-[10px] font-black uppercase">Sin reportes hoy</p>
+                    </div>
+                  ) : (
+                    filteredMedical.map((report, i) => (
+                      <div key={i} className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-blue-600 font-black italic text-[10px] border border-slate-100">
+                            {report.players?.nombre?.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{report.players?.nombre} {report.players?.apellido1}</p>
+                            <span className={`text-[7px] font-black px-1.5 py-0.5 rounded uppercase ${report.severity === 'high' ? 'bg-red-100 text-red-600' : report.severity === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                              {report.severity}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-slate-600 text-[9px] font-medium line-clamp-2 italic">"{report.observation}"</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* ATENCIONES KINESICAS */}
+              <div className="bg-white rounded-[32px] md:rounded-[48px] p-6 md:p-10 border border-slate-100 shadow-sm flex flex-col">
+                <div className="flex items-center justify-between mb-6 md:mb-8">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-600/20 flex items-center justify-center text-emerald-500">
+                      <i className="fa-solid fa-hand-holding-medical text-xs"></i>
+                    </div>
+                    <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] italic">Atenciones Kinésicas</h3>
+                  </div>
+                  <button 
+                    onClick={() => onMenuChange('medica')}
+                    className="text-[9px] font-black text-emerald-500 uppercase tracking-widest hover:text-slate-900 transition-colors flex items-center gap-1"
+                  >
+                    Ver Área <i className="fa-solid fa-chevron-right text-[7px]"></i>
+                  </button>
+                </div>
+                <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
+                  {filteredKinesic.length === 0 ? (
+                    <div className="text-center py-10">
+                      <p className="text-slate-400 text-[10px] font-black uppercase">Sin atenciones hoy</p>
+                    </div>
+                  ) : (
+                    filteredKinesic.map((treatment, i) => (
+                      <div key={i} className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-emerald-600 font-black italic text-[10px] border border-slate-100">
+                            {treatment.players?.nombre?.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{treatment.players?.nombre} {treatment.players?.apellido1}</p>
+                          </div>
+                        </div>
+                        <p className="text-slate-600 text-[9px] font-medium line-clamp-2 italic">"{treatment.description}"</p>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
