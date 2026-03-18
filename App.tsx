@@ -457,6 +457,22 @@ export default function App() {
         if (count === 0) {
           console.log("Seeding referencias_gps table...");
           const defaultRefs = [
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'DELANTERO', dist_total_m: 3800, m_por_min: 60, dist_ai_m_15_kmh: 350, dist_mai_m_20_kmh: 60, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 70 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'MEDIO', dist_total_m: 4200, m_por_min: 65, dist_ai_m_15_kmh: 400, dist_mai_m_20_kmh: 70, dist_sprint_m_25_kmh: 3, acc_decc_ai_n: 85 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'DEFENSA', dist_total_m: 3500, m_por_min: 55, dist_ai_m_15_kmh: 300, dist_mai_m_20_kmh: 50, dist_sprint_m_25_kmh: 4, acc_decc_ai_n: 65 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'PORTERO', dist_total_m: 1200, m_por_min: 20, dist_ai_m_15_kmh: 30, dist_mai_m_20_kmh: 5, dist_sprint_m_25_kmh: 1, acc_decc_ai_n: 20 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_14', Posicion: 'DELANTERO', dist_total_m: 4000, m_por_min: 62, dist_ai_m_15_kmh: 380, dist_mai_m_20_kmh: 70, dist_sprint_m_25_kmh: 6, acc_decc_ai_n: 80 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_14', Posicion: 'MEDIO', dist_total_m: 4400, m_por_min: 68, dist_ai_m_15_kmh: 450, dist_mai_m_20_kmh: 80, dist_sprint_m_25_kmh: 4, acc_decc_ai_n: 95 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_14', Posicion: 'DEFENSA', dist_total_m: 3800, m_por_min: 58, dist_ai_m_15_kmh: 330, dist_mai_m_20_kmh: 60, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 75 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_14', Posicion: 'PORTERO', dist_total_m: 1300, m_por_min: 22, dist_ai_m_15_kmh: 40, dist_mai_m_20_kmh: 8, dist_sprint_m_25_kmh: 1, acc_decc_ai_n: 25 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_15', Posicion: 'DELANTERO', dist_total_m: 4200, m_por_min: 65, dist_ai_m_15_kmh: 420, dist_mai_m_20_kmh: 80, dist_sprint_m_25_kmh: 8, acc_decc_ai_n: 90 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_15', Posicion: 'MEDIO', dist_total_m: 4600, m_por_min: 70, dist_ai_m_15_kmh: 500, dist_mai_m_20_kmh: 90, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 105 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_15', Posicion: 'DEFENSA', dist_total_m: 4000, m_por_min: 62, dist_ai_m_15_kmh: 360, dist_mai_m_20_kmh: 70, dist_sprint_m_25_kmh: 6, acc_decc_ai_n: 85 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_15', Posicion: 'PORTERO', dist_total_m: 1400, m_por_min: 24, dist_ai_m_15_kmh: 45, dist_mai_m_20_kmh: 10, dist_sprint_m_25_kmh: 2, acc_decc_ai_n: 28 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_16', Posicion: 'DELANTERO', dist_total_m: 4400, m_por_min: 68, dist_ai_m_15_kmh: 460, dist_mai_m_20_kmh: 90, dist_sprint_m_25_kmh: 9, acc_decc_ai_n: 95 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_16', Posicion: 'MEDIO', dist_total_m: 4800, m_por_min: 72, dist_ai_m_15_kmh: 550, dist_mai_m_20_kmh: 110, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 115 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_16', Posicion: 'DEFENSA', dist_total_m: 4100, m_por_min: 64, dist_ai_m_15_kmh: 380, dist_mai_m_20_kmh: 75, dist_sprint_m_25_kmh: 7, acc_decc_ai_n: 88 },
+            { Tipo: 'PROMEDIO', Categoria: 'SUB_16', Posicion: 'PORTERO', dist_total_m: 1450, m_por_min: 24, dist_ai_m_15_kmh: 48, dist_mai_m_20_kmh: 10, dist_sprint_m_25_kmh: 2, acc_decc_ai_n: 29 },
             { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'DELANTERO', dist_total_m: 4500, m_por_min: 70, dist_ai_m_15_kmh: 500, dist_mai_m_20_kmh: 100, dist_sprint_m_25_kmh: 10, acc_decc_ai_n: 100 },
             { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'MEDIO', dist_total_m: 5000, m_por_min: 75, dist_ai_m_15_kmh: 600, dist_mai_m_20_kmh: 120, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 120 },
             { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'DEFENSA', dist_total_m: 4200, m_por_min: 65, dist_ai_m_15_kmh: 400, dist_mai_m_20_kmh: 80, dist_sprint_m_25_kmh: 8, acc_decc_ai_n: 90 },
@@ -660,6 +676,7 @@ export default function App() {
                 onMenuChange={setActiveMenu} 
                 userClub={userClub || undefined}
                 userRole={role}
+                userId_del_jugador={linkedPlayerId}
               />
             )}
           </div>

@@ -9,11 +9,12 @@ interface FisicaAreaProps {
   view?: 'wellness' | 'pse' | 'external_total' | 'report';
   userRole?: string;
   userClub?: string;
+  highlightPlayerId?: number | null;
 }
 
 type MainTab = 'carga_interna' | 'carga_externa' | 'reporte_diario';
 
-export default function FisicaArea({ performanceRecords, view = 'wellness', userRole, userClub }: FisicaAreaProps) {
+export default function FisicaArea({ performanceRecords, view = 'wellness', userRole, userClub, highlightPlayerId }: FisicaAreaProps) {
   const activeMainTab: MainTab = useMemo(() => {
     if (view === 'external_total') return 'carga_externa';
     if (view === 'report') return 'reporte_diario';
@@ -78,29 +79,58 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   const calcularIFR = (gpsData: any, player: any) => {
     if (!gpsReferences.length || !player) return null;
 
+    const normalizeStr = (str: string) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
     // Find reference for player category and position
-    const ref = gpsReferences.find(r => 
-      r.categoria?.toLowerCase() === player.categoria?.toLowerCase() && 
-      r.posicion?.toLowerCase() === player.posicion?.toLowerCase()
-    );
+    let playerPos = (player.posicion || '').toUpperCase();
+    if (playerPos.includes('DELANTERO') || playerPos.includes('EXTREMO') || playerPos.includes('PUNTA')) playerPos = 'DELANTERO';
+    else if (playerPos.includes('VOLANTE') || playerPos.includes('MEDIO') || playerPos.includes('CENTRAL') && !playerPos.includes('DEFENSA')) playerPos = 'MEDIO';
+    else if (playerPos.includes('DEFENSA') || playerPos.includes('LATERAL') || playerPos.includes('ZAGUERO')) playerPos = 'DEFENSA';
+    else if (playerPos.includes('PORTERO') || playerPos.includes('ARQUERO')) playerPos = 'PORTERO';
+    else playerPos = 'MEDIO';
+
+    const pCat = normalizeStr(player.categoria || '');
+
+    let ref = gpsReferences.find(r => {
+      const rCat = normalizeStr(r.Categoria || r.categoria || '');
+      const rPos = (r.Posicion || r.posicion || '').toUpperCase();
+      return rCat === pCat && rPos === playerPos;
+    });
+
+    // Fallback: If no exact match for category + position, try position in any category
+    if (!ref) {
+      ref = gpsReferences.find(r => {
+        const rPos = (r.Posicion || r.posicion || '').toUpperCase();
+        return rPos === playerPos;
+      });
+    }
 
     if (!ref) return null;
 
     // Weights: 0.2 Volumen, 0.3 Intensidad, 0.5 Neuromuscular
     
     // 1. Volumen (20%): Distancia Total y Metros/min
-    const volDT = (gpsData.dist_total_m / (ref.distancia_total || 1)) * 100;
-    const volMM = (gpsData.m_por_min / (ref.metros_minuto || 1)) * 100;
+    const refDistTotal = Number(ref['Total Distance (m)'] || ref.distancia_total || ref.dist_total_m || 1);
+    const refMetrosMin = Number(ref['Metros/min'] || ref.metros_minuto || ref.m_por_min || 1);
+    
+    const volDT = (Number(gpsData.dist_total_m || 0) / refDistTotal) * 100;
+    const volMM = (Number(gpsData.m_por_min || 0) / refMetrosMin) * 100;
     const volumen = (volDT + volMM) / 2;
 
     // 2. Intensidad (30%): >15km/h (Dist. AI) y >20km/h (Dist. MAI)
-    const intAI = (gpsData.dist_ai_m_15_kmh / (ref.distancia_ai || 1)) * 100;
-    const intMAI = (gpsData.dist_mai_m_20_kmh / (ref.distancia_mai || 1)) * 100;
+    const refDistAI = Number(ref['AInt >15 km/h'] || ref.distancia_ai || ref.dist_ai_m_15_kmh || 1);
+    const refDistMAI = Number(ref['MAInt >20km/h'] || ref.distancia_mai || ref.dist_mai_m_20_kmh || 1);
+    
+    const intAI = (Number(gpsData.dist_ai_m_15_kmh || 0) / refDistAI) * 100;
+    const intMAI = (Number(gpsData.dist_mai_m_20_kmh || 0) / refDistMAI) * 100;
     const intensidad = (intAI + intMAI) / 2;
 
     // 3. Neuromuscular (50%): Sprint >25km/h y #Acc+Decc AI
-    const neuroSprint = (gpsData.dist_sprint_m_25_kmh / (ref.distancia_sprint || 1)) * 100;
-    const neuroAccDecc = (gpsData.acc_decc_ai_n / (ref.acc_decc_ai || 1)) * 100;
+    const refDistSprint = Number(ref['Sprint >25 km/h'] || ref.distancia_sprint || ref.dist_sprint_m_25_kmh || 1);
+    const refAccDecc = Number(ref['#Acc+Decc AI'] || ref.acc_decc_ai || ref.acc_decc_ai_n || 1);
+    
+    const neuroSprint = (Number(gpsData.dist_sprint_m_25_kmh || 0) / refDistSprint) * 100;
+    const neuroAccDecc = (Number(gpsData.acc_decc_ai_n || 0) / refAccDecc) * 100;
     const neuromuscular = (neuroSprint + neuroAccDecc) / 2;
 
     const ifr = (volumen * 0.2) + (intensidad * 0.3) + (neuromuscular * 0.5);
@@ -877,9 +907,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   const isPending = !row.hasReported;
                   const avg = row.wellness ? (row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3 : 0;
                   
+                  const isHighlighted = highlightPlayerId && Number(row.player.id_del_jugador) === Number(highlightPlayerId);
+                  
                   return (
-                    <tr key={idx} className={`transition-colors font-black uppercase italic text-[10px] md:text-xs ${isPending ? 'bg-slate-50/50 text-slate-300' : (row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '') ? 'bg-slate-100/80 hover:bg-slate-100' : 'hover:bg-slate-50 text-slate-900')}`}>
-                      <td className="px-4 md:px-8 py-4 md:py-5 text-left">
+                    <tr key={idx} className={`transition-colors font-black uppercase italic text-[10px] md:text-xs ${isHighlighted ? 'bg-blue-50 border-l-4 border-blue-500' : isPending ? 'bg-slate-50/50 text-slate-300' : (row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '') ? 'bg-slate-100/80 hover:bg-slate-100' : 'hover:bg-slate-50 text-slate-900')}`}>
+                      <td className={`px-4 md:px-8 py-4 md:py-5 text-left ${isHighlighted ? 'bg-blue-50' : ''}`}>
                         <div className="flex flex-col">
                           <span>{row.player.name}</span>
                           <span className="text-[8px] opacity-50 not-italic">{row.player.club_name || row.player.club || 'SIN CLUB'}</span>
@@ -981,7 +1013,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                    <th className="px-2 md:px-4 py-4 md:py-5">Dist. Sprint (&gt;25)</th>
                    <th className="px-2 md:px-4 py-4 md:py-5">Sprints (n)</th>
                    <th className="px-2 md:px-4 py-4 md:py-5">Vel. Máx (km/h)</th>
-                   <th className="px-4 md:px-8 py-4 md:py-5 text-right">Acc/Decc AI</th>
+                   <th className="px-2 md:px-4 py-4 md:py-5">Acc/Decc AI</th>
+                   <th className="px-4 md:px-8 py-4 md:py-5 text-right">IFR (%)</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-slate-100 font-black italic uppercase text-[10px] md:text-xs">
@@ -990,9 +1023,19 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                    const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim() : `ID: ${row.id_del_jugador}`;
                    const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
                    
+                   const isHighlighted = highlightPlayerId && Number(row.id_del_jugador) === Number(highlightPlayerId);
+                   const ifrValue = calcularIFR(row, player);
+                   const ifrColor = ifrValue !== null ? getIFRColor(ifrValue) : null;
+                   
                    return (
-                     <tr key={idx} className={`hover:bg-slate-50 transition-colors ${isOwnPlayer ? 'bg-slate-100/80' : ''}`}>
-                       <td className={`px-4 md:px-8 py-4 md:py-5 text-left sticky left-0 group-hover:bg-slate-50 border-r border-slate-50 ${isOwnPlayer ? 'bg-slate-100/80' : 'bg-white'}`}>{playerName}</td>
+                     <tr 
+                       key={idx} 
+                       className={`hover:bg-slate-50 transition-colors ${isHighlighted ? 'bg-blue-50 border-l-4 border-blue-500' : isOwnPlayer ? 'bg-slate-100/80' : ''}`}
+                       style={{ 
+                         backgroundColor: ifrColor ? `${ifrColor}25` : undefined 
+                       }}
+                     >
+                       <td className={`px-4 md:px-8 py-4 md:py-5 text-left sticky left-0 group-hover:bg-slate-50 border-r border-slate-50 ${isHighlighted ? 'bg-blue-50' : isOwnPlayer ? 'bg-slate-100/80' : 'bg-white'}`} style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>{playerName}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.minutos?.toFixed(1) || '0.0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.dist_total_m?.toFixed(0) || '0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">
@@ -1005,7 +1048,19 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                        <td className="px-2 md:px-4 py-4 md:py-5 text-blue-600">{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.sprints_n?.toFixed(0) || '0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5 text-red-600 font-black">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
-                       <td className="px-4 md:px-8 py-4 md:py-5 text-right">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
+                       <td className="px-2 md:px-4 py-4 md:py-5">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
+                       <td className="px-4 md:px-8 py-4 md:py-5 text-right">
+                         {ifrValue !== null ? (
+                           <div 
+                             className="inline-block px-3 py-1 rounded-full text-white font-black text-[10px] shadow-sm"
+                             style={{ backgroundColor: getIFRColor(ifrValue) }}
+                           >
+                             {ifrValue.toFixed(1)}%
+                           </div>
+                         ) : (
+                           <span className="text-slate-300">-</span>
+                         )}
+                       </td>
                      </tr>
                    );
                  })}
@@ -1286,7 +1341,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             <th className="px-1 py-2">AI</th>
                             <th className="px-1 py-2">SPRINT</th>
                             <th className="px-1 py-2">VEL MAX</th>
-                            <th className="px-4 py-2 text-right">ACC/DECC</th>
+                            <th className="px-1 py-2">ACC/DECC</th>
+                            <th className="px-4 py-2 text-right">IFR (%)</th>
                           </tr>
                         </thead>
                         <tbody className="text-[8px] font-mono font-black text-slate-900">
@@ -1294,10 +1350,16 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             const player = row.players;
                             const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.id_del_jugador}`;
                             const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
+                            const ifrValue = calcularIFR(row, player);
+                            const ifrColor = ifrValue !== null ? getIFRColor(ifrValue) : null;
                             
                             return (
-                              <tr key={row.id} className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}>
-                                <td className="px-4 py-0.5 text-left font-sans">
+                              <tr 
+                                key={row.id} 
+                                className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}
+                                style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}
+                              >
+                                <td className="px-4 py-0.5 text-left font-sans" style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{playerName}</span>
                                    <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player?.club_name || player?.club || 'SIN CLUB'}</span>
                                 </td>
@@ -1312,7 +1374,19 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <td className="px-1 py-0.5 text-slate-500 italic text-[8px]">{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
                                 <td className="px-1 py-0.5 text-blue-600 italic text-[8px]">{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
                                 <td className="px-1 py-0.5 text-red-600 text-[10px] italic">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
-                                <td className="px-4 py-0.5 text-right text-[#0b1220] italic text-[8px]">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
+                                <td className="px-1 py-0.5 text-[#0b1220] italic text-[8px]">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
+                                <td className="px-4 py-0.5 text-right">
+                                  {ifrValue !== null ? (
+                                    <div 
+                                      className="inline-block px-2 py-0.5 rounded-full text-white font-black text-[7px] shadow-sm"
+                                      style={{ backgroundColor: getIFRColor(ifrValue) }}
+                                    >
+                                      {ifrValue.toFixed(1)}%
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-300">-</span>
+                                  )}
+                                </td>
                               </tr>
                             );
                           })}

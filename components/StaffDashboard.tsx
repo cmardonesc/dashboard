@@ -31,9 +31,10 @@ interface StaffDashboardProps {
   onMenuChange: (id: MenuId) => void;
   userClub?: string;
   userRole?: string;
+  userId_del_jugador?: number | null;
 }
 
-const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, activeMenu, onMenuChange, userClub, userRole }) => {
+const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, activeMenu, onMenuChange, userClub, userRole, userId_del_jugador }) => {
   const [realMicrocycles, setRealMicrocycles] = useState<any[]>([]);
   const [citData, setCitData] = useState<any[]>([]);
   const [dailyActivities, setDailyActivities] = useState<any[]>([]);
@@ -667,15 +668,15 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
           </div>
         );
       case 'fisica_wellness':
-        return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} />;
       case 'fisica_pse':
-        return <FisicaArea performanceRecords={performanceRecords} view="pse" userRole={userRole} userClub={userClub} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="pse" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} />;
       case 'fisica_carga_externa_total':
-        return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} />;
       case 'fisica_carga_externa_tareas':
         return <CargaTareasArea userRole={userRole} userClub={userClub} />;
       case 'fisica_reporte':
-        return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} />;
       case 'fisica_vo2max':
         return <VO2MaxArea />;
       case 'nutricion_resumen_grupal':

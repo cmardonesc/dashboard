@@ -412,6 +412,22 @@ create policy "Enable all access for referencias_gps" on public.referencias_gps 
 -- Seed some default references
 insert into public.referencias_gps ("Tipo", "Categoria", "Posicion", dist_total_m, m_por_min, dist_ai_m_15_kmh, dist_mai_m_20_kmh, dist_sprint_m_25_kmh, acc_decc_ai_n)
 values 
+('PROMEDIO', 'SUB_13', 'DELANTERO', 3800, 60, 350, 60, 5, 70),
+('PROMEDIO', 'SUB_13', 'MEDIO', 4200, 65, 400, 70, 3, 85),
+('PROMEDIO', 'SUB_13', 'DEFENSA', 3500, 55, 300, 50, 4, 65),
+('PROMEDIO', 'SUB_13', 'PORTERO', 1200, 20, 30, 5, 1, 20),
+('PROMEDIO', 'SUB_14', 'DELANTERO', 4000, 62, 380, 70, 6, 80),
+('PROMEDIO', 'SUB_14', 'MEDIO', 4400, 68, 450, 80, 4, 95),
+('PROMEDIO', 'SUB_14', 'DEFENSA', 3800, 58, 330, 60, 5, 75),
+('PROMEDIO', 'SUB_14', 'PORTERO', 1300, 22, 40, 8, 1, 25),
+('PROMEDIO', 'SUB_15', 'DELANTERO', 4200, 65, 420, 80, 8, 90),
+('PROMEDIO', 'SUB_15', 'MEDIO', 4600, 70, 500, 90, 5, 105),
+('PROMEDIO', 'SUB_15', 'DEFENSA', 4000, 62, 360, 70, 6, 85),
+('PROMEDIO', 'SUB_15', 'PORTERO', 1400, 24, 45, 10, 2, 28),
+('PROMEDIO', 'SUB_16', 'DELANTERO', 4400, 68, 460, 90, 9, 95),
+('PROMEDIO', 'SUB_16', 'MEDIO', 4800, 72, 550, 110, 5, 115),
+('PROMEDIO', 'SUB_16', 'DEFENSA', 4100, 64, 380, 75, 7, 88),
+('PROMEDIO', 'SUB_16', 'PORTERO', 1450, 24, 48, 10, 2, 29),
 ('PROMEDIO', 'SUB_17', 'DELANTERO', 4500, 70, 500, 100, 10, 100),
 ('PROMEDIO', 'SUB_17', 'MEDIO', 5000, 75, 600, 120, 5, 120),
 ('PROMEDIO', 'SUB_17', 'DEFENSA', 4200, 65, 400, 80, 8, 90),
