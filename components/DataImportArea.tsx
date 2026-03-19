@@ -34,8 +34,6 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'sprints_n', label: '# SP', required: false, type: 'number' },
       { key: 'vel_max_kmh', label: 'Max Vel (km/h)', required: false, type: 'number' },
       { key: 'acc_decc_ai_n', label: '#Acc+Decc AI', required: false, type: 'number' },
-      { key: 'ifr', label: 'IFR', required: false, type: 'number' },
-      { key: 'ifr_color', label: 'IFR Color', required: false, type: 'string' },
     ]
   },
   gps_tareas: {
@@ -58,8 +56,6 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'sprints_n', label: '# SP', required: false, type: 'number' },
       { key: 'vel_max_kmh', label: 'Max Vel (km/h)', required: false, type: 'number' },
       { key: 'acc_decc_ai_n', label: '#Acc+Decc AI', required: false, type: 'number' },
-      { key: 'ifr', label: 'IFR', required: false, type: 'number' },
-      { key: 'ifr_color', label: 'IFR Color', required: false, type: 'string' },
     ]
   },
   antropometria: {
@@ -465,7 +461,23 @@ export default function DataImportArea() {
         return;
       }
 
-      const { error } = await supabase.from(config.table).upsert(dataToInsert, {
+      // 4. Deduplicate dataToInsert based on conflictColumns to avoid "ON CONFLICT DO UPDATE" error
+      // This happens if the CSV has multiple rows for the same player/date/task
+      const deduplicatedData = dataToInsert.reduce((acc: any[], current) => {
+        const conflictKey = config.conflictColumns.map(col => String(current[col])).join('|');
+        const existingIndex = acc.findIndex(item => 
+          config.conflictColumns.map(col => String(item[col])).join('|') === conflictKey
+        );
+        
+        if (existingIndex > -1) {
+          acc[existingIndex] = current; // Keep the last occurrence in the file
+        } else {
+          acc.push(current);
+        }
+        return acc;
+      }, []);
+
+      const { error } = await supabase.from(config.table).upsert(deduplicatedData, {
         onConflict: config.conflictColumns.join(',')
       });
 

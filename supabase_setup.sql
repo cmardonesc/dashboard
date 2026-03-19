@@ -257,8 +257,6 @@ create table if not exists public.gps_import (
   vel_max_kmh float8,
   acc_decc_ai_n float8,
   jugador text,
-  ifr float8,
-  ifr_color text,
   unique(id_del_jugador, fecha)
 );
 
@@ -283,8 +281,6 @@ create table if not exists public.gps_tareas (
   vel_max_kmh float8,
   acc_decc_ai_n float8,
   jugador_nombre text,
-  ifr float8,
-  ifr_color text,
   unique(id_del_jugador, fecha, tarea)
 );
 
