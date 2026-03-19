@@ -24,7 +24,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     conflictColumns: ['id_del_jugador', 'fecha'],
     fields: [
       { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
-      { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
+      { key: 'fecha', label: 'Date', required: true, type: 'date' },
       { key: 'minutos', label: 'Min', required: false, type: 'number' },
       { key: 'dist_total_m', label: 'Total Distance (m)', required: false, type: 'number' },
       { key: 'm_por_min', label: 'Metros/min', required: false, type: 'number' },
@@ -34,6 +34,8 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'sprints_n', label: '# SP', required: false, type: 'number' },
       { key: 'vel_max_kmh', label: 'Max Vel (km/h)', required: false, type: 'number' },
       { key: 'acc_decc_ai_n', label: '#Acc+Decc AI', required: false, type: 'number' },
+      { key: 'ifr', label: 'IFR', required: false, type: 'number' },
+      { key: 'ifr_color', label: 'IFR Color', required: false, type: 'string' },
     ]
   },
   gps_tareas: {
@@ -46,6 +48,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Date', required: true, type: 'date' },
       { key: 'tarea', label: 'Name', required: true, type: 'string' },
+      { key: 'bloque', label: 'Bloque', required: false, type: 'number' },
       { key: 'minutos', label: 'Min', required: false, type: 'number' },
       { key: 'dist_total_m', label: 'Total Distance (m)', required: false, type: 'number' },
       { key: 'm_por_min', label: 'Metros/min', required: false, type: 'number' },
@@ -55,6 +58,8 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'sprints_n', label: '# SP', required: false, type: 'number' },
       { key: 'vel_max_kmh', label: 'Max Vel (km/h)', required: false, type: 'number' },
       { key: 'acc_decc_ai_n', label: '#Acc+Decc AI', required: false, type: 'number' },
+      { key: 'ifr', label: 'IFR', required: false, type: 'number' },
+      { key: 'ifr_color', label: 'IFR Color', required: false, type: 'string' },
     ]
   },
   antropometria: {
@@ -366,10 +371,14 @@ export default function DataImportArea() {
             const playerName = parts.pop()?.trim();
             const taskName = parts.join(' - ').trim();
             item.tarea = taskName;
-            item.jugador_nombre = playerName;
+            if (config.fields.some(f => f.key === 'jugador_nombre')) {
+              item.jugador_nombre = playerName;
+            }
           } else {
             item.tarea = nameVal;
-            item.jugador_nombre = nameVal;
+            if (config.fields.some(f => f.key === 'jugador_nombre')) {
+              item.jugador_nombre = nameVal;
+            }
           }
         }
 
@@ -421,8 +430,11 @@ export default function DataImportArea() {
           
           // Auto-populate 'jugador' name if missing but we have the player
           const player = players.find(p => (p as any).id_del_jugador === pId);
-          if (player && !item.jugador) {
+          if (player && !item.jugador && config.fields.some(f => f.key === 'jugador')) {
             item.jugador = `${(player as any).nombre} ${(player as any).apellido1}`;
+          }
+          if (player && !item.jugador_nombre && config.fields.some(f => f.key === 'jugador_nombre')) {
+            item.jugador_nombre = `${(player as any).nombre} ${(player as any).apellido1}`;
           }
         }
 

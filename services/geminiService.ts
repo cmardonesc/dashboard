@@ -171,3 +171,31 @@ export const getWeatherForecast = async (city: string, country: string): Promise
     return { data: null, sources: [], error: errorMessage };
   }
 };
+
+export const getChartSummary = async (chartTitle: string, data: any) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  try {
+    const prompt = `
+      Actúa como un Científico del Deporte de élite.
+      Analiza los siguientes datos estadísticos del gráfico titulado "${chartTitle}":
+      ${JSON.stringify(data)}
+
+      Por favor proporciona un resumen breve (máximo 3-4 líneas) que destaque:
+      1. El hallazgo más significativo o tendencia clara.
+      2. Una observación sobre la dispersión o valores atípicos si son relevantes.
+      3. Una recomendación rápida o punto de atención para el cuerpo técnico.
+
+      Sé directo, profesional y utiliza terminología técnica deportiva. RESPONDE SIEMPRE EN ESPAÑOL.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+    });
+
+    return response.text || "No se pudo generar el resumen del gráfico.";
+  } catch (error) {
+    console.error("Error al generar resumen del gráfico:", error);
+    return "Error al conectar con la IA para el resumen.";
+  }
+};

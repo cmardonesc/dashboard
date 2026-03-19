@@ -256,6 +256,9 @@ create table if not exists public.gps_import (
   sprints_n float8,
   vel_max_kmh float8,
   acc_decc_ai_n float8,
+  jugador text,
+  ifr float8,
+  ifr_color text,
   unique(id_del_jugador, fecha)
 );
 
@@ -278,7 +281,11 @@ create table if not exists public.gps_tareas (
   dist_sprint_m_25_kmh float8,
   sprints_n float8,
   vel_max_kmh float8,
-  acc_decc_ai_n float8
+  acc_decc_ai_n float8,
+  jugador_nombre text,
+  ifr float8,
+  ifr_color text,
+  unique(id_del_jugador, fecha, tarea)
 );
 
 alter table public.gps_tareas enable row level security;

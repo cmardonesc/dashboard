@@ -110,24 +110,24 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     // Weights: 0.2 Volumen, 0.3 Intensidad, 0.5 Neuromuscular
     
     // 1. Volumen (20%): Distancia Total y Metros/min
-    const refDistTotal = Number(ref['Total Distance (m)'] || ref.distancia_total || ref.dist_total_m || 1);
-    const refMetrosMin = Number(ref['Metros/min'] || ref.metros_minuto || ref.m_por_min || 1);
+    const refDistTotal = Number(ref['Total Distance (m)'] || ref.distancia_total || ref.dist_total_m) || 1;
+    const refMetrosMin = Number(ref['Metros/min'] || ref.metros_minuto || ref.m_por_min) || 1;
     
     const volDT = (Number(gpsData.dist_total_m || 0) / refDistTotal) * 100;
     const volMM = (Number(gpsData.m_por_min || 0) / refMetrosMin) * 100;
     const volumen = (volDT + volMM) / 2;
 
     // 2. Intensidad (30%): >15km/h (Dist. AI) y >20km/h (Dist. MAI)
-    const refDistAI = Number(ref['AInt >15 km/h'] || ref.distancia_ai || ref.dist_ai_m_15_kmh || 1);
-    const refDistMAI = Number(ref['MAInt >20km/h'] || ref.distancia_mai || ref.dist_mai_m_20_kmh || 1);
+    const refDistAI = Number(ref['AInt >15 km/h'] || ref.distancia_ai || ref.dist_ai_m_15_kmh) || 1;
+    const refDistMAI = Number(ref['MAInt >20km/h'] || ref.distancia_mai || ref.dist_mai_m_20_kmh) || 1;
     
     const intAI = (Number(gpsData.dist_ai_m_15_kmh || 0) / refDistAI) * 100;
     const intMAI = (Number(gpsData.dist_mai_m_20_kmh || 0) / refDistMAI) * 100;
     const intensidad = (intAI + intMAI) / 2;
 
     // 3. Neuromuscular (50%): Sprint >25km/h y #Acc+Decc AI
-    const refDistSprint = Number(ref['Sprint >25 km/h'] || ref.distancia_sprint || ref.dist_sprint_m_25_kmh || 1);
-    const refAccDecc = Number(ref['#Acc+Decc AI'] || ref.acc_decc_ai || ref.acc_decc_ai_n || 1);
+    const refDistSprint = Number(ref['Sprint >25 km/h'] || ref.distancia_sprint || ref.dist_sprint_m_25_kmh) || 1;
+    const refAccDecc = Number(ref['#Acc+Decc AI'] || ref.acc_decc_ai || ref.acc_decc_ai_n) || 1;
     
     const neuroSprint = (Number(gpsData.dist_sprint_m_25_kmh || 0) / refDistSprint) * 100;
     const neuroAccDecc = (Number(gpsData.acc_decc_ai_n || 0) / refAccDecc) * 100;
@@ -1350,8 +1350,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             const player = row.players;
                             const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.id_del_jugador}`;
                             const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
-                            const ifrValue = calcularIFR(row, player);
-                            const ifrColor = ifrValue !== null ? getIFRColor(ifrValue) : null;
+                            
+                            // Use stored IFR if available, otherwise calculate it
+                            const ifrValue = row.ifr !== undefined && row.ifr !== null ? row.ifr : calcularIFR(row, player);
+                            const ifrColor = row.ifr_color || (ifrValue !== null ? getIFRColor(ifrValue) : null);
                             
                             return (
                               <tr 

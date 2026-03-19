@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeClub } from '../lib/utils';
+import { getChartSummary } from '../services/geminiService';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Cell, BarChart, Bar, LineChart, Line, Legend,
@@ -1025,6 +1027,23 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
   const [selectedVo2Metrics, setSelectedVo2Metrics] = useState<string[]>(['vo2_max', 'vam', 'fc_max', 'mts']);
   const [selectedAntroMetrics, setSelectedAntroMetrics] = useState<string[]>(['masa_adiposa_pct', 'masa_muscular_pct', 'sumatoria_6_pliegues', 'peso']);
   const [selectedSquadPosiciones, setSelectedSquadPosiciones] = useState<string[]>([]);
+  
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [loadingSummaries, setLoadingSummaries] = useState<Record<string, boolean>>({});
+
+  const handleGenerateSummary = async (metricKey: string, table: string, label: string) => {
+    if (loadingSummaries[metricKey]) return;
+    setLoadingSummaries(prev => ({ ...prev, [metricKey]: true }));
+    try {
+      const data = getBoxPlotData(metricKey, table);
+      const summary = await getChartSummary(label, data);
+      setSummaries(prev => ({ ...prev, [metricKey]: summary }));
+    } catch (error) {
+      console.error("Error generating summary:", error);
+    } finally {
+      setLoadingSummaries(prev => ({ ...prev, [metricKey]: false }));
+    }
+  };
 
   const filteredPlayers = useMemo(() => 
     players.filter(p => {
@@ -1217,29 +1236,77 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedImtpMetrics.map((metricKey, idx) => (
-            <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-              <div className="flex justify-between items-center mb-8">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  {METRICS_OPTIONS.find(m => m.key === metricKey)?.label}
-                </h4>
-                <select 
-                  value={metricKey}
-                  onChange={(e) => {
-                    const next = [...selectedImtpMetrics];
-                    next[idx] = e.target.value;
-                    setSelectedImtpMetrics(next);
-                  }}
-                  className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
-                >
-                  {imtpOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
-                </select>
+          {selectedImtpMetrics.map((metricKey, idx) => {
+            const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
+            return (
+              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 relative group">
+                <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {label}
+                    </h4>
+                    <button 
+                      onClick={() => handleGenerateSummary(metricKey, 'imtp', label)}
+                      disabled={loadingSummaries[metricKey]}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${loadingSummaries[metricKey] ? 'bg-slate-100 text-slate-400 animate-pulse' : 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white'}`}
+                      title="Generar resumen con IA"
+                    >
+                      <i className={`fa-solid ${loadingSummaries[metricKey] ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[10px]`}></i>
+                    </button>
+                  </div>
+                  <select 
+                    value={metricKey}
+                    onChange={(e) => {
+                      const next = [...selectedImtpMetrics];
+                      next[idx] = e.target.value;
+                      setSelectedImtpMetrics(next);
+                      // Clear summary if metric changes
+                      if (summaries[metricKey]) {
+                        const newSummaries = { ...summaries };
+                        delete newSummaries[metricKey];
+                        setSummaries(newSummaries);
+                      }
+                    }}
+                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
+                  >
+                    {imtpOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                  </select>
+                </div>
+                <div className="h-64">
+                  <BoxPlotChart data={getBoxPlotData(metricKey, 'imtp')} color="#ef4444" />
+                </div>
+
+                <AnimatePresence>
+                  {summaries[metricKey] && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="mt-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                      <div className="flex items-start gap-3">
+                        <i className="fa-solid fa-robot text-red-500 mt-1 text-xs"></i>
+                        <p className="text-[11px] font-bold text-slate-600 leading-relaxed italic">
+                          {summaries[metricKey]}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newSummaries = { ...summaries };
+                          delete newSummaries[metricKey];
+                          setSummaries(newSummaries);
+                        }}
+                        className="absolute top-2 right-2 text-slate-300 hover:text-slate-500"
+                      >
+                        <i className="fa-solid fa-xmark text-[10px]"></i>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              <div className="h-64">
-                <BoxPlotChart data={getBoxPlotData(metricKey, 'imtp')} color="#ef4444" />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -1250,29 +1317,76 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedSpeedMetrics.map((metricKey, idx) => (
-            <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-              <div className="flex justify-between items-center mb-8">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  {METRICS_OPTIONS.find(m => m.key === metricKey)?.label}
-                </h4>
-                <select 
-                  value={metricKey}
-                  onChange={(e) => {
-                    const next = [...selectedSpeedMetrics];
-                    next[idx] = e.target.value;
-                    setSelectedSpeedMetrics(next);
-                  }}
-                  className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-amber-500 uppercase tracking-widest"
-                >
-                  {speedOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
-                </select>
+          {selectedSpeedMetrics.map((metricKey, idx) => {
+            const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
+            return (
+              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 relative group">
+                <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {label}
+                    </h4>
+                    <button 
+                      onClick={() => handleGenerateSummary(metricKey, 'speed', label)}
+                      disabled={loadingSummaries[metricKey]}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${loadingSummaries[metricKey] ? 'bg-slate-100 text-slate-400 animate-pulse' : 'bg-amber-50 text-amber-500 hover:bg-amber-500 hover:text-white'}`}
+                      title="Generar resumen con IA"
+                    >
+                      <i className={`fa-solid ${loadingSummaries[metricKey] ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[10px]`}></i>
+                    </button>
+                  </div>
+                  <select 
+                    value={metricKey}
+                    onChange={(e) => {
+                      const next = [...selectedSpeedMetrics];
+                      next[idx] = e.target.value;
+                      setSelectedSpeedMetrics(next);
+                      if (summaries[metricKey]) {
+                        const newSummaries = { ...summaries };
+                        delete newSummaries[metricKey];
+                        setSummaries(newSummaries);
+                      }
+                    }}
+                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-amber-500 uppercase tracking-widest"
+                  >
+                    {speedOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                  </select>
+                </div>
+                <div className="h-64">
+                  <BoxPlotChart data={getBoxPlotData(metricKey, 'speed')} color="#f59e0b" />
+                </div>
+
+                <AnimatePresence>
+                  {summaries[metricKey] && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="mt-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
+                      <div className="flex items-start gap-3">
+                        <i className="fa-solid fa-robot text-amber-500 mt-1 text-xs"></i>
+                        <p className="text-[11px] font-bold text-slate-600 leading-relaxed italic">
+                          {summaries[metricKey]}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newSummaries = { ...summaries };
+                          delete newSummaries[metricKey];
+                          setSummaries(newSummaries);
+                        }}
+                        className="absolute top-2 right-2 text-slate-300 hover:text-slate-500"
+                      >
+                        <i className="fa-solid fa-xmark text-[10px]"></i>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              <div className="h-64">
-                <BoxPlotChart data={getBoxPlotData(metricKey, 'speed')} color="#f59e0b" />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -1283,29 +1397,76 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedVo2Metrics.map((metricKey, idx) => (
-            <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-              <div className="flex justify-between items-center mb-8">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  {METRICS_OPTIONS.find(m => m.key === metricKey)?.label}
-                </h4>
-                <select 
-                  value={metricKey}
-                  onChange={(e) => {
-                    const next = [...selectedVo2Metrics];
-                    next[idx] = e.target.value;
-                    setSelectedVo2Metrics(next);
-                  }}
-                  className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-indigo-500 uppercase tracking-widest"
-                >
-                  {vo2Options.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
-                </select>
+          {selectedVo2Metrics.map((metricKey, idx) => {
+            const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
+            return (
+              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 relative group">
+                <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {label}
+                    </h4>
+                    <button 
+                      onClick={() => handleGenerateSummary(metricKey, 'vo2max', label)}
+                      disabled={loadingSummaries[metricKey]}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${loadingSummaries[metricKey] ? 'bg-slate-100 text-slate-400 animate-pulse' : 'bg-indigo-50 text-indigo-500 hover:bg-indigo-500 hover:text-white'}`}
+                      title="Generar resumen con IA"
+                    >
+                      <i className={`fa-solid ${loadingSummaries[metricKey] ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[10px]`}></i>
+                    </button>
+                  </div>
+                  <select 
+                    value={metricKey}
+                    onChange={(e) => {
+                      const next = [...selectedVo2Metrics];
+                      next[idx] = e.target.value;
+                      setSelectedVo2Metrics(next);
+                      if (summaries[metricKey]) {
+                        const newSummaries = { ...summaries };
+                        delete newSummaries[metricKey];
+                        setSummaries(newSummaries);
+                      }
+                    }}
+                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-indigo-500 uppercase tracking-widest"
+                  >
+                    {vo2Options.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                  </select>
+                </div>
+                <div className="h-64">
+                  <BoxPlotChart data={getBoxPlotData(metricKey, 'vo2max')} color="#6366f1" />
+                </div>
+
+                <AnimatePresence>
+                  {summaries[metricKey] && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="mt-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                      <div className="flex items-start gap-3">
+                        <i className="fa-solid fa-robot text-indigo-500 mt-1 text-xs"></i>
+                        <p className="text-[11px] font-bold text-slate-600 leading-relaxed italic">
+                          {summaries[metricKey]}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newSummaries = { ...summaries };
+                          delete newSummaries[metricKey];
+                          setSummaries(newSummaries);
+                        }}
+                        className="absolute top-2 right-2 text-slate-300 hover:text-slate-500"
+                      >
+                        <i className="fa-solid fa-xmark text-[10px]"></i>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              <div className="h-64">
-                <BoxPlotChart data={getBoxPlotData(metricKey, 'vo2max')} color="#6366f1" />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -1316,29 +1477,76 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedAntroMetrics.map((metricKey, idx) => (
-            <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-              <div className="flex justify-between items-center mb-8">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  {METRICS_OPTIONS.find(m => m.key === metricKey)?.label}
-                </h4>
-                <select 
-                  value={metricKey}
-                  onChange={(e) => {
-                    const next = [...selectedAntroMetrics];
-                    next[idx] = e.target.value;
-                    setSelectedAntroMetrics(next);
-                  }}
-                  className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-emerald-500 uppercase tracking-widest"
-                >
-                  {antroOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
-                </select>
+          {selectedAntroMetrics.map((metricKey, idx) => {
+            const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
+            return (
+              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 relative group">
+                <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {label}
+                    </h4>
+                    <button 
+                      onClick={() => handleGenerateSummary(metricKey, 'antropometria', label)}
+                      disabled={loadingSummaries[metricKey]}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${loadingSummaries[metricKey] ? 'bg-slate-100 text-slate-400 animate-pulse' : 'bg-emerald-50 text-emerald-500 hover:bg-emerald-500 hover:text-white'}`}
+                      title="Generar resumen con IA"
+                    >
+                      <i className={`fa-solid ${loadingSummaries[metricKey] ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[10px]`}></i>
+                    </button>
+                  </div>
+                  <select 
+                    value={metricKey}
+                    onChange={(e) => {
+                      const next = [...selectedAntroMetrics];
+                      next[idx] = e.target.value;
+                      setSelectedAntroMetrics(next);
+                      if (summaries[metricKey]) {
+                        const newSummaries = { ...summaries };
+                        delete newSummaries[metricKey];
+                        setSummaries(newSummaries);
+                      }
+                    }}
+                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-emerald-500 uppercase tracking-widest"
+                  >
+                    {antroOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                  </select>
+                </div>
+                <div className="h-64">
+                  <BoxPlotChart data={getBoxPlotData(metricKey, 'antropometria')} color="#10b981" />
+                </div>
+
+                <AnimatePresence>
+                  {summaries[metricKey] && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="mt-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                      <div className="flex items-start gap-3">
+                        <i className="fa-solid fa-robot text-emerald-500 mt-1 text-xs"></i>
+                        <p className="text-[11px] font-bold text-slate-600 leading-relaxed italic">
+                          {summaries[metricKey]}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newSummaries = { ...summaries };
+                          delete newSummaries[metricKey];
+                          setSummaries(newSummaries);
+                        }}
+                        className="absolute top-2 right-2 text-slate-300 hover:text-slate-500"
+                      >
+                        <i className="fa-solid fa-xmark text-[10px]"></i>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              <div className="h-64">
-                <BoxPlotChart data={getBoxPlotData(metricKey, 'antropometria')} color="#10b981" />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
