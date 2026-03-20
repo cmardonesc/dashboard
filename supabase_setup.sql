@@ -231,8 +231,13 @@ create policy "Enable all access for microcycles" on public.microcycles for all 
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, role, id_del_jugador)
-  values (new.id, coalesce(new.raw_user_meta_data->>'role', 'player'), (new.raw_user_meta_data->>'id_del_jugador')::int);
+  insert into public.profiles (id, role, id_del_jugador, club_name)
+  values (
+    new.id, 
+    coalesce(new.raw_user_meta_data->>'role', 'player'), 
+    (new.raw_user_meta_data->>'id_del_jugador')::int,
+    new.raw_user_meta_data->>'club_name'
+  );
   return new;
 end;
 $$ language plpgsql security definer;
@@ -442,6 +447,27 @@ values
 ('PROMEDIO', 'ADULTA', 'MEDIO', 5500, 85, 700, 140, 8, 140),
 ('PROMEDIO', 'ADULTA', 'DEFENSA', 4800, 75, 500, 100, 12, 110)
 on conflict do nothing;
+
+-- Seed some default clubs
+insert into public.clubes (nombre, codigo, activo)
+values 
+('Club Universidad de Chile', 'uch', true),
+('Colo-Colo', 'cc', true),
+('Universidad Católica', 'uc', true),
+('Unión Española', 'ue', true),
+('Audax Italiano', 'ai', true),
+('Palestino', 'pal', true),
+('Everton de Viña del Mar', 'eve', true),
+('Santiago Wanderers', 'sw', true),
+('Cobreloa', 'cob', true),
+('Huachipato', 'hua', true),
+('O''Higgins', 'ohi', true),
+('Coquimbo Unido', 'coq', true),
+('Deportes La Serena', 'ser', true),
+('Ñublense', 'nub', true),
+('Curicó Unido', 'cur', true),
+('Cobresal', 'cbs', true)
+on conflict (nombre) do nothing;
 
 -- Function to safely create microcycles with unique code
 create or replace function public.create_microcycle_safe(

@@ -1,6 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabase } from './lib/supabase'
+import { normalizeClub } from './lib/utils'
 import PlayerDashboard from './components/PlayerDashboard'
 import StaffDashboard from './components/StaffDashboard'
 import ClubHome from './components/ClubHome'
@@ -539,8 +540,11 @@ export default function App() {
       // Lógica de anonimización para perfil de clubes
       let finalPlayer = { ...player };
       if (role === 'club' && userClub) {
-        const playerClub = player.club || player.club_name;
-        if (playerClub !== userClub) {
+        const pClub = player.club || player.club_name || '';
+        const uClubNorm = normalizeClub(userClub);
+        const pClubNorm = normalizeClub(pClub);
+
+        if (pClubNorm !== uClubNorm) {
           finalPlayer.name = `Jugador [${player.id_del_jugador || 'EXT'}]`;
           finalPlayer.nombre = 'Jugador';
           finalPlayer.apellido1 = `[${player.id_del_jugador || 'EXT'}]`;
@@ -719,10 +723,47 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [signupRole, setSignupRole] = useState<'player' | 'staff' | ''>('')
+  const [signupRole, setSignupRole] = useState<'player' | 'staff' | 'club' | ''>('')
   const [playerId, setPlayerId] = useState('')
+  const [selectedClub, setSelectedClub] = useState('')
+  const [clubs, setClubs] = useState<{id_club: number, nombre: string}[]>([])
+  const [loadingClubs, setLoadingClubs] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (mode === 'signup' && signupRole === 'club') {
+      const fetchClubs = async () => {
+        setLoadingClubs(true);
+        try {
+          console.log("Fetching clubs from Supabase...");
+          const { data, error } = await supabase
+            .from('clubes')
+            .select('id_club, nombre')
+            .eq('activo', true)
+            .order('nombre');
+          
+          if (error) {
+            console.error("Error fetching clubs:", error);
+            setMsg(`Error al cargar clubes: ${error.message}`);
+          } else {
+            console.log("Clubs fetched successfully:", data);
+            if (data && data.length > 0) {
+              setClubs(data);
+            } else {
+              setMsg("No se encontraron clubes activos en la base de datos.");
+            }
+          }
+        } catch (err: any) {
+          console.error("Unexpected error fetching clubs:", err);
+          setMsg(`Error inesperado: ${err.message}`);
+        } finally {
+          setLoadingClubs(false);
+        }
+      };
+      fetchClubs();
+    }
+  }, [mode, signupRole]);
 
   const handleLogin = async () => {
     if (submitting) return
@@ -839,6 +880,12 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         verifiedPlayerId = pid;
       }
 
+      if (signupRole === 'club' && !selectedClub) {
+        setMsg('Debes seleccionar un club.');
+        setSubmitting(false);
+        return;
+      }
+
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('El servidor tardó demasiado en responder (10s).')), 10000)
       );
@@ -849,7 +896,8 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         options: { 
           data: { 
             role: signupRole,
-            id_del_jugador: verifiedPlayerId 
+            id_del_jugador: verifiedPlayerId,
+            club_name: signupRole === 'club' ? selectedClub : null
           } 
         } 
       });
@@ -874,7 +922,8 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
             await supabase.from('profiles').upsert({
               id: data.user.id,
               role: signupRole,
-              id_del_jugador: verifiedPlayerId
+              id_del_jugador: verifiedPlayerId,
+              club_name: signupRole === 'club' ? selectedClub : null
             });
           } catch (e) {
             console.error("Error creando perfil:", e);
@@ -909,6 +958,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
                   <option value="">¿Quién eres?</option>
                   <option value="player">Jugador</option>
                   <option value="staff">Staff Técnico</option>
+                  <option value="club">Club</option>
                 </select>
                 {signupRole === 'player' && (
                   <input 
@@ -918,6 +968,24 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
                     className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none animate-in slide-in-from-top-2 duration-300" 
                     placeholder="ID de Jugador (Asignado por Staff)" 
                   />
+                )}
+                {signupRole === 'club' && (
+                  <div className="space-y-1">
+                    <select 
+                      value={selectedClub} 
+                      onChange={(e) => setSelectedClub(e.target.value)} 
+                      disabled={loadingClubs}
+                      className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none animate-in slide-in-from-top-2 duration-300 disabled:opacity-50"
+                    >
+                      <option value="">{loadingClubs ? 'Cargando clubes...' : 'Selecciona tu Club'}</option>
+                      {clubs.map(c => (
+                        <option key={c.id_club} value={c.nombre}>{c.nombre}</option>
+                      ))}
+                    </select>
+                    {clubs.length === 0 && !loadingClubs && (
+                      <p className="text-[8px] text-red-500 font-bold uppercase px-2">No hay clubes disponibles. Contacta a soporte.</p>
+                    )}
+                  </div>
                 )}
               </>
             )}
