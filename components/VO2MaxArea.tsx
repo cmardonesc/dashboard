@@ -11,13 +11,11 @@ export default function VO2MaxArea() {
 
   useEffect(() => {
     fetchTests();
-  }, [selectedCategories]);
+  }, []);
 
   const fetchTests = async () => {
     setLoading(true);
     try {
-      const catIds = selectedCategories.map(c => CATEGORY_ID_MAP[c as Category]);
-      
       const { data, error } = await supabase
         .from('vo2max_tests')
         .select(`
@@ -26,10 +24,9 @@ export default function VO2MaxArea() {
             nombre,
             apellido1,
             apellido2,
-            category_id
+            anio
           )
         `)
-        .in('players.category_id', catIds)
         .order('fecha', { ascending: false });
 
       if (error) throw error;
@@ -44,9 +41,31 @@ export default function VO2MaxArea() {
   const filteredTests = useMemo(() => {
     return tests.filter(t => {
       const fullName = `${t.players.nombre} ${t.players.apellido1} ${t.players.apellido2 || ''}`.toLowerCase();
-      return fullName.includes(searchTerm.toLowerCase());
+      const matchesSearch = fullName.includes(searchTerm.toLowerCase());
+      
+      // Inferir categoría para filtrar
+      let category = '';
+      if (t.players.anio) {
+        const age = 2026 - t.players.anio;
+        if (age <= 13) category = Category.SUB_13;
+        else if (age === 14) category = Category.SUB_14;
+        else if (age === 15) category = Category.SUB_15;
+        else if (age === 16) category = Category.SUB_16;
+        else if (age === 17) category = Category.SUB_17;
+        else if (age === 18) category = Category.SUB_18;
+        else if (age <= 20) category = Category.SUB_20;
+        else if (age <= 21) category = Category.SUB_21;
+        else if (age <= 23) category = Category.SUB_23;
+        else category = Category.ADULTA;
+      } else {
+        category = Category.SUB_17;
+      }
+      
+      const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(category);
+      
+      return matchesSearch && matchesCategory;
     });
-  }, [tests, searchTerm]);
+  }, [tests, searchTerm, selectedCategories]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

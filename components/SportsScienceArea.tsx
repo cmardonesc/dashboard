@@ -180,7 +180,25 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         supabase.from('gps_import').select('*')
       ]);
 
-      if (pData) setPlayers(pData);
+      if (pData) {
+        const mapped = pData.map((p: any) => {
+          if (!p.categoria && p.anio) {
+            const age = 2026 - p.anio;
+            if (age <= 13) p.categoria = 'sub_13';
+            else if (age === 14) p.categoria = 'sub_14';
+            else if (age === 15) p.categoria = 'sub_15';
+            else if (age === 16) p.categoria = 'sub_16';
+            else if (age === 17) p.categoria = 'sub_17';
+            else if (age === 18) p.categoria = 'sub_18';
+            else if (age <= 20) p.categoria = 'sub_20';
+            else if (age <= 21) p.categoria = 'sub_21';
+            else if (age <= 23) p.categoria = 'sub_23';
+            else p.categoria = 'adulta';
+          }
+          return p;
+        });
+        setPlayers(mapped);
+      }
       if (iData) setImtpData(iData);
       if (sData) setSpeedData(sData);
       if (aData) setAntropometria(aData);

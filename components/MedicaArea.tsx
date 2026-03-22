@@ -528,7 +528,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                           >
                             <div className="flex items-center gap-3 md:gap-4">
                               <div className="w-8 h-8 md:w-10 md:h-10 bg-[#0b1220] text-white rounded-lg md:rounded-xl flex items-center justify-center font-black italic text-[10px] md:text-xs group-hover:bg-red-600 transition-colors shadow-sm">
-                                {p.name.charAt(0)}
+                                {p.name?.charAt(0)}
                               </div>
                               <div>
                                 <p className="text-[10px] md:text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
@@ -663,7 +663,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                <i className="fa-solid fa-arrow-left"></i>
             </button>
             <div className="w-16 h-16 md:w-20 md:h-20 bg-white/20 rounded-2xl md:rounded-[32px] flex items-center justify-center text-white font-black text-2xl md:text-3xl mb-4 mx-auto border border-white/20 shadow-xl">
-              {reportingPlayer.name.charAt(0)}
+              {reportingPlayer.name?.charAt(0)}
             </div>
             <h3 className="text-2xl md:text-3xl font-black uppercase italic tracking-tighter leading-none">
               {editingInjuryId ? 'Editar Ficha Clínica' : 'Nueva Ficha Clínica'}
@@ -859,7 +859,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
                       <div className="flex items-center gap-3 md:gap-4">
                         <div className="w-10 h-10 md:w-12 md:h-12 bg-[#0b1220] text-white rounded-xl md:rounded-2xl flex items-center justify-center font-black italic text-xs md:text-sm shadow-lg">
-                          {athleteName.charAt(0)}
+                          {athleteName?.charAt(0)}
                         </div>
                         <div>
                           <h4 className="text-xs md:text-sm font-black text-slate-900 uppercase italic tracking-tight">{athleteName}</h4>
@@ -942,7 +942,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black italic text-xs ${selectedGpsPlayer?.id === injury.id ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'}`}>
-                            {injury.players?.nombre.charAt(0)}
+                            {injury.players?.nombre?.charAt(0)}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className={`text-[11px] font-black uppercase italic leading-none truncate ${selectedGpsPlayer?.id === injury.id ? 'text-white' : 'text-slate-900'}`}>{injury.players?.nombre} {injury.players?.apellido1}</p>
@@ -971,7 +971,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                     <div className="flex items-center justify-between border-b border-slate-100 pb-8">
                       <div className="flex items-center gap-6">
                         <div className="w-16 h-16 bg-blue-600 text-white rounded-[24px] flex items-center justify-center font-black italic text-2xl shadow-xl shadow-blue-900/20">
-                          {selectedGpsPlayer.players?.nombre.charAt(0)}
+                          {selectedGpsPlayer.players?.nombre?.charAt(0)}
                         </div>
                         <div>
                           <h4 className="text-2xl md:text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">{selectedGpsPlayer.players?.nombre} {selectedGpsPlayer.players?.apellido1}</h4>
@@ -1065,7 +1065,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                             className="w-full flex items-center gap-4 p-4 hover:bg-red-50 rounded-2xl transition-all text-left group"
                           >
                             <div className="w-10 h-10 bg-[#0b1220] text-white rounded-xl flex items-center justify-center font-black italic text-xs group-hover:bg-red-600 transition-colors">
-                              {p.name.charAt(0)}
+                              {p.name?.charAt(0)}
                             </div>
                             <div>
                               <p className="text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
@@ -1083,7 +1083,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-[#0b1220] text-white rounded-2xl flex items-center justify-center font-black italic text-lg shadow-lg">
-                      {reportingPlayer.name.charAt(0)}
+                      {reportingPlayer.name?.charAt(0)}
                     </div>
                     <div>
                       <h4 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter leading-none">{reportingPlayer.name}</h4>
@@ -1183,7 +1183,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                           <td className="px-6 py-4 text-left">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center font-black italic text-[10px] text-slate-900">
-                                {report.players?.nombre.charAt(0)}
+                                {report.players?.nombre?.charAt(0)}
                               </div>
                               <div>
                                 <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1}</p>
@@ -1211,7 +1211,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                           <td className="px-6 py-4 text-left">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center font-black italic text-[10px] text-slate-900">
-                                {t.players?.nombre.charAt(0)}
+                                {t.players?.nombre?.charAt(0)}
                               </div>
                               <div>
                                 <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{t.players?.nombre} {t.players?.apellido1}</p>

@@ -117,21 +117,44 @@ export default function DesconvocatoriaArea() {
             nombre,
             apellido1,
             club,
-            posicion
+            posicion,
+            anio
           )
         `)
       .eq('microcycle_id', microId)
 
       if (error) throw error
       if (data) {
-        const mapped: User[] = data.map((d: any) => ({
-          id: `p-${d.players.id_del_jugador}`,
-          id_del_jugador: d.players.id_del_jugador,
-          name: `${d.players.nombre} ${d.players.apellido1}`,
-          role: UserRole.PLAYER,
-          club: d.players.club || 'SIN CLUB',
-          position: d.players.posicion || 'N/A'
-        }))
+        const mapped: User[] = data.map((d: any) => {
+          // Inferir categoría si falta
+          let category = '';
+          if (d.players.anio) {
+            const age = 2026 - d.players.anio;
+            if (age <= 13) category = Category.SUB_13;
+            else if (age === 14) category = Category.SUB_14;
+            else if (age === 15) category = Category.SUB_15;
+            else if (age === 16) category = Category.SUB_16;
+            else if (age === 17) category = Category.SUB_17;
+            else if (age === 18) category = Category.SUB_18;
+            else if (age <= 20) category = Category.SUB_20;
+            else if (age <= 21) category = Category.SUB_21;
+            else if (age <= 23) category = Category.SUB_23;
+            else category = Category.ADULTA;
+          } else {
+            category = Category.SUB_17;
+          }
+
+          return {
+            id: `p-${d.players.id_del_jugador}`,
+            id_del_jugador: d.players.id_del_jugador,
+            name: `${d.players.nombre} ${d.players.apellido1}`,
+            role: UserRole.PLAYER,
+            club: d.players.club || 'SIN CLUB',
+            position: d.players.posicion || 'N/A',
+            category: category,
+            anio: d.players.anio
+          };
+        })
         setCitedPlayers(mapped)
       }
     } catch (err) {

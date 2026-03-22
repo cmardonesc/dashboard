@@ -195,21 +195,21 @@ export default function App() {
         const pid = p.id_del_jugador || p.id;
         
         // Inferir categoría si falta
-        let category = p.categoria;
-        if (!category && p.anio) {
+        let category = '';
+        if (p.anio) {
           const age = 2026 - p.anio;
-          if (age <= 13) category = 'SUB_13';
-          else if (age === 14) category = 'SUB_14';
-          else if (age === 15) category = 'SUB_15';
-          else if (age === 16) category = 'SUB_16';
-          else if (age === 17) category = 'SUB_17';
-          else if (age === 18) category = 'SUB_18';
-          else if (age <= 20) category = 'SUB_20';
-          else if (age <= 21) category = 'SUB_21';
-          else if (age <= 23) category = 'SUB_23';
-          else category = 'ADULTA';
+          if (age <= 13) category = 'sub_13';
+          else if (age === 14) category = 'sub_14';
+          else if (age === 15) category = 'sub_15';
+          else if (age === 16) category = 'sub_16';
+          else if (age === 17) category = 'sub_17';
+          else if (age === 18) category = 'sub_18';
+          else if (age <= 20) category = 'sub_20';
+          else if (age <= 21) category = 'sub_21';
+          else if (age <= 23) category = 'sub_23';
+          else category = 'adulta';
         } else if (!category) {
-          category = 'SUB_17';
+          category = 'sub_17';
         }
 
         return {

@@ -652,7 +652,7 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
                       className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all text-left flex items-center gap-4 group"
                     >
                       <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 font-black italic text-lg group-hover:bg-[#0b1220] group-hover:text-white transition-all">
-                        {item.player.name.charAt(0)}
+                        {item.player.name?.charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-black uppercase text-slate-900 italic truncate">{item.player.name}</p>
@@ -845,7 +845,7 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
               ) : (
                 <div className="bg-[#0b1220] p-6 rounded-[32px] flex items-center justify-between shadow-xl">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black italic text-lg shadow-lg">{selectedAthleteForm.name.charAt(0)}</div>
+                    <div className="w-12 h-12 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black italic text-lg shadow-lg">{selectedAthleteForm.name?.charAt(0)}</div>
                     <div>
                       <p className="text-white text-sm font-black uppercase italic leading-none">{selectedAthleteForm.name}</p>
                       <p className="text-red-500 text-[9px] font-black uppercase tracking-widest mt-1">{selectedAthleteForm.club}</p>

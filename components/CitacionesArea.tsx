@@ -101,21 +101,41 @@ export default function CitacionesArea() {
     try {
       const { data, error } = await supabase
         .from('players')
-        .select(`id_del_jugador, nombre, apellido1, club, posicion, anio, category`);
+        .select(`id_del_jugador, nombre, apellido1, club, posicion, anio`);
       
       if (error) throw error;
       
       if (data) {
-        const mapped = data.map((p: any) => ({
-          id: `p-${p.id_del_jugador}`,
-          id_del_jugador: p.id_del_jugador,
-          name: `${p.nombre} ${p.apellido1}`,
-          role: UserRole.PLAYER, 
-          anio: p.anio,
-          club: p.club || 'SIN CLUB',
-          position: p.posicion || 'N/A',
-          category: p.category
-        }));
+        const mapped = data.map((p: any) => {
+          // Inferir categoría si falta
+          let category = '';
+          if (p.anio) {
+            const age = 2026 - p.anio;
+            if (age <= 13) category = Category.SUB_13;
+            else if (age === 14) category = Category.SUB_14;
+            else if (age === 15) category = Category.SUB_15;
+            else if (age === 16) category = Category.SUB_16;
+            else if (age === 17) category = Category.SUB_17;
+            else if (age === 18) category = Category.SUB_18;
+            else if (age <= 20) category = Category.SUB_20;
+            else if (age <= 21) category = Category.SUB_21;
+            else if (age <= 23) category = Category.SUB_23;
+            else category = Category.ADULTA;
+          } else {
+            category = Category.SUB_17;
+          }
+
+          return {
+            id: `p-${p.id_del_jugador}`,
+            id_del_jugador: p.id_del_jugador,
+            name: `${p.nombre} ${p.apellido1}`,
+            role: UserRole.PLAYER, 
+            anio: p.anio,
+            club: p.club || 'SIN CLUB',
+            position: p.posicion || 'N/A',
+            category: category
+          };
+        });
         setAllPlayers(mapped);
       }
     } catch (err) {
@@ -823,7 +843,7 @@ export default function CitacionesArea() {
                     <div className="flex items-center gap-5">
                       {/* Avatar Bubble (Referencia Visual: Benjamin Molina) */}
                       <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center text-2xl font-black italic transition-all shadow-inner ${isCited ? 'bg-emerald-500 text-white' : 'bg-[#0b1220] text-white'}`}>
-                        {p.name.charAt(0)}
+                        {p.name?.charAt(0)}
                       </div>
                       <div className="overflow-hidden pr-10">
                         <p className={`text-[11px] font-black uppercase italic tracking-tighter leading-none mb-1 truncate ${isCited ? 'text-emerald-700' : 'text-slate-900'}`}>

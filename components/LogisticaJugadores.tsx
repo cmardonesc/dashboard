@@ -58,10 +58,29 @@ const LogisticaJugadores: React.FC = () => {
         club: p.club,
         position: p.posicion,
         anio: p.anio,
+        category: '',
         fecha_nacimiento: p.fecha_nacimiento
       }));
 
-      setPlayers(mapped);
+      // Inferir categorías si es necesario
+      const finalMapped = mapped.map(p => {
+        if (!p.category && p.anio) {
+          const age = 2026 - p.anio;
+          if (age <= 13) p.category = 'sub_13';
+          else if (age === 14) p.category = 'sub_14';
+          else if (age === 15) p.category = 'sub_15';
+          else if (age === 16) p.category = 'sub_16';
+          else if (age === 17) p.category = 'sub_17';
+          else if (age === 18) p.category = 'sub_18';
+          else if (age <= 20) p.category = 'sub_20';
+          else if (age <= 21) p.category = 'sub_21';
+          else if (age <= 23) p.category = 'sub_23';
+          else p.category = 'adulta';
+        }
+        return p;
+      });
+
+      setPlayers(finalMapped);
     } catch (err) {
       console.error('Error fetching players:', err);
     } finally {

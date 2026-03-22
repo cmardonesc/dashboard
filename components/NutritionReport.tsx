@@ -186,7 +186,7 @@ export default function NutritionReport({ data, history, player, onClose }: Nutr
             <div className="flex items-center gap-4 md:gap-6">
                <div className="w-16 h-16 md:w-24 md:h-24 bg-[#0b1220] rounded-2xl md:rounded-[32px] flex items-center justify-center text-white font-black italic text-2xl md:text-4xl shadow-2xl relative overflow-hidden shrink-0">
                   <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent"></div>
-                  {player.name.charAt(0)}
+                  {player.name?.charAt(0)}
                </div>
                <div>
                   <div className="flex items-center gap-2 md:gap-3 mb-1">

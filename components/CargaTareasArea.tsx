@@ -110,18 +110,21 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
       // Join in memory
       const joinedData = gpsData.map(gps => {
         const player = playersData?.find(p => p.id_del_jugador === gps.id_del_jugador) as any;
-        if (player && !player.categoria && player.anio) {
-          const age = 2026 - player.anio;
-          if (age <= 13) player.categoria = 'sub_13';
-          else if (age === 14) player.categoria = 'sub_14';
-          else if (age === 15) player.categoria = 'sub_15';
-          else if (age === 16) player.categoria = 'sub_16';
-          else if (age === 17) player.categoria = 'sub_17';
-          else if (age === 18) player.categoria = 'sub_18';
-          else if (age <= 20) player.categoria = 'sub_20';
-          else if (age <= 21) player.categoria = 'sub_21';
-          else if (age <= 23) player.categoria = 'sub_23';
-          else player.categoria = 'adulta';
+        if (player) {
+          player.category = '';
+          if (player.anio) {
+            const age = 2026 - player.anio;
+            if (age <= 13) player.category = 'sub_13';
+            else if (age === 14) player.category = 'sub_14';
+            else if (age === 15) player.category = 'sub_15';
+            else if (age === 16) player.category = 'sub_16';
+            else if (age === 17) player.category = 'sub_17';
+            else if (age === 18) player.category = 'sub_18';
+            else if (age <= 20) player.category = 'sub_20';
+            else if (age <= 21) player.category = 'sub_21';
+            else if (age <= 23) player.category = 'sub_23';
+            else player.category = 'adulta';
+          }
         }
         return {
           ...gps,
@@ -532,7 +535,7 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
                   <td className="px-8 py-6 text-left border-r border-slate-50">
                     <div className="flex items-center gap-4">
                        <div className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center text-slate-400 font-black text-xs group-hover:bg-red-600 group-hover:text-white transition-all italic shadow-inner">
-                          {(row.player?.nombre || row.jugador_nombre || "P").charAt(0)}
+                          {(row.player?.nombre || row.jugador_nombre || "P")?.charAt(0)}
                        </div>
                        <div>
                           <p className="font-black text-slate-900 uppercase italic text-[13px] leading-none mb-1 group-hover:text-red-600 transition-colors">
