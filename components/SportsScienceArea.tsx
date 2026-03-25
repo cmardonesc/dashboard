@@ -11,7 +11,7 @@ import {
   ReferenceLine, ErrorBar
 } from 'recharts';
 
-type TabId = 'individual' | 'grupal' | 'laboratorio' | 'salud' | 'tabla' | 'categorias' | 'insights';
+type TabId = 'huella' | 'individual' | 'grupal' | 'laboratorio' | 'salud' | 'tabla' | 'categorias' | 'insights';
 
 interface PlayerData {
   id_del_jugador: number;
@@ -140,7 +140,7 @@ interface SportsScienceAreaProps {
 }
 
 const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClub }) => {
-  const [activeTab, setActiveTab] = useState<TabId>('individual');
+  const [activeTab, setActiveTab] = useState<TabId>('huella');
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedAnios, setSelectedAnios] = useState<number[]>([]);
   const [selectedPosiciones, setSelectedPosiciones] = useState<string[]>([]);
@@ -274,7 +274,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
 
           {/* TAB NAVIGATION */}
           <div className="flex flex-wrap gap-2 mt-10">
-            <TabButton active={activeTab === 'individual'} label="Huella del Atleta" icon="fa-fingerprint" onClick={() => setActiveTab('individual')} />
+            <TabButton active={activeTab === 'huella'} label="Huella del Atleta" icon="fa-fingerprint" onClick={() => setActiveTab('huella')} />
+            <TabButton active={activeTab === 'individual'} label="Reporte Individual" icon="fa-chart-line" onClick={() => setActiveTab('individual')} />
             <TabButton active={activeTab === 'grupal'} label="Análisis Grupal" icon="fa-users-rays" onClick={() => setActiveTab('grupal')} />
             <TabButton active={activeTab === 'laboratorio'} label="Laboratorio" icon="fa-flask-vial" onClick={() => setActiveTab('laboratorio')} />
             {userRole !== 'club' && (
@@ -384,7 +385,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
           </div>
         </div>
         
-        {activeTab === 'individual' && (
+        {(activeTab === 'individual' || activeTab === 'huella') && (
           <div className="flex items-center gap-3">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador:</label>
             <select 
@@ -416,6 +417,20 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
 
       {/* CONTENIDO DINÁMICO */}
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {activeTab === 'huella' && (
+          <AthleteHuella 
+            player={selectedPlayer} 
+            imtp={imtpData.filter(d => d.id_del_jugador === selectedPlayerId)}
+            speed={speedData.filter(d => d.id_del_jugador === selectedPlayerId)}
+            antropometria={antropometria.filter(d => d.id_del_jugador === selectedPlayerId)}
+            vo2max={vo2maxData.filter(d => d.id_del_jugador === selectedPlayerId)}
+            allImtp={imtpData}
+            allSpeed={speedData}
+            allAntro={antropometria}
+            allVo2={vo2maxData}
+            allPlayers={anonymizedPlayers}
+          />
+        )}
         {activeTab === 'individual' && (
           <IndividualDashboard 
             player={selectedPlayer} 
@@ -560,6 +575,208 @@ const METRICS_OPTIONS = [
   { label: 'PHV Media', key: 'phv_media', table: 'antropometria' },
   { label: 'Estatura Proy (cm)', key: 'estatura_proy_media_cm', table: 'antropometria' },
 ];
+
+const AthleteHuella = ({ 
+  player, imtp, speed, antropometria, vo2max, 
+  allImtp, allSpeed, allAntro, allVo2, allPlayers 
+}: { 
+  player?: PlayerData, 
+  imtp: IMTPData[], 
+  speed: SpeedTestData[], 
+  antropometria: AntropometriaData[],
+  vo2max: VO2MaxData[],
+  allImtp: IMTPData[],
+  allSpeed: SpeedTestData[],
+  allAntro: AntropometriaData[],
+  allVo2: VO2MaxData[],
+  allPlayers: PlayerData[]
+}) => {
+  if (!player) return (
+    <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
+      <i className="fa-solid fa-user-magnifying-glass text-4xl text-slate-200 mb-4"></i>
+      <p className="text-slate-400 font-black uppercase text-xs tracking-widest">Selecciona un atleta para visualizar su huella digital</p>
+    </div>
+  );
+
+  const latestImtp = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
+  const latestSpeed = [...speed].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+  const latestAntro = [...antropometria].sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
+  const latestVo2 = [...vo2max].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+
+  const playerYear = (player as any).anio ? Number((player as any).anio) : new Date(player.fecha_nacimiento).getFullYear();
+  const categoryPlayers = allPlayers.filter(p => {
+    const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+    return pYear === playerYear;
+  });
+  const categoryPlayerIds = categoryPlayers.map(p => p.id_del_jugador);
+
+  const getAvg = (data: any[], key: string) => {
+    const values = data.filter(d => categoryPlayerIds.includes(d.id_del_jugador) && d[key] != null).map(d => d[key]);
+    if (values.length === 0) return 0;
+    return values.reduce((a, b) => a + b, 0) / values.length;
+  };
+
+  const radarData = [
+    { subject: 'Potencia', A: latestImtp?.imtp_fuerza_n || 0, B: getAvg(allImtp, 'imtp_fuerza_n'), fullMark: 5000 },
+    { subject: 'Velocidad', A: latestSpeed?.vel_10m || 0, B: getAvg(allSpeed, 'vel_10m'), fullMark: 10 },
+    { subject: 'Resistencia', A: latestVo2?.vo2_max || 0, B: getAvg(allVo2, 'vo2_max'), fullMark: 80 },
+    { subject: 'Masa Musc.', A: latestAntro?.masa_muscular_pct || 0, B: getAvg(allAntro, 'masa_muscular_pct'), fullMark: 60 },
+    { subject: 'Masa Grasa', A: 100 - (latestAntro?.masa_adiposa_pct || 0), B: 100 - getAvg(allAntro, 'masa_adiposa_pct'), fullMark: 100 },
+  ];
+
+  const normalizedRadarData = radarData.map(d => ({
+    subject: d.subject,
+    A: (d.A / d.fullMark) * 100,
+    B: (d.B / d.fullMark) * 100,
+  }));
+
+  return (
+    <div className="space-y-8">
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-wrap items-center justify-between gap-8">
+        <div className="flex items-center gap-6">
+          <div className="w-32 h-32 bg-slate-50 rounded-[32px] flex items-center justify-center text-slate-200 border border-slate-100 relative overflow-hidden">
+            <i className="fa-solid fa-user text-5xl"></i>
+          </div>
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+               <span className="bg-red-600 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Atleta Élite</span>
+               <span className="bg-slate-100 text-slate-500 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">ID: {player.id_del_jugador}</span>
+            </div>
+            <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter italic leading-none">{player.nombre} {player.apellido1}</h2>
+            <p className="text-slate-400 font-bold text-sm mt-1 uppercase tracking-widest">{player.posicion} • {player.club || player.club_name || 'S/D'}</p>
+            
+            <div className="flex flex-wrap gap-6 mt-6">
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Año Nac.</span>
+                <span className="text-lg font-black italic text-slate-900">{playerYear}</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Talla (cm)</span>
+                <span className="text-lg font-black italic text-slate-900">{latestAntro?.talla_cm || '-'}</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Peso (kg)</span>
+                <span className="text-lg font-black italic text-slate-900">{latestAntro?.masa_corporal_kg || '-'}</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Maduración (PHV)</span>
+                <span className="text-lg font-black italic text-emerald-600">{latestAntro?.phv_media?.toFixed(2) || '-'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex flex-col items-end gap-4">
+          <div className="bg-emerald-50 border border-emerald-100 px-6 py-4 rounded-[24px] text-right">
+            <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1">Estado de Disponibilidad</p>
+            <div className="flex items-center gap-2 justify-end">
+              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+              <span className="text-xl font-black text-emerald-700 uppercase italic tracking-tighter">Disponible</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-white rounded-[40px] p-10 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-10">
+            <div>
+              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">Huella de Rendimiento</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Comparativa vs Promedio Categoría</p>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-red-600 rounded-full"></div>
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Atleta</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-slate-200 rounded-full"></div>
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Promedio</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart cx="50%" cy="50%" outerRadius="80%" data={normalizedRadarData}>
+                <PolarGrid stroke="#f1f5f9" />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} />
+                <Radar name="Atleta" dataKey="A" stroke="#dc2626" fill="#dc2626" fillOpacity={0.6} />
+                <Radar name="Promedio" dataKey="B" stroke="#e2e8f0" fill="#e2e8f0" fillOpacity={0.4} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="space-y-8">
+          <div className="bg-slate-900 rounded-[40px] p-8 text-white">
+            <h3 className="text-lg font-black uppercase tracking-tighter italic mb-6">Métricas Clave</h3>
+            <div className="space-y-6">
+              <div className="flex justify-between items-center border-b border-white/10 pb-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">VO2 Max</span>
+                <span className="text-xl font-black italic">{latestVo2?.vo2_max || '-'} <span className="text-[10px] text-slate-500 not-italic">ml/kg/min</span></span>
+              </div>
+              <div className="flex justify-between items-center border-b border-white/10 pb-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vel. Máxima</span>
+                <span className="text-xl font-black italic">{latestSpeed?.vel_10m || '-'} <span className="text-[10px] text-slate-500 not-italic">km/h</span></span>
+              </div>
+              <div className="flex justify-between items-center border-b border-white/10 pb-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fuerza IMTP</span>
+                <span className="text-xl font-black italic">{latestImtp?.imtp_fuerza_n || '-'} <span className="text-[10px] text-slate-500 not-italic">N</span></span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">% Grasa</span>
+                <span className="text-xl font-black italic text-red-500">{latestAntro?.masa_adiposa_pct || '-'}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic mb-6">Estado Wellness</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-50 rounded-2xl p-4">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Fatiga</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 w-[80%]"></div>
+                  </div>
+                  <span className="text-xs font-black italic text-slate-700">8/10</span>
+                </div>
+              </div>
+              <div className="bg-slate-50 rounded-2xl p-4">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Sueño</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500 w-[70%]"></div>
+                  </div>
+                  <span className="text-xs font-black italic text-slate-700">7/10</span>
+                </div>
+              </div>
+              <div className="bg-slate-50 rounded-2xl p-4">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Estrés</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-amber-500 w-[40%]"></div>
+                  </div>
+                  <span className="text-xs font-black italic text-slate-700">4/10</span>
+                </div>
+              </div>
+              <div className="bg-slate-50 rounded-2xl p-4">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Dolor Musc.</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 w-[90%]"></div>
+                  </div>
+                  <span className="text-xs font-black italic text-slate-700">9/10</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const IndividualDashboard = ({ 
   player, imtp, speed, antropometria, vo2max
@@ -1735,14 +1952,30 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
     const std = Math.sqrt(values.map(x => Math.pow(x - avg, 2)).reduce((a, b) => a + b, 0) / values.length);
 
-    const distribution = {
+    const isInverted = [
+      'masa_adiposa_kg', 
+      'masa_adiposa_pct', 
+      'tiempo_10m', 
+      'tiempo_10_20m', 
+      'tiempo_20_30m', 
+      'tiempo_total',
+      'sum_pliegues_6_mm',
+      'sum_pliegues_8_mm'
+    ].includes(metricKey);
+
+    const distribution = isInverted ? {
+      elite: values.filter(v => v < avg - std).length,
+      competitive: values.filter(v => v >= avg - std && v < avg).length,
+      development: values.filter(v => v >= avg && v <= avg + std).length,
+      attention: values.filter(v => v > avg + std).length
+    } : {
       elite: values.filter(v => v > avg + std).length,
       competitive: values.filter(v => v > avg && v <= avg + std).length,
       development: values.filter(v => v >= avg - std && v <= avg).length,
       attention: values.filter(v => v < avg - std).length
     };
 
-    return { avg, std, count: values.length, distribution };
+    return { avg, std, count: values.length, distribution, isInverted };
   };
 
   const renderCategoryBox = (metricKey: string, setMetric: (val: string) => void, title: string) => {
@@ -1808,12 +2041,14 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
                     </div>
                     <div>
                       <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Nivel Élite</p>
-                      <p className="text-xs font-bold text-slate-500">Superior a +1σ ({stats.distribution.elite} jug.)</p>
+                      <p className="text-xs font-bold text-slate-500">
+                        {stats.isInverted ? 'Inferior a -1σ' : 'Superior a +1σ'} ({stats.distribution.elite} jug.)
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-black text-emerald-700 italic tracking-tighter">
-                      {'>'} {(stats.avg + stats.std).toFixed(2)}
+                      {stats.isInverted ? '<' : '>'} {(stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std).toFixed(2)}
                     </p>
                   </div>
                 </div>
@@ -1826,12 +2061,17 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
                     </div>
                     <div>
                       <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Nivel Competitivo</p>
-                      <p className="text-xs font-bold text-slate-500">Entre Promedio y +1σ ({stats.distribution.competitive} jug.)</p>
+                      <p className="text-xs font-bold text-slate-500">
+                        {stats.isInverted ? 'Entre -1σ y Promedio' : 'Entre Promedio y +1σ'} ({stats.distribution.competitive} jug.)
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-black text-blue-700 italic tracking-tighter">
-                      {stats.avg.toFixed(2)} - {(stats.avg + stats.std).toFixed(2)}
+                      {stats.isInverted 
+                        ? `${(stats.avg - stats.std).toFixed(2)} - ${stats.avg.toFixed(2)}`
+                        : `${stats.avg.toFixed(2)} - ${(stats.avg + stats.std).toFixed(2)}`
+                      }
                     </p>
                   </div>
                 </div>
@@ -1844,12 +2084,17 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
                     </div>
                     <div>
                       <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Nivel en Desarrollo</p>
-                      <p className="text-xs font-bold text-slate-500">Entre -1σ y Promedio ({stats.distribution.development} jug.)</p>
+                      <p className="text-xs font-bold text-slate-500">
+                        {stats.isInverted ? 'Entre Promedio y +1σ' : 'Entre -1σ y Promedio'} ({stats.distribution.development} jug.)
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-black text-amber-700 italic tracking-tighter">
-                      {(stats.avg - stats.std).toFixed(2)} - {stats.avg.toFixed(2)}
+                      {stats.isInverted
+                        ? `${stats.avg.toFixed(2)} - ${(stats.avg + stats.std).toFixed(2)}`
+                        : `${(stats.avg - stats.std).toFixed(2)} - ${stats.avg.toFixed(2)}`
+                      }
                     </p>
                   </div>
                 </div>
@@ -1862,12 +2107,14 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
                     </div>
                     <div>
                       <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Nivel de Atención</p>
-                      <p className="text-xs font-bold text-slate-500">Inferior a -1σ ({stats.distribution.attention} jug.)</p>
+                      <p className="text-xs font-bold text-slate-500">
+                        {stats.isInverted ? 'Superior a +1σ' : 'Inferior a -1σ'} ({stats.distribution.attention} jug.)
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-black text-red-700 italic tracking-tighter">
-                      {'<'} {(stats.avg - stats.std).toFixed(2)}
+                      {stats.isInverted ? '>' : '<'} {(stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std).toFixed(2)}
                     </p>
                   </div>
                 </div>
