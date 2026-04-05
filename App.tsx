@@ -1015,7 +1015,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
       <div className="bg-white rounded-[32px] md:rounded-[40px] overflow-hidden shadow-2xl border border-slate-100">
         <div className="bg-[#CF1B2B] py-8 md:py-12 px-6 md:px-8 flex items-center justify-center gap-4 md:gap-6">
           {FEDERATION_LOGO && (
-            <div className="w-14 h-14 md:w-16 md:h-16 bg-white rounded-2xl p-1.5 shadow-xl overflow-hidden shrink-0">
+            <div className="w-16 h-16 md:w-20 md:h-20 overflow-hidden shrink-0">
               <img 
                 src={getDriveDirectLink(FEDERATION_LOGO)} 
                 alt="Federación Logo" 

@@ -109,4 +109,4 @@ export const CLUB_LOGOS: Record<string, string> = {
 /**
  * Logo de la Federación (puedes usar un enlace de Google Drive aquí)
  */
-export const FEDERATION_LOGO = "https://drive.google.com/file/d/1dACZfh-DDxPKlH0bo5YLiuhhYAAEKy0s/view?usp=drive_link";
+export const FEDERATION_LOGO = "https://drive.google.com/file/d/1dACZfh-DDxPKlH0bo5YLiuhhYAAEKy0s/view?usp=sharing";

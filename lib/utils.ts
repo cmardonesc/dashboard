@@ -26,8 +26,8 @@ export const getDriveDirectLink = (url: string) => {
     const match = trimmedUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
     const id = match ? match[1] : null;
     if (id) {
-      // Usamos el formato de link directo más compatible
-      return `https://drive.google.com/uc?id=${id}&export=view`;
+      // Usamos el formato de googleusercontent que es más estable para incrustar imágenes
+      return `https://lh3.googleusercontent.com/d/${id}`;
     }
   } catch (e) {
     console.error("Error parsing Drive URL:", e);

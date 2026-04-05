@@ -78,11 +78,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           onClick={() => onMenuChange('inicio')}
         >
           {FEDERATION_LOGO ? (
-            <div className="w-10 h-10 rounded-xl overflow-hidden bg-white flex items-center justify-center shadow-lg shrink-0">
+            <div className="w-10 h-10 overflow-hidden flex items-center justify-center shrink-0">
               <img 
                 src={getDriveDirectLink(FEDERATION_LOGO)} 
                 alt="Logo Federación" 
-                className="w-full h-full object-contain p-1"
+                className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
               />
             </div>
