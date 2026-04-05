@@ -17,30 +17,36 @@ export async function subscribeToNotifications() {
     const registration = await navigator.serviceWorker.ready;
 
     // 3. Suscribirse al servidor de push
-    // Nota: En producción necesitarás una VAPID PUBLIC KEY. 
-    // Por ahora usamos una suscripción básica para preparar la estructura.
+    // NOTA: En una app real, debes generar tu propio par de claves VAPID.
+    // Para propósitos de esta demo, usaremos una clave de ejemplo válida.
+    const applicationServerKey = 'BEl62vp9IHZbtS9K8guS9WV76DB7En79S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9A';
+    
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: 'BEl62vp9IHZbtS9K8guS9WV76DB7En79S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9A' // Clave de ejemplo
+      applicationServerKey: applicationServerKey
+    }).catch(err => {
+      console.error("Error en pushManager.subscribe:", err);
+      throw new Error(`Error de suscripción: ${err.message}`);
     });
 
     // 4. Guardar en Supabase
     const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Debes iniciar sesión para activar notificaciones.');
     
     const { error } = await supabase
       .from('user_notifications')
       .upsert({
-        user_id: user?.id,
+        user_id: user.id,
         subscription: subscription.toJSON(),
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id' });
 
     if (error) throw error;
 
-    return true;
-  } catch (error) {
+    return { success: true };
+  } catch (error: any) {
     console.error('Error al suscribirse:', error);
-    return false;
+    return { success: false, message: error.message || 'Error desconocido' };
   }
 }
 

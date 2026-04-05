@@ -467,13 +467,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
         )}
         <button 
           onClick={async () => {
-            const success = await subscribeToNotifications();
-            if (success) {
+            const result = await subscribeToNotifications();
+            if (result.success) {
               setNotificationMsg('¡Notificaciones activadas!');
               setTimeout(() => setNotificationMsg(null), 3000);
             } else {
-              setNotificationMsg('Error al activar');
-              setTimeout(() => setNotificationMsg(null), 3000);
+              setNotificationMsg(result.message || 'Error al activar');
+              setTimeout(() => setNotificationMsg(null), 5000);
             }
           }}
           className="w-full py-3 bg-blue-600/20 text-blue-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all border border-blue-600/30"
