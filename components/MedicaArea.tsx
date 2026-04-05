@@ -8,30 +8,17 @@ interface MedicaAreaProps {
   onMenuChange?: (id: any) => void;
 }
 
-type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar' | 'daily_report' | 'treatments';
+type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar' | 'daily_report';
 
 interface DailyReport {
   id: string;
-  player_id: number;
-  category_id: number;
-  microcycle_id: number;
+  id_del_jugador: number;
+  anio: number;
   report_date: string;
   observation: string;
   diagnostico_medico?: string;
   treatments_applied?: string[];
   severity: 'low' | 'medium' | 'high';
-  players?: {
-    nombre: string;
-    apellido1: string;
-  };
-}
-
-interface Treatment {
-  id: string;
-  player_id: number;
-  category_id: number;
-  treatment_date: string;
-  description: string;
   players?: {
     nombre: string;
     apellido1: string;
@@ -74,7 +61,7 @@ interface MedicalExam {
 }
 
 const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChange }) => {
-  const [view, setView] = useState<MedicaView>('treatments');
+  const [view, setView] = useState<MedicaView>('daily_report');
   const [reportingPlayer, setReportingPlayer] = useState<User | null>(null);
   const [editingInjuryId, setEditingInjuryId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -85,15 +72,19 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
   const searchRef = useRef<HTMLDivElement>(null);
 
   const [dailyReports, setDailyReports] = useState<DailyReport[]>([]);
-  const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [dailyReportForm, setDailyReportForm] = useState({
     observation: '',
     diagnostico_medico: '',
     severity: 'low' as 'low' | 'medium' | 'high'
   });
-  const [treatmentForm, setTreatmentForm] = useState({
-    description: ''
-  });
+
+  const [availableTreatmentOptions, setAvailableTreatmentOptions] = useState<string[]>([
+    'Vendaje', 'Masoterapia', 'Electroterapia', 'Tecarterapia', 'Hielo local', 
+    'Crioconpresión', 'Compresa húmedo caliente', 'Terapia manual', 
+    'Terapia invasiva', 'Ventosas', 'Otros'
+  ]);
+  const [selectedTreatments, setSelectedTreatments] = useState<string[]>([]);
+  const [newTreatmentOption, setNewTreatmentOption] = useState('');
 
   const [exams, setExams] = useState<MedicalExam[]>([]);
   const [newExam, setNewExam] = useState<MedicalExam>({
@@ -128,16 +119,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
   const [selectedGpsPlayer, setSelectedGpsPlayer] = useState<DBInjury | null>(null);
 
-  const [showTreatmentModal, setShowTreatmentModal] = useState(false);
-  const [selectedReportForTreatment, setSelectedReportForTreatment] = useState<DailyReport | null>(null);
-  const [availableTreatmentOptions, setAvailableTreatmentOptions] = useState<string[]>([
-    'Vendaje', 'Masoterapia', 'Electroterapia', 'Tecarterapia', 'Hielo local', 
-    'Crioconpresión', 'Compresa húmedo caliente', 'Terapia manual', 
-    'Terapia invasiva', 'Ventosas', 'Otros'
-  ]);
-  const [selectedTreatments, setSelectedTreatments] = useState<string[]>([]);
-  const [newTreatmentOption, setNewTreatmentOption] = useState('');
-
   const filteredInjuries = useMemo(() => {
     if (!selectedCategoryId) return dbInjuries;
     return dbInjuries.filter(i => i.category_id === selectedCategoryId);
@@ -146,7 +127,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
   useEffect(() => {
     fetchInjuredPlayers();
     fetchDailyReports();
-    fetchTreatments();
     
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -206,19 +186,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     }
   };
 
-  const fetchTreatments = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('medical_treatments')
-        .select('*, players(nombre, apellido1)')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      if (data) setTreatments(data);
-    } catch (err) {
-      console.error("Error cargando atenciones:", err);
-    }
-  };
-
   const uniqueDiagnoses = useMemo(() => {
     const diagnoses = dailyReports
       .map(r => r.diagnostico_medico)
@@ -234,12 +201,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     return uniqueDiagnoses.filter(d => d.toLowerCase().includes(term));
   }, [uniqueDiagnoses, dailyReportForm.diagnostico_medico]);
 
-  const handleOpenTreatmentModal = (report: DailyReport) => {
-    setSelectedReportForTreatment(report);
-    setSelectedTreatments(report.treatments_applied || []);
-    setShowTreatmentModal(true);
-  };
-
   const handleToggleTreatment = (option: string) => {
     setSelectedTreatments(prev => 
       prev.includes(option) ? prev.filter(t => t !== option) : [...prev, option]
@@ -254,66 +215,28 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     }
   };
 
-  const handleSaveTreatments = async () => {
-    if (!selectedReportForTreatment) return;
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from('medical_daily_reports')
-        .update({ treatments_applied: selectedTreatments })
-        .eq('id', selectedReportForTreatment.id);
-      
-      if (error) throw error;
-      
-      setSuccessMessage("Tratamientos actualizados correctamente.");
-      fetchDailyReports();
-      setShowTreatmentModal(false);
-    } catch (err: any) {
-      setErrorMessage("Error al guardar tratamientos: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSaveDailyReport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reportingPlayer || !dailyReportForm.observation) return;
     setLoading(true);
     try {
+      // Extraemos el año del club (ej: "2008" -> 2008)
+      const playerYear = parseInt(reportingPlayer.club || '0');
+
       const { error } = await supabase.from('medical_daily_reports').insert([{
-        player_id: reportingPlayer.id_del_jugador,
-        category_id: CATEGORY_ID_MAP[reportingPlayer.club as Category] || 1,
+        id_del_jugador: reportingPlayer.id_del_jugador,
+        anio: playerYear,
         observation: dailyReportForm.observation,
         diagnostico_medico: dailyReportForm.diagnostico_medico,
-        severity: dailyReportForm.severity
+        severity: dailyReportForm.severity,
+        treatments_applied: selectedTreatments // Guardamos el arreglo de tratamientos
       }]);
       if (error) throw error;
       setSuccessMessage("Reporte médico guardado.");
       setDailyReportForm({ observation: '', diagnostico_medico: '', severity: 'low' });
+      setSelectedTreatments([]); // Limpiamos tratamientos seleccionados
       setReportingPlayer(null);
       fetchDailyReports();
-    } catch (err: any) {
-      setErrorMessage("Error: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSaveTreatment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!reportingPlayer || !treatmentForm.description) return;
-    setLoading(true);
-    try {
-      const { error } = await supabase.from('medical_treatments').insert([{
-        player_id: reportingPlayer.id_del_jugador,
-        category_id: CATEGORY_ID_MAP[reportingPlayer.club as Category] || 1,
-        description: treatmentForm.description
-      }]);
-      if (error) throw error;
-      setSuccessMessage("Atención registrada.");
-      setTreatmentForm({ description: '' });
-      setReportingPlayer(null);
-      fetchTreatments();
     } catch (err: any) {
       setErrorMessage("Error: " + err.message);
     } finally {
@@ -522,12 +445,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
             className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'daily_report' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
           >
             Reporte Diario
-          </button>
-          <button 
-            onClick={() => setView('treatments')}
-            className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'treatments' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
-          >
-            Atenciones
           </button>
           <button 
             onClick={() => setView('calendar')}
@@ -1086,12 +1003,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         </div>
       )}
 
-      {(view === 'daily_report' || view === 'treatments') && (
+      {view === 'daily_report' && (
         <div className="space-y-8 animate-in fade-in duration-300">
           <section className="bg-white p-6 md:p-10 rounded-[32px] md:rounded-[48px] border border-slate-100 shadow-sm space-y-6">
             <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
-              <span className={`w-2 h-6 rounded-full ${view === 'daily_report' ? 'bg-blue-600' : 'bg-emerald-600'}`}></span>
-              {view === 'daily_report' ? 'Reporte Médico Diario (Doctor)' : 'Registro de Atenciones (Kinesiólogo)'}
+              <span className="w-2 h-6 rounded-full bg-blue-600"></span>
+              Reporte Médico Diario (Doctor)
             </h3>
 
             {!reportingPlayer ? (
@@ -1144,93 +1061,108 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   <button onClick={() => setReportingPlayer(null)} className="text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest">Cambiar Jugador</button>
                 </div>
 
-                {view === 'daily_report' ? (
-                  <form onSubmit={handleSaveDailyReport} className="space-y-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Gravedad del Caso</label>
-                      <div className="flex gap-3">
-                        {(['low', 'medium', 'high'] as const).map(s => (
-                          <button
-                            key={s}
-                            type="button"
-                            onClick={() => setDailyReportForm({...dailyReportForm, severity: s})}
-                            className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
-                              dailyReportForm.severity === s 
-                                ? s === 'low' ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : s === 'medium' ? 'bg-amber-50 border-amber-500 text-amber-600' : 'bg-red-50 border-red-500 text-red-600'
-                                : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
-                            }`}
-                          >
-                            {s === 'low' ? 'Leve (Verde)' : s === 'medium' ? 'Medio (Amarillo)' : 'Grave (Rojo)'}
-                          </button>
-                        ))}
-                      </div>
+                <form onSubmit={handleSaveDailyReport} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Gravedad del Caso</label>
+                    <div className="flex gap-3">
+                      {(['low', 'medium', 'high'] as const).map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setDailyReportForm({...dailyReportForm, severity: s})}
+                          className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
+                            dailyReportForm.severity === s 
+                              ? s === 'low' ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : s === 'medium' ? 'bg-amber-50 border-amber-500 text-amber-600' : 'bg-red-50 border-red-500 text-red-600'
+                              : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
+                          }`}
+                        >
+                          {s === 'low' ? 'Leve (Verde)' : s === 'medium' ? 'Medio (Amarillo)' : 'Grave (Rojo)'}
+                        </button>
+                      ))}
                     </div>
-                    <div className="space-y-2 relative">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Diagnóstico Médico (Autocomplete)</label>
-                      <div className="relative">
+                  </div>
+                  <div className="space-y-2 relative">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Diagnóstico Médico (Autocomplete)</label>
+                    <div className="relative">
+                      <input 
+                        type="text"
+                        className="w-full bg-white border-none rounded-3xl px-6 py-4 text-sm font-bold text-slate-700 shadow-inner focus:ring-4 focus:ring-blue-500/10 transition-all"
+                        placeholder="Escriba el diagnóstico..."
+                        value={dailyReportForm.diagnostico_medico}
+                        onChange={e => setDailyReportForm({...dailyReportForm, diagnostico_medico: e.target.value})}
+                        onFocus={() => setShowSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                      />
+                      {showSuggestions && filteredSuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[100] max-h-48 overflow-y-auto animate-in slide-in-from-top-2 duration-200">
+                          {filteredSuggestions.map((s, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setDailyReportForm({...dailyReportForm, diagnostico_medico: s});
+                                setShowSuggestions(false);
+                              }}
+                              className="w-full text-left px-6 py-3 text-[11px] font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors border-b border-slate-50 last:border-none"
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Tratamientos Aplicados</label>
+                    <div className="flex flex-wrap gap-2 p-4 bg-white rounded-3xl shadow-inner border border-slate-100">
+                      {availableTreatmentOptions.map(option => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => handleToggleTreatment(option)}
+                          className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                            selectedTreatments.includes(option)
+                              ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                              : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-slate-200'
+                          }`}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                      <div className="flex gap-2 w-full mt-2">
                         <input 
                           type="text"
-                          className="w-full bg-white border-none rounded-3xl px-6 py-4 text-sm font-bold text-slate-700 shadow-inner focus:ring-4 focus:ring-blue-500/10 transition-all"
-                          placeholder="Escriba el diagnóstico..."
-                          value={dailyReportForm.diagnostico_medico}
-                          onChange={e => setDailyReportForm({...dailyReportForm, diagnostico_medico: e.target.value})}
-                          onFocus={() => setShowSuggestions(true)}
-                          onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                          placeholder="Otro tratamiento..."
+                          className="flex-1 bg-slate-50 border-none rounded-xl px-4 py-2 text-[10px] font-bold text-slate-700 shadow-inner"
+                          value={newTreatmentOption}
+                          onChange={e => setNewTreatmentOption(e.target.value)}
                         />
-                        {showSuggestions && filteredSuggestions.length > 0 && (
-                          <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[100] max-h-48 overflow-y-auto animate-in slide-in-from-top-2 duration-200">
-                            {filteredSuggestions.map((s, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => {
-                                  setDailyReportForm({...dailyReportForm, diagnostico_medico: s});
-                                  setShowSuggestions(false);
-                                }}
-                                className="w-full text-left px-6 py-3 text-[11px] font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors border-b border-slate-50 last:border-none"
-                              >
-                                {s}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                        <button 
+                          type="button"
+                          onClick={handleAddCustomTreatment}
+                          className="px-4 py-2 bg-[#0b1220] text-white rounded-xl text-[9px] font-black uppercase tracking-widest"
+                        >
+                          Agregar
+                        </button>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Observación Médica</label>
-                      <textarea 
-                        required
-                        rows={4}
-                        className="w-full bg-white border-none rounded-3xl p-6 text-sm font-bold text-slate-700 shadow-inner resize-none focus:ring-4 focus:ring-blue-500/10 transition-all"
-                        placeholder="Escriba el diagnóstico o novedades del día..."
-                        value={dailyReportForm.observation}
-                        onChange={e => setDailyReportForm({...dailyReportForm, observation: e.target.value})}
-                      />
-                    </div>
-                    <button type="submit" disabled={loading} className="w-full bg-[#0b1220] text-white py-6 rounded-3xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-600 transition-all active:scale-95 flex items-center justify-center gap-3">
-                      {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
-                      Guardar Reporte Diario
-                    </button>
-                  </form>
-                ) : (
-                  <form onSubmit={handleSaveTreatment} className="space-y-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Atención Realizada</label>
-                      <textarea 
-                        required
-                        rows={4}
-                        className="w-full bg-white border-none rounded-3xl p-6 text-sm font-bold text-slate-700 shadow-inner resize-none focus:ring-4 focus:ring-emerald-500/10 transition-all"
-                        placeholder="Detalle el tratamiento, masaje, vendaje o atención kinésica..."
-                        value={treatmentForm.description}
-                        onChange={e => setTreatmentForm({...treatmentForm, description: e.target.value})}
-                      />
-                    </div>
-                    <button type="submit" disabled={loading} className="w-full bg-[#0b1220] text-white py-6 rounded-3xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-emerald-600 transition-all active:scale-95 flex items-center justify-center gap-3">
-                      {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
-                      Registrar Atención
-                    </button>
-                  </form>
-                )}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Observación Médica</label>
+                    <textarea 
+                      required
+                      rows={4}
+                      className="w-full bg-white border-none rounded-3xl p-6 text-sm font-bold text-slate-700 shadow-inner resize-none focus:ring-4 focus:ring-blue-500/10 transition-all"
+                      placeholder="Escriba el diagnóstico o novedades del día..."
+                      value={dailyReportForm.observation}
+                      onChange={e => setDailyReportForm({...dailyReportForm, observation: e.target.value})}
+                    />
+                  </div>
+                  <button type="submit" disabled={loading} className="w-full bg-[#0b1220] text-white py-6 rounded-3xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-600 transition-all active:scale-95 flex items-center justify-center gap-3">
+                    {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
+                    Guardar Reporte Diario
+                  </button>
+                </form>
               </div>
             )}
           </section>
@@ -1238,7 +1170,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
           <section className="space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
-                <span className={`w-2 h-6 rounded-full ${view === 'daily_report' ? 'bg-blue-600' : 'bg-emerald-600'}`}></span>
+                <span className="w-2 h-6 rounded-full bg-blue-600"></span>
                 Historial Reciente
               </h3>
             </div>
@@ -1249,89 +1181,55 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   <tr>
                     <th className="px-6 py-4 text-left">Atleta</th>
                     <th className="px-4 py-4">Fecha</th>
-                    {view === 'daily_report' && <th className="px-4 py-4">Gravedad</th>}
-                    {view === 'daily_report' && <th className="px-6 py-4 text-left">Diagnóstico</th>}
-                    <th className="px-6 py-4 text-left">{view === 'daily_report' ? 'Observación' : 'Atención Realizada'}</th>
-                    {view === 'daily_report' && <th className="px-6 py-4">Tratamiento</th>}
+                    <th className="px-4 py-4">Gravedad</th>
+                    <th className="px-6 py-4 text-left">Diagnóstico</th>
+                    <th className="px-6 py-4 text-left">Observación</th>
+                    <th className="px-6 py-4">Tratamiento</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-                  {view === 'daily_report' ? (
-                    dailyReports.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay reportes registrados</td>
-                      </tr>
-                    ) : (
-                      dailyReports.map(report => (
-                        <tr key={report.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4 text-left">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center font-black italic text-[10px] text-slate-900">
-                                {report.players?.nombre?.charAt(0)}
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-slate-400">{formatDate(report.report_date)}</td>
-                          <td className="px-4 py-4">
-                            <div className="flex justify-center">
-                              <div className={`w-3 h-3 rounded-full shadow-sm ${report.severity === 'low' ? 'bg-emerald-500' : report.severity === 'medium' ? 'bg-amber-500' : 'bg-red-500'}`}></div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-left font-black text-slate-900 uppercase italic truncate max-w-[150px]">{report.diagnostico_medico || '-'}</td>
-                          <td className="px-6 py-4 text-left italic text-slate-500 max-w-md truncate">"{report.observation}"</td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center justify-center gap-2">
-                              {report.treatments_applied && report.treatments_applied.length > 0 && (
-                                <div className="flex -space-x-1 overflow-hidden">
-                                  {report.treatments_applied.slice(0, 2).map((t, i) => (
-                                    <div key={i} className="inline-block h-5 px-2 rounded-md bg-blue-50 text-blue-600 border border-blue-100 text-[7px] font-black uppercase flex items-center justify-center">
-                                      {t.substring(0, 3)}
-                                    </div>
-                                  ))}
-                                  {report.treatments_applied.length > 2 && (
-                                    <div className="inline-block h-5 w-5 rounded-md bg-slate-100 text-slate-400 text-[7px] font-black flex items-center justify-center">
-                                      +{report.treatments_applied.length - 2}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                              <button 
-                                onClick={() => handleOpenTreatmentModal(report)}
-                                className="w-8 h-8 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all shadow-sm active:scale-90"
-                              >
-                                <i className="fa-solid fa-plus text-[10px]"></i>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )
+                  {dailyReports.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay reportes registrados</td>
+                    </tr>
                   ) : (
-                    treatments.length === 0 ? (
-                      <tr>
-                        <td colSpan={3} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay atenciones registradas</td>
-                      </tr>
-                    ) : (
-                      treatments.map(t => (
-                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4 text-left">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center font-black italic text-[10px] text-slate-900">
-                                {t.players?.nombre?.charAt(0)}
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{t.players?.nombre} {t.players?.apellido1}</p>
-                              </div>
+                    dailyReports.map(report => (
+                      <tr key={report.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4 text-left">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center font-black italic text-[10px] text-slate-900">
+                              {report.players?.nombre?.charAt(0)}
                             </div>
-                          </td>
-                          <td className="px-4 py-4 text-slate-400">{formatDate(t.treatment_date)}</td>
-                          <td className="px-6 py-4 text-left italic text-slate-500 max-w-md truncate">"{t.description}"</td>
-                        </tr>
-                      ))
-                    )
+                            <div>
+                              <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-slate-400">{formatDate(report.report_date)}</td>
+                        <td className="px-4 py-4">
+                          <div className="flex justify-center">
+                            <div className={`w-3 h-3 rounded-full shadow-sm ${report.severity === 'low' ? 'bg-emerald-500' : report.severity === 'medium' ? 'bg-amber-500' : 'bg-red-500'}`}></div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-left font-black text-slate-900 uppercase italic truncate max-w-[150px]">{report.diagnostico_medico || '-'}</td>
+                        <td className="px-6 py-4 text-left italic text-slate-500 max-w-md truncate">"{report.observation}"</td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-center gap-2">
+                            {report.treatments_applied && report.treatments_applied.length > 0 ? (
+                              <div className="flex flex-wrap justify-center gap-1">
+                                {report.treatments_applied.map((t, i) => (
+                                  <div key={i} className="inline-block h-5 px-2 rounded-md bg-blue-50 text-blue-600 border border-blue-100 text-[7px] font-black uppercase flex items-center justify-center">
+                                    {t}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-slate-300 italic">Sin tratamiento</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
@@ -1339,88 +1237,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
           </section>
         </div>
       )}
-      {/* MODAL DE TRATAMIENTOS */}
-      {showTreatmentModal && selectedReportForTreatment && (
-        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white rounded-[40px] p-8 md:p-10 max-w-2xl w-full shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-900/20">
-                  <i className="fa-solid fa-hand-holding-medical text-xl"></i>
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">Registro de Tratamiento</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                    {selectedReportForTreatment.players?.nombre} {selectedReportForTreatment.players?.apellido1} • {formatDate(selectedReportForTreatment.report_date)}
-                  </p>
-                </div>
-              </div>
-              <button onClick={() => setShowTreatmentModal(false)} className="w-10 h-10 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all">
-                <i className="fa-solid fa-xmark"></i>
-              </button>
-            </div>
-
-            <div className="space-y-8">
-              <div className="space-y-4">
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Opciones de Tratamiento</label>
-                <div className="flex flex-wrap gap-2">
-                  {availableTreatmentOptions.map((option, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleToggleTreatment(option)}
-                      className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
-                        selectedTreatments.includes(option)
-                          ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-900/20'
-                          : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
-                      }`}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-4 pt-4 border-t border-slate-50">
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Agregar Nueva Opción</label>
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="Escriba un nuevo tratamiento..."
-                    className="flex-1 bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner focus:ring-4 focus:ring-blue-500/10 transition-all"
-                    value={newTreatmentOption}
-                    onChange={e => setNewTreatmentOption(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleAddCustomTreatment()}
-                  />
-                  <button 
-                    onClick={handleAddCustomTreatment}
-                    className="px-6 bg-[#0b1220] text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-blue-600 transition-all shadow-xl active:scale-95"
-                  >
-                    Añadir
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-6">
-                <button 
-                  onClick={() => setShowTreatmentModal(false)}
-                  className="flex-1 px-8 py-4 rounded-2xl bg-slate-100 text-slate-600 font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={handleSaveTreatments}
-                  disabled={loading}
-                  className="flex-1 px-8 py-4 rounded-2xl bg-blue-600 text-white font-black uppercase text-[10px] tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-900/20 active:scale-95 flex items-center justify-center gap-3"
-                >
-                  {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-check"></i>}
-                  Guardar Tratamiento
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN */}
       {showConfirmDelete && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
