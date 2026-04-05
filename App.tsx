@@ -257,6 +257,65 @@ export default function App() {
   }
 
   useEffect(() => {
+    // Suscribirse a cambios en tiempo real en múltiples tablas
+    const appEventsSubscription = supabase
+      .channel('app_events_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'medical_daily_reports' },
+        async (payload) => {
+          handleRealtimeNotification('Reporte Médico', payload.new);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'wellness_checkin' },
+        async (payload) => {
+          handleRealtimeNotification('Check-in Wellness', payload.new);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'internal_load' },
+        async (payload) => {
+          handleRealtimeNotification('Check-out (RPE)', payload.new);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'microcycles' },
+        async (payload) => {
+          new Notification('Nuevo Microciclo', {
+            body: `Se ha creado un nuevo microciclo: ${payload.new.type}`,
+            icon: '/icon-192x192.png'
+          });
+        }
+      )
+      .subscribe();
+
+    async function handleRealtimeNotification(type: string, record: any) {
+      if (Notification.permission === 'granted') {
+        const { data: player } = await supabase
+          .from('players')
+          .select('nombre, apellido1')
+          .eq('id_del_jugador', record.id_del_jugador)
+          .single();
+        
+        const playerName = player ? `${player.nombre} ${player.apellido1}` : 'Jugador';
+        
+        new Notification(`Nuevo ${type}`, {
+          body: `${playerName}: ${record.diagnostico_medico || record.molestias || (record.rpe ? 'RPE ' + record.rpe : '') || 'Nueva actualización'}.`,
+          icon: '/icon-192x192.png'
+        });
+      }
+    }
+
+    return () => {
+      supabase.removeChannel(appEventsSubscription);
+    };
+  }, []);
+
+  useEffect(() => {
     let isMounted = true
     
     // Temporizador de seguridad: Si después de 10 segundos sigue cargando, forzamos la entrada

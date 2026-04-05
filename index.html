@@ -33,6 +33,15 @@
 }
 </script>
 <link rel="stylesheet" href="/index.css">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('Service Worker registered!', reg))
+        .catch(err => console.log('Service Worker registration failed: ', err));
+    });
+  }
+</script>
 </head>
   <body>
     <div id="root"></div>

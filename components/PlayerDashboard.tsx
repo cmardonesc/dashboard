@@ -36,6 +36,7 @@ type AthleteView = 'menu' | 'wellness' | 'load' | 'match' | 'nutrition'
 import PlayerSidebar, { PlayerMenuId } from './PlayerSidebar'
 import ChefAssistant from './ChefAssistant'
 import AITrainer from './AITrainer'
+import { triggerPushNotification } from '../lib/notifications'
 
 const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   player,
@@ -199,6 +200,13 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       
       logActivity('Envío Wellness', { playerId: player.id_del_jugador, date: today });
 
+      // Disparar notificación push
+      triggerPushNotification({
+        title: `Check-in Wellness: ${player.nombre} ${player.apellido1}`,
+        body: `Fatiga: ${data.fatigue}, Sueño: ${data.sleep}, Estrés: ${data.stress}`,
+        url: '/fisica_wellness'
+      }).catch(err => console.error("Error disparando notificación:", err));
+
       setSuccessModalConfig({
         show: true,
         title: 'Reporte Listo',
@@ -247,6 +255,13 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       if (error) throw error;
       
       logActivity('Envío Carga Interna (PSE)', { playerId: player.id_del_jugador, date: today, rpe: data.rpe });
+
+      // Disparar notificación push
+      triggerPushNotification({
+        title: `Check-out (RPE): ${player.nombre} ${player.apellido1}`,
+        body: `Esfuerzo: ${data.rpe}, Duración: ${data.duration} min.`,
+        url: '/fisica_pse'
+      }).catch(err => console.error("Error disparando notificación:", err));
 
       setSuccessModalConfig({
         show: true,

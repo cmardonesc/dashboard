@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { subscribeToNotifications } from '../lib/notifications';
 
 type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'fisica_vo2max' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios' | 'logs' | 'importar_datos' | 'sports_science';
 
@@ -22,6 +23,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   // Estado para Nutrición y sus submenús
   const isNutricionActive = activeMenu.startsWith('nutricion_');
   const [nutricionOpen, setNutricionOpen] = useState(isNutricionActive);
+  const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
   
   const [cargaInternaOpen, setCargaInternaOpen] = useState(activeMenu === 'fisica_wellness' || activeMenu === 'fisica_pse');
   const [cargaExternaOpen, setCargaExternaOpen] = useState(activeMenu === 'fisica_carga_externa_total' || activeMenu === 'fisica_carga_externa_tareas');
@@ -457,7 +459,28 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
         )}
       </nav>
 
-      <div className={`p-8 border-t border-white/5 ${isCollapsed ? 'hidden' : ''}`}>
+      <div className={`p-8 border-t border-white/5 ${isCollapsed ? 'hidden' : ''} flex flex-col gap-4`}>
+        {notificationMsg && (
+          <div className="bg-blue-600/20 text-blue-400 p-3 rounded-xl text-[9px] font-black uppercase text-center animate-pulse">
+            {notificationMsg}
+          </div>
+        )}
+        <button 
+          onClick={async () => {
+            const success = await subscribeToNotifications();
+            if (success) {
+              setNotificationMsg('¡Notificaciones activadas!');
+              setTimeout(() => setNotificationMsg(null), 3000);
+            } else {
+              setNotificationMsg('Error al activar');
+              setTimeout(() => setNotificationMsg(null), 3000);
+            }
+          }}
+          className="w-full py-3 bg-blue-600/20 text-blue-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all border border-blue-600/30"
+        >
+          <i className="fa-solid fa-bell mr-2"></i>
+          Activar Notificaciones
+        </button>
         <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest text-center">ANFP v2026.1</p>
       </div>
     </aside>

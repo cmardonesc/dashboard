@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AthletePerformanceRecord, Category, User, MicrocicloDB, CATEGORY_ID_MAP, UserRole } from '../types';
 import { supabase } from '../lib/supabase';
+import { triggerPushNotification } from '../lib/notifications';
 
 interface MedicaAreaProps {
   performanceRecords: AthletePerformanceRecord[];
@@ -232,6 +233,14 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         treatments_applied: selectedTreatments // Guardamos el arreglo de tratamientos
       }]);
       if (error) throw error;
+
+      // Disparar notificación push (vía Edge Function)
+      triggerPushNotification({
+        title: `Nuevo Reporte Médico: ${reportingPlayer.name}`,
+        body: `${dailyReportForm.diagnostico_medico || 'Sin diagnóstico'}. Gravedad: ${dailyReportForm.severity}`,
+        url: '/medica'
+      }).catch(err => console.error("Error disparando notificación:", err));
+
       setSuccessMessage("Reporte médico guardado.");
       setDailyReportForm({ observation: '', diagnostico_medico: '', severity: 'low' });
       setSelectedTreatments([]); // Limpiamos tratamientos seleccionados

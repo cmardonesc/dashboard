@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { User, Category, CATEGORY_ID_MAP, MicrocicloDB, UserRole } from '../types'
 import { supabase } from '../lib/supabase'
+import { triggerPushNotification } from '../lib/notifications'
 
 type ViewMode = 'grid' | 'selection'
 
@@ -336,6 +337,15 @@ export default function CitacionesArea() {
       }
 
       if (error) throw error;
+
+      // Disparar notificación push
+      if (newMicro) {
+        triggerPushNotification({
+          title: `Nuevo Microciclo Creado`,
+          body: `Tipo: ${newMicro.type}, Del ${newMicro.start_date} al ${newMicro.end_date}`,
+          url: '/tecnica'
+        }).catch(err => console.error("Error disparando notificación:", err));
+      }
 
       // 4. Copiar jugadores si hay
       if (playersToCopy.length > 0 && newMicro) {
