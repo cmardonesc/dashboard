@@ -323,26 +323,26 @@ const PlanificacionAnual: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="flex items-center gap-6">
-          <div className="w-14 h-14 bg-[#0b1220] rounded-2xl flex items-center justify-center text-white shadow-xl">
-            <i className="fa-solid fa-calendar-days text-xl"></i>
+      <div className="bg-white p-4 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="flex items-center gap-4 md:gap-6 w-full md:w-auto">
+          <div className="w-12 h-12 md:w-14 md:h-14 bg-[#0b1220] rounded-2xl flex items-center justify-center text-white shadow-xl shrink-0">
+            <i className="fa-solid fa-calendar-days text-lg md:text-xl"></i>
           </div>
           <div>
-            <h2 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter">PLANIFICACIÓN <span className="text-red-600">{currentDate.getFullYear()}</span></h2>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Gestión logística y técnica anual.</p>
+            <h2 className="text-xl md:text-2xl font-black text-slate-900 uppercase italic tracking-tighter">PLANIFICACIÓN <span className="text-red-600">{currentDate.getFullYear()}</span></h2>
+            <p className="text-slate-400 text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1">Gestión logística y técnica anual.</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-[24px] border border-slate-100">
-          <button onClick={handlePrevMonth} className="w-10 h-10 rounded-xl hover:bg-white hover:shadow-sm text-slate-400 hover:text-red-600 transition-all">
-            <i className="fa-solid fa-chevron-left text-xs"></i>
+        <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 md:p-2 rounded-[20px] md:rounded-[24px] border border-slate-100 w-full md:w-auto justify-between md:justify-start">
+          <button onClick={handlePrevMonth} className="w-8 h-8 md:w-10 md:h-10 rounded-xl hover:bg-white hover:shadow-sm text-slate-400 hover:text-red-600 transition-all">
+            <i className="fa-solid fa-chevron-left text-[10px] md:text-xs"></i>
           </button>
-          <div className="px-6 text-center min-w-[160px]">
-            <span className="text-sm font-black text-[#0b1220] uppercase tracking-widest italic">{monthName}</span>
+          <div className="px-2 md:px-6 text-center min-w-[120px] md:min-w-[160px]">
+            <span className="text-xs md:text-sm font-black text-[#0b1220] uppercase tracking-widest italic">{monthName}</span>
           </div>
-          <button onClick={handleNextMonth} className="w-10 h-10 rounded-xl hover:bg-white hover:shadow-sm text-slate-400 hover:text-red-600 transition-all">
-            <i className="fa-solid fa-chevron-right text-xs"></i>
+          <button onClick={handleNextMonth} className="w-8 h-8 md:w-10 md:h-10 rounded-xl hover:bg-white hover:shadow-sm text-slate-400 hover:text-red-600 transition-all">
+            <i className="fa-solid fa-chevron-right text-[10px] md:text-xs"></i>
           </button>
         </div>
       </div>
@@ -387,18 +387,19 @@ const PlanificacionAnual: React.FC = () => {
       </div>
 
       {/* GRID DE CALENDARIO */}
-      <div className="bg-white rounded-[48px] border border-slate-100 shadow-2xl overflow-hidden p-10">
-        <div className="grid grid-cols-7 gap-2 mb-6">
+      <div className="bg-white rounded-[32px] md:rounded-[48px] border border-slate-100 shadow-2xl overflow-hidden p-4 md:p-10">
+        <div className="grid grid-cols-7 gap-1 md:gap-2 mb-4 md:mb-6">
           {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map(d => (
-            <div key={d} className="text-center py-2">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{d}</span>
+            <div key={d} className="text-center py-1 md:py-2">
+              <span className="hidden md:inline text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{d}</span>
+              <span className="md:hidden text-[9px] font-black text-slate-400 uppercase tracking-widest">{d.substring(0, 1)}</span>
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-2 min-h-[600px]">
+        <div className="grid grid-cols-7 gap-1 md:gap-2 min-h-[400px] md:min-h-[600px]">
           {calendarDays.map((dayObj, idx) => {
-            if (!dayObj) return <div key={`empty-${idx}`} className="bg-slate-50/30 rounded-2xl"></div>;
+            if (!dayObj) return <div key={`empty-${idx}`} className="bg-slate-50/30 rounded-xl md:rounded-2xl"></div>;
             
             const isToday = dayObj.date === new Date().toISOString().split('T')[0];
             const isSelected = selectedDay === dayObj.date;
@@ -424,37 +425,37 @@ const PlanificacionAnual: React.FC = () => {
             return (
               <div 
                 key={dayObj.date}
-                className={`relative rounded-[32px] border transition-all cursor-pointer p-4 group min-h-[110px] flex flex-col justify-between ${
+                className={`relative rounded-xl md:rounded-[32px] border transition-all cursor-pointer p-2 md:p-4 group min-h-[60px] md:min-h-[110px] flex flex-col justify-between ${
                   isSelected ? `border-red-500 ring-4 ring-red-500/5 shadow-xl ${bgColor}` : `${bgColor} ${borderColor} ${hoverBorder} hover:shadow-lg`
                 }`}
                 onClick={() => { setSelectedDay(dayObj.date); setIsDrawerOpen(true); }}
               >
                 <div className="flex justify-between items-start">
-                  <span className={`text-lg font-black tracking-tighter ${isToday ? 'text-red-600' : 'text-slate-400'}`}>{dayObj.day}</span>
+                  <span className={`text-sm md:text-lg font-black tracking-tighter ${isToday ? 'text-red-600' : 'text-slate-400'}`}>{dayObj.day}</span>
                   <div className="flex gap-1">
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleCopyDay(dayObj.date); }}
-                      className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-lg bg-slate-100 text-slate-400 hover:text-blue-600 transition-all flex items-center justify-center"
+                      className="hidden md:flex opacity-0 group-hover:opacity-100 w-6 h-6 rounded-lg bg-slate-100 text-slate-400 hover:text-blue-600 transition-all items-center justify-center"
                       title="Copiar de otro día"
                     >
                       <i className="fa-solid fa-copy text-[10px]"></i>
                     </button>
                     {dayObj.activities.length > 0 && (
-                      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                      <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-red-500 animate-pulse"></div>
                     )}
                   </div>
                 </div>
                 
-                <div className="flex flex-wrap gap-1 mt-1">
+                <div className="flex flex-wrap gap-0.5 md:gap-1 mt-1">
                   {dayObj.activities.slice(0, 5).map(act => (
-                    <div key={act.id} className={`w-1.5 h-1.5 rounded-full ${TIPO_COLORS[act.actividad.toUpperCase()] || 'bg-slate-300'}`} title={act.actividad}></div>
+                    <div key={act.id} className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${TIPO_COLORS[act.actividad.toUpperCase()] || 'bg-slate-300'}`} title={act.actividad}></div>
                   ))}
                   {dayObj.activities.length > 5 && (
-                    <span className="text-[7px] font-black text-slate-400">+{dayObj.activities.length - 5}</span>
+                    <span className="text-[6px] md:text-[7px] font-black text-slate-400">+{dayObj.activities.length - 5}</span>
                   )}
                 </div>
 
-                <div className="mt-1.5 space-y-1 overflow-hidden">
+                <div className="hidden md:block mt-1.5 space-y-1 overflow-hidden">
                   {dayObj.activities.slice(0, 4).map(act => (
                     <div key={act.id} className="flex items-center justify-between gap-1">
                       <p className="text-[7px] font-black uppercase text-slate-800 italic truncate leading-none flex-1">
