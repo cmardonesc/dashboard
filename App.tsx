@@ -291,6 +291,18 @@ export default function App() {
           });
         }
       )
+      .on(
+        'broadcast',
+        { event: 'notification' },
+        (payload) => {
+          if (Notification.permission === 'granted') {
+            new Notification(payload.payload.title, {
+              body: payload.payload.body,
+              icon: '/icon-192x192.png'
+            });
+          }
+        }
+      )
       .subscribe();
 
     async function handleRealtimeNotification(type: string, record: any) {

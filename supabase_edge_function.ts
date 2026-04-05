@@ -78,10 +78,32 @@ serve(async (req) => {
       });
     }
 
-    // 3. Enviar notificación (Simulación de envío)
-    console.log(`Enviando notificación: [${title}] ${body}`);
+    // 3. Broadcast vía Realtime para feedback inmediato en la app
+    await supabase.channel('app_events_realtime').send({
+      type: 'broadcast',
+      event: 'notification',
+      payload: { title, body, url }
+    });
 
-    return new Response(JSON.stringify({ success: true, notified: subscriptions.length }), {
+    // 4. Enviar notificación push real a cada suscripción (Simulación mejorada)
+    const results = await Promise.all(
+      subscriptions.map(async (sub: any) => {
+        try {
+          const { endpoint, keys } = sub.subscription;
+          if (!endpoint || !keys) return { success: false, error: "Invalid subscription" };
+          
+          console.log(`Simulando envío push a endpoint: ${endpoint}`);
+          return { success: true };
+        } catch (err) {
+          console.error("Error enviando a suscripción:", err);
+          return { success: false, error: err.message };
+        }
+      })
+    );
+
+    const notifiedCount = results.filter(r => r.success).length;
+
+    return new Response(JSON.stringify({ success: true, notified: notifiedCount }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
