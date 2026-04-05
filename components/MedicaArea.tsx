@@ -241,11 +241,19 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         url: '/medica'
       }).catch(err => console.error("Error disparando notificación:", err));
 
-      setSuccessMessage("Reporte médico guardado.");
+      setSuccessMessage("REPORTE MÉDICO GUARDADO.");
       setDailyReportForm({ observation: '', diagnostico_medico: '', severity: 'low' });
       setSelectedTreatments([]); // Limpiamos tratamientos seleccionados
       setReportingPlayer(null);
+      setSearchTerm(''); // Limpiar término de búsqueda
+      setFoundPlayers([]); // Limpiar jugadores encontrados
+      setHasSearched(false); // Resetear estado de búsqueda
       fetchDailyReports();
+
+      // Auto-ocultar mensaje de éxito a los 2 segundos
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 2000);
     } catch (err: any) {
       setErrorMessage("Error: " + err.message);
     } finally {
@@ -334,8 +342,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     try {
       const { error } = await supabase.from('lesionados').delete().eq('id', id);
       if (error) throw error;
-      setSuccessMessage("Registro clínico eliminado.");
+      setSuccessMessage("REGISTRO CLÍNICO ELIMINADO.");
       fetchInjuredPlayers();
+
+      // Auto-ocultar mensaje de éxito a los 2 segundos
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 2000);
     } catch (err: any) {
       setErrorMessage("Error al eliminar: " + err.message);
     } finally {
@@ -386,12 +399,17 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       if (editingInjuryId) {
         const { error } = await supabase.from('lesionados').update(payload).eq('id', editingInjuryId);
         if (error) throw error;
-        setSuccessMessage("Ficha clínica actualizada con éxito.");
+        setSuccessMessage("FICHA CLÍNICA ACTUALIZADA CON ÉXITO.");
       } else {
         const { error } = await supabase.from('lesionados').insert([payload]);
         if (error) throw error;
-        setSuccessMessage("Ficha médica guardada y sincronizada.");
+        setSuccessMessage("FICHA MÉDICA GUARDADA Y SINCRONIZADA.");
       }
+
+      // Auto-ocultar mensaje de éxito a los 2 segundos
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 2000);
 
       fetchInjuredPlayers();
       setReportingPlayer(null);
@@ -1290,11 +1308,11 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
       {/* MODAL DE ÉXITO */}
       {successMessage && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[700] animate-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-emerald-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-emerald-500">
-            <i className="fa-solid fa-circle-check text-lg"></i>
-            <p className="text-xs font-black uppercase tracking-widest">{successMessage}</p>
-            <button onClick={() => setSuccessMessage(null)} className="hover:scale-110 transition-transform">
+        <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 bg-white/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-emerald-600 text-white px-8 py-6 rounded-[32px] shadow-2xl flex items-center gap-6 border border-emerald-500 animate-in zoom-in-95 duration-300">
+            <i className="fa-solid fa-circle-check text-2xl"></i>
+            <p className="text-sm font-black uppercase tracking-widest italic">{successMessage}</p>
+            <button onClick={() => setSuccessMessage(null)} className="hover:scale-110 transition-transform ml-4">
               <i className="fa-solid fa-xmark"></i>
             </button>
           </div>

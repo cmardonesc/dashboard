@@ -1,6 +1,8 @@
 
 import React, { useState } from 'react';
 import { subscribeToNotifications } from '../lib/notifications';
+import { FEDERATION_LOGO } from '../constants';
+import { getDriveDirectLink } from '../lib/utils';
 
 type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'fisica_vo2max' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios' | 'logs' | 'importar_datos' | 'sports_science';
 
@@ -75,9 +77,20 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           className={`flex items-center gap-4 ${isCollapsed ? 'justify-center w-full' : ''} cursor-pointer hover:opacity-80 transition-opacity`}
           onClick={() => onMenuChange('inicio')}
         >
-          <div className="w-10 h-10 bg-[#CF1B2B] rounded-xl flex items-center justify-center shadow-lg shadow-red-900/20 shrink-0">
-            <span className="text-white font-black text-xl tracking-tighter">LR</span>
-          </div>
+          {FEDERATION_LOGO ? (
+            <div className="w-10 h-10 rounded-xl overflow-hidden bg-white flex items-center justify-center shadow-lg shrink-0">
+              <img 
+                src={getDriveDirectLink(FEDERATION_LOGO)} 
+                alt="Logo Federación" 
+                className="w-full h-full object-contain p-1"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ) : (
+            <div className="w-10 h-10 bg-[#CF1B2B] rounded-xl flex items-center justify-center shadow-lg shadow-red-900/20 shrink-0">
+              <span className="text-white font-black text-xl tracking-tighter">LR</span>
+            </div>
+          )}
           {!isCollapsed && (
             <div className="flex flex-col overflow-hidden whitespace-nowrap">
               {userRole === 'club' ? (

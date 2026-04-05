@@ -12,3 +12,25 @@ export const normalizeClub = (name: string) => {
     .replace(/[.\-]/g, "")
     .trim();
 };
+
+/**
+ * Convierte un enlace de visualización de Google Drive en un enlace directo de descarga/imagen.
+ */
+export const getDriveDirectLink = (url: string) => {
+  if (!url) return "";
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl.includes("drive.google.com")) return trimmedUrl;
+
+  try {
+    // Busca el ID del archivo (cadena de caracteres entre /d/ y el siguiente / o ?)
+    const match = trimmedUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    const id = match ? match[1] : null;
+    if (id) {
+      // Usamos el formato de link directo más compatible
+      return `https://drive.google.com/uc?id=${id}&export=view`;
+    }
+  } catch (e) {
+    console.error("Error parsing Drive URL:", e);
+  }
+  return trimmedUrl;
+};

@@ -105,3 +105,8 @@ export const CLUB_LOGOS: Record<string, string> = {
   'magallanes': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Logo_Club_Deportivo_Magallanes.svg/1200px-Logo_Club_Deportivo_Magallanes.svg.png',
   'union la calera': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Logo_Uni%C3%B3n_La_Calera.svg/1200px-Logo_Uni%C3%B3n_La_Calera.svg.png'
 };
+
+/**
+ * Logo de la Federación (puedes usar un enlace de Google Drive aquí)
+ */
+export const FEDERATION_LOGO = "https://drive.google.com/file/d/1dACZfh-DDxPKlH0bo5YLiuhhYAAEKy0s/view?usp=drive_link";

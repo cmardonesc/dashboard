@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabase } from './lib/supabase'
-import { normalizeClub } from './lib/utils'
+import { normalizeClub, getDriveDirectLink } from './lib/utils'
 import PlayerDashboard from './components/PlayerDashboard'
 import StaffDashboard from './components/StaffDashboard'
 import ClubHome from './components/ClubHome'
@@ -9,6 +9,7 @@ import Sidebar from './components/Sidebar'
 import { AthletePerformanceRecord, User, UserRole, NutritionData } from './types'
 import { MOCK_PLAYERS } from './mockData'
 import { logActivity } from './lib/activityLogger'
+import { FEDERATION_LOGO } from './constants'
 
 type Role = 'player' | 'staff' | 'admin' | 'club' | null
 type MenuId =
@@ -1012,8 +1013,18 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
   return (
     <div className="w-full max-w-[440px] px-4 animate-in fade-in zoom-in-95 duration-500">
       <div className="bg-white rounded-[32px] md:rounded-[40px] overflow-hidden shadow-2xl border border-slate-100">
-        <div className="bg-[#CF1B2B] py-8 md:py-12 px-6 md:px-8 text-center">
-          <div className="text-white font-black text-3xl md:text-4xl tracking-tighter uppercase italic">La Roja</div>
+        <div className="bg-[#CF1B2B] py-8 md:py-12 px-6 md:px-8 flex items-center justify-center gap-4 md:gap-6">
+          {FEDERATION_LOGO && (
+            <div className="w-14 h-14 md:w-16 md:h-16 bg-white rounded-2xl p-1.5 shadow-xl overflow-hidden shrink-0">
+              <img 
+                src={getDriveDirectLink(FEDERATION_LOGO)} 
+                alt="Federación Logo" 
+                className="w-full h-full object-contain"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          )}
+          <div className="text-white font-black text-3xl md:text-4xl tracking-tighter uppercase italic leading-none">La Roja</div>
         </div>
         <div className="p-6 md:p-10 space-y-4 md:space-y-6">
           <div className="flex gap-2 p-1 bg-slate-50 rounded-2xl">
