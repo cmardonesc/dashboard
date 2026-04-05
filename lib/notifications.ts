@@ -38,7 +38,7 @@ export async function subscribeToNotifications() {
       .upsert({
         user_id: user.id,
         subscription: subscription.toJSON(),
-        updated_at: new Date().toISOString()
+        created_at: new Date().toISOString()
       }, { onConflict: 'user_id' });
 
     if (error) throw error;
