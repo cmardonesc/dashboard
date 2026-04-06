@@ -9,7 +9,7 @@ export const normalizeClub = (name: string) => {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[.\-]/g, "")
+    .replace(/[^a-z0-9]/g, "")
     .trim();
 };
 
@@ -22,11 +22,11 @@ export const getDriveDirectLink = (url: string) => {
   if (!trimmedUrl.includes("drive.google.com")) return trimmedUrl;
 
   try {
-    // Busca el ID del archivo (cadena de caracteres entre /d/ y el siguiente / o ?)
-    const match = trimmedUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    // Soporta formatos /d/ID/view, /open?id=ID, /file/d/ID/edit, etc.
+    const match = trimmedUrl.match(/\/d\/([a-zA-Z0-9_-]+)/) || trimmedUrl.match(/id=([a-zA-Z0-9_-]+)/);
     const id = match ? match[1] : null;
     if (id) {
-      // Usamos el formato de googleusercontent que es más estable para incrustar imágenes
+      // Formato lh3 es el más confiable para incrustar en iframes y evitar bloqueos
       return `https://lh3.googleusercontent.com/d/${id}`;
     }
   } catch (e) {

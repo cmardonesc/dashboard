@@ -1,20 +1,30 @@
 import React, { useMemo, useState } from 'react';
 import { AthletePerformanceRecord, User } from '../types';
-import { normalizeClub } from '../lib/utils';
+import { normalizeClub, getDriveDirectLink } from '../lib/utils';
 import { CLUB_LOGOS } from '../constants';
 
 interface ClubHomeProps {
   performanceRecords: AthletePerformanceRecord[];
   userClub?: string;
+  clubs?: any[];
 }
 
-const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub }) => {
+const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, clubs = [] }) => {
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
+  const getClubLogo = (clubName: string) => {
+    if (!clubName) return null;
+    const normName = normalizeClub(clubName);
+    const club = clubs.find(c => normalizeClub(c.nombre) === normName);
+    if (club?.logo_url) {
+      return getDriveDirectLink(club.logo_url);
+    }
+    return CLUB_LOGOS[normName] || null;
+  };
+
   const userClubLogo = useMemo(() => {
-    if (!userClub) return null;
-    return CLUB_LOGOS[normalizeClub(userClub)];
-  }, [userClub]);
+    return getClubLogo(userClub || '');
+  }, [userClub, clubs]);
 
   const playersByYear = useMemo(() => {
     const groups: Record<number, User[]> = {};
@@ -130,7 +140,7 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub }) => 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {playersByYear[selectedYear].map(player => {
               const pClub = player.club_name || player.club || '';
-              const pLogo = CLUB_LOGOS[normalizeClub(pClub)];
+              const pLogo = getClubLogo(pClub);
               
               return (
                 <div 

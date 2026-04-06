@@ -137,6 +137,7 @@ create table if not exists public.clubes (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   nombre text not null unique,
   codigo text not null unique,
+  logo_url text,
   activo boolean default true
 );
 
@@ -448,26 +449,58 @@ values
 ('PROMEDIO', 'ADULTA', 'DEFENSA', 4800, 75, 500, 100, 12, 110)
 on conflict do nothing;
 
--- Seed some default clubs
-insert into public.clubes (nombre, codigo, activo)
+-- Seed clubs with logos
+insert into public.clubes (nombre, codigo, logo_url, activo)
 values 
-('Club Universidad de Chile', 'uch', true),
-('Colo-Colo', 'cc', true),
-('Universidad Católica', 'uc', true),
-('Unión Española', 'ue', true),
-('Audax Italiano', 'ai', true),
-('Palestino', 'pal', true),
-('Everton de Viña del Mar', 'eve', true),
-('Santiago Wanderers', 'sw', true),
-('Cobreloa', 'cob', true),
-('Huachipato', 'hua', true),
-('O''Higgins', 'ohi', true),
-('Coquimbo Unido', 'coq', true),
-('Deportes La Serena', 'ser', true),
-('Ñublense', 'nub', true),
-('Curicó Unido', 'cur', true),
-('Cobresal', 'cbs', true)
-on conflict (nombre) do nothing;
+('Atlético Colina', 'colina', 'https://drive.google.com/file/d/1XreCc1WyUBNc7i6ezqS1IAB1OX8A_QTF/view?usp=sharing', true),
+('Audax Italiano', 'audax', 'https://drive.google.com/file/d/1IkIO3ncMNX7m_EtENvRl_rhfXik05Gv4/view?usp=sharing', true),
+('Brujas de Salamanca', 'brujas', 'https://drive.google.com/file/d/1hLbrL2P4S2ZoT1nnl85sMqGwe5DwWpz6/view?usp=sharing', true),
+('Cobreloa', 'cobreloa', 'https://drive.google.com/file/d/1zQojlLXj6FpkY-ShbDao1-Tedtu0751c/view?usp=sharing', true),
+('Cobresal', 'cobresal', 'https://drive.google.com/file/d/1SsY_tni1DMwTJR6C-o0Q6qTXkGWsudXN/view?usp=sharing', true),
+('Colchagua', 'colchagua', 'https://drive.google.com/file/d/1flk-fQDuTQB0DA4qSc-OgQOFu6nKs5IS/view?usp=sharing', true),
+('Colo-Colo', 'colocolo', 'https://drive.google.com/file/d/1co-5tVYtqe52Nn10kkGTBTKzEsYlApNw/view?usp=sharing', true),
+('Concón National', 'concon', 'https://drive.google.com/file/d/1X3nhQFdumNPOd3waOYRg6dUqqt4WqdjF/view?usp=sharing', true),
+('Coquimbo Unido', 'coquimbo', 'https://drive.google.com/file/d/1C3jDIcAGpZUI7x_b3q3o9MyQkEOdvy5w/view?usp=sharing', true),
+('Curicó Unido', 'curico', 'https://drive.google.com/file/d/1_ugp9q_aNxbiy5MSDltys1q8xPssaCxV/view?usp=sharing', true),
+('Deportes Antofagasta', 'antofagasta', 'https://drive.google.com/file/d/1tqeTXHob0aBCUL1PPuz7C6eKtAlO8JO9/view?usp=sharing', true),
+('Deportes Concepción', 'concepcion', 'https://drive.google.com/file/d/1AhFIz-YbpgyDfEY_Nr5i3ZZh_uuPBBo6/view?usp=sharing', true),
+('Deportes Copiapó', 'copiapo', 'https://drive.google.com/file/d/1KLnsILkqpOC_gUgljNPEqmf8nrfXIxEh/view?usp=sharing', true),
+('Deportes Iquique', 'iquique', 'https://drive.google.com/file/d/1JpFW8NidSz7n9kJsHAqASvLc8RIjnRb3/view?usp=sharing', true),
+('Deportes La Serena', 'serena', 'https://drive.google.com/file/d/1_9nqKVvWXY-kD65lBA6ErRXQ3YgfWbuZ/view?usp=sharing', true),
+('Deportes Limache', 'limache', 'https://drive.google.com/file/d/13zpWlLytiwIGJsgudeBaNM1zqz3rxoNN/view?usp=sharing', true),
+('Deportes Linares', 'linares', 'https://drive.google.com/file/d/1yfruBY-GqkE4izP6wpvSG5xDfHQyfSYl/view?usp=sharing', true),
+('Deportes Recoleta', 'recoleta', 'https://drive.google.com/file/d/1XRFiFjmZRBKkRt4kBAGgb-DVHFfSHsd-/view?usp=sharing', true),
+('Deportes Rengo', 'rengo', 'https://drive.google.com/file/d/1KvoA8s4j4i5fbFFvES8hbFiBQrzBXxej/view?usp=sharing', true),
+('Deportes Santa Cruz', 'santacruz', 'https://drive.google.com/file/d/1STujZpx6Yc0L50GsjpyC2TsVsRPH6gxA/view?usp=sharing', true),
+('Deportes Temuco', 'temuco', 'https://drive.google.com/file/d/1G3zTAk3Y97YiMSQ5taJ4ZIdQYua1eniE/view?usp=sharing', true),
+('Everton', 'everton', 'https://drive.google.com/file/d/1dCcZssetKjyFV27Bg6dhw33FFoxJqUSM/view?usp=sharing', true),
+('General Velásquez', 'generalvelasquez', 'https://drive.google.com/file/d/1pEA995FDJ1EACB1QgjoXB2Rt836cST-3/view?usp=sharing', true),
+('Huachipato', 'huachipato', 'https://drive.google.com/file/d/1htmaRYkpwbVsKn2Lsq91AQKD70q7oKns/view?usp=sharing', true),
+('Lota Schwager', 'lota', 'https://drive.google.com/file/d/1UF9euIBzCPjd4fR_6w95YGUe5kjfOkvw/view?usp=sharing', true),
+('Magallanes', 'magallanes', 'https://drive.google.com/file/d/1olNayy4I8kF_7HyJtAa38N8gUEapZyVV/view?usp=sharing', true),
+('Ñublense', 'nublense', 'https://drive.google.com/file/d/18s8oxImK3-BW7W45TJO4nnCPfhG1pMVI/view?usp=sharing', true),
+('O''Higgins', 'ohiggins', 'https://drive.google.com/file/d/1fJejc6VEH_AQoKDGb6p4cG2-g72KBIka/view?usp=sharing', true),
+('Palestino', 'palestino', 'https://drive.google.com/file/d/1OfGcu7KgdtCOSSOhifvZQjOhCyZutAUQ/view?usp=sharing', true),
+('Provincial Osorno', 'osorno', 'https://drive.google.com/file/d/10XyGDYTNE1OR3Db0T9O4Ql9g-om2CPXV/view?usp=sharing', true),
+('Provincial Ovalle', 'ovalle', 'https://drive.google.com/file/d/1of5C6Wbl0yc9gmCLVC7cT0B4ImagitmK/view?usp=sharing', true),
+('Puerto Montt', 'puertomontt', 'https://drive.google.com/file/d/1eetaXWZ9L52L7bBlwxPVARe-nRh_2H_-/view?usp=sharing', true),
+('Rangers de Talca', 'rangers', 'https://drive.google.com/file/d/1JhZCLVAgGC8AYFbiJnvYH9QbEDpCORwK/view?usp=sharing', true),
+('Real San Joaquín', 'realsanjoaquin', 'https://drive.google.com/file/d/14-QZctnB4jR6TeuIte4SxZarTSVG6Dlv/view?usp=sharing', true),
+('San Luis de Quillota', 'sanluis', 'https://drive.google.com/file/d/1vO2-auLXByRqXE9IF8PhZtLAi278rWPr/view?usp=sharing', true),
+('San Marcos de Arica', 'sanmarcos', 'https://drive.google.com/file/d/1Of97TH33iAXFn7phF8mR9_U6RIZZgS3c/view?usp=sharing', true),
+('Santiago City', 'santiagocity', 'https://drive.google.com/file/d/1ZAkKtAjvwgqtTyZgt2iqhixFpXMpHp-1/view?usp=sharing', true),
+('Santiago Morning', 'santiagomorning', 'https://drive.google.com/file/d/1OmzxvOTxrDFvDHLCVnPROX3bwWq85WqB/view?usp=sharing', true),
+('Santiago Wanderers', 'santiagowanderers', 'https://drive.google.com/file/d/1xVST7LALS5exStbFDDH9gPGloLIVwGwK/view?usp=sharing', true),
+('Trasandino de Los Andes', 'trasandino', 'https://drive.google.com/file/d/1pMdD0_BC3yvv4WF-OoLi2MdpIMmzil9q/view?usp=sharing', true),
+('Unión Española', 'unionespanola', 'https://drive.google.com/file/d/1VXU3ehA5V1d6dtT-20uD1OmAfR9yj0hG/view?usp=sharing', true),
+('Unión La Calera', 'unionlacalera', 'https://drive.google.com/file/d/1WAA9Mo-wKemc3Fj694ySoZUhM9ICK8O7/view?usp=sharing', true),
+('Unión San Felipe', 'unionsanfelipe', 'https://drive.google.com/file/d/1HXJw-elYvwJG1yn3DUaJGFl1hKmGClqf/view?usp=sharing', true),
+('Universidad Católica', 'universidadcatolica', 'https://drive.google.com/file/d/1z5OO2cabtRy6qHigXumVJH_PCO7TMwTt/view?usp=sharing', true),
+('Universidad de Chile', 'universidaddechile', 'https://drive.google.com/file/d/1Eqp8Cf4p--CcAZ43fFFnOfB06ztDPk_X/view?usp=sharing', true),
+('Universidad de Concepción', 'universidaddeconcepcion', 'https://drive.google.com/file/d/1I5eQfDw0aaQysfZpbF_wmepx52BubEbm/view?usp=sharing', true)
+on conflict (codigo) do update set 
+  logo_url = excluded.logo_url,
+  nombre = excluded.nombre;
 
 -- Function to safely create microcycles with unique code
 create or replace function public.create_microcycle_safe(

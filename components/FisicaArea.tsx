@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { AthletePerformanceRecord, Category, CATEGORY_ID_MAP } from '../types';
 import { supabase } from '../lib/supabase';
 import { normalizeClub } from '../lib/utils';
+import ClubBadge from './ClubBadge';
 
 interface FisicaAreaProps {
   performanceRecords: AthletePerformanceRecord[];
@@ -10,11 +11,12 @@ interface FisicaAreaProps {
   userRole?: string;
   userClub?: string;
   highlightPlayerId?: number | null;
+  clubs?: any[];
 }
 
 type MainTab = 'carga_interna' | 'carga_externa' | 'reporte_diario';
 
-export default function FisicaArea({ performanceRecords, view = 'wellness', userRole, userClub, highlightPlayerId }: FisicaAreaProps) {
+export default function FisicaArea({ performanceRecords, view = 'wellness', userRole, userClub, highlightPlayerId, clubs = [] }: FisicaAreaProps) {
   const activeMainTab: MainTab = useMemo(() => {
     if (view === 'external_total') return 'carga_externa';
     if (view === 'report') return 'reporte_diario';
@@ -914,7 +916,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       <td className={`px-4 md:px-8 py-4 md:py-5 text-left ${isHighlighted ? 'bg-blue-50' : ''}`}>
                         <div className="flex flex-col">
                           <span>{row.player.name}</span>
-                          <span className="text-[8px] opacity-50 not-italic">{row.player.club_name || row.player.club || 'SIN CLUB'}</span>
+                          <ClubBadge 
+                            clubName={row.player.club_name || row.player.club} 
+                            clubs={clubs}
+                            className="mt-0.5"
+                            logoSize="w-3 h-3"
+                            showName={true}
+                          />
                         </div>
                       </td>
                       
@@ -1176,7 +1184,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                               <tr key={player.id} className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}>
                                 <td className="px-4 py-0.5 text-left">
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
-                                   <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                   <ClubBadge 
+                                     clubName={player.club_name || player.club} 
+                                     clubs={clubs}
+                                     className="mt-0.5"
+                                     logoSize="w-2.5 h-2.5"
+                                     showName={true}
+                                   />
                                 </td>
                                 <td className="px-1 py-0.5">
                                   {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.fatigue)}`}>{data.fatigue}</span> : '-'}
@@ -1279,7 +1293,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                               <tr key={player.id} className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}>
                                 <td className="px-4 py-0.5 text-left">
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
-                                   <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                   <ClubBadge 
+                                     clubName={player.club_name || player.club} 
+                                     clubs={clubs}
+                                     className="mt-0.5"
+                                     logoSize="w-2.5 h-2.5"
+                                     showName={true}
+                                   />
                                 </td>
                                 <td className="px-2 py-0.5 text-slate-400 font-black italic text-[8px]">{sessions.length}</td>
                                 <td className="px-2 py-0.5 font-black text-[10px] italic text-[#0b1220]">{rpeAvg ? rpeAvg.toFixed(1) : '—'}</td>
@@ -1363,7 +1383,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                               >
                                 <td className="px-4 py-0.5 text-left font-sans" style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{playerName}</span>
-                                   <span className="text-[5px] font-bold uppercase text-slate-400 mt-0.5 block tracking-widest">{player?.club_name || player?.club || 'SIN CLUB'}</span>
+                                   <ClubBadge 
+                                     clubName={player?.club_name || player?.club} 
+                                     clubs={clubs}
+                                     className="mt-0.5"
+                                     logoSize="w-2.5 h-2.5"
+                                     showName={true}
+                                   />
                                 </td>
                                 <td className="px-1 py-0.5 text-slate-400 italic text-[8px]">{row.minutos?.toFixed(0) || '0'}</td>
                                 <td className="px-1 py-0.5 text-[#0b1220] italic text-[8px]">{row.dist_total_m?.toFixed(0) || '0'}</td>

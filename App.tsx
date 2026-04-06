@@ -43,6 +43,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   const [dbPlayers, setDbPlayers] = useState<User[]>([])
+  const [dbClubs, setDbClubs] = useState<any[]>([])
   const [allData, setAllData] = useState<{
     wellness: any[]
     loads: any[]
@@ -186,13 +187,22 @@ export default function App() {
 
   const fetchRealPlayers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('players')
-        .select('id_del_jugador, nombre, apellido1, apellido2, club, posicion, anio')
+      const [{ data: playersData, error: playersError }, { data: clubsData, error: clubsError }] = await Promise.all([
+        supabase
+          .from('players')
+          .select('id_del_jugador, nombre, apellido1, apellido2, club, posicion, anio'),
+        supabase
+          .from('clubes')
+          .select('*')
+          .eq('activo', true)
+      ])
 
-      if (error) throw error
+      if (playersError) throw playersError
+      if (clubsError) console.error('Error al cargar clubes:', clubsError)
 
-      const mappedPlayers: User[] = (data || []).map((p: any) => {
+      if (clubsData) setDbClubs(clubsData)
+
+      const mappedPlayers: User[] = (playersData || []).map((p: any) => {
         const pid = p.id_del_jugador || p.id;
         
         // Inferir categoría si falta
@@ -720,6 +730,7 @@ export default function App() {
             userRole={role} 
             userEmail={sessionUser?.email}
             userClub={userClub}
+            clubs={dbClubs}
           />
         </div>
 
@@ -744,7 +755,11 @@ export default function App() {
           </div>
           <div className="p-4 md:p-8">
             {role === 'club' && activeMenu === 'inicio' ? (
-              <ClubHome performanceRecords={performanceRecords} userClub={userClub || undefined} />
+              <ClubHome 
+                performanceRecords={performanceRecords} 
+                userClub={userClub || undefined} 
+                clubs={dbClubs}
+              />
             ) : (
               <StaffDashboard 
                 performanceRecords={performanceRecords} 

@@ -3,10 +3,12 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AthletePerformanceRecord, Category, User, MicrocicloDB, CATEGORY_ID_MAP, UserRole } from '../types';
 import { supabase } from '../lib/supabase';
 import { triggerPushNotification } from '../lib/notifications';
+import ClubBadge from './ClubBadge';
 
 interface MedicaAreaProps {
   performanceRecords: AthletePerformanceRecord[];
   onMenuChange?: (id: any) => void;
+  clubs?: any[];
 }
 
 type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar' | 'daily_report';
@@ -61,7 +63,7 @@ interface MedicalExam {
   description: string;
 }
 
-const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChange }) => {
+const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChange, clubs = [] }) => {
   const [view, setView] = useState<MedicaView>('daily_report');
   const [reportingPlayer, setReportingPlayer] = useState<User | null>(null);
   const [editingInjuryId, setEditingInjuryId] = useState<string | null>(null);
@@ -528,7 +530,9 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                               <div>
                                 <p className="text-[10px] md:text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
                                 <p className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                                  {p.club} • {p.position}
+                                  <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-400 font-bold uppercase text-[9px]" />
+                                  <span className="text-slate-400 mx-1">•</span>
+                                  <span className="text-slate-400 font-bold uppercase text-[9px]">{p.position}</span>
                                 </p>
                               </div>
                             </div>
@@ -663,7 +667,11 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
             <h3 className="text-2xl md:text-3xl font-black uppercase italic tracking-tighter leading-none">
               {editingInjuryId ? 'Editar Ficha Clínica' : 'Nueva Ficha Clínica'}
             </h3>
-            <p className="text-white/70 font-bold uppercase text-[8px] md:text-[10px] tracking-[0.3em] mt-3">{reportingPlayer.name} • {reportingPlayer.club}</p>
+            <div className="flex items-center justify-center gap-2 mt-3">
+              <span className="text-white/70 font-bold uppercase text-[8px] md:text-[10px] tracking-[0.3em]">{reportingPlayer.name}</span>
+              <span className="text-white/30">•</span>
+              <ClubBadge clubName={reportingPlayer.club} clubs={clubs} logoSize="w-3 h-3" className="text-white/70 font-bold uppercase text-[8px] md:text-[10px] tracking-[0.3em]" />
+            </div>
           </div>
 
           <form onSubmit={handleSaveInjury} className="p-6 md:p-12 space-y-8 md:space-y-12">
@@ -1064,7 +1072,11 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                             </div>
                             <div>
                               <p className="text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{p.club} • {p.position}</p>
+                              <div className="flex items-center gap-1 mt-1">
+                                <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest" />
+                                <span className="text-slate-300">•</span>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{p.position}</span>
+                              </div>
                             </div>
                           </button>
                         ))}
@@ -1082,7 +1094,11 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                     </div>
                     <div>
                       <h4 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter leading-none">{reportingPlayer.name}</h4>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{reportingPlayer.club} • {reportingPlayer.position}</p>
+                      <div className="flex items-center gap-1 mt-1">
+                        <ClubBadge clubName={reportingPlayer.club} clubs={clubs} logoSize="w-3 h-3" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest" />
+                        <span className="text-slate-300">•</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{reportingPlayer.position}</span>
+                      </div>
                     </div>
                   </div>
                   <button onClick={() => setReportingPlayer(null)} className="text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest">Cambiar Jugador</button>

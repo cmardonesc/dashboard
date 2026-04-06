@@ -10,6 +10,7 @@ export interface ClubDB {
   region?: string;
   activo: boolean;
   id_pais?: number;
+  logo_url?: string;
 }
 
 export const useClubs = () => {

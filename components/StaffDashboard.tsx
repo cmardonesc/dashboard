@@ -2,6 +2,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { AthletePerformanceRecord, Category, CATEGORY_ID_MAP, CATEGORY_COLORS } from '../types'
 import { supabase } from '../lib/supabase'
+import ClubBadge from './ClubBadge'
 import CitacionesArea from './CitacionesArea'
 import DesconvocatoriaArea from './DesconvocatoriaArea'
 import TecnicaArea from './TecnicaArea'
@@ -33,9 +34,10 @@ interface StaffDashboardProps {
   userClub?: string;
   userRole?: string;
   userId_del_jugador?: number | null;
+  clubs?: any[];
 }
 
-const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, activeMenu, onMenuChange, userClub, userRole, userId_del_jugador }) => {
+const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, activeMenu, onMenuChange, userClub, userRole, userId_del_jugador, clubs = [] }) => {
   const [realMicrocycles, setRealMicrocycles] = useState<any[]>([]);
   const [citData, setCitData] = useState<any[]>([]);
   const [dailyActivities, setDailyActivities] = useState<any[]>([]);
@@ -522,7 +524,10 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                     </div>
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{p.nombre} {p.apellido1}</p>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.posicion}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.posicion}</p>
+                        <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-slate-400 uppercase tracking-widest" />
+                      </div>
                     </div>
                   </div>
                   <button onClick={(e) => e.stopPropagation()} className="text-amber-500 hover:scale-110 transition-transform"><i className="fa-solid fa-bell"></i></button>
@@ -553,7 +558,10 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                     </div>
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{p.nombre} {p.apellido1}</p>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.posicion}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.posicion}</p>
+                        <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-slate-400 uppercase tracking-widest" />
+                      </div>
                     </div>
                   </div>
                   <button onClick={(e) => e.stopPropagation()} className="text-blue-500 hover:scale-110 transition-transform"><i className="fa-solid fa-bell"></i></button>
@@ -586,9 +594,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                     </div>
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{w.players?.nombre} {w.players?.apellido1}</p>
-                      <p className="text-[8px] font-bold text-red-500 uppercase tracking-widest">
-                        {w.illness_symptoms && w.illness_symptoms.length > 0 ? `Enfermedad: ${w.illness_symptoms.join(', ')}` : `Estado: ${w.soreness}/5 • ${w.soreness_areas?.join(', ') || 'Sin molestias'}`}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[8px] font-bold text-red-500 uppercase tracking-widest">
+                          {w.illness_symptoms && w.illness_symptoms.length > 0 ? `Enfermedad: ${w.illness_symptoms.join(', ')}` : `Estado: ${w.soreness}/5 • ${w.soreness_areas?.join(', ') || 'Sin molestias'}`}
+                        </p>
+                        <ClubBadge clubName={w.players?.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-red-500 uppercase tracking-widest" />
+                      </div>
                     </div>
                   </div>
                   <button onClick={(e) => { e.stopPropagation(); onMenuChange('medica'); }} className="text-red-600 hover:scale-110 transition-transform"><i className="fa-solid fa-suitcase-medical"></i></button>
@@ -982,27 +993,27 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
           </div>
         );
       case 'fisica_wellness':
-        return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
       case 'fisica_pse':
-        return <FisicaArea performanceRecords={performanceRecords} view="pse" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="pse" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
       case 'fisica_carga_externa_total':
-        return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
       case 'fisica_carga_externa_tareas':
-        return <CargaTareasArea userRole={userRole} userClub={userClub} />;
+        return <CargaTareasArea performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'fisica_reporte':
-        return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
       case 'fisica_vo2max':
-        return <VO2MaxArea />;
+        return <VO2MaxArea clubs={clubs} />;
       case 'nutricion_resumen_grupal':
-        return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} />;
+        return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'nutricion_comparativo':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="general" userRole={userRole} userClub={userClub} />;
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="general" userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'nutricion_individual':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="individual" userRole={userRole} userClub={userClub} />;
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="individual" userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'nutricion_top10':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="top10" userRole={userRole} userClub={userClub} />;
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="top10" userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'nutricion_maduracion':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="crecimiento" userRole={userRole} userClub={userClub} />;
+        return <NutricionArea performanceRecords={performanceRecords} initialTab="crecimiento" userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'logistica_jugadores':
         return <LogisticaJugadores />;
       case 'logs':
@@ -1010,7 +1021,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
       case 'importar_datos':
         return <DataImportArea />;
       case 'sports_science':
-        return <SportsScienceArea userRole={userRole} userClub={userClub} />;
+        return <SportsScienceArea userRole={userRole} userClub={userClub} clubs={clubs} />;
       default:
         const ContentComponent = {
           planificacion_anual: PlanificacionAnual,
@@ -1022,7 +1033,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
           usuarios: UserManagementArea
         }[activeMenu as any] as any;
         
-        return ContentComponent ? <ContentComponent performanceRecords={performanceRecords} onMenuChange={onMenuChange} /> : null;
+        return ContentComponent ? <ContentComponent performanceRecords={performanceRecords} onMenuChange={onMenuChange} clubs={clubs} /> : null;
     }
   };
 

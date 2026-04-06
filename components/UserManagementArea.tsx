@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { User, UserRole } from '../types';
 import { normalizeClub } from '../lib/utils';
+import ClubBadge from './ClubBadge';
 
 interface UserManagementAreaProps {
   onMenuChange?: (menu: any) => void;
@@ -273,7 +274,9 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                         {p.role}
                       </span>
                       {p.role === 'club' && p.club_name && (
-                        <p className="text-[8px] font-black text-slate-400 mt-1 uppercase tracking-tighter">{p.club_name}</p>
+                        <div className="mt-1">
+                          <ClubBadge clubName={p.club_name} clubs={dbClubs} logoSize="w-3 h-3" className="text-[8px] font-black text-slate-400 uppercase tracking-tighter" />
+                        </div>
                       )}
                     </td>
                     <td className="px-8 py-4">

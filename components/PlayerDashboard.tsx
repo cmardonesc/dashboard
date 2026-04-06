@@ -7,6 +7,7 @@ import WellnessForm from './WellnessForm'
 import TrainingLoadForm from './TrainingLoadForm'
 import MatchReportForm from './MatchReportForm'
 import NutritionReport from './NutritionReport'
+import ClubBadge from './ClubBadge'
 import { useClubs } from '../lib/useClubs'
 import {
   LineChart,
@@ -369,9 +370,13 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                 <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full -mr-16 -mt-16 group-hover:bg-red-600/20 transition-all duration-700"></div>
                 <div className="relative z-10 flex flex-col gap-1">
                   <h2 className="text-white text-xl md:text-4xl font-black italic uppercase tracking-tighter leading-none">{player?.name || 'ATLETA DEMO'}</h2>
-                  <p className="text-white/40 text-[8px] md:text-[10px] font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">
-                    {player?.club || 'SIN CLUB'} | {player?.position || 'SIN POSICIÓN'} | {player?.anio ? (Number(player.anio) < 100 ? `CATEGORÍA SUB ${player.anio}` : `CLASE ${player.anio}`) : 'N/A'}
-                  </p>
+                  <div className="flex items-center gap-2 text-white/40 text-[8px] md:text-[10px] font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">
+                    <ClubBadge clubName={player?.club} clubs={dbClubs} logoSize="w-3 h-3" className="text-white/40 font-bold uppercase" />
+                    <span className="text-white/20">|</span>
+                    <span>{player?.position || 'SIN POSICIÓN'}</span>
+                    <span className="text-white/20">|</span>
+                    <span>{player?.anio ? (Number(player.anio) < 100 ? `CATEGORÍA SUB ${player.anio}` : `CLASE ${player.anio}`) : 'N/A'}</span>
+                  </div>
                   <div className="mt-3 md:mt-6 flex gap-3">
                     <div className="inline-flex items-center gap-2 bg-[#CF1B2B]/20 border border-[#CF1B2B]/30 px-3 md:px-4 py-1.5 md:py-2 rounded-full">
                       <i className={`fa-solid ${player?.isUnlinked ? 'fa-circle-dot animate-pulse' : 'fa-circle-check'} text-[#CF1B2B] text-[8px] md:text-[10px]`}></i>

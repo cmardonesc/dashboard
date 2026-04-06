@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { NutritionData, User } from '../types';
+import ClubBadge from './ClubBadge';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, LabelList,
   ScatterChart, Scatter, ZAxis, Cell
@@ -10,6 +11,7 @@ interface NutritionReportProps {
   history: NutritionData[]; // Full history for charts
   player: User;
   onClose: () => void;
+  clubs?: any[];
 }
 
 // Colors adapted to the App's Aesthetic
@@ -22,7 +24,7 @@ const COLORS = {
   TEXT_MUTED: '#64748b', // Slate-500
 };
 
-export default function NutritionReport({ data, history, player, onClose }: NutritionReportProps) {
+export default function NutritionReport({ data, history, player, onClose, clubs = [] }: NutritionReportProps) {
   
   // Sort history by date ascending for charts
   const sortedHistory = useMemo(() => {
@@ -193,7 +195,7 @@ export default function NutritionReport({ data, history, player, onClose }: Nutr
                     <span className="bg-red-600 text-white px-2 md:px-3 py-0.5 md:py-1 rounded-md md:rounded-lg text-[8px] md:text-[9px] font-black uppercase tracking-widest shadow-sm">
                       {player.category ? player.category.replace('_', ' ') : 'S/C'}
                     </span>
-                    <span className="text-slate-400 text-[8px] md:text-[10px] font-black uppercase tracking-widest">{player.club || 'Selección Chile'}</span>
+                    <ClubBadge clubName={player.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-400 text-[8px] md:text-[10px] font-black uppercase tracking-widest" />
                   </div>
                   <h2 className="text-xl md:text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">{player.name}</h2>
                   <p className={`text-[9px] md:text-[11px] font-black uppercase tracking-[0.2em] italic ${nutritionActionStatus.color}`}>

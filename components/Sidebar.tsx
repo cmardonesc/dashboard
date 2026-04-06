@@ -12,12 +12,26 @@ interface SidebarProps {
   userRole?: string | null;
   userEmail?: string | null;
   userClub?: string | null;
+  clubs?: any[];
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, userEmail, userClub }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, userEmail, userClub, clubs = [] }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [logisticsOpen, setLogisticsOpen] = useState(activeMenu === 'citaciones' || activeMenu === 'desconvocatoria' || activeMenu === 'logistica_jugadores');
   
+  const getClubLogo = (clubName: string) => {
+    if (!clubName) return null;
+    const normName = clubName.toLowerCase().trim();
+    const club = clubs.find(c => c.nombre.toLowerCase().trim() === normName);
+    if (club?.logo_url) {
+      return getDriveDirectLink(club.logo_url);
+    }
+    return null;
+  };
+
+  const currentClubLogo = userRole === 'club' && userClub ? getClubLogo(userClub) : null;
+  const displayLogo = currentClubLogo || (FEDERATION_LOGO ? getDriveDirectLink(FEDERATION_LOGO) : null);
+
   // Estado para Área Física y sus submenús
   const isFisicaActive = activeMenu.startsWith('fisica_');
   const [fisicaOpen, setFisicaOpen] = useState(isFisicaActive);
@@ -77,11 +91,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           className={`flex items-center gap-4 ${isCollapsed ? 'justify-center w-full' : ''} cursor-pointer hover:opacity-80 transition-opacity`}
           onClick={() => onMenuChange('inicio')}
         >
-          {FEDERATION_LOGO ? (
+          {displayLogo ? (
             <div className="w-10 h-10 overflow-hidden flex items-center justify-center shrink-0">
               <img 
-                src={getDriveDirectLink(FEDERATION_LOGO)} 
-                alt="Logo Federación" 
+                src={displayLogo} 
+                alt="Logo" 
                 className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
               />

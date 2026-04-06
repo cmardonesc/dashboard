@@ -7,16 +7,18 @@ import MedicaArea from './MedicaArea';
 import TecnicaArea from './TecnicaArea';
 import CargaTareasArea from './CargaTareasArea';
 import NutricionResumenGrupal from './NutricionResumenGrupal';
+import ClubBadge from './ClubBadge';
 import { useIFR, GPSData as IFRGPSData } from '../hooks/useIFR';
 
 interface ClubDashboardProps {
   userClub?: string;
   performanceRecords: AthletePerformanceRecord[];
+  clubs?: any[];
 }
 
 type ClubSection = 'carga' | 'nutricion' | 'medica' | 'tecnica' | 'evaluaciones';
 
-const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceRecords }) => {
+const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceRecords, clubs = [] }) => {
   const [activeSection, setActiveSection] = useState<ClubSection>('carga');
   const [subSection, setSubSection] = useState<string>('wellness');
   const [selectedClub, setSelectedClub] = useState<string>(userClub || 'Chile');
@@ -66,7 +68,7 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
     }
   }, [performanceRecords, activeSection, subSection]);
 
-  const clubs = useMemo(() => {
+  const availableClubs = useMemo(() => {
     const uniqueClubs = new Set<string>();
     performanceRecords.forEach(r => {
       if (r.player.club) uniqueClubs.add(r.player.club);
@@ -206,7 +208,7 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                          {record.player.club || 'S/D'}
+                          <ClubBadge clubName={record.player.club} clubs={clubs} logoSize="w-3 h-3" className="text-[10px] font-black text-slate-400 uppercase tracking-widest" />
                         </span>
                       </td>
                       {subSection === 'wellness' && (
@@ -372,6 +374,7 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
                 performanceRecords={performanceRecords} 
                 userRole="club"
                 userClub={userClub}
+                clubs={clubs}
               />
             ) : (
               <NutricionArea 
@@ -379,12 +382,13 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
                 initialTab={subSection === 'grupal' ? 'general' : 'individual'} 
                 userRole="club"
                 userClub={userClub}
+                clubs={clubs}
               />
             )}
           </div>
         );
       case 'medica':
-        return <MedicaArea performanceRecords={clubRecords} />;
+        return <MedicaArea performanceRecords={clubRecords} clubs={clubs} />;
       case 'tecnica':
         return (
           <div className="space-y-6">
@@ -451,7 +455,7 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
               onChange={(e) => setSelectedClub(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold text-sm outline-none appearance-none cursor-pointer hover:bg-white/10 transition-all"
             >
-              {clubs.map(club => (
+              {availableClubs.map(club => (
                 <option key={club} value={club} className="bg-[#0b1220] text-white">{club}</option>
               ))}
             </select>

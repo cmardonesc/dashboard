@@ -4,14 +4,16 @@ import { AthletePerformanceRecord, NutritionData } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
 import { normalizeClub } from '../lib/utils';
+import ClubBadge from './ClubBadge';
 
 interface NutricionResumenGrupalProps {
   performanceRecords: AthletePerformanceRecord[];
   userRole?: string;
   userClub?: string;
+  clubs?: any[];
 }
 
-const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ performanceRecords, userRole, userClub }) => {
+const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ performanceRecords, userRole, userClub, clubs = [] }) => {
   const [startDate, setStartDate] = useState<string>('2020-01-01');
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedClub, setSelectedClub] = useState<string>(userRole === 'club' && userClub ? userClub : 'TODOS');
@@ -68,7 +70,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     return Array.from(cats).sort((a, b) => b.localeCompare(a));
   }, [performanceRecords]);
 
-  const clubs = useMemo(() => {
+  const availableClubs = useMemo(() => {
     const c = new Set<string>();
     performanceRecords.forEach(r => {
       if (r.player.club) c.add(r.player.club);
@@ -249,7 +251,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
               {userRole === 'club' ? (
                 userClub && <option value={userClub}>{userClub}</option>
               ) : (
-                clubs.map(club => <option key={club} value={club}>{club}</option>)
+                availableClubs.map(club => <option key={club} value={club}>{club}</option>)
               )}
             </select>
           </div>
@@ -301,7 +303,11 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
                     <tr key={i} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-8 py-4">
                         <p className="text-xs font-black text-slate-900 uppercase italic">{displayName}</p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase">{displayClub} • Cat {item.player.anio}</p>
+                        <div className="flex items-center gap-1 mt-1">
+                          <ClubBadge clubName={displayClub} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase" />
+                          <span className="text-slate-300">•</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase">Cat {item.player.anio}</span>
+                        </div>
                       </td>
                       <td className="px-8 py-4">
                         <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{item.player.position || 'N/A'}</p>

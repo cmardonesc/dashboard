@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { normalizeClub } from '../lib/utils';
 import { getChartSummary } from '../services/geminiService';
 import { motion, AnimatePresence } from 'framer-motion';
+import ClubBadge from './ClubBadge';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Cell, BarChart, Bar, LineChart, Line, Legend,
@@ -137,9 +138,10 @@ interface VO2MaxData {
 interface SportsScienceAreaProps {
   userRole?: string;
   userClub?: string;
+  clubs?: any[];
 }
 
-const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClub }) => {
+const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClub, clubs = [] }) => {
   const [activeTab, setActiveTab] = useState<TabId>('huella');
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedAnios, setSelectedAnios] = useState<number[]>([]);
@@ -429,6 +431,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             allAntro={antropometria}
             allVo2={vo2maxData}
             allPlayers={anonymizedPlayers}
+            clubs={clubs}
           />
         )}
         {activeTab === 'individual' && (
@@ -438,6 +441,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             speed={speedData.filter(d => d.id_del_jugador === selectedPlayerId)}
             antropometria={antropometria.filter(d => d.id_del_jugador === selectedPlayerId)}
             vo2max={vo2maxData.filter(d => d.id_del_jugador === selectedPlayerId)}
+            clubs={clubs}
           />
         )}
         {activeTab === 'grupal' && (
@@ -578,7 +582,7 @@ const METRICS_OPTIONS = [
 
 const AthleteHuella = ({ 
   player, imtp, speed, antropometria, vo2max, 
-  allImtp, allSpeed, allAntro, allVo2, allPlayers 
+  allImtp, allSpeed, allAntro, allVo2, allPlayers, clubs 
 }: { 
   player?: PlayerData, 
   imtp: IMTPData[], 
@@ -589,7 +593,8 @@ const AthleteHuella = ({
   allSpeed: SpeedTestData[],
   allAntro: AntropometriaData[],
   allVo2: VO2MaxData[],
-  allPlayers: PlayerData[]
+  allPlayers: PlayerData[],
+  clubs: any[]
 }) => {
   if (!player) return (
     <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
@@ -643,7 +648,11 @@ const AthleteHuella = ({
                <span className="bg-slate-100 text-slate-500 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">ID: {player.id_del_jugador}</span>
             </div>
             <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter italic leading-none">{player.nombre} {player.apellido1}</h2>
-            <p className="text-slate-400 font-bold text-sm mt-1 uppercase tracking-widest">{player.posicion} • {player.club || player.club_name || 'S/D'}</p>
+            <div className="flex items-center gap-1 mt-1">
+              <span className="text-slate-400 font-bold text-sm uppercase tracking-widest">{player.posicion}</span>
+              <span className="text-slate-300">•</span>
+              <ClubBadge clubName={player.club || player.club_name} clubs={clubs} logoSize="w-3.5 h-3.5" className="text-slate-400 font-bold text-sm uppercase tracking-widest" />
+            </div>
             
             <div className="flex flex-wrap gap-6 mt-6">
               <div className="flex flex-col">
@@ -779,13 +788,14 @@ const AthleteHuella = ({
 };
 
 const IndividualDashboard = ({ 
-  player, imtp, speed, antropometria, vo2max
+  player, imtp, speed, antropometria, vo2max, clubs
 }: { 
   player?: PlayerData, 
   imtp: IMTPData[], 
   speed: SpeedTestData[], 
   antropometria: AntropometriaData[],
-  vo2max: VO2MaxData[]
+  vo2max: VO2MaxData[],
+  clubs: any[]
 }) => {
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>([
     'imtp_fuerza_n',
@@ -896,7 +906,10 @@ const IndividualDashboard = ({
               </span>
               <span className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <i className="fa-solid fa-building text-emerald-500"></i>
-                Club: {player.club || player.club_name || 'S/D'}
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-500">Club:</span>
+                  <ClubBadge clubName={player.club || player.club_name} clubs={clubs} logoSize="w-3 h-3" className="text-slate-900 font-bold" />
+                </div>
               </span>
             </div>
           </div>

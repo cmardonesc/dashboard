@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { AthletePerformanceRecord, Category, User, NutritionData } from '../types';
 import { supabase } from '../lib/supabase';
 import NutritionReport from './NutritionReport';
+import ClubBadge from './ClubBadge';
 import {
   LineChart,
   Line,
@@ -26,6 +27,7 @@ interface NutricionAreaProps {
   initialTab?: TabId;
   userRole?: string;
   userClub?: string;
+  clubs?: any[];
 }
 
 type TabId = 'general' | 'individual' | 'top10' | 'crecimiento';
@@ -52,7 +54,7 @@ const POSITION_ABBR: { [key: string]: string } = {
   'Sin definir': 'S/D',
 };
 
-const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initialTab = 'general', userRole, userClub }) => {
+const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initialTab = 'general', userRole, userClub, clubs = [] }) => {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
   const [searchTerm, setSearchTerm] = useState('');
@@ -629,6 +631,7 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
               history={individualRecord.history}
               player={selectedIndividual} 
               onClose={() => setSelectedIndividual(null)} 
+              clubs={clubs}
             />
           ) : selectedIndividual ? (
             <div className="py-24 bg-white rounded-[48px] border border-slate-100 shadow-sm text-center">
@@ -797,10 +800,10 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8 animate-in fade-in duration-500">
-            <RankingCard title="Masa Muscular (kg)" data={top10MuscleKg} field="masa_muscular_kg" unit="kg" color="red" icon="fa-weight-hanging" />
-            <RankingCard title="Masa Muscular (%)" data={top10MusclePct} field="masa_muscular_pct" unit="%" color="blue" icon="fa-dumbbell" />
-            <RankingCard title="Masa Adiposa (%)" data={top10AdiposePct} field="masa_adiposa_pct" unit="%" color="emerald" icon="fa-droplet-slash" inverted />
-            <RankingCard title="6 Pliegues (mm)" data={top10Pliegues6} field="sum_pliegues_6_mm" unit="mm" color="amber" icon="fa-ruler-horizontal" inverted />
+            <RankingCard title="Masa Muscular (kg)" data={top10MuscleKg} field="masa_muscular_kg" unit="kg" color="red" icon="fa-weight-hanging" clubs={clubs} />
+            <RankingCard title="Masa Muscular (%)" data={top10MusclePct} field="masa_muscular_pct" unit="%" color="blue" icon="fa-dumbbell" clubs={clubs} />
+            <RankingCard title="Masa Adiposa (%)" data={top10AdiposePct} field="masa_adiposa_pct" unit="%" color="emerald" icon="fa-droplet-slash" inverted clubs={clubs} />
+            <RankingCard title="6 Pliegues (mm)" data={top10Pliegues6} field="sum_pliegues_6_mm" unit="mm" color="amber" icon="fa-ruler-horizontal" inverted clubs={clubs} />
           </div>
         </div>
       )}
@@ -837,7 +840,11 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
                       .map(r => (
                         <button key={r.player.id} onClick={() => handleSelectAthleteForm(r.player)} className="p-4 bg-slate-50 hover:bg-red-50 rounded-2xl text-left transition-all border border-transparent hover:border-red-100 group">
                           <p className="text-xs font-black uppercase italic text-slate-900 group-hover:text-red-600 transition-colors">{r.player.name}</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">{r.player.club} | {r.player.position}</p>
+                          <div className="flex items-center gap-1">
+                            <ClubBadge clubName={r.player.club || r.player.club_name} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase" />
+                            <span className="text-slate-300">|</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">{r.player.position}</span>
+                          </div>
                         </button>
                       ))}
                   </div>
@@ -848,7 +855,7 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
                     <div className="w-12 h-12 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black italic text-lg shadow-lg">{selectedAthleteForm.name?.charAt(0)}</div>
                     <div>
                       <p className="text-white text-sm font-black uppercase italic leading-none">{selectedAthleteForm.name}</p>
-                      <p className="text-red-500 text-[9px] font-black uppercase tracking-widest mt-1">{selectedAthleteForm.club}</p>
+                      <ClubBadge clubName={selectedAthleteForm.club} clubs={clubs} logoSize="w-3 h-3" className="text-red-500 text-[9px] font-black uppercase tracking-widest mt-1" />
                     </div>
                   </div>
                   <button onClick={() => setSelectedAthleteForm(null)} className="text-white/20 hover:text-white transition-colors p-2"><i className="fa-solid fa-rotate-left"></i></button>
@@ -1081,7 +1088,7 @@ function InputGroup({ label, type, value, onChange }: { label: string, type: str
   );
 }
 
-function RankingCard({ title, data, field, unit, color, icon, inverted = false }: { title: string, data: any[], field: string, unit: string, color: string, icon: string, inverted?: boolean }) {
+function RankingCard({ title, data, field, unit, color, icon, clubs, inverted = false }: { title: string, data: any[], field: string, unit: string, color: string, icon: string, clubs: any[], inverted?: boolean }) {
   const colorMap: Record<string, string> = {
     red: 'bg-red-600 text-red-600',
     blue: 'bg-blue-600 text-blue-600',
@@ -1107,7 +1114,7 @@ function RankingCard({ title, data, field, unit, color, icon, inverted = false }
                 <span className="text-[10px] font-black text-slate-300 w-4 group-hover:text-red-500">#{i + 1}</span>
                 <div>
                   <p className="text-xs font-black text-slate-900 uppercase italic leading-none mb-1 group-hover:text-white">{item.player.name}</p>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-500">{item.player.club}</p>
+                  <ClubBadge clubName={item.player.club} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-500" />
                 </div>
               </div>
               <span className={`text-sm font-black italic tracking-tighter ${colorMap[color].split(' ')[1]} group-hover:text-white`}>

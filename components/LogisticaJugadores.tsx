@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { User, UserRole } from '../types';
 import { useClubs } from '../lib/useClubs';
+import ClubBadge from './ClubBadge';
 
 const LogisticaJugadores: React.FC = () => {
   const [players, setPlayers] = useState<User[]>([]);
@@ -264,7 +265,7 @@ const LogisticaJugadores: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-8 py-6">
-                      <p className="text-[11px] font-black text-slate-700 uppercase">{player.club || 'S/C'}</p>
+                      <ClubBadge clubName={player.club} clubs={dbClubs} logoSize="w-3 h-3" className="text-[11px] font-black text-slate-700 uppercase" />
                     </td>
                     <td className="px-8 py-6">
                       <p className="text-[11px] font-black text-slate-700 uppercase">{player.position || 'S/D'}</p>

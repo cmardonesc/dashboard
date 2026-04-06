@@ -2,8 +2,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { Category, CATEGORY_ID_MAP } from '../types';
+import ClubBadge from './ClubBadge';
 
-export default function VO2MaxArea() {
+interface VO2MaxAreaProps {
+  clubs?: any[];
+}
+
+export default function VO2MaxArea({ clubs = [] }: VO2MaxAreaProps) {
   const [loading, setLoading] = useState(true);
   const [tests, setTests] = useState<any[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([Category.SUB_17]);
@@ -24,7 +29,8 @@ export default function VO2MaxArea() {
             nombre,
             apellido1,
             apellido2,
-            anio
+            anio,
+            club
           )
         `)
         .order('fecha', { ascending: false });
@@ -149,7 +155,10 @@ export default function VO2MaxArea() {
                 filteredTests.map((test, idx) => (
                   <tr key={test.id} className="hover:bg-slate-50 transition-colors group">
                     <td className="px-6 py-5 text-left sticky left-0 bg-white group-hover:bg-slate-50 border-r border-slate-50">
-                      {test.players.nombre} {test.players.apellido1}
+                      <p className="font-black text-slate-900 uppercase italic text-[13px] leading-none mb-1 group-hover:text-red-600 transition-colors">
+                        {test.players.nombre} {test.players.apellido1}
+                      </p>
+                      <ClubBadge clubName={test.players.club || 'Sin Club'} clubs={clubs} logoSize="w-3 h-3" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest" />
                     </td>
                     <td className="px-4 py-5 text-slate-500">{new Date(test.fecha).toLocaleDateString()}</td>
                     <td className="px-4 py-5">{test.peso} kg</td>
