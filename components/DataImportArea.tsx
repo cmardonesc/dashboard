@@ -243,7 +243,7 @@ export default function DataImportArea() {
       const apellido1 = normalizeString(p.apellido1 || '');
       const apellido2 = normalizeString(p.apellido2 || '');
       
-      const pFullName = `${nombre} ${apellido1} ${apellido2}`.trim();
+      const pFullName = `${nombre} ${apellido1}`.trim();
       const pShortName = `${nombre} ${apellido1}`.trim();
       
       // Check for exact match of normalized full name or short name

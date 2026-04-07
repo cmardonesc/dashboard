@@ -156,7 +156,7 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, clubs
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-slate-900 uppercase italic tracking-tight">
-                      {player.nombre} {player.apellido1} {player.apellido2}
+                      {player.nombre} {player.apellido1}
                     </h3>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{player.position || 'S/D'}</span>
@@ -205,7 +205,6 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, clubs
                           </div>
                           <div>
                             <p className="text-xs font-black text-slate-900 uppercase italic tracking-tight">{player.nombre} {player.apellido1}</p>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{player.apellido2 || ''}</p>
                           </div>
                         </div>
                       </td>

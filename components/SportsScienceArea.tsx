@@ -894,7 +894,7 @@ const IndividualDashboard = ({
             <i className="fa-solid fa-user text-3xl"></i>
           </div>
           <div>
-            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">{player.nombre} {player.apellido1} {player.apellido2}</h2>
+            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">{player.nombre} {player.apellido1}</h2>
             <div className="flex flex-wrap gap-4 mt-2">
               <span className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <i className="fa-solid fa-shield-halved text-red-500"></i>

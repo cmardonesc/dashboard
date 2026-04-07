@@ -226,7 +226,7 @@ export default function App() {
         return {
           id: `player-${pid}`,
           id_del_jugador: pid ? Number(pid) : undefined,
-          name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${pid}`,
+          name: `${p.nombre || ''} ${p.apellido1 || ''}`.trim() || `Atleta #${pid}`,
           nombre: p.nombre,
           apellido1: p.apellido1,
           apellido2: p.apellido2,

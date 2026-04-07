@@ -672,7 +672,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         if (!matchesCategory) return false;
       }
 
-      const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim().toLowerCase() : 'atleta desconocido';
+      const playerName = player ? `${player.nombre} ${player.apellido1}`.trim().toLowerCase() : 'atleta desconocido';
       const matchesSearch = playerName.includes(athleteSearch.toLowerCase());
       const duration = row.minutos || 0;
       const matchesDuration = duration >= minDuration && duration <= maxDuration;
@@ -1028,7 +1028,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                <tbody className="divide-y divide-slate-100 font-black italic uppercase text-[10px] md:text-xs">
                  {filteredGpsImport.map((row, idx) => {
                    const player = row.players;
-                   const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim() : `ID: ${row.id_del_jugador}`;
+                   const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.id_del_jugador}`;
                    const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
                    
                    const isHighlighted = highlightPlayerId && Number(row.id_del_jugador) === Number(highlightPlayerId);

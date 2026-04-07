@@ -51,7 +51,7 @@ const LogisticaJugadores: React.FC = () => {
       const mapped: User[] = (data || []).map((p: any) => ({
         id: `player-${p.id_del_jugador}`,
         id_del_jugador: p.id_del_jugador,
-        name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim(),
+        name: `${p.nombre || ''} ${p.apellido1 || ''}`.trim(),
         nombre: p.nombre,
         apellido1: p.apellido1,
         apellido2: p.apellido2,

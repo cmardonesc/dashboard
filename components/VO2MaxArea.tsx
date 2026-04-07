@@ -46,7 +46,7 @@ export default function VO2MaxArea({ clubs = [] }: VO2MaxAreaProps) {
 
   const filteredTests = useMemo(() => {
     return tests.filter(t => {
-      const fullName = `${t.players.nombre} ${t.players.apellido1} ${t.players.apellido2 || ''}`.toLowerCase();
+      const fullName = `${t.players.nombre} ${t.players.apellido1}`.toLowerCase();
       const matchesSearch = fullName.includes(searchTerm.toLowerCase());
       
       // Inferir categoría para filtrar
