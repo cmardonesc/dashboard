@@ -76,7 +76,34 @@ export interface User {
   fecha_nacimiento?: string;
   anio?: number; 
   celular?: string;
+  foto_url?: string;
 }
+
+export type MenuId =
+  | 'inicio'
+  | 'planificacion_anual'
+  | 'tecnica'
+  | 'fisica_wellness'
+  | 'fisica_pse'
+  | 'fisica_carga_externa_total'
+  | 'fisica_carga_externa_tareas'
+  | 'fisica_gps_intelligence'
+  | 'fisica_reporte'
+  | 'fisica_vo2max'
+  | 'medica'
+  | 'nutricion_resumen_grupal'
+  | 'nutricion_comparativo'
+  | 'nutricion_individual'
+  | 'nutricion_top10'
+  | 'nutricion_maduracion'
+  | 'competencia'
+  | 'citaciones'
+  | 'desconvocatoria'
+  | 'logistica_jugadores'
+  | 'usuarios'
+  | 'logs'
+  | 'importar_datos'
+  | 'sports_science';
 
 export interface CitacionDB {
   id: string;
@@ -150,6 +177,8 @@ export interface GPSData {
   intensity: number;
   // Nuevos campos para IFR
   m_por_min?: number;
+  dist_total_m?: number;
+  vel_max_kmh?: number;
   dist_ai_m_15_kmh?: number;
   dist_mai_m_20_kmh?: number;
   dist_sprint_m_25_kmh?: number;
@@ -201,5 +230,6 @@ export interface ItineraryActivity {
   type: string;
   location: string;
   emoji: string;
+  grupo?: string;
   isCustom?: boolean;
 }

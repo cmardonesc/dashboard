@@ -2,14 +2,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeClub } from '../lib/utils';
-import { getChartSummary } from '../services/geminiService';
-import { motion, AnimatePresence } from 'framer-motion';
+import { getChartSummary, getAthleteFootprintSummary } from '../services/geminiService';
+import { motion, AnimatePresence } from 'motion/react';
 import ClubBadge from './ClubBadge';
+import Markdown from 'react-markdown';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Cell, BarChart, Bar, LineChart, Line, Legend,
   ComposedChart, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  ReferenceLine, ErrorBar
+  ReferenceLine, ErrorBar, AreaChart
 } from 'recharts';
 
 type TabId = 'huella' | 'individual' | 'grupal' | 'laboratorio' | 'salud' | 'tabla' | 'categorias' | 'insights';
@@ -135,6 +136,23 @@ interface VO2MaxData {
   jugador?: string;
 }
 
+interface MedicalReport {
+  id: string;
+  id_del_jugador: number;
+  report_date: string;
+  observation: string;
+  diagnostico_medico?: string;
+  severity: string;
+  created_at: string;
+}
+
+interface InternalLoadData {
+  id_del_jugador: number;
+  session_date: string;
+  load: number;
+  rpe: number;
+}
+
 interface SportsScienceAreaProps {
   userRole?: string;
   userClub?: string;
@@ -155,6 +173,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   const [vo2maxData, setVo2maxData] = useState<VO2MaxData[]>([]);
   const [injuries, setInjuries] = useState<InjuryData[]>([]);
   const [gpsData, setGpsData] = useState<GPSData[]>([]);
+  const [medicalReports, setMedicalReports] = useState<MedicalReport[]>([]);
+  const [internalLoads, setInternalLoads] = useState<InternalLoadData[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -171,7 +191,9 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         { data: aData },
         { data: vData },
         { data: injData },
-        { data: gData }
+        { data: gData },
+        { data: mData },
+        { data: lData }
       ] = await Promise.all([
         supabase.from('players').select('*'),
         supabase.from('evaluaciones_imtp_salto').select('*'),
@@ -179,7 +201,9 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         supabase.from('antropometria').select('*'),
         supabase.from('vo2max_tests').select('*'),
         supabase.from('lesionados').select('*'),
-        supabase.from('gps_import').select('*')
+        supabase.from('gps_import').select('*'),
+        supabase.from('medical_daily_reports').select('*'),
+        supabase.from('internal_load').select('*')
       ]);
 
       if (pData) {
@@ -207,6 +231,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
       if (vData) setVo2maxData(vData);
       if (injData) setInjuries(injData);
       if (gData) setGpsData(gData);
+      if (mData) setMedicalReports(mData);
+      if (lData) setInternalLoads(lData);
     } catch (err) {
       console.error("Error fetching sports science data:", err);
     } finally {
@@ -426,6 +452,9 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             speed={speedData.filter(d => d.id_del_jugador === selectedPlayerId)}
             antropometria={antropometria.filter(d => d.id_del_jugador === selectedPlayerId)}
             vo2max={vo2maxData.filter(d => d.id_del_jugador === selectedPlayerId)}
+            medicalReports={medicalReports.filter(d => d.id_del_jugador === selectedPlayerId)}
+            internalLoads={internalLoads.filter(d => d.id_del_jugador === selectedPlayerId)}
+            gps={gpsData.filter(d => d.id_del_jugador === selectedPlayerId)}
             allImtp={imtpData}
             allSpeed={speedData}
             allAntro={antropometria}
@@ -581,7 +610,7 @@ const METRICS_OPTIONS = [
 ];
 
 const AthleteHuella = ({ 
-  player, imtp, speed, antropometria, vo2max, 
+  player, imtp, speed, antropometria, vo2max, medicalReports, internalLoads, gps,
   allImtp, allSpeed, allAntro, allVo2, allPlayers, clubs 
 }: { 
   player?: PlayerData, 
@@ -589,6 +618,9 @@ const AthleteHuella = ({
   speed: SpeedTestData[], 
   antropometria: AntropometriaData[],
   vo2max: VO2MaxData[],
+  medicalReports: MedicalReport[],
+  internalLoads: InternalLoadData[],
+  gps: GPSData[],
   allImtp: IMTPData[],
   allSpeed: SpeedTestData[],
   allAntro: AntropometriaData[],
@@ -596,6 +628,36 @@ const AthleteHuella = ({
   allPlayers: PlayerData[],
   clubs: any[]
 }) => {
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [loadingAi, setLoadingAi] = useState(false);
+
+  useEffect(() => {
+    if (player) {
+      generateAiSummary();
+    }
+  }, [player]);
+
+  const generateAiSummary = async () => {
+    if (!player) return;
+    setLoadingAi(true);
+    try {
+      const metrics = {
+        imtp: imtp.slice(-1)[0],
+        speed: speed.slice(-1)[0],
+        antropometria: antropometria.slice(-1)[0],
+        vo2max: vo2max.slice(-1)[0],
+        recentMedical: medicalReports.slice(-3),
+        recentLoads: internalLoads.slice(-7)
+      };
+      const summary = await getAthleteFootprintSummary(player, metrics);
+      setAiSummary(summary);
+    } catch (err) {
+      console.error("Error generating AI summary:", err);
+    } finally {
+      setLoadingAi(false);
+    }
+  };
+
   if (!player) return (
     <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
       <i className="fa-solid fa-user-magnifying-glass text-4xl text-slate-200 mb-4"></i>
@@ -608,7 +670,8 @@ const AthleteHuella = ({
   const latestAntro = [...antropometria].sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
   const latestVo2 = [...vo2max].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
 
-  const playerYear = (player as any).anio ? Number((player as any).anio) : new Date(player.fecha_nacimiento).getFullYear();
+  const playerYearRaw = (player as any).anio ? Number((player as any).anio) : new Date(player.fecha_nacimiento).getFullYear();
+  const playerYear = isNaN(playerYearRaw) ? '-' : playerYearRaw;
   const categoryPlayers = allPlayers.filter(p => {
     const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
     return pYear === playerYear;
@@ -616,17 +679,20 @@ const AthleteHuella = ({
   const categoryPlayerIds = categoryPlayers.map(p => p.id_del_jugador);
 
   const getAvg = (data: any[], key: string) => {
-    const values = data.filter(d => categoryPlayerIds.includes(d.id_del_jugador) && d[key] != null).map(d => d[key]);
+    const values = data
+      .filter(d => categoryPlayerIds.includes(d.id_del_jugador) && d[key] != null && !isNaN(Number(d[key])))
+      .map(d => Number(d[key]));
     if (values.length === 0) return 0;
-    return values.reduce((a, b) => a + b, 0) / values.length;
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    return isNaN(avg) ? 0 : avg;
   };
 
   const radarData = [
-    { subject: 'Potencia', A: latestImtp?.imtp_fuerza_n || 0, B: getAvg(allImtp, 'imtp_fuerza_n'), fullMark: 5000 },
-    { subject: 'Velocidad', A: latestSpeed?.vel_10m || 0, B: getAvg(allSpeed, 'vel_10m'), fullMark: 10 },
-    { subject: 'Resistencia', A: latestVo2?.vo2_max || 0, B: getAvg(allVo2, 'vo2_max'), fullMark: 80 },
-    { subject: 'Masa Musc.', A: latestAntro?.masa_muscular_pct || 0, B: getAvg(allAntro, 'masa_muscular_pct'), fullMark: 60 },
-    { subject: 'Masa Grasa', A: 100 - (latestAntro?.masa_adiposa_pct || 0), B: 100 - getAvg(allAntro, 'masa_adiposa_pct'), fullMark: 100 },
+    { subject: 'Potencia', A: (latestImtp?.imtp_fuerza_n != null && !isNaN(Number(latestImtp.imtp_fuerza_n))) ? Number(latestImtp.imtp_fuerza_n) : 0, B: getAvg(allImtp, 'imtp_fuerza_n'), fullMark: 5000 },
+    { subject: 'Velocidad', A: (latestSpeed?.vel_10m != null && !isNaN(Number(latestSpeed.vel_10m))) ? Number(latestSpeed.vel_10m) : 0, B: getAvg(allSpeed, 'vel_10m'), fullMark: 10 },
+    { subject: 'Resistencia', A: (latestVo2?.vo2_max != null && !isNaN(Number(latestVo2.vo2_max))) ? Number(latestVo2.vo2_max) : 0, B: getAvg(allVo2, 'vo2_max'), fullMark: 80 },
+    { subject: 'Masa Musc.', A: (latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct))) ? Number(latestAntro.masa_muscular_pct) : 0, B: getAvg(allAntro, 'masa_muscular_pct'), fullMark: 60 },
+    { subject: 'Masa Grasa', A: (latestAntro?.masa_adiposa_pct != null && !isNaN(Number(latestAntro.masa_adiposa_pct))) ? 100 - Number(latestAntro.masa_adiposa_pct) : 0, B: 100 - getAvg(allAntro, 'masa_adiposa_pct'), fullMark: 100 },
   ];
 
   const normalizedRadarData = radarData.map(d => ({
@@ -635,149 +701,240 @@ const AthleteHuella = ({
     B: (d.B / d.fullMark) * 100,
   }));
 
+  const recentLoadsData = internalLoads.slice(-14).map(l => ({
+    date: l.session_date.split('T')[0],
+    load: l.load
+  }));
+
   return (
     <div className="space-y-8">
-      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-wrap items-center justify-between gap-8">
-        <div className="flex items-center gap-6">
-          <div className="w-32 h-32 bg-slate-50 rounded-[32px] flex items-center justify-center text-slate-200 border border-slate-100 relative overflow-hidden">
-            <i className="fa-solid fa-user text-5xl"></i>
+      {/* HEADER BENTO STYLE */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-3 bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-red-50 rounded-full -mr-32 -mt-32 blur-3xl opacity-50"></div>
+          <div className="w-40 h-40 bg-slate-900 rounded-[40px] flex items-center justify-center text-white border-4 border-white shadow-2xl relative z-10">
+            <i className="fa-solid fa-user text-6xl opacity-20 absolute"></i>
+            <span className="text-5xl font-black italic">{player.nombre.charAt(0)}{player.apellido1.charAt(0)}</span>
           </div>
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-               <span className="bg-red-600 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Atleta Élite</span>
-               <span className="bg-slate-100 text-slate-500 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">ID: {player.id_del_jugador}</span>
+          <div className="relative z-10 flex-1">
+            <div className="flex items-center gap-3 mb-3">
+               <span className="bg-red-600 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-red-200">Elite Performance</span>
+               <span className="bg-slate-900 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">ID: {player.id_del_jugador}</span>
             </div>
-            <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter italic leading-none">{player.nombre} {player.apellido1}</h2>
-            <div className="flex items-center gap-1 mt-1">
-              <span className="text-slate-400 font-bold text-sm uppercase tracking-widest">{player.posicion}</span>
-              <span className="text-slate-300">•</span>
-              <ClubBadge clubName={player.club || player.club_name} clubs={clubs} logoSize="w-3.5 h-3.5" className="text-slate-400 font-bold text-sm uppercase tracking-widest" />
+            <h2 className="text-4xl md:text-5xl font-black text-slate-900 uppercase tracking-tighter italic leading-none mb-2">{player.nombre} {player.apellido1}</h2>
+            <div className="flex items-center gap-3">
+              <span className="text-slate-400 font-black text-sm uppercase tracking-widest">{player.posicion}</span>
+              <span className="text-slate-200">|</span>
+              <ClubBadge clubName={player.club || player.club_name} clubs={clubs} logoSize="w-5 h-5" className="text-slate-600 font-black text-sm uppercase tracking-widest" />
             </div>
             
-            <div className="flex flex-wrap gap-6 mt-6">
-              <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Año Nac.</span>
-                <span className="text-lg font-black italic text-slate-900">{playerYear}</span>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8">
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Año Nac.</p>
+                <p className="text-xl font-black italic text-slate-900">{playerYear}</p>
               </div>
-              <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Talla (cm)</span>
-                <span className="text-lg font-black italic text-slate-900">{latestAntro?.talla_cm || '-'}</span>
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Talla (cm)</p>
+                <p className="text-xl font-black italic text-slate-900">
+                  {(latestAntro?.talla_cm != null && !isNaN(Number(latestAntro.talla_cm))) ? latestAntro.talla_cm : '-'}
+                </p>
               </div>
-              <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Peso (kg)</span>
-                <span className="text-lg font-black italic text-slate-900">{latestAntro?.masa_corporal_kg || '-'}</span>
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Peso (kg)</p>
+                <p className="text-xl font-black italic text-slate-900">
+                  {(latestAntro?.masa_corporal_kg != null && !isNaN(Number(latestAntro.masa_corporal_kg))) ? latestAntro.masa_corporal_kg : '-'}
+                </p>
               </div>
-              <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Maduración (PHV)</span>
-                <span className="text-lg font-black italic text-emerald-600">{latestAntro?.phv_media?.toFixed(2) || '-'}</span>
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">PHV Status</p>
+                <p className="text-xl font-black italic text-emerald-600">
+                  {(latestAntro?.phv_media != null && !isNaN(Number(latestAntro.phv_media))) 
+                    ? Number(latestAntro.phv_media).toFixed(2) 
+                    : '-'}
+                </p>
               </div>
             </div>
           </div>
         </div>
-        
-        <div className="flex flex-col items-end gap-4">
-          <div className="bg-emerald-50 border border-emerald-100 px-6 py-4 rounded-[24px] text-right">
-            <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1">Estado de Disponibilidad</p>
-            <div className="flex items-center gap-2 justify-end">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-              <span className="text-xl font-black text-emerald-700 uppercase italic tracking-tighter">Disponible</span>
+
+        <div className="bg-emerald-600 rounded-[40px] p-8 text-white shadow-xl shadow-emerald-100 flex flex-col justify-between relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60 mb-2">Disponibilidad</p>
+            <h3 className="text-3xl font-black italic uppercase leading-none tracking-tighter">Apto para<br/>Competición</h3>
+          </div>
+          <div className="mt-8">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
+              <span className="text-xs font-black uppercase tracking-widest">Disponible 100%</span>
+            </div>
+            <div className="h-1 bg-white/20 rounded-full overflow-hidden">
+              <div className="h-full bg-white w-full"></div>
             </div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white rounded-[40px] p-10 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-10">
-            <div>
-              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">Huella de Rendimiento</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Comparativa vs Promedio Categoría</p>
+        {/* AI INSIGHTS BENTO */}
+        <div className="lg:col-span-2 space-y-8">
+          <div className="bg-[#0b1220] rounded-[40px] p-10 text-white shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-8">
+              <i className="fa-solid fa-sparkles text-red-600 text-3xl animate-pulse"></i>
             </div>
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-red-600 rounded-full"></div>
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Atleta</span>
+            <h3 className="text-xl font-black uppercase tracking-tighter italic mb-6 flex items-center gap-3">
+              <span className="w-2 h-6 bg-red-600 rounded-full"></span>
+              Perfil Ejecutivo IA
+            </h3>
+            {loadingAi ? (
+              <div className="py-12 flex flex-col items-center justify-center space-y-4">
+                <div className="w-10 h-10 border-2 border-white/10 border-t-red-600 rounded-full animate-spin"></div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Analizando huella digital...</p>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-slate-200 rounded-full"></div>
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Promedio</span>
+            ) : (
+              <div className="prose prose-invert max-w-none prose-sm">
+                <Markdown>{aiSummary || "No hay datos suficientes para generar el perfil."}</Markdown>
               </div>
-            </div>
+            )}
           </div>
 
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="80%" data={normalizedRadarData}>
-                <PolarGrid stroke="#f1f5f9" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} />
-                <Radar name="Atleta" dataKey="A" stroke="#dc2626" fill="#dc2626" fillOpacity={0.6} />
-                <Radar name="Promedio" dataKey="B" stroke="#e2e8f0" fill="#e2e8f0" fillOpacity={0.4} />
-              </RadarChart>
-            </ResponsiveContainer>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <i className="fa-solid fa-heart-pulse text-red-600"></i>
+                Historial Médico Reciente
+              </h3>
+              <div className="space-y-4">
+                {medicalReports.length > 0 ? (
+                  medicalReports.slice(0, 3).map((report, idx) => (
+                    <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{report.report_date}</span>
+                        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${report.severity === 'high' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                          {report.severity}
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-slate-700 leading-relaxed">{report.diagnostico_medico || report.observation}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-10 text-center">
+                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Sin incidencias médicas</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <i className="fa-solid fa-gauge-high text-blue-600"></i>
+                Tendencia de Carga (14d)
+              </h3>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={recentLoadsData}>
+                    <defs>
+                      <linearGradient id="colorLoad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="date" hide />
+                    <YAxis hide />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#0b1220', border: 'none', borderRadius: '12px', fontSize: '10px', color: '#fff' }}
+                      itemStyle={{ color: '#fff', fontWeight: 'bold' }}
+                    />
+                    <Area type="monotone" dataKey="load" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorLoad)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 flex justify-between items-center">
+                <div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Carga Media</p>
+                  <p className="text-lg font-black italic text-slate-900">
+                    {(() => {
+                      const validLoads = internalLoads.filter(l => l.load != null && !isNaN(Number(l.load)));
+                      if (validLoads.length === 0) return 0;
+                      const avg = validLoads.reduce((a, b) => a + Number(b.load), 0) / validLoads.length;
+                      return isNaN(avg) ? 0 : Math.round(avg);
+                    })()}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Estado</p>
+                  <p className="text-xs font-black italic text-emerald-600 uppercase">Estable</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
+        {/* PERFORMANCE RADAR BENTO */}
         <div className="space-y-8">
-          <div className="bg-slate-900 rounded-[40px] p-8 text-white">
-            <h3 className="text-lg font-black uppercase tracking-tighter italic mb-6">Métricas Clave</h3>
-            <div className="space-y-6">
-              <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">VO2 Max</span>
-                <span className="text-xl font-black italic">{latestVo2?.vo2_max || '-'} <span className="text-[10px] text-slate-500 not-italic">ml/kg/min</span></span>
+          <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-8 flex items-center gap-2">
+              <i className="fa-solid fa-radar text-red-600"></i>
+              Huella de Rendimiento
+            </h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="80%" data={normalizedRadarData}>
+                  <PolarGrid stroke="#f1f5f9" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 9, fontWeight: 900 }} />
+                  <Radar name="Atleta" dataKey="A" stroke="#dc2626" fill="#dc2626" fillOpacity={0.6} />
+                  <Radar name="Promedio" dataKey="B" stroke="#e2e8f0" fill="#e2e8f0" fillOpacity={0.4} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-6 space-y-3">
+              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">VO2 Max</span>
+                <span className="text-sm font-black italic text-slate-900">
+                  {(latestVo2?.vo2_max != null && !isNaN(Number(latestVo2.vo2_max))) ? latestVo2.vo2_max : '-'}
+                </span>
               </div>
-              <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vel. Máxima</span>
-                <span className="text-xl font-black italic">{latestSpeed?.vel_10m || '-'} <span className="text-[10px] text-slate-500 not-italic">km/h</span></span>
+              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Vel. 10m</span>
+                <span className="text-sm font-black italic text-slate-900">
+                  {(latestSpeed?.vel_10m != null && !isNaN(Number(latestSpeed.vel_10m))) ? `${latestSpeed.vel_10m} km/h` : '-'}
+                </span>
               </div>
-              <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fuerza IMTP</span>
-                <span className="text-xl font-black italic">{latestImtp?.imtp_fuerza_n || '-'} <span className="text-[10px] text-slate-500 not-italic">N</span></span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">% Grasa</span>
-                <span className="text-xl font-black italic text-red-500">{latestAntro?.masa_adiposa_pct || '-'}%</span>
+              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Fuerza IMTP</span>
+                <span className="text-sm font-black italic text-slate-900">
+                  {(latestImtp?.imtp_fuerza_n != null && !isNaN(Number(latestImtp.imtp_fuerza_n))) ? `${latestImtp.imtp_fuerza_n} N` : '-'}
+                </span>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic mb-6">Estado Wellness</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-50 rounded-2xl p-4">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Fatiga</p>
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 w-[80%]"></div>
-                  </div>
-                  <span className="text-xs font-black italic text-slate-700">8/10</span>
-                </div>
+          <div className="bg-slate-900 rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden">
+            <div className="absolute bottom-0 right-0 w-32 h-32 bg-red-600/20 rounded-full -mr-16 -mb-16 blur-2xl"></div>
+            <h3 className="text-sm font-black uppercase tracking-widest mb-6">Métricas Antropométricas</h3>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">% Grasa</p>
+                <p className="text-2xl font-black italic text-red-500">
+                  {(latestAntro?.masa_adiposa_pct != null && !isNaN(Number(latestAntro.masa_adiposa_pct))) ? `${latestAntro.masa_adiposa_pct}%` : '-'}
+                </p>
               </div>
-              <div className="bg-slate-50 rounded-2xl p-4">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Sueño</p>
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 w-[70%]"></div>
-                  </div>
-                  <span className="text-xs font-black italic text-slate-700">7/10</span>
-                </div>
+              <div>
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">% Muscular</p>
+                <p className="text-2xl font-black italic text-emerald-500">
+                  {(latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct))) ? `${latestAntro.masa_muscular_pct}%` : '-'}
+                </p>
               </div>
-              <div className="bg-slate-50 rounded-2xl p-4">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Estrés</p>
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-500 w-[40%]"></div>
-                  </div>
-                  <span className="text-xs font-black italic text-slate-700">4/10</span>
-                </div>
+              <div>
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Índice IMO</p>
+                <p className="text-2xl font-black italic">
+                  {(latestAntro?.indice_imo != null && !isNaN(Number(latestAntro.indice_imo))) ? latestAntro.indice_imo : '-'}
+                </p>
               </div>
-              <div className="bg-slate-50 rounded-2xl p-4">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Dolor Musc.</p>
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 w-[90%]"></div>
-                  </div>
-                  <span className="text-xs font-black italic text-slate-700">9/10</span>
-                </div>
+              <div>
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Somatotipo</p>
+                <p className="text-xs font-black italic uppercase text-slate-400">Meso-Ecto</p>
               </div>
             </div>
           </div>
@@ -852,7 +1009,7 @@ const IndividualDashboard = ({
     }
 
     return sourceData
-      .filter(d => d[metricKey] !== undefined && d[metricKey] !== null)
+      .filter(d => d[metricKey] !== undefined && d[metricKey] !== null && !isNaN(Number(d[metricKey])))
       .map(d => ({
         date: new Date(d[dateKey]).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
         value: d[metricKey],
@@ -894,7 +1051,7 @@ const IndividualDashboard = ({
             <i className="fa-solid fa-user text-3xl"></i>
           </div>
           <div>
-            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">{player.nombre} {player.apellido1}</h2>
+            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">{player.nombre} {player.apellido1} {player.apellido2}</h2>
             <div className="flex flex-wrap gap-4 mt-2">
               <span className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <i className="fa-solid fa-shield-halved text-red-500"></i>
@@ -902,7 +1059,7 @@ const IndividualDashboard = ({
               </span>
               <span className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <i className="fa-solid fa-calendar text-blue-500"></i>
-                Año: {new Date(player.fecha_nacimiento).getFullYear()}
+                Año: {player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : ((player as any).anio ? Number((player as any).anio) : '-')}
               </span>
               <span className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <i className="fa-solid fa-building text-emerald-500"></i>
@@ -1205,7 +1362,7 @@ const POSITION_ABBR: { [key: string]: string } = {
 };
 
 const getPerformanceColor = (value: number, type: 'fuerza_peak' | 'fuerza_relativa' | 'altura_salto' | 'rsi_mod') => {
-  if (value === undefined || value === null || value === 0) return { bg: 'bg-slate-100', text: 'text-slate-400', label: '-' };
+  if (value === undefined || value === null || value === 0 || isNaN(value)) return { bg: 'bg-slate-100', text: 'text-slate-400', label: '-' };
 
   const config = {
     fuerza_peak: [
@@ -1399,11 +1556,11 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
                 return (
                   <div className="bg-white p-4 rounded-2xl shadow-xl border border-slate-100 text-[10px] font-black uppercase tracking-widest space-y-1">
                     <p className="text-slate-900 border-b border-slate-50 pb-1 mb-1">{posData.name}</p>
-                    <p className="text-slate-400">Max (Whisker): <span className="text-slate-900">{posData.max.toFixed(2)}</span></p>
-                    <p className="text-slate-400">Q3: <span className="text-slate-900">{posData.q3.toFixed(2)}</span></p>
-                    <p className="text-red-600 font-bold">Mediana: <span>{posData.median.toFixed(2)}</span></p>
-                    <p className="text-slate-400">Q1: <span className="text-slate-900">{posData.q1.toFixed(2)}</span></p>
-                    <p className="text-slate-400">Min (Whisker): <span className="text-slate-900">{posData.min.toFixed(2)}</span></p>
+                    <p className="text-slate-400">Max (Whisker): <span className="text-slate-900">{(posData.max != null && !isNaN(Number(posData.max))) ? Number(posData.max).toFixed(2) : '-'}</span></p>
+                    <p className="text-slate-400">Q3: <span className="text-slate-900">{(posData.q3 != null && !isNaN(Number(posData.q3))) ? Number(posData.q3).toFixed(2) : '-'}</span></p>
+                    <p className="text-red-600 font-bold">Mediana: <span>{(posData.median != null && !isNaN(Number(posData.median))) ? Number(posData.median).toFixed(2) : '-'}</span></p>
+                    <p className="text-slate-400">Q1: <span className="text-slate-900">{(posData.q1 != null && !isNaN(Number(posData.q1))) ? Number(posData.q1).toFixed(2) : '-'}</span></p>
+                    <p className="text-slate-400">Min (Whisker): <span className="text-slate-900">{(posData.min != null && !isNaN(Number(posData.min))) ? Number(posData.min).toFixed(2) : '-'}</span></p>
                     {posData.outliers.length > 0 && (
                       <p className="text-red-500 pt-1 border-t border-slate-50 mt-1">Outliers: {posData.outliers.length}</p>
                     )}
@@ -2026,11 +2183,15 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-slate-900 rounded-3xl p-6 text-white">
                   <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Promedio (μ)</p>
-                  <p className="text-3xl font-black italic tracking-tighter">{stats.avg.toFixed(2)}</p>
+                  <p className="text-3xl font-black italic tracking-tighter">
+                    {(stats.avg != null && !isNaN(Number(stats.avg))) ? Number(stats.avg).toFixed(2) : '-'}
+                  </p>
                 </div>
                 <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Desv. Estándar (σ)</p>
-                  <p className="text-3xl font-black italic tracking-tighter text-slate-900">±{stats.std.toFixed(2)}</p>
+                  <p className="text-3xl font-black italic tracking-tighter text-slate-900">
+                    ±{(stats.std != null && !isNaN(Number(stats.std))) ? Number(stats.std).toFixed(2) : '0.00'}
+                  </p>
                 </div>
               </div>
               <div className="flex justify-center">
@@ -2061,7 +2222,7 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-black text-emerald-700 italic tracking-tighter">
-                      {stats.isInverted ? '<' : '>'} {(stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std).toFixed(2)}
+                      {stats.isInverted ? '<' : '>'} {((stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std) != null && !isNaN(Number(stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std))) ? (stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std).toFixed(2) : '-'}
                     </p>
                   </div>
                 </div>
@@ -2082,8 +2243,8 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
                   <div className="text-right">
                     <p className="text-lg font-black text-blue-700 italic tracking-tighter">
                       {stats.isInverted 
-                        ? `${(stats.avg - stats.std).toFixed(2)} - ${stats.avg.toFixed(2)}`
-                        : `${stats.avg.toFixed(2)} - ${(stats.avg + stats.std).toFixed(2)}`
+                        ? `${(stats.avg - stats.std != null && !isNaN(Number(stats.avg - stats.std))) ? (stats.avg - stats.std).toFixed(2) : '-'} - ${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'}`
+                        : `${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'} - ${(stats.avg + stats.std != null && !isNaN(Number(stats.avg + stats.std))) ? (stats.avg + stats.std).toFixed(2) : '-'}`
                       }
                     </p>
                   </div>
@@ -2105,8 +2266,8 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
                   <div className="text-right">
                     <p className="text-lg font-black text-amber-700 italic tracking-tighter">
                       {stats.isInverted
-                        ? `${stats.avg.toFixed(2)} - ${(stats.avg + stats.std).toFixed(2)}`
-                        : `${(stats.avg - stats.std).toFixed(2)} - ${stats.avg.toFixed(2)}`
+                        ? `${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'} - ${(stats.avg + stats.std != null && !isNaN(Number(stats.avg + stats.std))) ? (stats.avg + stats.std).toFixed(2) : '-'}`
+                        : `${(stats.avg - stats.std != null && !isNaN(Number(stats.avg - stats.std))) ? (stats.avg - stats.std).toFixed(2) : '-'} - ${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'}`
                       }
                     </p>
                   </div>
@@ -2127,7 +2288,7 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-black text-red-700 italic tracking-tighter">
-                      {stats.isInverted ? '>' : '<'} {(stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std).toFixed(2)}
+                      {stats.isInverted ? '>' : '<'} {((stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std) != null && !isNaN(Number(stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std))) ? (stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std).toFixed(2) : '-'}
                     </p>
                   </div>
                 </div>
@@ -2252,10 +2413,10 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
                 <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-2">Análisis Estadístico</p>
                 <div className="space-y-1">
                   <p className="text-xs font-black text-red-600 tracking-tighter">
-                    y = {stats.slope.toFixed(3)}x {stats.intercept >= 0 ? '+' : '-'} {Math.abs(stats.intercept).toFixed(2)}
+                    y = {(stats.slope != null && !isNaN(Number(stats.slope))) ? stats.slope.toFixed(3) : '0.000'}x {stats.intercept >= 0 ? '+' : '-'} {(stats.intercept != null && !isNaN(Number(stats.intercept))) ? Math.abs(stats.intercept).toFixed(2) : '0.00'}
                   </p>
                   <p className="text-xs font-black text-slate-600 tracking-tighter">
-                    R = {stats.r.toFixed(3)}
+                    R = {(stats.r != null && !isNaN(Number(stats.r))) ? stats.r.toFixed(3) : '0.000'}
                   </p>
                 </div>
               </div>
@@ -2309,7 +2470,7 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
                     axisLine={false}
                     domain={['auto', 'auto']}
                     tick={{ fill: '#94a3b8' }}
-                    label={{ value: METRICS_OPTIONS.find(m => m.key === axis.x)?.label, position: 'insideBottom', offset: -20, fontSize: 11, fontWeight: 900, fill: '#64748b', textTransform: 'uppercase' }}
+                    label={{ value: METRICS_OPTIONS.find(m => m.key === axis.x)?.label, position: 'insideBottom', offset: -20, fontSize: 11, fontWeight: 900, fill: '#64748b' }}
                   />
                   <YAxis 
                     type="number" 
@@ -2321,7 +2482,7 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
                     axisLine={false}
                     domain={['auto', 'auto']}
                     tick={{ fill: '#94a3b8' }}
-                    label={{ value: METRICS_OPTIONS.find(m => m.key === axis.y)?.label, angle: -90, position: 'insideLeft', offset: 0, fontSize: 11, fontWeight: 900, fill: '#64748b', textTransform: 'uppercase' }}
+                    label={{ value: METRICS_OPTIONS.find(m => m.key === axis.y)?.label, angle: -90, position: 'insideLeft', offset: 0, fontSize: 11, fontWeight: 900, fill: '#64748b' }}
                   />
                   <Tooltip 
                     cursor={{ strokeDasharray: '3 3', stroke: '#cbd5e1' }}
@@ -2667,12 +2828,12 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
                           {performanceStyle ? (
                             <div className="flex items-center gap-2">
                               <span className={`px-2 py-1 rounded-md min-w-[45px] text-center text-[9px] font-black uppercase tracking-tighter ${performanceStyle.bg} ${performanceStyle.text}`}>
-                                {value !== undefined && value !== null ? value : '-'}
+                                {value !== undefined && value !== null && !isNaN(Number(value)) ? value : '-'}
                               </span>
                               <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter w-6">{performanceStyle.label}</span>
                             </div>
                           ) : (
-                            row[col.key] !== undefined && row[col.key] !== null ? row[col.key] : '-'
+                            row[col.key] !== undefined && row[col.key] !== null && !isNaN(Number(row[col.key])) ? row[col.key] : '-'
                           )}
                         </td>
                       );

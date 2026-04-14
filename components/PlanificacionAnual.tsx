@@ -269,7 +269,8 @@ const PlanificacionAnual: React.FC = () => {
     setNewActivity({
       type: act.actividad,
       category: categoryEnum || Category.SUB_16,
-      observation: act.observacion || ''
+      observation: act.observacion || '',
+      endDate: ''
     });
   };
 

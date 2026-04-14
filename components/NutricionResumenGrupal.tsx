@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AthletePerformanceRecord, NutritionData } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
@@ -20,6 +20,37 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const hasInitializedDates = useRef(false);
+
+  // Set initial dates to the latest evaluation date when data is loaded
+  useEffect(() => {
+    if (performanceRecords.length > 0 && !hasInitializedDates.current) {
+      let latestDateStr = '';
+      performanceRecords.forEach(record => {
+        if (record.nutrition) {
+          record.nutrition.forEach(n => {
+            if (n.fecha_medicion && (!latestDateStr || n.fecha_medicion > latestDateStr)) {
+              latestDateStr = n.fecha_medicion;
+            }
+          });
+        }
+      });
+
+      if (latestDateStr) {
+        try {
+          const dateObj = new Date(latestDateStr);
+          if (!isNaN(dateObj.getTime())) {
+            const formattedDate = dateObj.toISOString().split('T')[0];
+            setStartDate(formattedDate);
+            setEndDate(formattedDate);
+            hasInitializedDates.current = true;
+          }
+        } catch (e) {
+          console.error("Error parsing latest date:", e);
+        }
+      }
+    }
+  }, [performanceRecords]);
 
   const getCellColor = (value: number, type: 'muscular' | 'adiposa' | 'pliegues', birthYear: number) => {
     // Lógica para nacidos ANTES de 2008 (Mayores)

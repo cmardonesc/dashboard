@@ -99,17 +99,23 @@ export const generateMockData = () => {
       });
 
       // GPS
-      // Fix: Added missing duration property to match GPSData interface
+      const totalDistance = 6000 + Math.floor(Math.random() * 4000);
+      const m_por_min = 60 + Math.random() * 40;
       gps.push({
         id: `g-${player.id}-${date}`,
         playerId: player.id,
         date,
         duration,
-        totalDistance: 6000 + Math.floor(Math.random() * 4000),
+        totalDistance,
+        dist_total_m: totalDistance, // Alias for dashboard consistency
         hsrDistance: 400 + Math.floor(Math.random() * 600),
+        dist_mai_m_20_kmh: 400 + Math.floor(Math.random() * 600),
         sprintCount: 5 + Math.floor(Math.random() * 15),
-        maxSpeed: 8 + Math.random() * 2,
-        intensity: 80 + Math.random() * 40
+        dist_sprint_m_25_kmh: 50 + Math.floor(Math.random() * 200),
+        maxSpeed: 28 + Math.random() * 7,
+        vel_max_kmh: 28 + Math.random() * 7,
+        intensity: m_por_min,
+        m_por_min: m_por_min
       });
     });
   });

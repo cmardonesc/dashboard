@@ -26,6 +26,8 @@ interface GpsTarea {
     apellido1: string;
     posicion: string;
     club: string;
+    club_name?: string;
+    foto_url?: string;
   };
 }
 
@@ -400,10 +402,10 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
 
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
              <KPIMini label="ATLETAS" value={groupKPIs.count} icon="fa-users" color="text-slate-900" />
-             <KPIMini label="AVG DIST (M)" value={groupKPIs.avgDist.toFixed(0)} icon="fa-arrows-left-right" color="text-blue-600" />
-             <KPIMini label="AVG INT (M/M)" value={groupKPIs.avgInt.toFixed(1)} icon="fa-fire-flame-curved" color="text-red-600" />
-             <KPIMini label="MAX VEL (KM/H)" value={groupKPIs.maxVel.toFixed(1)} icon="fa-bolt" color="text-amber-500" />
-             <KPIMini label="AVG TIEMPO" value={`${groupKPIs.avgMin.toFixed(0)}m`} icon="fa-clock" color="text-indigo-500" />
+             <KPIMini label="AVG DIST (M)" value={(groupKPIs.avgDist != null && !isNaN(Number(groupKPIs.avgDist))) ? groupKPIs.avgDist.toFixed(0) : '-'} icon="fa-arrows-left-right" color="text-blue-600" />
+             <KPIMini label="AVG INT (M/M)" value={(groupKPIs.avgInt != null && !isNaN(Number(groupKPIs.avgInt))) ? groupKPIs.avgInt.toFixed(1) : '-'} icon="fa-fire-flame-curved" color="text-red-600" />
+             <KPIMini label="MAX VEL (KM/H)" value={(groupKPIs.maxVel != null && !isNaN(Number(groupKPIs.maxVel))) ? groupKPIs.maxVel.toFixed(1) : '-'} icon="fa-bolt" color="text-amber-500" />
+             <KPIMini label="AVG TIEMPO" value={(groupKPIs.avgMin != null && !isNaN(Number(groupKPIs.avgMin))) ? `${groupKPIs.avgMin.toFixed(0)}m` : '-'} icon="fa-clock" color="text-indigo-500" />
         </div>
       </div>
 
@@ -443,31 +445,31 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
                   <div>
                     <p className={`text-[8px] font-black uppercase mb-1 ${selectedTask === task.name ? 'text-slate-400' : 'text-slate-400'}`}>Dist Total</p>
                     <p className="text-xl font-black italic tracking-tighter leading-none">
-                      {task.avgDist.toFixed(0)} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">m</span>
+                      {(task.avgDist != null && !isNaN(Number(task.avgDist))) ? task.avgDist.toFixed(0) : '-'} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">m</span>
                     </p>
                   </div>
                   <div>
                     <p className={`text-[8px] font-black uppercase mb-1 ${selectedTask === task.name ? 'text-slate-400' : 'text-slate-400'}`}>Acc/Dec</p>
                     <p className="text-xl font-black italic tracking-tighter leading-none">
-                      {task.avgAccDec.toFixed(0)} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">n</span>
+                      {(task.avgAccDec != null && !isNaN(Number(task.avgAccDec))) ? task.avgAccDec.toFixed(0) : '-'} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">n</span>
                     </p>
                   </div>
                   <div>
                     <p className={`text-[8px] font-black uppercase mb-1 ${selectedTask === task.name ? 'text-slate-400' : 'text-slate-400'}`}>&gt;15 km/h</p>
                     <p className="text-xl font-black italic tracking-tighter leading-none">
-                      {task.avgDist15.toFixed(0)} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">m</span>
+                      {(task.avgDist15 != null && !isNaN(Number(task.avgDist15))) ? task.avgDist15.toFixed(0) : '-'} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">m</span>
                     </p>
                   </div>
                   <div>
                     <p className={`text-[8px] font-black uppercase mb-1 ${selectedTask === task.name ? 'text-slate-400' : 'text-slate-400'}`}>&gt;20 km/h</p>
                     <p className="text-xl font-black italic tracking-tighter leading-none">
-                      {task.avgDist20.toFixed(0)} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">m</span>
+                      {(task.avgDist20 != null && !isNaN(Number(task.avgDist20))) ? task.avgDist20.toFixed(0) : '-'} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">m</span>
                     </p>
                   </div>
                   <div className="col-span-2">
                     <p className={`text-[8px] font-black uppercase mb-1 ${selectedTask === task.name ? 'text-red-500' : 'text-red-600'}`}>Sprint (&gt;25 km/h)</p>
                     <p className="text-xl font-black italic tracking-tighter leading-none">
-                      {task.avgDist25.toFixed(0)} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">m</span>
+                      {(task.avgDist25 != null && !isNaN(Number(task.avgDist25))) ? task.avgDist25.toFixed(0) : '-'} <span className="text-[9px] not-italic font-bold opacity-50 uppercase">m</span>
                     </p>
                   </div>
                 </div>
@@ -550,35 +552,35 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
                     </div>
                   </td>
                   <td className="px-4 py-6 font-black text-slate-900 italic text-sm border-r border-slate-50">
-                    {Number(row.minutos).toFixed(0)} <span className="text-[9px] text-slate-400 not-italic font-bold">m</span>
+                    {(row.minutos != null && !isNaN(Number(row.minutos))) ? Number(row.minutos).toFixed(0) : '-'} <span className="text-[9px] text-slate-400 not-italic font-bold">m</span>
                   </td>
                   <td className="px-4 py-6 font-black text-slate-900 italic text-sm border-r border-slate-50">
-                    {Number(row.dist_total_m).toFixed(0)} <span className="text-[9px] text-slate-400 not-italic font-bold">m</span>
+                    {(row.dist_total_m != null && !isNaN(Number(row.dist_total_m))) ? Number(row.dist_total_m).toFixed(0) : '-'} <span className="text-[9px] text-slate-400 not-italic font-bold">m</span>
                   </td>
                   <td className="px-4 py-6 border-r border-slate-50">
                     <div className={`inline-flex items-center gap-3 px-4 py-1.5 rounded-xl font-black text-[12px] italic transition-transform group-hover:scale-110 shadow-sm ${getIntensityStyle(row.m_por_min)}`}>
-                      {Number(row.m_por_min).toFixed(1)}
+                      {(row.m_por_min != null && !isNaN(Number(row.m_por_min))) ? Number(row.m_por_min).toFixed(1) : '-'}
                     </div>
                   </td>
                   <td className="px-4 py-6 border-r border-slate-50 font-black text-slate-900 text-sm italic">
-                    {Number(row.dist_mai_m_20_kmh).toFixed(0)} <span className="text-[9px] text-slate-400 not-italic font-bold">m</span>
+                    {(row.dist_mai_m_20_kmh != null && !isNaN(Number(row.dist_mai_m_20_kmh))) ? Number(row.dist_mai_m_20_kmh).toFixed(0) : '-'} <span className="text-[9px] text-slate-400 not-italic font-bold">m</span>
                   </td>
                   <td className="px-4 py-6 border-r border-slate-50 font-black text-slate-400 text-sm italic">
-                    {Number(row.dist_ai_m_15_kmh || 0).toFixed(0)} <span className="text-[9px] not-italic font-bold">m</span>
+                    {(row.dist_ai_m_15_kmh != null && !isNaN(Number(row.dist_ai_m_15_kmh))) ? Number(row.dist_ai_m_15_kmh).toFixed(0) : (row.dist_ai_m_15_kmh === 0 ? '0' : '-')} <span className="text-[9px] not-italic font-bold">m</span>
                   </td>
                   <td className="px-4 py-6 border-r border-slate-50 font-black text-red-600 text-sm italic">
-                    {Number(row.dist_sprint_m_25_kmh || 0).toFixed(0)} <span className="text-[9px] text-slate-400 not-italic font-bold">m</span>
+                    {(row.dist_sprint_m_25_kmh != null && !isNaN(Number(row.dist_sprint_m_25_kmh))) ? Number(row.dist_sprint_m_25_kmh).toFixed(0) : (row.dist_sprint_m_25_kmh === 0 ? '0' : '-')} <span className="text-[9px] text-slate-400 not-italic font-bold">m</span>
                   </td>
                   <td className="px-4 py-6 border-r border-slate-50">
                     <div className="inline-flex items-center gap-2 bg-slate-900 text-white px-3 py-1 rounded-lg font-black text-[11px] shadow-lg">
-                      {Number(row.sprints_n).toFixed(1)} <i className="fa-solid fa-bolt text-[9px] text-yellow-400"></i>
+                      {(row.sprints_n != null && !isNaN(Number(row.sprints_n))) ? Number(row.sprints_n).toFixed(1) : '-'} <i className="fa-solid fa-bolt text-[9px] text-yellow-400"></i>
                     </div>
                   </td>
                   <td className="px-4 py-6 border-r border-slate-50 font-black text-slate-900 text-sm italic">
-                    {Number(row.vel_max_kmh || 0).toFixed(1)} <span className="text-[9px] text-slate-400 not-italic font-bold">km/h</span>
+                    {(row.vel_max_kmh != null && !isNaN(Number(row.vel_max_kmh))) ? Number(row.vel_max_kmh).toFixed(1) : (row.vel_max_kmh === 0 ? '0.0' : '-')} <span className="text-[9px] text-slate-400 not-italic font-bold">km/h</span>
                   </td>
-                  <td className="px-6 py-6 font-black text-slate-900 italic text-sm">
-                    {Number(row.acc_decc_ai_n || 0).toFixed(0)} <span className="text-[9px] text-slate-400 not-italic font-bold">act.</span>
+                  <td className="px-4 py-6 font-black text-slate-900 italic text-sm">
+                    {(row.acc_decc_ai_n != null && !isNaN(Number(row.acc_decc_ai_n))) ? Number(row.acc_decc_ai_n).toFixed(0) : (row.acc_decc_ai_n === 0 ? '0' : '-')} <span className="text-[9px] text-slate-400 not-italic font-bold">act.</span>
                   </td>
                 </tr>
               );

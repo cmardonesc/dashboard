@@ -3,8 +3,7 @@ import React, { useState } from 'react';
 import { subscribeToNotifications } from '../lib/notifications';
 import { FEDERATION_LOGO } from '../constants';
 import { getDriveDirectLink } from '../lib/utils';
-
-type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'fisica_vo2max' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios' | 'logs' | 'importar_datos' | 'sports_science';
+import { MenuId } from '../types';
 
 interface SidebarProps {
   activeMenu: MenuId;
@@ -241,6 +240,15 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                     >
                       <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_carga_externa_tareas' ? 'bg-blue-400' : 'bg-slate-700'}`}></div>
                       <span className="text-[10px] font-bold">Por Tarea</span>
+                    </button>
+                    <button
+                      onClick={() => onMenuChange('fisica_gps_intelligence')}
+                      className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                        activeMenu === 'fisica_gps_intelligence' ? 'text-blue-400 bg-blue-900/20' : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_gps_intelligence' ? 'bg-blue-400' : 'bg-slate-700'}`}></div>
+                      <span className="text-[10px] font-bold italic">GPS Intelligence</span>
                     </button>
                   </div>
                 )}

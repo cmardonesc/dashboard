@@ -6,31 +6,12 @@ import PlayerDashboard from './components/PlayerDashboard'
 import StaffDashboard from './components/StaffDashboard'
 import ClubHome from './components/ClubHome'
 import Sidebar from './components/Sidebar'
-import { AthletePerformanceRecord, User, UserRole, NutritionData } from './types'
+import { AthletePerformanceRecord, User, UserRole, NutritionData, MenuId } from './types'
 import { MOCK_PLAYERS } from './mockData'
 import { logActivity } from './lib/activityLogger'
 import { FEDERATION_LOGO } from './constants'
 
 type Role = 'player' | 'staff' | 'admin' | 'club' | null
-type MenuId =
-  | 'inicio'
-  | 'planificacion_anual'
-  | 'tecnica'
-  | 'fisica_wellness'
-  | 'fisica_pse'
-  | 'fisica_carga_externa_total'
-  | 'fisica_carga_externa_tareas'
-  | 'fisica_reporte'
-  | 'fisica_vo2max'
-  | 'medica'
-  | 'nutricion'
-  | 'citaciones'
-  | 'desconvocatoria'
-  | 'logistica_jugadores'
-  | 'usuarios'
-  | 'logs'
-  | 'importar_datos'
-  | 'sports_science'
 
 export default function App() {
   const [loading, setLoading] = useState(true)
@@ -226,7 +207,7 @@ export default function App() {
         return {
           id: `player-${pid}`,
           id_del_jugador: pid ? Number(pid) : undefined,
-          name: `${p.nombre || ''} ${p.apellido1 || ''}`.trim() || `Atleta #${pid}`,
+          name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${pid}`,
           nombre: p.nombre,
           apellido1: p.apellido1,
           apellido2: p.apellido2,
@@ -586,9 +567,9 @@ export default function App() {
     // 2. "Descubrimiento" de jugadores: Si hay datos en nutrición, wellness o loads para un ID que no está en 'players',
     // lo agregamos como un jugador virtual para que no se pierdan sus registros.
     const discoverFrom = [
-      ...allData.nutrition.map(n => ({ id: n.id_del_jugador || n.id_jugador || n.player_id, name: n.nombre_raw })),
-      ...allData.wellness.map(w => ({ id: w.id_del_jugador || w.player_id || w.playerId, name: null })),
-      ...allData.loads.map(l => ({ id: l.id_del_jugador || l.player_id || l.id_jugador, name: null })),
+      ...allData.nutrition.map((n: any) => ({ id: n.id_del_jugador || n.id_jugador || n.player_id, name: n.nombre_raw })),
+      ...allData.wellness.map((w: any) => ({ id: w.id_del_jugador || w.player_id || w.playerId, name: null })),
+      ...allData.loads.map((l: any) => ({ id: l.id_del_jugador || l.player_id || l.id_jugador, name: null })),
       ...allData.gps.map((g: any) => ({ id: g.id_del_jugador, name: g.jugador_nombre }))
     ];
 
@@ -703,7 +684,7 @@ export default function App() {
 
   const menuTitle = role === 'club' 
     ? `${userClub || 'CLUB'} - PERFIL DE CLUB`
-    : (activeMenu === 'citaciones' ? 'CITAS' : activeMenu === 'fisica_tareas' ? 'CARGA TAREAS' : activeMenu.toUpperCase().replace('_', ' '))
+    : (activeMenu === 'citaciones' ? 'CITAS' : activeMenu === 'fisica_carga_externa_tareas' ? 'CARGA TAREAS' : activeMenu.toUpperCase().replace('_', ' '))
 
   if (role === 'staff' || role === 'admin' || role === 'club') {
     return (

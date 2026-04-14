@@ -199,3 +199,38 @@ export const getChartSummary = async (chartTitle: string, data: any) => {
     return "Error al conectar con la IA para el resumen.";
   }
 };
+
+export const getAthleteFootprintSummary = async (player: any, metrics: any) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  try {
+    const prompt = `
+      Actúa como un Director de Ciencias del Deporte de una Selección Nacional de Fútbol.
+      Analiza el perfil completo de "Huella del Atleta" para el siguiente jugador:
+      
+      Jugador: ${player.nombre} ${player.apellido1}
+      Posición: ${player.posicion}
+      Categoría: ${player.category || 'N/A'}
+      
+      Métricas Recientes:
+      ${JSON.stringify(metrics)}
+
+      Por favor proporciona un "Perfil Ejecutivo del Jugador" que incluya:
+      1. **Resumen de Capacidades**: Breve descripción de su perfil físico (ej: "Jugador explosivo con alta capacidad de aceleración pero resistencia aeróbica moderada").
+      2. **Estado de Salud y Disponibilidad**: Basado en su historial reciente.
+      3. **Puntos de Mejora**: 1-2 aspectos específicos a trabajar en el próximo microciclo.
+      4. **Conclusión Técnica**: Una frase final sobre su proyección o estado actual para la competición.
+
+      Formatea la respuesta en Markdown elegante. Sé muy profesional, directo y utiliza terminología de alto rendimiento. RESPONDE SIEMPRE EN ESPAÑOL.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+    });
+
+    return response.text || "No se pudo generar el perfil ejecutivo en este momento.";
+  } catch (error) {
+    console.error("Error al generar perfil de huella:", error);
+    return "Error al conectar con el motor de IA para el perfil del jugador.";
+  }
+};

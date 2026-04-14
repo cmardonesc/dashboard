@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react'
-import { AthletePerformanceRecord, Category, CATEGORY_ID_MAP, CATEGORY_COLORS } from '../types'
+import { AthletePerformanceRecord, Category, CATEGORY_ID_MAP, CATEGORY_COLORS, MenuId } from '../types'
 import { supabase } from '../lib/supabase'
 import ClubBadge from './ClubBadge'
 import CitacionesArea from './CitacionesArea'
@@ -19,13 +19,12 @@ import ActivityLogArea from './ActivityLogArea'
 import DataImportArea from './DataImportArea'
 import VO2MaxArea from './VO2MaxArea'
 import SportsScienceArea from './SportsScienceArea'
+import GPSIntelligenceDashboard from './GPSIntelligenceDashboard'
 import ClubDashboard from './ClubDashboard'
 import { logActivity } from '../lib/activityLogger'
 import { getPerformanceInsights, getWeatherForecast, queryCoachAssistant, WeatherData } from '../services/geminiService'
 import { AreaChart, Area, XAxis, ResponsiveContainer, Tooltip, BarChart, Bar, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
 import { Reorder } from 'framer-motion'
-
-type MenuId = 'inicio' | 'planificacion_anual' | 'tecnica' | 'fisica_wellness' | 'fisica_pse' | 'fisica_carga_externa_total' | 'fisica_carga_externa_tareas' | 'fisica_reporte' | 'fisica_vo2max' | 'medica' | 'nutricion_resumen_grupal' | 'nutricion_comparativo' | 'nutricion_individual' | 'nutricion_top10' | 'nutricion_maduracion' | 'competencia' | 'citaciones' | 'desconvocatoria' | 'logistica_jugadores' | 'usuarios' | 'logs' | 'importar_datos' | 'sports_science';
 
 interface StaffDashboardProps {
   performanceRecords: AthletePerformanceRecord[];
@@ -44,6 +43,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
   const [medicalReportsToday, setMedicalReportsToday] = useState<any[]>([]);
   const [kinesicTreatmentsToday, setKinesicTreatmentsToday] = useState<any[]>([]);
   const [activeTasks, setActiveTasks] = useState<any[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
@@ -278,32 +278,73 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
   };
 
   const filteredTasks = useMemo(() => {
-    return activeTasks.filter(t => (t.jornada || 'AM') === selectedJornada);
-  }, [activeTasks, selectedJornada]);
+    let tasks = activeTasks.filter(t => (t.jornada || 'AM') === selectedJornada);
+    if (selectedCategoryId) {
+      const mcIds = realMicrocycles
+        .filter(m => m.category_id === selectedCategoryId)
+        .map(m => m.id);
+      tasks = tasks.filter(t => mcIds.includes(t.id_microcycles));
+    }
+    return tasks;
+  }, [activeTasks, selectedJornada, selectedCategoryId, realMicrocycles]);
 
   const filteredPending = useMemo(() => {
+    if (selectedCategoryId) {
+      return pendingCheckins.filter(p => p.category_id === selectedCategoryId);
+    }
     return pendingCheckins;
-  }, [pendingCheckins]);
+  }, [pendingCheckins, selectedCategoryId]);
 
   const filteredDiscomfort = useMemo(() => {
+    if (selectedCategoryId) {
+      return discomfortReports.filter(w => w.players?.category_id === selectedCategoryId);
+    }
     return discomfortReports;
-  }, [discomfortReports]);
+  }, [discomfortReports, selectedCategoryId]);
 
   const filteredCheckouts = useMemo(() => {
+    if (selectedCategoryId) {
+      return pendingCheckouts.filter(p => p.category_id === selectedCategoryId);
+    }
     return pendingCheckouts;
-  }, [pendingCheckouts]);
+  }, [pendingCheckouts, selectedCategoryId]);
 
   const filteredActivities = useMemo(() => {
+    if (selectedCategoryId) {
+      const mcIds = realMicrocycles
+        .filter(m => m.category_id === selectedCategoryId)
+        .map(m => m.id);
+      return dailyActivities.filter(a => mcIds.includes(a.id_microcycles));
+    }
     return dailyActivities;
-  }, [dailyActivities]);
+  }, [dailyActivities, selectedCategoryId, realMicrocycles]);
 
   const filteredMedical = useMemo(() => {
+    if (selectedCategoryId) {
+      return medicalReportsToday.filter(m => {
+        const citedCat = playerToCategory.get(m.player_id);
+        return citedCat === selectedCategoryId;
+      });
+    }
     return medicalReportsToday;
-  }, [medicalReportsToday]);
+  }, [medicalReportsToday, selectedCategoryId, playerToCategory]);
 
   const filteredKinesic = useMemo(() => {
+    if (selectedCategoryId) {
+      return kinesicTreatmentsToday.filter(k => {
+        const citedCat = playerToCategory.get(k.player_id);
+        return citedCat === selectedCategoryId;
+      });
+    }
     return kinesicTreatmentsToday;
-  }, [kinesicTreatmentsToday]);
+  }, [kinesicTreatmentsToday, selectedCategoryId, playerToCategory]);
+
+  const filteredPerformanceRecords = useMemo(() => {
+    if (selectedCategoryId) {
+      return performanceRecords.filter(r => playerToCategory.get(r.player.id_del_jugador) === selectedCategoryId);
+    }
+    return performanceRecords;
+  }, [performanceRecords, selectedCategoryId, playerToCategory]);
 
   const renderContent = () => {
     const todayStr = new Date().toISOString().split('T')[0];
@@ -398,13 +439,13 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
               <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Check-in</p>
               <div className="flex items-baseline gap-1">
                 <span className="text-2xl font-black italic text-slate-900">
-                  {performanceRecords.length > 0 ? Math.round(((performanceRecords.length - filteredPending.length) / performanceRecords.length) * 100) : 0}%
+                  {filteredPerformanceRecords.length > 0 ? Math.round(((filteredPerformanceRecords.length - filteredPending.length) / filteredPerformanceRecords.length) * 100) : 0}%
                 </span>
               </div>
               <div className="w-full h-1 bg-slate-200 rounded-full mt-2 overflow-hidden">
                 <div 
                   className="h-full bg-emerald-500 transition-all duration-1000" 
-                  style={{ width: `${performanceRecords.length > 0 ? ((performanceRecords.length - filteredPending.length) / performanceRecords.length) * 100 : 0}%` }}
+                  style={{ width: `${filteredPerformanceRecords.length > 0 ? ((filteredPerformanceRecords.length - filteredPending.length) / filteredPerformanceRecords.length) * 100 : 0}%` }}
                 ></div>
               </div>
             </div>
@@ -413,13 +454,13 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
               <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Check-out</p>
               <div className="flex items-baseline gap-1">
                 <span className="text-2xl font-black italic text-slate-900">
-                  {performanceRecords.length > 0 ? Math.round(((performanceRecords.length - filteredCheckouts.length) / performanceRecords.length) * 100) : 0}%
+                  {filteredPerformanceRecords.length > 0 ? Math.round(((filteredPerformanceRecords.length - filteredCheckouts.length) / filteredPerformanceRecords.length) * 100) : 0}%
                 </span>
               </div>
               <div className="w-full h-1 bg-slate-200 rounded-full mt-2 overflow-hidden">
                 <div 
                   className="h-full bg-blue-500 transition-all duration-1000" 
-                  style={{ width: `${performanceRecords.length > 0 ? ((performanceRecords.length - filteredCheckouts.length) / performanceRecords.length) * 100 : 0}%` }}
+                  style={{ width: `${filteredPerformanceRecords.length > 0 ? ((filteredPerformanceRecords.length - filteredCheckouts.length) / filteredPerformanceRecords.length) * 100 : 0}%` }}
                 ></div>
               </div>
             </div>
@@ -434,7 +475,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
               ))}
             </div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-              {performanceRecords.length - filteredPending.length} reportes hoy
+              {filteredPerformanceRecords.length - filteredPending.length} reportes hoy
             </p>
           </div>
         </div>
@@ -525,7 +566,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{p.nombre} {p.apellido1}</p>
                       <div className="flex items-center gap-2">
-                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.posicion}</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.position}</p>
                         <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-slate-400 uppercase tracking-widest" />
                       </div>
                     </div>
@@ -559,7 +600,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{p.nombre} {p.apellido1}</p>
                       <div className="flex items-center gap-2">
-                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.posicion}</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.position}</p>
                         <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-slate-400 uppercase tracking-widest" />
                       </div>
                     </div>
@@ -799,6 +840,14 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                 <div className="w-full lg:w-80 bg-white/5 backdrop-blur-md border border-white/10 rounded-[32px] md:rounded-[40px] p-6 md:p-8 space-y-4 md:space-y-6">
                    <div className="flex items-center justify-between border-b border-white/5 pb-3 md:pb-4">
                      <p className="text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest">Series Activas</p>
+                     {selectedCategoryId && (
+                       <button 
+                         onClick={() => setSelectedCategoryId(null)}
+                         className="text-[8px] font-black text-red-500 uppercase tracking-widest hover:text-white transition-colors"
+                       >
+                         Limpiar Filtro
+                       </button>
+                     )}
                    </div>
                    <div className="space-y-2">
                      {activeMicrocycles.length === 0 ? (
@@ -807,23 +856,33 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                        activeMicrocycles.map((mc, idx) => {
                          const categoryEntry = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === mc.category_id);
                          const categoryLabel = categoryEntry ? categoryEntry[0].replace('_', ' ').toUpperCase() : 'Selección';
+                         const isSelected = selectedCategoryId === mc.category_id;
                          
                          return (
-                           <div 
+                           <button 
                              key={idx} 
-                             className={`flex items-center justify-between group/mc p-3 rounded-2xl transition-all border bg-white/5 border-transparent hover:bg-white/10`}
+                             onClick={() => setSelectedCategoryId(isSelected ? null : mc.category_id)}
+                             className={`w-full flex items-center justify-between group/mc p-3 rounded-2xl transition-all border text-left ${
+                               isSelected 
+                                 ? 'bg-red-600 border-red-600 shadow-lg shadow-red-900/40' 
+                                 : 'bg-white/5 border-transparent hover:bg-white/10'
+                             }`}
                            >
                              <div>
                                <div className="flex items-center gap-2 mb-1">
-                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest bg-red-600/20 text-red-500`}>
+                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${
+                                   isSelected ? 'bg-white text-red-600' : 'bg-red-600/20 text-red-500'
+                                 }`}>
                                    {categoryLabel}
                                  </span>
                                  <p className="text-white text-sm font-black italic tracking-tighter leading-none uppercase">{mc.name}</p>
                                </div>
-                               <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">{mc.city}, {mc.country}</p>
+                               <p className={`text-[10px] font-bold uppercase tracking-widest ${
+                                 isSelected ? 'text-white/70' : 'text-slate-400'
+                               }`}>{mc.city}, {mc.country}</p>
                              </div>
                              <div className={`w-2 h-2 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] bg-emerald-500 animate-pulse`}></div>
-                           </div>
+                           </button>
                          );
                        })
                      )}
@@ -1000,6 +1059,11 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
       case 'fisica_carga_externa_tareas':
         return <CargaTareasArea performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
+      case 'fisica_gps_intelligence':
+        const selectedCategoryName = selectedCategoryId 
+          ? Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === selectedCategoryId)?.[0].replace('_', ' ').toUpperCase()
+          : null;
+        return <GPSIntelligenceDashboard performanceRecords={filteredPerformanceRecords} clubs={clubs} categoryName={selectedCategoryName} />;
       case 'fisica_reporte':
         return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
       case 'fisica_vo2max':
