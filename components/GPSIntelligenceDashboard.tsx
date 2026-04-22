@@ -4,7 +4,7 @@ import { AthletePerformanceRecord, User } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  Legend, ScatterChart, Scatter, ZAxis, Cell, ReferenceLine
+  Legend, ScatterChart, Scatter, ZAxis, Cell, ReferenceLine, ComposedChart, Line
 } from 'recharts';
 import ClubBadge from './ClubBadge';
 
@@ -14,7 +14,16 @@ interface GPSIntelligenceDashboardProps {
   categoryName?: string | null;
 }
 
-const POSITIONS = ['DEFENSA', 'VOLANTE', 'DELANTERO', 'PORTERO'];
+const POSITIONS = ['DEFENSA', 'VOLANTE', 'DELANTERO'];
+
+const METRICS_CONFIG = [
+  { id: 'dist_total_m', name: 'Distancia Total', unit: 'm', color: '#3b82f6' },
+  { id: 'dist_mai_m_20_kmh', name: 'HSR (20+ km/h)', unit: 'm', color: '#f59e0b' },
+  { id: 'dist_sprint_m_25_kmh', name: 'Distancia Sprint', unit: 'm', color: '#ef4444' },
+  { id: 'm_por_min', name: 'Intensidad', unit: 'm/min', color: '#10b981' },
+  { id: 'vel_max_kmh', name: 'Velocidad Máxima', unit: 'km/h', color: '#8b5cf6' },
+  { id: 'sprints_n', name: 'Cantidad Sprints', unit: 'n', color: '#64748b' }
+];
 
 export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [], categoryName }: GPSIntelligenceDashboardProps) {
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -22,6 +31,10 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
   const [sessionData, setSessionData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
+  
+  // Chart metrics state
+  const [barMetricId, setBarMetricId] = useState('dist_total_m');
+  const [lineMetricId, setLineMetricId] = useState('m_por_min');
 
   // 1. Fetch available dates from gps_import
   useEffect(() => {
@@ -105,7 +118,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
 
           const mapped = gpsRecords.map(d => {
             const p = d.players as any;
-            const pos = p?.posicion?.toUpperCase() || 'S/D';
+            const rawPos = p?.posicion?.toUpperCase() || 'S/D';
             const catName = playerCategoryMap.get(d.id_del_jugador) || 'SIN CATEGORÍA';
             
             return {
@@ -115,14 +128,13 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
                 name: `${p?.nombre} ${p?.apellido1}`.trim(),
                 id: `player-${p?.id_del_jugador}`
               },
-              posicion: pos,
+              posicion: rawPos,
               categoria: catName,
-              posGroup: pos.includes('DEF') ? 'DEFENSA' :
-                        pos.includes('VOL') || pos.includes('MED') ? 'VOLANTE' :
-                        pos.includes('DEL') || pos.includes('EXT') ? 'DELANTERO' :
-                        pos.includes('POR') ? 'PORTERO' : 'OTROS'
+              posGroup: rawPos.includes('DEF') ? 'DEFENSA' :
+                        rawPos.includes('VOL') || rawPos.includes('MED') || rawPos.includes('VOL') ? 'VOLANTE' :
+                        rawPos.includes('DEL') || rawPos.includes('EXT') || rawPos.includes('PUN') ? 'DELANTERO' : 'OTROS'
             };
-          });
+          }).filter(d => !d.posicion.includes('POR') && !d.posicion.includes('ARQ'));
           setSessionData(mapped);
           
           // Reset category filter if it's not valid for the new data
@@ -169,14 +181,16 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
     return groups.map(group => {
       const groupPlayers = filteredSessionData.filter(d => d.posGroup === group);
       const count = groupPlayers.length;
-      if (count === 0) return { name: group, dist: 0, hsr: 0, sprint: 0, int: 0 };
-      return {
-        name: group,
-        dist: groupPlayers.reduce((acc, curr) => acc + (Number(curr.dist_total_m) || 0), 0) / count,
-        hsr: groupPlayers.reduce((acc, curr) => acc + (Number(curr.dist_mai_m_20_kmh) || 0), 0) / count,
-        sprint: groupPlayers.reduce((acc, curr) => acc + (Number(curr.dist_sprint_m_25_kmh) || 0), 0) / count,
-        int: groupPlayers.reduce((acc, curr) => acc + (Number(curr.m_por_min) || 0), 0) / count
-      };
+      
+      const res: any = { name: group };
+      METRICS_CONFIG.forEach(m => {
+        if (count === 0) {
+          res[m.id] = 0;
+        } else {
+          res[m.id] = groupPlayers.reduce((acc, curr) => acc + (Number(curr[m.id]) || 0), 0) / count;
+        }
+      });
+      return res;
     });
   }, [filteredSessionData]);
 
@@ -187,6 +201,9 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
       sprints: [...filteredSessionData].sort((a, b) => (Number(b.sprints_n) || 0) - (Number(a.sprints_n) || 0)).slice(0, 3)
     };
   }, [filteredSessionData]);
+
+  const currentBarMetric = METRICS_CONFIG.find(m => m.id === barMetricId)!;
+  const currentLineMetric = METRICS_CONFIG.find(m => m.id === lineMetricId)!;
 
   if (loading || !selectedDate) {
     return (
@@ -271,48 +288,100 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* POSITIONAL BENCHMARKING */}
-        <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-8">
+        {/* POSITIONAL BENCHMARKING - DYNAMIC COMPOSED CHART */}
+        <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col h-full">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
               <span className="w-2 h-6 bg-blue-500 rounded-full"></span>
               Rendimiento por Posición
             </h3>
+            
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <select 
+                  value={barMetricId}
+                  onChange={(e) => setBarMetricId(e.target.value)}
+                  className="bg-slate-50 border-none rounded-xl px-3 py-2 text-[9px] font-black text-slate-600 outline-none pr-8 shadow-inner appearance-none border border-slate-100"
+                >
+                  {METRICS_CONFIG.map(m => (
+                    <option key={m.id} value={m.id}>📊 {m.name}</option>
+                  ))}
+                </select>
+                <i className="fa-solid fa-chevron-down absolute right-2 top-1/2 -translate-y-1/2 text-[8px] text-slate-300 pointer-events-none"></i>
+              </div>
+              <span className="text-[10px] font-black text-slate-300">vs</span>
+              <div className="relative">
+                <select 
+                  value={lineMetricId}
+                  onChange={(e) => setLineMetricId(e.target.value)}
+                  className="bg-slate-50 border-none rounded-xl px-3 py-2 text-[9px] font-black text-slate-600 outline-none pr-8 shadow-inner appearance-none border border-slate-100"
+                >
+                  {METRICS_CONFIG.map(m => (
+                    <option key={m.id} value={m.id}>📈 {m.name}</option>
+                  ))}
+                </select>
+                <i className="fa-solid fa-chevron-down absolute right-2 top-1/2 -translate-y-1/2 text-[8px] text-slate-300 pointer-events-none"></i>
+              </div>
+            </div>
           </div>
-          <div className="h-80">
+          
+          <div className="flex-1 min-h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={positionalData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+              <ComposedChart data={positionalData} margin={{ top: 20, right: 20, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={10} fontWeight={900} stroke="#94a3b8" />
-                <YAxis axisLine={false} tickLine={false} fontSize={10} fontWeight={900} stroke="#94a3b8" />
+                
+                {/* Y Axis for Bars (Left) */}
+                <YAxis yAxisId="left" axisLine={false} tickLine={false} fontSize={10} fontWeight={900} stroke="#94a3b8" />
+                
+                {/* Y Axis for Line (Right) */}
+                <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} fontSize={10} fontWeight={900} stroke="#94a3b8" />
+                
                 <Tooltip 
                   contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontWeight: '900', fontSize: '10px' }}
                   cursor={{ fill: '#f8fafc' }}
                 />
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase' }} />
-                <Bar dataKey="dist" name="Distancia (m)" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={30} />
-                <Bar dataKey="hsr" name="HSR (m)" fill="#f59e0b" radius={[6, 6, 0, 0]} barSize={30} />
-                <Bar dataKey="sprint" name="Sprint (m)" fill="#ef4444" radius={[6, 6, 0, 0]} barSize={30} />
-              </BarChart>
+                
+                <Bar 
+                  yAxisId="left" 
+                  dataKey={barMetricId} 
+                  name={currentBarMetric.name} 
+                  fill={currentBarMetric.color} 
+                  radius={[6, 6, 0, 0]} 
+                  barSize={30} 
+                />
+                
+                <Line 
+                  yAxisId="right" 
+                  type="monotone" 
+                  dataKey={lineMetricId} 
+                  name={currentLineMetric.name} 
+                  stroke={currentLineMetric.color} 
+                  strokeWidth={3} 
+                  dot={{ r: 4, fill: currentLineMetric.color, strokeWidth: 2, stroke: '#fff' }} 
+                  activeDot={{ r: 6, strokeWidth: 0 }}
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* INTENSITY SCATTER PLOT */}
-        <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-8">
+        <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col">
+          <div className="flex items-center justify-between mb-8 text-nowrap">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
               <span className="w-2 h-6 bg-emerald-500 rounded-full"></span>
               Eficiencia: Distancia vs Intensidad
             </h3>
           </div>
-          <div className="h-80">
+          <div className="flex-1 min-h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis 
                   type="number" 
-                  dataKey={(d) => d.totalDistance || d.dist_total_m} 
+                  dataKey="dist_total_m" 
                   name="Distancia" 
                   unit="m" 
                   axisLine={false} 
@@ -324,7 +393,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
                 />
                 <YAxis 
                   type="number" 
-                  dataKey={(d) => d.m_por_min || d.intensity} 
+                  dataKey="m_por_min" 
                   name="Intensidad" 
                   unit="m/m" 
                   axisLine={false} 
@@ -344,8 +413,8 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
                         <div className="bg-[#0b1220] p-4 rounded-2xl text-white shadow-2xl border border-white/10">
                           <p className="text-[10px] font-black uppercase italic mb-2">{data.player.nombre} {data.player.apellido1}</p>
                           <div className="space-y-1">
-                            <p className="text-[9px] font-bold opacity-60 uppercase">Distancia: {Math.round(data.totalDistance || data.dist_total_m)}m</p>
-                            <p className="text-[9px] font-bold opacity-60 uppercase">Intensidad: {Number(data.m_por_min || data.intensity).toFixed(1)} m/m</p>
+                            <p className="text-[9px] font-bold opacity-60 uppercase">Distancia: {Math.round(data.dist_total_m)}m</p>
+                            <p className="text-[9px] font-bold opacity-60 uppercase">Intensidad: {Number(data.m_por_min).toFixed(1)} m/m</p>
                           </div>
                         </div>
                       );
@@ -353,8 +422,8 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
                     return null;
                   }}
                 />
-                <Scatter name="Jugadores" data={sessionData}>
-                  {sessionData.map((entry, index) => (
+                <Scatter name="Jugadores" data={filteredSessionData}>
+                  {filteredSessionData.map((entry, index) => (
                     <Cell 
                       key={`cell-${index}`} 
                       fill={entry.posGroup === 'DEFENSA' ? '#3b82f6' : entry.posGroup === 'VOLANTE' ? '#10b981' : entry.posGroup === 'DELANTERO' ? '#ef4444' : '#94a3b8'} 
@@ -366,10 +435,14 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
               </ScatterChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex justify-center gap-6 mt-4">
+          <div className="flex flex-wrap justify-center gap-4 mt-6">
             {['DEFENSA', 'VOLANTE', 'DELANTERO'].map(group => (
               <div key={group} className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${group === 'DEFENSA' ? 'bg-blue-500' : group === 'VOLANTE' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                <div className={`w-2 h-2 rounded-full ${
+                  group === 'DEFENSA' ? 'bg-blue-500' : 
+                  group === 'VOLANTE' ? 'bg-emerald-500' : 
+                  'bg-red-500'
+                }`}></div>
                 <span className="text-[8px] font-black uppercase text-slate-400">{group}</span>
               </div>
             ))}

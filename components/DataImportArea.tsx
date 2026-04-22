@@ -46,6 +46,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Date', required: true, type: 'date' },
       { key: 'tarea', label: 'Name', required: true, type: 'string' },
+      { key: 'jugador_nombre', label: 'Nombre Jugador', required: false, type: 'string' },
       { key: 'bloque', label: 'Bloque', required: false, type: 'number' },
       { key: 'minutos', label: 'Min', required: false, type: 'number' },
       { key: 'dist_total_m', label: 'Total Distance (m)', required: false, type: 'number' },
