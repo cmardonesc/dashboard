@@ -4,7 +4,7 @@ import { User, Category, CATEGORY_ID_MAP, MicrocicloDB, UserRole } from '../type
 import { supabase } from '../lib/supabase'
 import { triggerPushNotification } from '../lib/notifications'
 import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 
 type ViewMode = 'grid' | 'selection' | 'clubs'
 
@@ -531,7 +531,7 @@ export default function CitacionesArea() {
       formatCategoryLabel(p.category)
     ]);
     
-    (doc as any).autoTable({
+    autoTable(doc, {
       startY: 85,
       head: [['#', 'JUGADOR', 'POSICIÓN', 'CATEGORÍA']],
       body: tableData,
@@ -555,7 +555,7 @@ export default function CitacionesArea() {
     });
     
     // Footer
-    const finalY = (doc as any).lastAutoTable.finalY || 85;
+    const finalY = (doc as any).lastAutoTable?.finalY || 85;
     doc.setFontSize(9);
     doc.setTextColor(100, 116, 139); // Slate 400
     doc.text("Generado por La Roja Performance Hub - Centro de Inteligencia Deportiva", 105, finalY + 20, { align: 'center' });
@@ -600,7 +600,7 @@ export default function CitacionesArea() {
         formatCategoryLabel(p.category)
       ]);
       
-      (doc as any).autoTable({
+      autoTable(doc, {
         startY: 85,
         head: [['#', 'JUGADOR', 'POSICIÓN', 'CATEGORÍA']],
         body: tableData,
@@ -615,7 +615,7 @@ export default function CitacionesArea() {
         margin: { top: 85 }
       });
       
-      const finalY = (doc as any).lastAutoTable.finalY || 85;
+      const finalY = (doc as any).lastAutoTable?.finalY || 85;
       doc.setFontSize(9);
       doc.setTextColor(100, 116, 139);
       doc.text("Generado por La Roja Performance Hub", 105, finalY + 20, { align: 'center' });
