@@ -207,9 +207,9 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                           <ClubBadge clubName={record.player.club} clubs={clubs} logoSize="w-3 h-3" className="text-[10px] font-black text-slate-400 uppercase tracking-widest" />
-                        </span>
+                        </div>
                       </td>
                       {subSection === 'wellness' && (
                         <>

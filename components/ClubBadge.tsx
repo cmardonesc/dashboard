@@ -19,10 +19,12 @@ const ClubBadge: React.FC<ClubBadgeProps> = ({
   logoSize = "w-5 h-5"
 }) => {
   const [imgError, setImgError] = useState(false);
+  const [retryUrl, setRetryUrl] = useState<string | null>(null);
 
   // Resetear error cuando cambia el club o la URL
   React.useEffect(() => {
     setImgError(false);
+    setRetryUrl(null);
   }, [clubName]);
 
   if (!clubName) return null;
@@ -45,19 +47,31 @@ const ClubBadge: React.FC<ClubBadgeProps> = ({
 
   const logoUrl = getClubLogo(clubName);
 
+  const handleImgError = () => {
+    if (!retryUrl && logoUrl?.includes('lh3.googleusercontent.com')) {
+      // Si falló el formato lh3, intentamos con el formato uc?id=
+      const id = logoUrl.split('/').pop();
+      if (id) {
+        setRetryUrl(`https://drive.google.com/uc?export=view&id=${id}`);
+        return;
+      }
+    }
+    console.warn(`Error cargando logo para ${clubName}: ${retryUrl || logoUrl}`);
+    setImgError(true);
+  };
+
+  const currentUrl = retryUrl || logoUrl;
+
   return (
     <div className={`inline-flex items-center gap-2 ${className}`}>
       <div className={`${logoSize} flex items-center justify-center shrink-0`}>
-        {logoUrl && !imgError ? (
+        {currentUrl && !imgError ? (
           <img 
-            src={logoUrl} 
+            src={currentUrl} 
             alt={clubName} 
             className="w-full h-full object-contain" 
             referrerPolicy="no-referrer" 
-            onError={(e) => {
-              console.warn(`Error cargando logo para ${clubName}: ${logoUrl}`);
-              setImgError(true);
-            }}
+            onError={handleImgError}
           />
         ) : (
           <div className="w-full h-full bg-slate-100 rounded flex items-center justify-center" title={clubName}>

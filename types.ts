@@ -82,6 +82,7 @@ export interface User {
 export type MenuId =
   | 'inicio'
   | 'planificacion_anual'
+  | 'planificacion_semanal'
   | 'tecnica'
   | 'fisica_wellness'
   | 'fisica_pse'

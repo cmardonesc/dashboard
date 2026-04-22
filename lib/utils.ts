@@ -22,11 +22,18 @@ export const getDriveDirectLink = (url: string) => {
   if (!trimmedUrl.includes("drive.google.com")) return trimmedUrl;
 
   try {
-    // Soporta formatos /d/ID/view, /open?id=ID, /file/d/ID/edit, etc.
-    const match = trimmedUrl.match(/\/d\/([a-zA-Z0-9_-]+)/) || trimmedUrl.match(/id=([a-zA-Z0-9_-]+)/);
+    // Soporta formatos:
+    // /file/d/ID/view
+    // /d/ID/view
+    // /open?id=ID
+    // /file/d/ID/edit
+    const match = trimmedUrl.match(/\/d\/([a-zA-Z0-9_-]+)/) || 
+                  trimmedUrl.match(/id=([a-zA-Z0-9_-]+)/) ||
+                  trimmedUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    
     const id = match ? match[1] : null;
     if (id) {
-      // Formato lh3 es el más confiable para incrustar en iframes y evitar bloqueos
+      // Intentamos usar el formato de googleusercontent que suele ser más directo para imágenes
       return `https://lh3.googleusercontent.com/d/${id}`;
     }
   } catch (e) {

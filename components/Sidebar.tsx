@@ -31,21 +31,30 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const currentClubLogo = userRole === 'club' && userClub ? getClubLogo(userClub) : null;
   const displayLogo = currentClubLogo || (FEDERATION_LOGO ? getDriveDirectLink(FEDERATION_LOGO) : null);
 
+  // Estado para Diario y sus submenús
+  const DIARIO_IDS = ['fisica_wellness', 'fisica_pse', 'fisica_carga_externa_total', 'fisica_carga_externa_tareas', 'fisica_gps_intelligence'];
+  const isDiarioActive = DIARIO_IDS.includes(activeMenu);
+  const [diarioOpen, setDiarioOpen] = useState(isDiarioActive);
+
   // Estado para Área Física y sus submenús
-  const isFisicaActive = activeMenu.startsWith('fisica_');
+  const FISICA_IDS = ['fisica_reporte', 'fisica_vo2max'];
+  const isFisicaActive = FISICA_IDS.includes(activeMenu);
   const [fisicaOpen, setFisicaOpen] = useState(isFisicaActive);
 
   // Estado para Nutrición y sus submenús
   const isNutricionActive = activeMenu.startsWith('nutricion_');
   const [nutricionOpen, setNutricionOpen] = useState(isNutricionActive);
+
+  // Estado para Planificación y sus submenús
+  const PLANIFICACION_IDS = ['planificacion_anual', 'planificacion_semanal'];
+  const isPlanificacionActive = PLANIFICACION_IDS.includes(activeMenu);
+  const [planificacionOpen, setPlanificacionOpen] = useState(isPlanificacionActive);
+
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
-  
-  const [cargaInternaOpen, setCargaInternaOpen] = useState(activeMenu === 'fisica_wellness' || activeMenu === 'fisica_pse');
-  const [cargaExternaOpen, setCargaExternaOpen] = useState(activeMenu === 'fisica_carga_externa_total' || activeMenu === 'fisica_carga_externa_tareas');
+  const [logoError, setLogoError] = useState(false);
 
   const menuItems = [
     { id: 'inicio', label: 'Inicio', icon: 'fa-solid fa-house' },
-    { id: 'planificacion_anual', label: 'Planificación Anual', icon: 'fa-solid fa-calendar-check' },
     { id: 'tecnica', label: 'Área Técnica', icon: 'fa-solid fa-bullseye' },
   ];
 
@@ -54,11 +63,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
     if (id !== 'citaciones' && id !== 'desconvocatoria' && id !== 'logistica_jugadores') {
       setLogisticsOpen(false);
     }
-    if (!id.startsWith('fisica_')) {
+    if (!DIARIO_IDS.includes(id)) {
+      setDiarioOpen(false);
+    }
+    if (!FISICA_IDS.includes(id)) {
       setFisicaOpen(false);
     }
     if (!id.startsWith('nutricion_')) {
       setNutricionOpen(false);
+    }
+    if (!PLANIFICACION_IDS.includes(id)) {
+      setPlanificacionOpen(false);
     }
   };
 
@@ -66,9 +81,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
     setIsCollapsed(!isCollapsed);
     // Si colapsamos, cerramos los submenús para limpieza visual
     if (!isCollapsed) {
+      setDiarioOpen(false);
       setFisicaOpen(false);
       setNutricionOpen(false);
       setLogisticsOpen(false);
+      setPlanificacionOpen(false);
     }
   };
 
@@ -90,13 +107,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           className={`flex items-center gap-4 ${isCollapsed ? 'justify-center w-full' : ''} cursor-pointer hover:opacity-80 transition-opacity`}
           onClick={() => onMenuChange('inicio')}
         >
-          {displayLogo ? (
+          {displayLogo && !logoError ? (
             <div className="w-10 h-10 overflow-hidden flex items-center justify-center shrink-0">
               <img 
                 src={displayLogo} 
                 alt="Logo" 
                 className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
+                onError={() => setLogoError(true)}
               />
             </div>
           ) : (
@@ -154,6 +172,113 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           );
         })}
 
+        {/* MENÚ PLANIFICACIÓN COLLAPSIBLE */}
+        <div className="pt-2">
+          <button
+            onClick={() => handleSubmenuClick(setPlanificacionOpen, !planificacionOpen)}
+            title={isCollapsed ? 'Planificación' : ''}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 ${
+              planificacionOpen ? 'text-white bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
+              <i className={`fa-solid fa-calendar-check text-xl ${isCollapsed ? '' : 'w-6'} ${planificacionOpen ? 'text-red-500' : 'text-slate-500'}`}></i>
+              {!isCollapsed && <span className="font-bold text-sm tracking-tight">Planificación</span>}
+            </div>
+            {!isCollapsed && <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${planificacionOpen ? 'rotate-180' : ''}`}></i>}
+          </button>
+          
+          {planificacionOpen && !isCollapsed && (
+            <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
+              <button
+                onClick={() => onMenuChange('planificacion_anual')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'planificacion_anual' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_anual' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Planificación Anual</span>
+              </button>
+              <button
+                onClick={() => onMenuChange('planificacion_semanal')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'planificacion_semanal' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_semanal' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Cronograma Semanal</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* MENÚ DIARIO COLLAPSIBLE */}
+        <div className="pt-2">
+          <button
+            onClick={() => handleSubmenuClick(setDiarioOpen, !diarioOpen)}
+            title={isCollapsed ? 'Diario' : ''}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 ${
+              diarioOpen ? 'text-white bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
+              <i className={`fa-solid fa-calendar-day text-xl ${isCollapsed ? '' : 'w-6'} ${diarioOpen ? 'text-emerald-500' : 'text-slate-500'}`}></i>
+              {!isCollapsed && <span className="font-bold text-sm tracking-tight uppercase tracking-widest">Diario</span>}
+            </div>
+            {!isCollapsed && <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${diarioOpen ? 'rotate-180' : ''}`}></i>}
+          </button>
+          
+          {diarioOpen && !isCollapsed && (
+            <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
+              <button
+                onClick={() => onMenuChange('fisica_wellness')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'fisica_wellness' ? 'text-emerald-400 bg-emerald-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_wellness' ? 'bg-emerald-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Wellness</span>
+              </button>
+              <button
+                onClick={() => onMenuChange('fisica_pse')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'fisica_pse' ? 'text-emerald-400 bg-emerald-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_pse' ? 'bg-emerald-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">PSE</span>
+              </button>
+              <button
+                onClick={() => onMenuChange('fisica_carga_externa_total')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'fisica_carga_externa_total' ? 'text-emerald-400 bg-emerald-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_carga_externa_total' ? 'bg-emerald-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Totales de Carga Externa</span>
+              </button>
+              <button
+                onClick={() => onMenuChange('fisica_carga_externa_tareas')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'fisica_carga_externa_tareas' ? 'text-emerald-400 bg-emerald-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_carga_externa_tareas' ? 'bg-emerald-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold">Por Tarea</span>
+              </button>
+              <button
+                onClick={() => onMenuChange('fisica_gps_intelligence')}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                  activeMenu === 'fisica_gps_intelligence' ? 'text-emerald-400 bg-emerald-900/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_gps_intelligence' ? 'bg-emerald-400' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold italic">GPS Intelligence</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* ÁREA FÍSICA COLLAPSIBLE */}
         <div className="pt-2">
           <button
@@ -172,88 +297,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           
           {fisicaOpen && !isCollapsed && (
             <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
-              
-              {/* SUB-GRUPO: CARGA INTERNA */}
-              <div>
-                <button
-                  onClick={() => setCargaInternaOpen(!cargaInternaOpen)}
-                  className={`w-full flex items-center justify-between gap-4 px-4 py-3 rounded-xl transition-all ${
-                    cargaInternaOpen ? 'text-white' : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  <span className="text-xs font-bold tracking-tight">Carga interna</span>
-                  <i className={`fa-solid fa-chevron-down text-[9px] transition-transform ${cargaInternaOpen ? 'rotate-180' : ''}`}></i>
-                </button>
-                
-                {cargaInternaOpen && (
-                  <div className="ml-4 mt-1 space-y-1 border-l border-white/5 pl-4">
-                    <button
-                      onClick={() => onMenuChange('fisica_wellness')}
-                      className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                        activeMenu === 'fisica_wellness' ? 'text-blue-400 bg-blue-900/20' : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_wellness' ? 'bg-blue-400' : 'bg-slate-700'}`}></div>
-                      <span className="text-[10px] font-bold">Wellness</span>
-                    </button>
-                    <button
-                      onClick={() => onMenuChange('fisica_pse')}
-                      className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                        activeMenu === 'fisica_pse' ? 'text-blue-400 bg-blue-900/20' : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_pse' ? 'bg-blue-400' : 'bg-slate-700'}`}></div>
-                      <span className="text-[10px] font-bold">PSE</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* SUB-GRUPO: CARGA EXTERNA */}
-              <div className="mt-2">
-                <button
-                  onClick={() => setCargaExternaOpen(!cargaExternaOpen)}
-                  className={`w-full flex items-center justify-between gap-4 px-4 py-3 rounded-xl transition-all ${
-                    cargaExternaOpen ? 'text-white' : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  <span className="text-xs font-bold tracking-tight">Carga externa</span>
-                  <i className={`fa-solid fa-chevron-down text-[9px] transition-transform ${cargaExternaOpen ? 'rotate-180' : ''}`}></i>
-                </button>
-                
-                {cargaExternaOpen && (
-                  <div className="ml-4 mt-1 space-y-1 border-l border-white/5 pl-4">
-                    <button
-                      onClick={() => onMenuChange('fisica_carga_externa_total')}
-                      className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                        activeMenu === 'fisica_carga_externa_total' ? 'text-blue-400 bg-blue-900/20' : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_carga_externa_total' ? 'bg-blue-400' : 'bg-slate-700'}`}></div>
-                      <span className="text-[10px] font-bold">Totales</span>
-                    </button>
-                    <button
-                      onClick={() => onMenuChange('fisica_carga_externa_tareas')}
-                      className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                        activeMenu === 'fisica_carga_externa_tareas' ? 'text-blue-400 bg-blue-900/20' : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_carga_externa_tareas' ? 'bg-blue-400' : 'bg-slate-700'}`}></div>
-                      <span className="text-[10px] font-bold">Por Tarea</span>
-                    </button>
-                    <button
-                      onClick={() => onMenuChange('fisica_gps_intelligence')}
-                      className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                        activeMenu === 'fisica_gps_intelligence' ? 'text-blue-400 bg-blue-900/20' : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_gps_intelligence' ? 'bg-blue-400' : 'bg-slate-700'}`}></div>
-                      <span className="text-[10px] font-bold italic">GPS Intelligence</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
               {userRole !== 'club' && (
                 <>
                   {/* REPORTE DE SESIÓN */}
@@ -283,7 +326,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                   </button>
                 </>
               )}
-
             </div>
           )}
         </div>

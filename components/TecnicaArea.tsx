@@ -24,6 +24,7 @@ interface MicrocicloUI extends MicrocicloDB {
 interface TecnicaAreaProps {
   performanceRecords?: AthletePerformanceRecord[];
   onMenuChange?: (id: any) => void;
+  initialTab?: SubTab;
 }
 
 const DINAMICAS_OFICIALES = [
@@ -70,9 +71,9 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'OTRA', emoji: '📝' },
 ];
 
-const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuChange }) => {
+const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuChange, initialTab }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('selection');
-  const [activeTab, setActiveTab] = useState<SubTab>('cronograma');
+  const [activeTab, setActiveTab] = useState<SubTab>(initialTab || 'cronograma');
   const [selectedMicro, setSelectedMicro] = useState<MicrocicloUI | null>(null);
   const [selectedJornada, setSelectedJornada] = useState<'AM' | 'PM'>('AM');
   const [microciclos, setMicrociclos] = useState<MicrocicloUI[]>([]);

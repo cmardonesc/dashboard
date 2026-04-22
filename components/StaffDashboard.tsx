@@ -1080,6 +1080,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         return <NutricionArea performanceRecords={performanceRecords} initialTab="crecimiento" userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'logistica_jugadores':
         return <LogisticaJugadores />;
+      case 'planificacion_semanal':
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} initialTab="cronograma" />;
       case 'logs':
         return <ActivityLogArea />;
       case 'importar_datos':

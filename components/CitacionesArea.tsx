@@ -3,8 +3,10 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { User, Category, CATEGORY_ID_MAP, MicrocicloDB, UserRole } from '../types'
 import { supabase } from '../lib/supabase'
 import { triggerPushNotification } from '../lib/notifications'
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
 
-type ViewMode = 'grid' | 'selection'
+type ViewMode = 'grid' | 'selection' | 'clubs'
 
 interface MicrocicloUI extends MicrocicloDB {
   id: number;
@@ -483,6 +485,145 @@ export default function CitacionesArea() {
     return `${day}-${month}-${year}`;
   };
 
+  const citadosByClub = useMemo(() => {
+    const groups: Record<string, User[]> = {};
+    sortedCitados.forEach(p => {
+      const club = p.club || 'SIN CLUB';
+      if (!groups[club]) groups[club] = [];
+      groups[club].push(p);
+    });
+    return groups;
+  }, [sortedCitados]);
+
+  const generatePDFByClub = (clubName: string, players: User[]) => {
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(24);
+    doc.setTextColor(207, 27, 43); // #CF1B2B
+    doc.setFont("helvetica", "bold");
+    doc.text("LA ROJA PERFORMANCE", 105, 25, { align: 'center' });
+    
+    doc.setFontSize(14);
+    doc.setTextColor(51, 65, 85); // Slate 700
+    doc.text(`CITACIÓN OFICIAL DE JUGADORES - ${clubName.toUpperCase()}`, 105, 35, { align: 'center' });
+    
+    doc.setDrawColor(207, 27, 43);
+    doc.setLineWidth(1);
+    doc.line(20, 40, 190, 40);
+    
+    // Proceso Info
+    doc.setFontSize(11);
+    doc.setTextColor(11, 18, 32); // #0b1220
+    doc.setFont("helvetica", "bold");
+    doc.text("DETALLES DEL PROCESO", 20, 52);
+    
+    doc.setFont("helvetica", "normal");
+    doc.text(`Proceso: ${selectedMicro?.type?.toUpperCase()}`, 20, 60);
+    doc.text(`Periodo: Del ${formatDate(selectedMicro?.start_date || '')} al ${formatDate(selectedMicro?.end_date || '')}`, 20, 67);
+    doc.text(`Sede: ${selectedMicro?.city?.toUpperCase()}, ${selectedMicro?.country?.toUpperCase()}`, 20, 74);
+    
+    // Table
+    const tableData = players.map((p, idx) => [
+      idx + 1,
+      p.name.toUpperCase(),
+      p.position.toUpperCase(),
+      formatCategoryLabel(p.category)
+    ]);
+    
+    (doc as any).autoTable({
+      startY: 85,
+      head: [['#', 'JUGADOR', 'POSICIÓN', 'CATEGORÍA']],
+      body: tableData,
+      headStyles: { 
+        fillColor: [11, 18, 32],
+        fontSize: 10,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      styles: { 
+        fontSize: 10,
+        cellPadding: 4
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 10 },
+        2: { halign: 'center' },
+        3: { halign: 'center' }
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { top: 85 }
+    });
+    
+    // Footer
+    const finalY = (doc as any).lastAutoTable.finalY || 85;
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139); // Slate 400
+    doc.text("Generado por La Roja Performance Hub - Centro de Inteligencia Deportiva", 105, finalY + 20, { align: 'center' });
+    doc.text(`Fecha de emisión: ${new Date().toLocaleDateString('es-CL')}`, 105, finalY + 26, { align: 'center' });
+    
+    doc.save(`Citacion_${clubName.replace(/\s+/g, '_')}_Microciclo_${selectedMicro?.id}.pdf`);
+  };
+
+  const generateAllClubsPDF = () => {
+    const doc = new jsPDF();
+    
+    Object.entries(citadosByClub).forEach(([clubName, players], index) => {
+      if (index > 0) doc.addPage();
+      
+      doc.setFontSize(24);
+      doc.setTextColor(207, 27, 43);
+      doc.setFont("helvetica", "bold");
+      doc.text("LA ROJA PERFORMANCE", 105, 25, { align: 'center' });
+      
+      doc.setFontSize(14);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`CITACIÓN OFICIAL - ${clubName.toUpperCase()}`, 105, 35, { align: 'center' });
+      
+      doc.setDrawColor(207, 27, 43);
+      doc.setLineWidth(1);
+      doc.line(20, 40, 190, 40);
+      
+      doc.setFontSize(11);
+      doc.setTextColor(11, 18, 32);
+      doc.setFont("helvetica", "bold");
+      doc.text("DETALLES DEL PROCESO", 20, 52);
+      
+      doc.setFont("helvetica", "normal");
+      doc.text(`Proceso: ${selectedMicro?.type?.toUpperCase()}`, 20, 60);
+      doc.text(`Periodo: Del ${formatDate(selectedMicro?.start_date || '')} al ${formatDate(selectedMicro?.end_date || '')}`, 20, 67);
+      doc.text(`Sede: ${selectedMicro?.city?.toUpperCase()}, ${selectedMicro?.country?.toUpperCase()}`, 20, 74);
+      
+      const tableData = players.map((p, idx) => [
+        idx + 1,
+        p.name.toUpperCase(),
+        p.position.toUpperCase(),
+        formatCategoryLabel(p.category)
+      ]);
+      
+      (doc as any).autoTable({
+        startY: 85,
+        head: [['#', 'JUGADOR', 'POSICIÓN', 'CATEGORÍA']],
+        body: tableData,
+        headStyles: { fillColor: [11, 18, 32], fontSize: 10, fontStyle: 'bold', halign: 'center' },
+        styles: { fontSize: 10, cellPadding: 4 },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 10 },
+          2: { halign: 'center' },
+          3: { halign: 'center' }
+        },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { top: 85 }
+      });
+      
+      const finalY = (doc as any).lastAutoTable.finalY || 85;
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Generado por La Roja Performance Hub", 105, finalY + 20, { align: 'center' });
+    });
+    
+    doc.save(`Citaciones_Completas_Microciclo_${selectedMicro?.id}.pdf`);
+  };
+
   if (viewMode === 'grid') {
     return (
       <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -705,13 +846,95 @@ export default function CitacionesArea() {
     )
   }
 
+  if (viewMode === 'clubs') {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+        <div className="bg-[#0b1220] rounded-[40px] p-10 text-white shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-red-600/10 rounded-full -mr-48 -mt-48 blur-3xl"></div>
+          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="flex items-center gap-6">
+              <button 
+                onClick={() => setViewMode('selection')}
+                className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center text-white/40 hover:text-white hover:bg-red-600 transition-all border border-white/10"
+              >
+                <i className="fa-solid fa-arrow-left text-xl"></i>
+              </button>
+              <div>
+                <h2 className="text-4xl font-black uppercase italic tracking-tighter leading-none">NÓMINA <span className="text-red-600">POR CLUB</span></h2>
+                <div className="flex items-center gap-3 mt-2">
+                   <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{selectedMicro?.type}</span>
+                   <span className="text-red-600 text-[10px] font-black uppercase tracking-widest">|</span>
+                   <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{formatCategoryLabel(selectedMicro?.category_id)}</span>
+                </div>
+              </div>
+            </div>
+            
+            <button 
+              onClick={generateAllClubsPDF}
+              className="bg-white text-slate-900 px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-slate-50 transition-all flex items-center gap-3 transform active:scale-95"
+            >
+              <i className="fa-solid fa-file-pdf text-lg text-red-600"></i> DESCARGAR TODO (.PDF)
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
+          {Object.entries(citadosByClub).sort((a,b) => a[0].localeCompare(b[0])).map(([clubName, players]) => (
+            <div key={clubName} className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden flex flex-col group hover:shadow-xl transition-all">
+              <div className="p-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-slate-900 font-black italic border border-slate-200">
+                    {clubName.charAt(0)}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-tighter leading-none mb-1">{clubName}</h4>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{players.length} JUGADORES</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => generatePDFByClub(clubName, players)}
+                  className="w-10 h-10 bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 rounded-xl flex items-center justify-center transition-all shadow-sm"
+                  title="Descargar PDF de este club"
+                >
+                  <i className="fa-solid fa-download"></i>
+                </button>
+              </div>
+              
+              <div className="p-6 flex-1 space-y-3">
+                {players.sort((a,b) => a.name.localeCompare(b.name)).map(p => (
+                  <div key={p.id} className="flex items-center justify-between p-3 rounded-2xl hover:bg-slate-50 transition-all border border-transparent hover:border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px] font-black italic">
+                        {p.name.charAt(0)}
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-700 uppercase">{p.name}</span>
+                    </div>
+                    <span className="text-[9px] font-black text-red-600 uppercase tracking-widest bg-red-50 px-2.5 py-1 rounded-full">{p.position}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-160px)] gap-6 animate-in fade-in transform-gpu">
       <div className="w-full lg:w-[380px] bg-[#0b1220] rounded-[48px] flex flex-col overflow-hidden shadow-2xl border border-white/5">
         <div className="p-10 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent">
-          <button onClick={() => setViewMode('grid')} className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-white/40 hover:text-white hover:bg-[#CF1B2B] transition-all mb-6">
-            <i className="fa-solid fa-arrow-left"></i>
-          </button>
+          <div className="flex items-center justify-between mb-6">
+            <button onClick={() => setViewMode('grid')} className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-white/40 hover:text-white hover:bg-[#CF1B2B] transition-all">
+              <i className="fa-solid fa-arrow-left"></i>
+            </button>
+            <button 
+              onClick={() => setViewMode('clubs')}
+              className="bg-red-600/20 text-red-500 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all flex items-center gap-2 border border-red-600/30 shadow-lg shadow-red-900/20"
+            >
+              <i className="fa-solid fa-file-pdf"></i> Nómina por Club
+            </button>
+          </div>
           <h3 className="text-white text-xl font-black uppercase italic tracking-tighter leading-none mb-1">NÓMINA OFICIAL</h3>
           <p className="text-[#CF1B2B] text-[10px] font-black uppercase tracking-[0.2em]">MICROCICLO #{selectedMicro?.id}</p>
         </div>

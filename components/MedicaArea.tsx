@@ -529,11 +529,11 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                               </div>
                               <div>
                                 <p className="text-[10px] md:text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
-                                <p className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                <div className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 flex items-center">
                                   <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-400 font-bold uppercase text-[9px]" />
                                   <span className="text-slate-400 mx-1">•</span>
                                   <span className="text-slate-400 font-bold uppercase text-[9px]">{p.position}</span>
-                                </p>
+                                </div>
                               </div>
                             </div>
                             {idx === 0 && (

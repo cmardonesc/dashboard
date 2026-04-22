@@ -1061,13 +1061,13 @@ const IndividualDashboard = ({
                 <i className="fa-solid fa-calendar text-blue-500"></i>
                 Año: {player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : ((player as any).anio ? Number((player as any).anio) : '-')}
               </span>
-              <span className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <i className="fa-solid fa-building text-emerald-500"></i>
                 <div className="flex items-center gap-1">
                   <span className="text-slate-500">Club:</span>
                   <ClubBadge clubName={player.club || player.club_name} clubs={clubs} logoSize="w-3 h-3" className="text-slate-900 font-bold" />
                 </div>
-              </span>
+              </div>
             </div>
           </div>
         </div>

@@ -545,9 +545,9 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
                           <p className="font-black text-slate-900 uppercase italic text-[13px] leading-none mb-1 group-hover:text-red-600 transition-colors">
                             {row.player?.nombre || row.jugador_nombre} {row.player?.apellido1 || ""}
                           </p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                             {row.player?.posicion || 'N/A'} | <ClubBadge clubName={row.player?.club || 'Sin Club'} clubs={clubs} logoSize="w-3 h-3" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest" />
-                          </p>
+                          </div>
                        </div>
                     </div>
                   </td>
