@@ -250,7 +250,7 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
       items = items.filter(item => 
         (item.players?.nombre || item.jugador_nombre || "").toLowerCase().includes(lowerSearch) ||
         (item.players?.apellido1 || "").toLowerCase().includes(lowerSearch) ||
-        item.tarea.toLowerCase().includes(lowerSearch)
+        (item.tarea || "").toLowerCase().includes(lowerSearch)
       );
     }
 

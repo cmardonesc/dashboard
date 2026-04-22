@@ -101,6 +101,7 @@ export type MenuId =
   | 'citaciones'
   | 'desconvocatoria'
   | 'logistica_jugadores'
+  | 'contactos_clubes'
   | 'usuarios'
   | 'logs'
   | 'importar_datos'

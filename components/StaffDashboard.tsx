@@ -15,6 +15,7 @@ import UserManagementArea from './UserManagementArea'
 import MatchManagementArea from './MatchManagementArea'
 import NutricionResumenGrupal from './NutricionResumenGrupal'
 import LogisticaJugadores from './LogisticaJugadores'
+import ContactosClubesArea from './ContactosClubesArea'
 import ActivityLogArea from './ActivityLogArea'
 import DataImportArea from './DataImportArea'
 import VO2MaxArea from './VO2MaxArea'
@@ -1080,6 +1081,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         return <NutricionArea performanceRecords={performanceRecords} initialTab="crecimiento" userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'logistica_jugadores':
         return <LogisticaJugadores />;
+      case 'contactos_clubes':
+        return <ContactosClubesArea />;
       case 'planificacion_semanal':
         return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} initialTab="cronograma" />;
       case 'logs':

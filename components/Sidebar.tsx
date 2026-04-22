@@ -60,7 +60,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
 
   const handleMenuClick = (id: MenuId) => {
     onMenuChange(id);
-    if (id !== 'citaciones' && id !== 'desconvocatoria' && id !== 'logistica_jugadores') {
+    if (id !== 'citaciones' && id !== 'desconvocatoria' && id !== 'logistica_jugadores' && id !== 'contactos_clubes') {
       setLogisticsOpen(false);
     }
     if (!DIARIO_IDS.includes(id)) {
@@ -479,6 +479,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                 >
                   <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'desconvocatoria' ? 'bg-white' : 'bg-slate-700'}`}></div>
                   <span className="text-xs font-bold tracking-tight">Desconvocatoria</span>
+                </button>
+                <button
+                  onClick={() => onMenuChange('contactos_clubes')}
+                  className={`w-full flex items-center gap-4 px-6 py-3 rounded-xl transition-all ${
+                    activeMenu === 'contactos_clubes' 
+                      ? 'bg-[#CF1B2B] text-white shadow-lg' 
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'contactos_clubes' ? 'bg-white' : 'bg-slate-700'}`}></div>
+                  <span className="text-xs font-bold tracking-tight">Contactos de Clubes</span>
                 </button>
               </div>
             )}

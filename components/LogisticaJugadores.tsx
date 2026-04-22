@@ -103,8 +103,8 @@ const LogisticaJugadores: React.FC = () => {
 
   const filteredPlayers = useMemo(() => {
     return players.filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           (p.club || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = (p.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                           (p.club?.toLowerCase() || '').includes(searchTerm.toLowerCase());
       const matchesCategory = filterCategory === 'TODAS' || p.anio?.toString() === filterCategory;
       const matchesClub = filterClub === 'TODOS' || p.club === filterClub;
       const matchesPosition = filterPosition === 'TODAS' || p.position === filterPosition;

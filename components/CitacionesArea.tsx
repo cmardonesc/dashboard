@@ -3,6 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { User, Category, CATEGORY_ID_MAP, MicrocicloDB, UserRole } from '../types'
 import { supabase } from '../lib/supabase'
 import { triggerPushNotification } from '../lib/notifications'
+import { FEDERATION_LOGO } from '../constants'
+import { getDriveDirectLink } from '../lib/utils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import JSZip from 'jszip'
@@ -45,6 +47,7 @@ export default function CitacionesArea() {
   const [microciclos, setMicrociclos] = useState<MicrocicloUI[]>([])
   const [allPlayers, setAllPlayers] = useState<User[]>([])
   const [citadosIds, setCitadosIds] = useState<number[]>([])
+  const [clubContacts, setClubContacts] = useState<any[]>([])
 
   // Modal State
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -63,7 +66,13 @@ export default function CitacionesArea() {
   useEffect(() => {
     fetchMicrocycles();
     fetchAllPlayers();
+    fetchClubContacts();
   }, []);
+
+  const fetchClubContacts = async () => {
+    const { data } = await supabase.from('contactos_solicitudes').select('*');
+    if (data) setClubContacts(data);
+  };
 
   const fetchMicrocycles = async () => {
     setLoadingMicros(true);
@@ -394,7 +403,7 @@ export default function CitacionesArea() {
   }, [allPlayers]);
 
   const sortedCitados = useMemo(() => {
-    return [...currentCitados].sort((a, b) => a.name.localeCompare(b.name));
+    return [...currentCitados].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }, [currentCitados]);
 
   const togglePosition = (pos: string) => {
@@ -409,9 +418,9 @@ export default function CitacionesArea() {
 
   const filteredPlayers = useMemo(() => {
     return allPlayers.filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = (p.name || "").toLowerCase().includes(searchTerm.toLowerCase());
       const matchesYear = selectedYear === 'TODOS' || p.anio?.toString() === selectedYear;
-      const matchesPos = selectedPositions.includes('TODAS') || selectedPositions.some(pos => p.position.includes(pos));
+      const matchesPos = selectedPositions.includes('TODAS') || selectedPositions.some(pos => (p.position || "").includes(pos));
       const matchesCat = selectedCategoryPlayer === 'TODOS' || p.category === selectedCategoryPlayer;
       return matchesSearch && matchesYear && matchesPos && matchesCat;
     });
@@ -564,6 +573,162 @@ export default function CitacionesArea() {
     doc.text(`Fecha de emisión: ${new Date().toLocaleDateString('es-CL')}`, 105, finalY + 26, { align: 'center' });
     
     return doc.output('blob');
+  };
+
+  const generateFormalLetterPDF = (clubName: string, players: User[]) => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const contact = clubContacts.find(c => 
+      (c.club?.toLowerCase() || "").includes(clubName.toLowerCase()) || 
+      clubName.toLowerCase().includes(c.club?.toLowerCase() || "")
+    );
+
+    const presidentName = contact?.presidente || 'Presidente';
+    const recipientCargo = contact?.cargo || 'Presidente';
+    const recipientClub = clubName.toUpperCase();
+    
+    // Header Logo & Signature
+    const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+    const signatureUrl = getDriveDirectLink("https://drive.google.com/file/d/1ymLFGskIutsx2PpVJJQtjfGshSW5ul3R/view?usp=drive_link");
+    
+    let logoLoaded = false;
+    let signatureLoaded = false;
+    const logoImg = new Image();
+    const signatureImg = new Image();
+    
+    const checkAllLoaded = () => {
+      if (logoLoaded && signatureLoaded) {
+        finishPDF();
+      }
+    };
+
+    logoImg.crossOrigin = "anonymous";
+    logoImg.src = logoUrl;
+    logoImg.onload = () => {
+      logoLoaded = true;
+      checkAllLoaded();
+    };
+    logoImg.onerror = () => {
+      logoLoaded = true;
+      checkAllLoaded();
+    };
+
+    signatureImg.crossOrigin = "anonymous";
+    signatureImg.src = signatureUrl;
+    signatureImg.onload = () => {
+      signatureLoaded = true;
+      checkAllLoaded();
+    };
+    signatureImg.onerror = () => {
+      signatureLoaded = true;
+      checkAllLoaded();
+    };
+
+    const finishPDF = () => {
+      // Add Logo if loaded correctly
+      if (logoImg.complete && logoImg.naturalWidth !== 0) {
+        doc.addImage(logoImg, 'PNG', 91, 12, 28, 28); 
+      } else {
+        // Fallback
+        doc.setDrawColor(30, 58, 138);
+        doc.setLineWidth(0.5);
+        doc.circle(105, 26, 14);
+      }
+
+      // Page Border - A4 is 210x297
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.2);
+      doc.rect(10, 10, 190, 277); 
+
+      // Date
+      const today = new Date();
+      const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+      const formattedToday = `Santiago de Chile, ${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.text(formattedToday, 180, 55, { align: 'right' });
+
+      // Recipient
+      doc.setFont("helvetica", "bold");
+      doc.text("Señor", 25, 65);
+      doc.text(presidentName, 25, 71);
+      doc.text(recipientCargo, 25, 77);
+      doc.text(`Club ${recipientClub}`, 25, 83);
+      doc.setLineWidth(0.3);
+      doc.line(25, 84, 45, 84);
+      doc.text("Presente", 25, 89);
+      
+      // Ref
+      doc.setFont("helvetica", "bold");
+      const categoryName = formatCategoryLabel(selectedMicro?.category_id);
+      const refText = `Ref.: Carta Convocatoria Selección Nacional ${categoryName}.`;
+      doc.text(refText, 25, 105);
+      const refWidth = doc.getTextWidth(refText);
+      doc.setLineWidth(0.2);
+      doc.line(25, 106, 25 + refWidth, 106);
+
+      // Salutation
+      doc.setFont("helvetica", "normal");
+      const salutation = recipientCargo.toLowerCase().includes('presidente') ? "Estimado presidente," : "Estimado señor,";
+      doc.text(salutation, 25, 118);
+
+      // Body (Continuous Text Paragraph)
+      const startDate = new Date(selectedMicro?.start_date + 'T12:00:00');
+      const startDay = startDate.getDate();
+      const endDay = new Date(selectedMicro?.end_date + 'T12:00:00').getDate();
+      const monthName = months[startDate.getMonth()];
+      const year = startDate.getFullYear();
+
+      const text1 = `El Cuerpo Técnico de la Selección Chilena de Fútbol, junto con la Gerencia de Selecciones Nacionales, tiene el agrado de convocar al jugador de sus registros, `;
+      const playerNamesStr = players.map(p => p.name).join(', ');
+      const text2 = `, al Microciclo que se desarrollará entre los días ${startDay} al ${endDay} de ${monthName} del ${year}.`;
+      
+      const marginX = 25;
+      const textMaxWidth = 160;
+      let currentY = 130;
+      const lineHeight = 6;
+
+      const fullParagraph = text1 + playerNamesStr + text2;
+      const lines1 = doc.splitTextToSize(fullParagraph, textMaxWidth);
+      doc.text(lines1, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
+      currentY += lines1.length * lineHeight + 8;
+
+      const text3 = `El jugador debe presentarse en el CAR José Sulantay el día ${startDay} de ${monthName} en horario por confirmar.`;
+      const lines3 = doc.splitTextToSize(text3, textMaxWidth);
+      doc.text(lines3, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
+      currentY += lines3.length * lineHeight + 10;
+
+      const text4 = `Asimismo, queremos recordar que, en el marco de la formación integral de nuestros futbolistas, se solicita que los jugadores mantengan una presentación acorde a los lineamientos establecidos. Por ello, queda prohibido el uso de aros, piercings, cortes en la ceja, cabello teñido u otros elementos que no se ajusten a la imagen profesional que buscamos proyectar en nuestros seleccionados.`;
+      const lines4 = doc.splitTextToSize(text4, textMaxWidth);
+      doc.text(lines4, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
+      currentY += lines4.length * lineHeight + 10;
+
+      const text5 = `Aprovechamos la ocasión para agradecer desde ya la buena disposición de su club para con nuestra Selección Nacional, y esperamos una favorable acogida.`;
+      const lines5 = doc.splitTextToSize(text5, textMaxWidth);
+      doc.text(lines5, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
+      currentY += lines5.length * lineHeight + 15;
+
+      doc.text("Le saluda cordialmente,", marginX, currentY);
+
+      // Signature (Image + Text)
+      if (signatureImg.complete && signatureImg.naturalWidth !== 0) {
+        // Adjust values for size/position as needed. Centered above the text.
+        doc.addImage(signatureImg, 'PNG', 85, 240, 40, 20); 
+      }
+
+      doc.setFont("helvetica", "bold");
+      doc.text("Felipe Correa", 105, 265, { align: 'center' });
+      doc.setFontSize(9);
+      doc.text("Gerente de Selecciones Nacionales", 105, 270, { align: 'center' });
+
+      // Save
+      doc.save(`Carta_Convocatoria_${clubName.replace(/\s+/g, '_')}.pdf`);
+    };
   };
 
   const generatePDFByClub = (clubName: string, players: User[]) => {
@@ -869,13 +1034,22 @@ export default function CitacionesArea() {
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{players.length} JUGADORES</p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => generatePDFByClub(clubName, players)}
-                  className="w-10 h-10 bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 rounded-xl flex items-center justify-center transition-all shadow-sm"
-                  title="Descargar PDF de este club"
-                >
-                  <i className="fa-solid fa-download"></i>
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => generateFormalLetterPDF(clubName, players)}
+                    className="w-10 h-10 bg-[#CF1B2B]/5 border border-[#CF1B2B]/20 text-[#CF1B2B] hover:bg-[#CF1B2B] hover:text-white rounded-xl flex items-center justify-center transition-all shadow-sm"
+                    title="Generar Carta Formal de Convocatoria"
+                  >
+                    <i className="fa-solid fa-file-invoice"></i>
+                  </button>
+                  <button 
+                    onClick={() => generatePDFByClub(clubName, players)}
+                    className="w-10 h-10 bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 rounded-xl flex items-center justify-center transition-all shadow-sm"
+                    title="Descargar Nómina (Lista)"
+                  >
+                    <i className="fa-solid fa-download"></i>
+                  </button>
+                </div>
               </div>
               
               <div className="p-6 flex-1 space-y-3">

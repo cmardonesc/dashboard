@@ -40,8 +40,8 @@ export const ActivityLogArea: React.FC = () => {
   };
 
   const filteredLogs = logs.filter(log => {
-    const matchesSearch = log.user_email.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          log.action.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (log.user_email?.toLowerCase() || "").includes(searchTerm.toLowerCase()) || 
+                          (log.action?.toLowerCase() || "").includes(searchTerm.toLowerCase());
     const matchesAction = filterAction === 'all' || log.action === filterAction;
     return matchesSearch && matchesAction;
   });
