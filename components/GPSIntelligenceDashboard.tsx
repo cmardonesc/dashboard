@@ -1,6 +1,7 @@
 
-import React, { useMemo, useState } from 'react';
-import { AthletePerformanceRecord } from '../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { AthletePerformanceRecord, User } from '../types';
+import { supabase } from '../lib/supabase';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   Legend, ScatterChart, Scatter, ZAxis, Cell, ReferenceLine
@@ -16,82 +17,185 @@ interface GPSIntelligenceDashboardProps {
 const POSITIONS = ['DEFENSA', 'VOLANTE', 'DELANTERO', 'PORTERO'];
 
 export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [], categoryName }: GPSIntelligenceDashboardProps) {
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    // Default to the most recent date in the GPS data
-    const allDates = performanceRecords.flatMap(r => r.gps.map(g => g.date)).sort();
-    return allDates.length > 0 ? allDates[allDates.length - 1] : new Date().toISOString().split('T')[0];
-  });
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [sessionData, setSessionData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
 
-  const availableDates = useMemo(() => {
-    const dates = new Set<string>();
-    performanceRecords.forEach(r => r.gps.forEach(g => dates.add(g.date)));
-    return Array.from(dates).sort().reverse();
-  }, [performanceRecords]);
-
-  // Sync selectedDate when availableDates changes (e.g. due to filtering)
-  // This ensures that if the current date is no longer available, we pick the most recent one.
-  React.useEffect(() => {
-    if (availableDates.length > 0 && !availableDates.includes(selectedDate)) {
-      setSelectedDate(availableDates[0]);
-    }
-  }, [availableDates, selectedDate]);
-
-  const sessionData = useMemo(() => {
-    const data: any[] = [];
-    performanceRecords.forEach(record => {
-      const gpsSession = record.gps.find(g => g.date === selectedDate);
-      if (gpsSession) {
-        data.push({
-          ...gpsSession,
-          player: record.player,
-          posicion: record.player.position?.toUpperCase() || 'S/D',
-          // Normalizar posición a categorías generales
-          posGroup: record.player.position?.toUpperCase().includes('DEF') ? 'DEFENSA' :
-                    record.player.position?.toUpperCase().includes('VOL') || record.player.position?.toUpperCase().includes('MED') ? 'VOLANTE' :
-                    record.player.position?.toUpperCase().includes('DEL') || record.player.position?.toUpperCase().includes('EXT') ? 'DELANTERO' :
-                    record.player.position?.toUpperCase().includes('POR') ? 'PORTERO' : 'OTROS'
-        });
+  // 1. Fetch available dates from gps_import
+  useEffect(() => {
+    const fetchDates = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('gps_import')
+          .select('fecha')
+          .order('fecha', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (data) {
+          const uniqueDates = Array.from(new Set(data.map(d => d.fecha))).sort().reverse();
+          setAvailableDates(uniqueDates);
+          if (uniqueDates.length > 0 && !selectedDate) {
+            setSelectedDate(uniqueDates[0]);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching gps dates:", err);
       }
+    };
+    fetchDates();
+  }, []);
+
+  // 2. Fetch session data from gps_import for selected date
+  useEffect(() => {
+    if (!selectedDate) return;
+
+    const fetchSessionData = async () => {
+      setLoading(true);
+      try {
+        // Fetch GPS records for the date
+        const { data: gpsRecords, error: gpsError } = await supabase
+          .from('gps_import')
+          .select(`
+            *,
+            players:id_del_jugador (
+              id_del_jugador,
+              nombre,
+              apellido1,
+              apellido2,
+              club,
+              posicion
+            )
+          `)
+          .eq('fecha', selectedDate);
+        
+        if (gpsError) throw gpsError;
+
+        if (gpsRecords) {
+          // Fetch citations for these players on this date to get microcycle and category
+          // We need to match player_id and date
+          const playerIds = gpsRecords.map(r => r.id_del_jugador);
+          
+          const { data: citations, error: citError } = await supabase
+            .from('citaciones')
+            .select(`
+              player_id,
+              microcycles (
+                category_id,
+                categories (
+                  name
+                )
+              )
+            `)
+            .in('player_id', playerIds)
+            .eq('fecha_citacion', selectedDate);
+
+          if (citError) console.error("Error fetching citations for categories:", citError);
+
+          // Create a map for quick lookup: playerId -> categoryName
+          const playerCategoryMap = new Map();
+          citations?.forEach((cit: any) => {
+            const catName = cit.microcycles?.categories?.name;
+            if (catName) {
+              playerCategoryMap.set(cit.player_id, catName.toUpperCase());
+            }
+          });
+
+          const mapped = gpsRecords.map(d => {
+            const p = d.players as any;
+            const pos = p?.posicion?.toUpperCase() || 'S/D';
+            const catName = playerCategoryMap.get(d.id_del_jugador) || 'SIN CATEGORÍA';
+            
+            return {
+              ...d,
+              player: {
+                ...p,
+                name: `${p?.nombre} ${p?.apellido1}`.trim(),
+                id: `player-${p?.id_del_jugador}`
+              },
+              posicion: pos,
+              categoria: catName,
+              posGroup: pos.includes('DEF') ? 'DEFENSA' :
+                        pos.includes('VOL') || pos.includes('MED') ? 'VOLANTE' :
+                        pos.includes('DEL') || pos.includes('EXT') ? 'DELANTERO' :
+                        pos.includes('POR') ? 'PORTERO' : 'OTROS'
+            };
+          });
+          setSessionData(mapped);
+          
+          // Reset category filter if it's not valid for the new data
+          setSelectedCategory('TODAS');
+        }
+      } catch (err) {
+        console.error("Error fetching gps session data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSessionData();
+  }, [selectedDate]);
+
+  const detectedCategories = useMemo(() => {
+    const cats = new Set<string>();
+    sessionData.forEach(d => {
+      if (d.categoria) cats.add(d.categoria);
     });
-    return data;
-  }, [performanceRecords, selectedDate]);
+    return Array.from(cats).sort();
+  }, [sessionData]);
+
+  const filteredSessionData = useMemo(() => {
+    if (selectedCategory === 'TODAS') return sessionData;
+    return sessionData.filter(d => d.categoria === selectedCategory);
+  }, [sessionData, selectedCategory]);
 
   const teamKPIs = useMemo(() => {
-    if (sessionData.length === 0) return null;
-    const count = sessionData.length;
+    if (filteredSessionData.length === 0) return null;
+    const count = filteredSessionData.length;
     return {
       count,
-      avgDist: sessionData.reduce((acc, curr) => acc + (Number(curr.totalDistance || curr.dist_total_m) || 0), 0) / count,
-      avgHSR: sessionData.reduce((acc, curr) => acc + (Number(curr.dist_mai_m_20_kmh || curr.hsrDistance) || 0), 0) / count,
-      avgSprint: sessionData.reduce((acc, curr) => acc + (Number(curr.dist_sprint_m_25_kmh || curr.sprintCount) || 0), 0) / count,
-      avgInt: sessionData.reduce((acc, curr) => acc + (Number(curr.m_por_min || curr.intensity) || 0), 0) / count,
-      maxVel: Math.max(...sessionData.map(d => Number(d.maxSpeed || d.vel_max_kmh) || 0))
+      avgDist: filteredSessionData.reduce((acc, curr) => acc + (Number(curr.dist_total_m) || 0), 0) / count,
+      avgHSR: filteredSessionData.reduce((acc, curr) => acc + (Number(curr.dist_mai_m_20_kmh) || 0), 0) / count,
+      avgSprint: filteredSessionData.reduce((acc, curr) => acc + (Number(curr.dist_sprint_m_25_kmh) || 0), 0) / count,
+      avgInt: filteredSessionData.reduce((acc, curr) => acc + (Number(curr.m_por_min) || 0), 0) / count,
+      maxVel: Math.max(...filteredSessionData.map(d => Number(d.vel_max_kmh) || 0))
     };
-  }, [sessionData]);
+  }, [filteredSessionData]);
 
   const positionalData = useMemo(() => {
     const groups = ['DEFENSA', 'VOLANTE', 'DELANTERO'];
     return groups.map(group => {
-      const groupPlayers = sessionData.filter(d => d.posGroup === group);
+      const groupPlayers = filteredSessionData.filter(d => d.posGroup === group);
       const count = groupPlayers.length;
       if (count === 0) return { name: group, dist: 0, hsr: 0, sprint: 0, int: 0 };
       return {
         name: group,
-        dist: groupPlayers.reduce((acc, curr) => acc + (Number(curr.totalDistance || curr.dist_total_m) || 0), 0) / count,
-        hsr: groupPlayers.reduce((acc, curr) => acc + (Number(curr.dist_mai_m_20_kmh || curr.hsrDistance) || 0), 0) / count,
-        sprint: groupPlayers.reduce((acc, curr) => acc + (Number(curr.dist_sprint_m_25_kmh || curr.sprintCount) || 0), 0) / count,
-        int: groupPlayers.reduce((acc, curr) => acc + (Number(curr.m_por_min || curr.intensity) || 0), 0) / count
+        dist: groupPlayers.reduce((acc, curr) => acc + (Number(curr.dist_total_m) || 0), 0) / count,
+        hsr: groupPlayers.reduce((acc, curr) => acc + (Number(curr.dist_mai_m_20_kmh) || 0), 0) / count,
+        sprint: groupPlayers.reduce((acc, curr) => acc + (Number(curr.dist_sprint_m_25_kmh) || 0), 0) / count,
+        int: groupPlayers.reduce((acc, curr) => acc + (Number(curr.m_por_min) || 0), 0) / count
       };
     });
-  }, [sessionData]);
+  }, [filteredSessionData]);
 
   const topPerformers = useMemo(() => {
     return {
-      vel: [...sessionData].sort((a, b) => (Number(b.maxSpeed || b.vel_max_kmh) || 0) - (Number(a.maxSpeed || a.vel_max_kmh) || 0)).slice(0, 3),
-      sprint: [...sessionData].sort((a, b) => (Number(b.dist_sprint_m_25_kmh || b.sprintCount) || 0) - (Number(a.dist_sprint_m_25_kmh || a.sprintCount) || 0)).slice(0, 3),
-      volume: [...sessionData].sort((a, b) => (Number(b.totalDistance || b.dist_total_m) || 0) - (Number(a.totalDistance || a.dist_total_m) || 0)).slice(0, 3)
+      vel: [...filteredSessionData].sort((a, b) => (Number(b.vel_max_kmh) || 0) - (Number(a.vel_max_kmh) || 0)).slice(0, 3),
+      sprint: [...filteredSessionData].sort((a, b) => (Number(b.dist_sprint_m_25_kmh) || 0) - (Number(a.dist_sprint_m_25_kmh) || 0)).slice(0, 3),
+      sprints: [...filteredSessionData].sort((a, b) => (Number(b.sprints_n) || 0) - (Number(a.sprints_n) || 0)).slice(0, 3)
     };
-  }, [sessionData]);
+  }, [filteredSessionData]);
+
+  if (loading || !selectedDate) {
+    return (
+      <div className="flex flex-col items-center justify-center py-40 bg-white rounded-[40px] border border-slate-100 shadow-sm">
+        <i className="fa-solid fa-circle-notch fa-spin text-red-600 text-3xl mb-4"></i>
+        <p className="text-slate-400 text-xs font-black uppercase tracking-widest">Sincronizando con gps_import...</p>
+      </div>
+    );
+  }
 
   if (sessionData.length === 0) {
     return (
@@ -99,15 +203,14 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
         <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6">
           <i className="fa-solid fa-satellite-dish text-slate-300 text-3xl animate-pulse"></i>
         </div>
-        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Sin datos de GPS</h3>
+        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Sin datos en gps_import</h3>
         <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">Selecciona otra fecha para analizar</p>
-        <select 
+        <input 
+          type="date"
           value={selectedDate}
           onChange={(e) => setSelectedDate(e.target.value)}
           className="mt-8 bg-slate-100 border-none rounded-2xl px-6 py-3 text-sm font-black text-slate-900 outline-none"
-        >
-          {availableDates.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        />
       </div>
     );
   }
@@ -126,17 +229,34 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
           </p>
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          {/* CATEGORY FILTER - Only show if more than one category exists */}
+          {detectedCategories.length > 1 && (
+            <div className="relative">
+              <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest z-10">Categoría</label>
+              <select 
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-12 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer"
+              >
+                <option value="TODAS">TODAS LAS SERIES</option>
+                {detectedCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              <i className="fa-solid fa-filter absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
+            </div>
+          )}
+
           <div className="relative">
             <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest z-10">Fecha de Sesión</label>
-            <select 
+            <input 
+              type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-12 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer w-full"
-            >
-              {availableDates.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <i className="fa-solid fa-calendar absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
+              className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-10 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer appearance-none min-w-[200px]"
+            />
+            <i className="fa-solid fa-calendar-days absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
           </div>
         </div>
       </div>
@@ -259,9 +379,9 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
 
       {/* TOP PERFORMERS LEADERBOARD */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <LeaderboardCard title="Velocidad Máxima" metric="maxSpeed" unit="km/h" data={topPerformers.vel} icon="fa-bolt" color="text-amber-500" bgColor="bg-amber-50" />
+        <LeaderboardCard title="Velocidad Máxima" metric="vel_max_kmh" unit="km/h" data={topPerformers.vel} icon="fa-bolt" color="text-amber-500" bgColor="bg-amber-50" />
         <LeaderboardCard title="Distancia Sprint" metric="dist_sprint_m_25_kmh" unit="m" data={topPerformers.sprint} icon="fa-fire-flame-curved" color="text-red-500" bgColor="bg-red-50" />
-        <LeaderboardCard title="Volumen Total" metric="totalDistance" unit="m" data={topPerformers.volume} icon="fa-arrows-left-right" color="text-blue-500" bgColor="bg-blue-50" />
+        <LeaderboardCard title="Cantidad de Sprints" metric="sprints_n" unit="n" data={topPerformers.sprints} icon="fa-person-running" color="text-blue-500" bgColor="bg-blue-50" />
       </div>
 
       {/* INDIVIDUAL BREAKDOWN TABLE */}
@@ -368,7 +488,7 @@ function LeaderboardCard({ title, metric, unit, data, icon, color, bgColor }: { 
             </div>
             <div className="text-right">
               <p className={`text-sm font-black italic tracking-tighter ${color}`}>
-                {Number(player[metric] || player.totalDistance || player.maxSpeed || player.dist_sprint_m_25_kmh).toFixed(metric === 'totalDistance' ? 0 : 1)}
+                {Number(player[metric] || 0).toFixed(metric === 'sprints_n' ? 0 : 1)}
                 <span className="text-[8px] not-italic font-bold ml-1 opacity-50">{unit}</span>
               </p>
             </div>
