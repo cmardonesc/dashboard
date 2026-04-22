@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase'
 import { triggerPushNotification } from '../lib/notifications'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import JSZip from 'jszip'
+import { saveAs } from 'file-saver'
 
 type ViewMode = 'grid' | 'selection' | 'clubs'
 
@@ -495,7 +497,7 @@ export default function CitacionesArea() {
     return groups;
   }, [sortedCitados]);
 
-  const generatePDFByClub = (clubName: string, players: User[]) => {
+  const generatePDFBlob = (clubName: string, players: User[]) => {
     const doc = new jsPDF();
     
     // Header
@@ -561,67 +563,43 @@ export default function CitacionesArea() {
     doc.text("Generado por La Roja Performance Hub - Centro de Inteligencia Deportiva", 105, finalY + 20, { align: 'center' });
     doc.text(`Fecha de emisión: ${new Date().toLocaleDateString('es-CL')}`, 105, finalY + 26, { align: 'center' });
     
-    doc.save(`Citacion_${clubName.replace(/\s+/g, '_')}_Microciclo_${selectedMicro?.id}.pdf`);
+    return doc.output('blob');
   };
 
-  const generateAllClubsPDF = () => {
-    const doc = new jsPDF();
+  const generatePDFByClub = (clubName: string, players: User[]) => {
+    try {
+      const blob = generatePDFBlob(clubName, players);
+      const fileName = `Citacion_${clubName.replace(/\s+/g, '_')}_Microciclo_${selectedMicro?.id}.pdf`;
+      saveAs(blob, fileName);
+    } catch (err) {
+      console.error("Error generating individual PDF:", err);
+      alert("Hubo un error al generar el PDF del club.");
+    }
+  };
+
+  const generateAllClubsPDF = async () => {
+    const zip = new JSZip();
+    const folder = zip.folder(`Citaciones_Microciclo_${selectedMicro?.id}`);
     
-    Object.entries(citadosByClub).forEach(([clubName, players], index) => {
-      if (index > 0) doc.addPage();
-      
-      doc.setFontSize(24);
-      doc.setTextColor(207, 27, 43);
-      doc.setFont("helvetica", "bold");
-      doc.text("LA ROJA PERFORMANCE", 105, 25, { align: 'center' });
-      
-      doc.setFontSize(14);
-      doc.setTextColor(51, 65, 85);
-      doc.text(`CITACIÓN OFICIAL - ${clubName.toUpperCase()}`, 105, 35, { align: 'center' });
-      
-      doc.setDrawColor(207, 27, 43);
-      doc.setLineWidth(1);
-      doc.line(20, 40, 190, 40);
-      
-      doc.setFontSize(11);
-      doc.setTextColor(11, 18, 32);
-      doc.setFont("helvetica", "bold");
-      doc.text("DETALLES DEL PROCESO", 20, 52);
-      
-      doc.setFont("helvetica", "normal");
-      doc.text(`Proceso: ${selectedMicro?.type?.toUpperCase()}`, 20, 60);
-      doc.text(`Periodo: Del ${formatDate(selectedMicro?.start_date || '')} al ${formatDate(selectedMicro?.end_date || '')}`, 20, 67);
-      doc.text(`Sede: ${selectedMicro?.city?.toUpperCase()}, ${selectedMicro?.country?.toUpperCase()}`, 20, 74);
-      
-      const tableData = players.map((p, idx) => [
-        idx + 1,
-        p.name.toUpperCase(),
-        p.position.toUpperCase(),
-        formatCategoryLabel(p.category)
-      ]);
-      
-      autoTable(doc, {
-        startY: 85,
-        head: [['#', 'JUGADOR', 'POSICIÓN', 'CATEGORÍA']],
-        body: tableData,
-        headStyles: { fillColor: [11, 18, 32], fontSize: 10, fontStyle: 'bold', halign: 'center' },
-        styles: { fontSize: 10, cellPadding: 4 },
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 10 },
-          2: { halign: 'center' },
-          3: { halign: 'center' }
-        },
-        alternateRowStyles: { fillColor: [248, 250, 252] },
-        margin: { top: 85 }
+    const entries = Object.entries(citadosByClub);
+    
+    if (entries.length === 0) {
+      alert("No hay jugadores citados para este proceso.");
+      return;
+    }
+
+    try {
+      entries.forEach(([clubName, players]) => {
+        const blob = generatePDFBlob(clubName, players);
+        folder?.file(`Citacion_${clubName.replace(/\s+/g, '_')}.pdf`, blob);
       });
       
-      const finalY = (doc as any).lastAutoTable?.finalY || 85;
-      doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139);
-      doc.text("Generado por La Roja Performance Hub", 105, finalY + 20, { align: 'center' });
-    });
-    
-    doc.save(`Citaciones_Completas_Microciclo_${selectedMicro?.id}.pdf`);
+      const content = await zip.generateAsync({ type: "blob" });
+      saveAs(content, `Nóminas_Completas_Microciclo_${selectedMicro?.id}.zip`);
+    } catch (err) {
+      console.error("Error generating ZIP:", err);
+      alert("Hubo un error al generar el archivo comprimido.");
+    }
   };
 
   if (viewMode === 'grid') {
@@ -873,7 +851,7 @@ export default function CitacionesArea() {
               onClick={generateAllClubsPDF}
               className="bg-white text-slate-900 px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-slate-50 transition-all flex items-center gap-3 transform active:scale-95"
             >
-              <i className="fa-solid fa-file-pdf text-lg text-red-600"></i> DESCARGAR TODO (.PDF)
+              <i className="fa-solid fa-file-zipper text-lg text-[#CF1B2B]"></i> DESCARGAR TODO (.ZIP)
             </button>
           </div>
         </div>
