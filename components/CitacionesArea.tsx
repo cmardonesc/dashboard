@@ -1213,24 +1213,24 @@ export default function CitacionesArea() {
                 return (
                   <div key={p.id} className={`group relative bg-white p-6 rounded-[36px] border transition-all flex items-center justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 ${isCited ? 'border-emerald-200 bg-emerald-50/10' : 'border-slate-100'}`}>
                     
-                    {/* Botón Pill Vertical Hanging (Referencia Visual: Benjamin Molina) */}
+                    {/* Botón Citación (Más pequeño y abajo para no superponer nombre) */}
                     <button 
                       onClick={() => p.id_del_jugador && (isCited ? handleUncite(p.id_del_jugador) : handleCite(p.id_del_jugador))}
-                      className={`absolute right-[-1px] top-1/2 -translate-y-1/2 w-[32px] h-[80px] rounded-l-[16px] flex flex-col items-center justify-center gap-1 transition-all border-y border-l shadow-sm active:scale-95 ${
+                      className={`absolute right-[-1px] bottom-4 w-[24px] h-[32px] rounded-l-[10px] flex flex-col items-center justify-center transition-all border-y border-l shadow-sm active:scale-95 z-10 ${
                         isCited 
                           ? 'bg-emerald-600 text-white border-emerald-500' 
                           : 'bg-[#f8fafc] text-slate-300 hover:bg-[#CF1B2B] hover:text-white border-slate-200'
                       }`}
                     >
-                      <i className={`fa-solid ${isCited ? 'fa-check' : 'fa-plus'} text-xs font-black`}></i>
+                      <i className={`fa-solid ${isCited ? 'fa-check' : 'fa-plus'} text-[10px] font-black`}></i>
                     </button>
 
                     <div className="flex items-center gap-5">
-                      {/* Avatar Bubble (Referencia Visual: Benjamin Molina) */}
+                      {/* Avatar Bubble */}
                       <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center text-2xl font-black italic transition-all shadow-inner ${isCited ? 'bg-emerald-500 text-white' : 'bg-[#0b1220] text-white'}`}>
                         {p.name?.charAt(0)}
                       </div>
-                      <div className="overflow-hidden pr-10">
+                      <div className="overflow-hidden pr-4">
                         <p className={`text-[11px] font-black uppercase italic tracking-tighter leading-none mb-1 truncate ${isCited ? 'text-emerald-700' : 'text-slate-900'}`}>
                           {p.name}
                         </p>
