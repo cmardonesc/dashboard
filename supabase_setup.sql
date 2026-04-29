@@ -418,6 +418,31 @@ create table if not exists public.referencias_gps (
 alter table public.referencias_gps enable row level security;
 create policy "Enable all access for referencias_gps" on public.referencias_gps for all using (true) with check (true);
 
+-- Create gps_pronosticos table
+create table if not exists public.gps_pronosticos (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  microcycle_id uuid references public.microcycles(id) on delete cascade,
+  fecha date not null,
+  dist_total_min float8 default 0,
+  dist_total_max float8 default 0,
+  m_por_min_min float8 default 0,
+  m_por_min_max float8 default 0,
+  hms_min float8 default 0, -- dist_mai_m_20_kmh
+  hms_max float8 default 0,
+  sprint_min float8 default 0, -- dist_sprint_m_25_kmh
+  sprint_max float8 default 0,
+  sprints_count_min float8 default 0,
+  sprints_count_max float8 default 0,
+  acc_decc_min float8 default 0,
+  acc_decc_max float8 default 0,
+  observaciones text,
+  unique(microcycle_id, fecha)
+);
+
+alter table public.gps_pronosticos enable row level security;
+create policy "Enable all access for gps_pronosticos" on public.gps_pronosticos for all using (true) with check (true);
+
 -- Seed some default references
 insert into public.referencias_gps ("Tipo", "Categoria", "Posicion", dist_total_m, m_por_min, dist_ai_m_15_kmh, dist_mai_m_20_kmh, dist_sprint_m_25_kmh, acc_decc_ai_n)
 values 

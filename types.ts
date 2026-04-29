@@ -90,7 +90,7 @@ export type MenuId =
   | 'fisica_carga_externa_tareas'
   | 'fisica_gps_intelligence'
   | 'fisica_reporte'
-  | 'fisica_vo2max'
+  | 'fisica_pronostico'
   | 'medica'
   | 'nutricion_resumen_grupal'
   | 'nutricion_comparativo'

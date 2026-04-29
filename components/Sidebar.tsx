@@ -37,7 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const [diarioOpen, setDiarioOpen] = useState(isDiarioActive);
 
   // Estado para Área Física y sus submenús
-  const FISICA_IDS = ['fisica_reporte', 'fisica_vo2max'];
+  const FISICA_IDS = ['fisica_reporte', 'fisica_pronostico'];
   const isFisicaActive = FISICA_IDS.includes(activeMenu);
   const [fisicaOpen, setFisicaOpen] = useState(isFisicaActive);
 
@@ -312,17 +312,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                     <span className="text-xs font-bold tracking-tight">Reporte Sesión</span>
                   </button>
 
-                  {/* CONSUMO DE OXÍGENO */}
+                  {/* PRONÓSTICO DE CARGAS */}
                   <button
-                    onClick={() => onMenuChange('fisica_vo2max')}
+                    onClick={() => onMenuChange('fisica_pronostico')}
                     className={`w-full flex items-center gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
-                      activeMenu === 'fisica_vo2max' 
-                        ? 'bg-red-600 text-white shadow-lg' 
+                      activeMenu === 'fisica_pronostico' 
+                        ? 'bg-blue-600 text-white shadow-lg' 
                         : 'text-slate-500 hover:text-slate-300'
                     }`}
                   >
-                    <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_vo2max' ? 'bg-white' : 'bg-slate-700'}`}></div>
-                    <span className="text-xs font-bold tracking-tight">Consumo Oxígeno</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_pronostico' ? 'bg-white' : 'bg-slate-700'}`}></div>
+                    <span className="text-xs font-bold tracking-tight">Pronóstico de Cargas</span>
                   </button>
                 </>
               )}

@@ -311,7 +311,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
               <div className="space-y-2">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Rol del Usuario</label>
                 <select 
-                  value={editingProfile.role} 
+                  value={editingProfile.role || ''} 
                   onChange={e => setEditingProfile({...editingProfile, role: e.target.value})}
                   className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500"
                 >

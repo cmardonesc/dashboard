@@ -21,6 +21,7 @@ import DataImportArea from './DataImportArea'
 import VO2MaxArea from './VO2MaxArea'
 import SportsScienceArea from './SportsScienceArea'
 import GPSIntelligenceDashboard from './GPSIntelligenceDashboard'
+import PronosticoCargas from './PronosticoCargas'
 import ClubDashboard from './ClubDashboard'
 import { logActivity } from '../lib/activityLogger'
 import { getPerformanceInsights, getWeatherForecast, queryCoachAssistant, WeatherData } from '../services/geminiService'
@@ -1067,8 +1068,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         return <GPSIntelligenceDashboard performanceRecords={filteredPerformanceRecords} clubs={clubs} categoryName={selectedCategoryName} />;
       case 'fisica_reporte':
         return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
-      case 'fisica_vo2max':
-        return <VO2MaxArea clubs={clubs} />;
+      case 'fisica_pronostico':
+        return <PronosticoCargas clubs={clubs} />;
       case 'nutricion_resumen_grupal':
         return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'nutricion_comparativo':

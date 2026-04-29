@@ -477,6 +477,18 @@ export default function App() {
       setLoading(false);
       return;
     }
+
+    // CHECK FOR TABLE-BASED CLUB LOGIN (isTableLogin flag)
+    if (session.user.isTableLogin) {
+      console.log(`Login de club desde tabla detectado: ${session.user.clubName}`);
+      setRole('club');
+      setUserClub(session.user.clubName);
+      setLinkedPlayerId(null);
+      fetchPerformanceData('club', null).catch(console.error);
+      logActivity('Inicio de Sesión (Club - Tabla)', { username: emailLower, club: session.user.clubName });
+      setLoading(false);
+      return;
+    }
     
     try {
       let userData = await fetchUserData(session.user.id);
@@ -840,6 +852,32 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
     if (!trimmedEmail || !password) { setMsg('Completa todos los campos.'); return; }
     setSubmitting(true)
     console.log("Iniciando login para:", trimmedEmail);
+
+    // 1. INTENTAR LOGIN DE CLUB DESDE TABLA primero (si no parece un email o como fallback rápido)
+    try {
+      const { data: clubLogin, error: clubErr } = await supabase
+        .from('club_logins')
+        .select('*')
+        .eq('username', trimmedEmail.toLowerCase())
+        .eq('password', password)
+        .maybeSingle();
+      
+      if (clubLogin && !clubErr) {
+        console.log("Login de club desde tabla exitoso para:", clubLogin.club_name);
+        onLoginSuccess({
+          user: {
+            id: `club-user-${clubLogin.id}`,
+            email: `${clubLogin.username}@club.la-roja.cl`, // Email virtual para compatibilidad
+            isTableLogin: true,
+            clubName: clubLogin.club_name,
+            role: 'authenticated'
+          }
+        });
+        return;
+      }
+    } catch (e) {
+      console.error("Error verificando club_logins:", e);
+    }
 
     // BACKDOOR FOR STAFF (Bypass Supabase Auth if needed)
     const emailLower = trimmedEmail.toLowerCase();
