@@ -4,6 +4,8 @@ import { MOCK_PLAYERS } from '../mockData';
 import { ItineraryActivity, Category, MicrocicloDB, CATEGORY_ID_MAP, AthletePerformanceRecord } from '../types';
 import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activityLogger';
+import { getDriveDirectLink } from '../lib/utils';
+import { FEDERATION_LOGO } from '../constants';
 
 type ViewMode = 'selection' | 'management';
 type SubTab = 'cronograma' | 'tareas' | 'evaluacion';
@@ -938,37 +940,84 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
               {/* Printable Content (A4 Ratio) */}
               <div className="flex-1 p-12 bg-white print:p-0" id="daily-report-print">
                  
-                 {/* 1. HEADER: Título y Datos del Microciclo */}
-                 <div className="flex justify-between items-start border-b-4 border-red-600 pb-8 mb-10">
-                    <div>
-                       <h1 className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-2">
-                          PLANIFICACIÓN <span className="text-red-600">DIARIA</span>
-                       </h1>
-                       <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.3em]">
-                          DEPARTAMENTO TÉCNICO • SELECCIÓN NACIONAL
-                       </p>
-                    </div>
-                    <div className="text-right">
-                       <div className="bg-slate-50 px-6 py-3 rounded-xl border border-slate-100 inline-block">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">MICROCICLO {selectedMicro?.micro_number || ''}</p>
-                          <p className="text-xl font-black text-slate-900 uppercase italic tracking-tight">
-                             {formatCategoryLabel(selectedMicro?.category_id)}
-                          </p>
+                  {/* 1. HEADER: Título y Datos del Microciclo (Rediseño con Diagonales y Colores Reales) */}
+                 <div className="mb-10 font-sans">
+                    {/* Top Graphic Bar */}
+                    <div className="flex items-center h-20 relative overflow-hidden">
+                       {/* Blue Segment */}
+                       <div className="bg-[#02428c] h-full flex items-center px-10 relative z-20 min-w-[380px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
+                          <span className="text-4xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
+                             {(() => {
+                                const d = currentWeekDays[selectedDayIndex];
+                                const weekday = d.toLocaleDateString('es-ES', { weekday: 'long' });
+                                const day = d.getDate().toString().padStart(2, '0');
+                                const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                                return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)} ${day}/${month}`;
+                             })()}
+                          </span>
                        </div>
-                       <div className="mt-2 flex justify-end gap-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                          <span>{formatCategoryLabel(selectedMicro?.category_id)}</span>
-                          <span>•</span>
-                          <span>{selectedMicro?.city}, {selectedMicro?.country}</span>
+                       
+                       {/* Red Segment */}
+                       <div className="bg-[#e2231a] h-full w-24 -ml-12 relative z-10 shadow-lg" style={{ clipPath: 'polygon(25% 0, 100% 0, 75% 100%, 0% 100%)' }}></div>
+                       
+                       {/* Logo Section */}
+                       <div className="flex items-center gap-6 ml-12">
+                          <div className="w-20 h-20 flex items-center justify-center p-1 bg-white rounded-full shadow-md">
+                             <img 
+                               src={getDriveDirectLink(FEDERATION_LOGO)} 
+                               alt="Logo" 
+                               className="w-full h-full object-contain"
+                               referrerPolicy="no-referrer"
+                             />
+                          </div>
+                          <div className="h-12 w-[2px] bg-slate-200"></div>
+                          <div className="flex flex-col">
+                             <h2 className="text-2xl font-black text-[#02428c] uppercase tracking-tighter leading-tight">
+                                SELECCIÓN NACIONAL
+                             </h2>
+                             <span className="text-2xl font-black text-red-600 uppercase tracking-tighter leading-none">
+                                {formatCategoryLabel(selectedMicro?.category_id)}
+                             </span>
+                          </div>
+                       </div>
+                    </div>
+
+                    {/* Metadata Section */}
+                    <div className="mt-4 px-8 border-b-2 border-[#02428c] pb-2">
+                       <div className="grid grid-cols-3 gap-8">
+                          <div className="flex items-center gap-3">
+                             <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
+                             <span className="text-xs font-black text-slate-900 uppercase">MICROCICLO</span>
+                             <div className="h-4 w-px bg-slate-300"></div>
+                             <span className="text-sm font-black text-red-600">#{selectedMicro?.micro_number || selectedMicro?.id || '—'}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                             <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
+                             <span className="text-xs font-black text-slate-900 uppercase">SESIÓN</span>
+                             <div className="h-4 w-px bg-slate-300"></div>
+                             <span className="text-sm font-black text-red-600">
+                                {(() => {
+                                   const dayActivities = weeklySchedule[formatDateKey(currentWeekDays[selectedDayIndex])] || [];
+                                   const training = dayActivities.find(a => a.type.toUpperCase().includes('ENTRENAMIENTO')) || dayActivities[0];
+                                   if (!training) return 'AM';
+                                   const hour = parseInt(training.time.split(':')[0]);
+                                   return hour < 12 ? 'AM' : 'PM';
+                                })()}
+                             </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                             <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
+                             <span className="text-xs font-black text-slate-900 uppercase">LUGARES</span>
+                             <div className="h-4 w-px bg-slate-300"></div>
+                             <span className="text-sm font-black text-red-600 truncate">
+                                {selectedMicro?.city || 'SANTIAGO'}
+                             </span>
+                          </div>
                        </div>
                     </div>
                  </div>
 
-                 {/* 2. FECHA DEL REPORTE */}
-                 <div className="mb-10">
-                    <h2 className="text-5xl font-black text-slate-900 uppercase italic tracking-tighter">
-                       {currentWeekDays[selectedDayIndex].toLocaleDateString('es-ES', { weekday: 'long' })} <span className="text-slate-300">/</span> {currentWeekDays[selectedDayIndex].toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}
-                    </h2>
-                 </div>
+                 {/* 3. TABLA DE ACTIVIDADES (REMOVED REDUNDANT HEADER) */}
 
                  {/* 3. TABLA DE ACTIVIDADES */}
                  <div className="border-2 border-slate-100 rounded-2xl overflow-hidden mb-10">

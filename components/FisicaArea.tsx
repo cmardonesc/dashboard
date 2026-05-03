@@ -2,7 +2,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AthletePerformanceRecord, Category, CATEGORY_ID_MAP } from '../types';
 import { supabase } from '../lib/supabase';
-import { normalizeClub } from '../lib/utils';
+import { normalizeClub, getDriveDirectLink } from '../lib/utils';
+import { FEDERATION_LOGO } from '../constants';
 import ClubBadge from './ClubBadge';
 
 interface FisicaAreaProps {
@@ -1569,7 +1570,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   );
 }
 
-// Subcomponente de Encabezado para Impresión (Rediseñado FIFA-Style)
+// Subcomponente de Encabezado para Impresión (Rediseñado FIFA-Style con Diagonales)
 function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, total }: any) {
   const formatCategoryLabel = (idOrName: any) => {
     if (typeof idOrName === 'string' && isNaN(Number(idOrName))) return idOrName.toUpperCase().replace('_', ' ');
@@ -1577,28 +1578,83 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
     return entry ? entry[0].toUpperCase().replace('_', ' ') : 'N/A';
   };
 
+  const microNumber = activeMicrocycle?.micro_number || activeMicrocycle?.id || '—';
+  const location = activeMicrocycle?.city || 'SANTIAGO';
+
+  const dateDisplay = useMemo(() => {
+    try {
+      const d = new Date(selectedDate + 'T12:00:00');
+      const weekday = d.toLocaleDateString('es-ES', { weekday: 'long' });
+      const day = d.getDate().toString().padStart(2, '0');
+      const month = (d.getMonth() + 1).toString().padStart(2, '0');
+      return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)} ${day}/${month}`;
+    } catch { return selectedDate; }
+  }, [selectedDate]);
+
   return (
-    <div className="hidden print:block pb-2 border-b-2 border-slate-900 mb-2">
-      <div className="flex justify-between items-center pb-2">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-slate-900 text-white flex items-center justify-center font-black text-xl italic rounded-lg shadow-md">LR</div>
-          <div>
-            <h1 className="text-lg font-black text-slate-900 leading-none uppercase tracking-tighter italic">REPORTE TÉCNICO DE RENDIMIENTO</h1>
-            <p className="text-[6px] font-bold text-slate-500 uppercase tracking-[0.4em] mt-1 opacity-60">PERFORMANCE HUB • SELECCIÓN NACIONAL • ÁREA FÍSICA</p>
+    <div className="hidden print:block mb-8 font-sans">
+      {/* Top Graphic Bar */}
+      <div className="flex items-center h-20 relative overflow-hidden">
+        {/* Blue Segment */}
+        <div className="bg-[#02428c] h-full flex items-center px-10 relative z-20 min-w-[380px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
+          <span className="text-4xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
+            {dateDisplay}
+          </span>
+        </div>
+        
+        {/* Red Segment */}
+        <div className="bg-[#e2231a] h-full w-24 -ml-12 relative z-10 shadow-lg" style={{ clipPath: 'polygon(25% 0, 100% 0, 75% 100%, 0% 100%)' }}></div>
+        
+        {/* Logo Section */}
+        <div className="flex items-center gap-6 ml-12">
+          <div className="w-20 h-20 flex items-center justify-center p-1 bg-white rounded-full shadow-md">
+            <img 
+              src={getDriveDirectLink(FEDERATION_LOGO)} 
+              alt="Logo" 
+              className="w-full h-full object-contain"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div className="h-12 w-[2px] bg-slate-200"></div>
+          <div className="flex flex-col">
+            <h2 className="text-2xl font-black text-[#02428c] uppercase tracking-tighter leading-tight">
+              SELECCIÓN NACIONAL
+            </h2>
+            <span className="text-2xl font-black text-red-600 uppercase tracking-tighter leading-none">
+              {formatCategoryLabel(selectedCategory)}
+            </span>
           </div>
         </div>
-        <div className="bg-slate-50 p-1.5 rounded-[12px] border border-slate-200 flex flex-col items-end min-w-[120px] shadow-sm">
-           <span className="text-[4px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Contexto de Proceso</span>
-           <p className="text-[8px] font-black text-slate-900 uppercase italic tracking-tighter">FECHA: {selectedDate}</p>
-           <p className="text-[7px] font-black text-red-600 uppercase tracking-widest mt-0.5">CATEGORÍA: {formatCategoryLabel(selectedCategory)}</p>
+      </div>
+
+      {/* Metadata Section */}
+      <div className="mt-4 px-8 border-b-2 border-[#02428c] pb-2">
+        <div className="grid grid-cols-3 gap-8">
+          <div className="flex items-center gap-3">
+             <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
+             <span className="text-xs font-black text-slate-900 uppercase">MICROCICLO</span>
+             <div className="h-4 w-px bg-slate-300"></div>
+             <span className="text-sm font-black text-red-600">#{microNumber}</span>
+          </div>
+          <div className="flex items-center gap-3">
+             <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
+             <span className="text-xs font-black text-slate-900 uppercase">SESIÓN</span>
+             <div className="h-4 w-px bg-slate-300"></div>
+             <span className="text-sm font-black text-red-600">AM</span>
+          </div>
+          <div className="flex items-center gap-3">
+             <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
+             <span className="text-xs font-black text-slate-900 uppercase">LUGARES</span>
+             <div className="h-4 w-px bg-slate-300"></div>
+             <span className="text-sm font-black text-red-600 truncate">{location.toUpperCase()}</span>
+          </div>
         </div>
       </div>
-      <div className="mt-1.5 flex justify-between items-center text-[7px] font-black text-slate-400 uppercase tracking-[0.15em] px-2">
-        <span className="flex items-center gap-2">
-          <i className="fa-solid fa-location-dot text-red-600"></i>
-          Sede: {activeMicrocycle?.city || 'SANTIAGO'} — {activeMicrocycle ? `Microciclo #${activeMicrocycle.id}` : 'SIN MICROCICLO'}
-        </span>
-        <span className="text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded-full">HOJA {page} / {total}</span>
+      
+      <div className="mt-2 flex justify-end px-8">
+         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
+           HOJA {page} / {total} — GENERADO EL {new Date().toLocaleDateString()}
+         </span>
       </div>
     </div>
   );
