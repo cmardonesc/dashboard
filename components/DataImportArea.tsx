@@ -4,7 +4,9 @@ import Papa from 'papaparse';
 import { supabase } from '../lib/supabase';
 import { User } from '../types';
 
-type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'velocidad' | 'aceleracion' | 'vo2max';
+import { fetchCatapultActivities, fetchCatapultActivityStats, testCatapultConnection } from '../services/catapultService';
+
+type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'velocidad' | 'aceleracion' | 'vo2max' | 'catapult_api';
 
 interface ImportConfig {
   label: string;
@@ -189,6 +191,17 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'vfa', label: 'VFA', required: false, type: 'number' },
       { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
     ]
+  },
+  catapult_api: {
+    label: 'Catapult Cloud Sync',
+    table: 'gps_import',
+    icon: 'fa-solid fa-cloud-arrow-down',
+    description: 'Sincronización directa con la nube de Catapult Sports.',
+    conflictColumns: ['id_del_jugador', 'fecha'],
+    fields: [
+      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
+    ]
   }
 };
 
@@ -203,6 +216,10 @@ export default function DataImportArea() {
   const [unmatchedRows, setUnmatchedRows] = useState<any[]>([]);
   const [resolvedIds, setResolvedIds] = useState<Record<number, number>>({}); // rowIndex -> playerId
   const [nameHeader, setNameHeader] = useState<string | null>(null);
+  const [catapultActivities, setCatapultActivities] = useState<any[]>([]);
+  const [syncingCatapult, setSyncingCatapult] = useState(false);
+  const [selectedActivityStats, setSelectedActivityStats] = useState<any>(null);
+  const [inspectingStats, setInspectingStats] = useState(false);
 
   useEffect(() => {
     fetchPlayers();
@@ -498,6 +515,60 @@ export default function DataImportArea() {
     }
   };
 
+  const handleCatapultSync = async () => {
+    setSyncingCatapult(true);
+    setMessage(null);
+    try {
+      const data = await fetchCatapultActivities();
+      console.log("Catapult Data Received:", data);
+      
+      // Catapult API sometimes returns nested arrays or objects
+      let activities = [];
+      if (Array.isArray(data)) {
+        activities = data;
+      } else if (data && typeof data === 'object') {
+        // Look for common array keys in API responses
+        activities = data.activities || data.data || data.results || [];
+      }
+
+      setCatapultActivities(activities);
+      
+      if (activities.length === 0) {
+        if (data && data.error) {
+          setMessage({ type: 'error', text: `API: ${data.error}` });
+        } else {
+          setMessage({ type: 'error', text: 'No se encontraron sesiones. Verifica la fecha en Catapult OpenField.' });
+        }
+      } else {
+        setMessage({ type: 'success', text: `Se encontraron ${activities.length} sesiones. Selecciona una para analizar.` });
+      }
+    } catch (err: any) {
+      console.error("Sync Error:", err);
+      let errorMsg = err.message;
+      if (errorMsg.includes('Invalid path') || errorMsg.includes('404')) {
+        errorMsg = 'Error Catapult: La ruta API es inválida. Verifica la región en Cloud OpenField.';
+      }
+      setMessage({ type: 'error', text: `Error de conexión: ${errorMsg}` });
+    } finally {
+      setSyncingCatapult(false);
+    }
+  };
+
+  const handleInspectActivity = async (activityId: string) => {
+    setSyncingCatapult(true);
+    setMessage(null);
+    try {
+      const stats = await fetchCatapultActivityStats(activityId);
+      console.log("Catapult Stats Received:", stats);
+      setSelectedActivityStats(stats);
+      setInspectingStats(true);
+    } catch (err: any) {
+      setMessage({ type: 'error', text: `Error obteniendo métricas: ${err.message}` });
+    } finally {
+      setSyncingCatapult(false);
+    }
+  };
+
   const updateResolvedId = (rowIndex: number, playerId: number) => {
     const row = csvData[rowIndex];
     const cleanName = getRowName(row);
@@ -527,20 +598,157 @@ export default function DataImportArea() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {(Object.keys(IMPORT_CONFIGS) as ImportType[]).map((type) => {
             const config = IMPORT_CONFIGS[type];
+            const isCatapult = type === 'catapult_api';
+            
             return (
               <button
                 key={type}
                 onClick={() => setSelectedType(type)}
-                className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:border-red-100 transition-all text-left group"
+                className={`bg-white p-8 rounded-[32px] border ${isCatapult ? 'border-sky-100 bg-sky-50/20' : 'border-slate-100'} shadow-sm hover:shadow-xl hover:border-red-100 transition-all text-left group`}
               >
-                <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-red-50 group-hover:text-red-600 transition-colors mb-6">
+                <div className={`w-14 h-14 ${isCatapult ? 'bg-sky-50 text-sky-600' : 'bg-slate-50 text-slate-400'} rounded-2xl flex items-center justify-center group-hover:bg-red-50 group-hover:text-red-600 transition-colors mb-6`}>
                   <i className={`${config.icon} text-2xl`}></i>
                 </div>
-                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">{config.label}</h3>
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">{config.label}</h3>
+                  {isCatapult && <span className="bg-sky-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">API</span>}
+                </div>
                 <p className="text-slate-500 text-xs font-medium leading-relaxed">{config.description}</p>
               </button>
             );
           })}
+        </div>
+      ) : selectedType === 'catapult_api' ? (
+        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden min-h-[400px]">
+          <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-sky-50/30">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => { setSelectedType(null); setCatapultActivities([]); }}
+                className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:border-red-100 transition-all"
+              >
+                <i className="fa-solid fa-arrow-left"></i>
+              </button>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Catapult Cloud Sync</h3>
+                <p className="text-sky-600 text-[10px] font-bold uppercase tracking-widest italic">Conectado vía Catapult API</p>
+              </div>
+            </div>
+            
+            <button
+              onClick={handleCatapultSync}
+              disabled={syncingCatapult}
+              className="bg-sky-600 text-white px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest hover:bg-sky-700 transition-all disabled:opacity-50 flex items-center gap-2"
+            >
+              {syncingCatapult ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-sync"></i>}
+              {catapultActivities.length > 0 ? 'Actualizar Sesiones' : 'Conectar y Buscar Sesiones'}
+            </button>
+          </div>
+
+          <div className="p-8">
+            {message && (
+              <div className={`mb-8 p-4 rounded-2xl border flex items-center gap-4 ${message.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
+                <i className={`fa-solid ${message.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'} text-lg`}></i>
+                <p className="text-xs font-bold">{message.text}</p>
+              </div>
+            )}
+
+            {Array.isArray(catapultActivities) && catapultActivities.length > 0 && (
+              <div className="mb-6 flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                    {catapultActivities.length} Sesiones encontradas
+                  </span>
+                  <div className="w-1 h-4 bg-slate-200 rounded-full"></div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await testCatapultConnection();
+                        setMessage({ type: 'success', text: `Conexión API: ${res.message}` });
+                      } catch (e: any) {
+                        setMessage({ type: 'error', text: 'Fallo enlace con el proxy de Catapult.' });
+                      }
+                    }}
+                    className="text-[10px] font-black text-sky-600 hover:text-sky-700 uppercase tracking-widest transition-colors"
+                  >
+                    Verificar Enlace
+                  </button>
+                </div>
+                <button 
+                  onClick={() => setCatapultActivities([])}
+                  className="text-[10px] font-black text-slate-400 hover:text-red-600 uppercase tracking-widest transition-colors"
+                >
+                  Limpiar Lista
+                </button>
+              </div>
+            )}
+
+            {(!Array.isArray(catapultActivities) || catapultActivities.length === 0) && !syncingCatapult ? (
+              <div className="py-20 flex flex-col items-center justify-center">
+                <div className="w-24 h-24 bg-sky-50 rounded-full flex items-center justify-center text-sky-200 mb-6">
+                  <i className="fa-solid fa-tower-broadcast text-4xl"></i>
+                </div>
+                <h4 className="text-slate-900 font-black uppercase tracking-widest text-xs mb-2">No hay sesiones cargadas</h4>
+                <p className="text-slate-400 text-[10px] font-medium max-w-sm text-center">Haz clic en el botón superior para obtener las últimas sesiones registradas en tu cuenta de Catapult Sport.</p>
+              </div>
+            ) : Array.isArray(catapultActivities) ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {catapultActivities.map((session) => (
+                  <div key={session.id || Math.random()} className="bg-white rounded-3xl border border-slate-100 p-6 hover:shadow-lg transition-all group border-l-4 border-l-sky-500">
+                    <div className="flex justify-between items-start mb-4">
+                      <span className="bg-sky-50 text-sky-600 text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest">
+                        {session.startTime ? new Date(session.startTime).toLocaleDateString() : 'N/A'}
+                      </span>
+                      <i className="fa-solid fa-chevron-right text-slate-200 group-hover:text-sky-500 transition-colors"></i>
+                    </div>
+                    <h5 className="text-slate-900 font-black uppercase tracking-tight text-sm mb-1">{session.name || 'Sesión sin nombre'}</h5>
+                    <p className="text-slate-400 text-[10px] font-bold mb-4 uppercase">{session.athleteCount || 0} Atletas • {session.duration || 0} min</p>
+                    <button 
+                      className="w-full bg-slate-50 text-slate-900 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 hover:text-white transition-all"
+                      onClick={() => handleInspectActivity(session.id)}
+                    >
+                      {syncingCatapult ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : null}
+                      Analizar Parámetros
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {/* DEBUG MODAL / RAW DATA INSPECTOR */}
+            {inspectingStats && selectedActivityStats && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-4xl max-h-[85vh] rounded-[40px] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in duration-300">
+                  <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+                    <div>
+                      <h4 className="text-lg font-black text-slate-900 uppercase tracking-tight">Inspección de Parámetros Catapult</h4>
+                      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Analizando estructura de datos para mapeo automatizado</p>
+                    </div>
+                    <button 
+                      onClick={() => setInspectingStats(false)}
+                      className="w-12 h-12 rounded-full bg-slate-900 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                    >
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-8 font-mono text-[11px] bg-slate-900 text-sky-400">
+                    <pre>{JSON.stringify(selectedActivityStats, null, 2)}</pre>
+                  </div>
+                  <div className="p-8 border-t border-slate-50 flex items-center justify-between">
+                    <p className="text-slate-400 text-[10px] font-medium max-w-md">
+                      Esta es la respuesta cruda de la API. Debemos identificar las llaves que corresponden a 
+                      <b>distancia</b>, <b>velocidad máxima</b>, <b>aceleraciones</b>, etc.
+                    </p>
+                    <button 
+                      onClick={() => setInspectingStats(false)}
+                      className="bg-sky-600 text-white px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-sky-700 transition-all"
+                    >
+                      Continuar al Mapeo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">

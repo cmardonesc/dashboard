@@ -907,12 +907,18 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
 
       if (error) { 
         console.error("Error login:", error);
-        if (error.message?.toLowerCase().includes('confirm')) {
+        let errorMsg = error.message;
+        
+        if (errorMsg?.includes('Invalid path specified in request URL')) {
+          errorMsg = 'Error de configuración: La URL de Supabase parece ser incorrecta o está bloqueada por un firewall/proxy. Por favor, verifica los Secrets.';
+        }
+        
+        if (errorMsg?.toLowerCase().includes('confirm')) {
           setMsg('Tu cuenta requiere confirmación. Como eres usuario del equipo, puedes entrar con la contraseña de respaldo: laroja2026');
-        } else if (error.message?.toLowerCase().includes('invalid login credentials')) {
+        } else if (errorMsg?.toLowerCase().includes('invalid login credentials')) {
           setMsg('Credenciales inválidas. Si eres del Staff o no tienes cuenta aún, usa la contraseña de respaldo: laroja2026');
         } else {
-          setMsg(error.message); 
+          setMsg(errorMsg); 
         }
         setSubmitting(false); 
         return; 
