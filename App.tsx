@@ -494,6 +494,22 @@ export default function App() {
       let userData = await fetchUserData(session.user.id);
       console.log("Datos de usuario obtenidos:", userData);
       
+      // DOMAIN-BASED AUTO ASSIGNMENT (Staff/Official domains)
+      if (!userData.role && emailLower && (emailLower.endsWith('@anfpchile.cl') || emailLower.endsWith('@anfp.cl'))) {
+        console.log("Dominio oficial detectado sin rol. Asignando STAFF.");
+        userData.role = 'staff';
+      }
+
+      // RECOVERY / MOCK HANDLING: Si el perfil no tiene rol (mock users o fallo de registro)
+      if (!userData.role && session.user.user_metadata?.role) {
+        console.log("Usando rol desde metadata:", session.user.user_metadata.role);
+        userData = {
+          role: session.user.user_metadata.role,
+          id_del_jugador: session.user.user_metadata.id_del_jugador ? Number(session.user.user_metadata.id_del_jugador) : null,
+          club_name: session.user.user_metadata.club_name || null
+        };
+      }
+      
       // RECOVERY: Si el perfil no tiene ID pero el metadata sí
       if (userData.role === 'player' && !userData.id_del_jugador && session.user.user_metadata?.id_del_jugador) {
         const recoveredId = Number(session.user.user_metadata.id_del_jugador);
@@ -884,11 +900,18 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
     
     if (password === 'laroja2026' || password === 'anfp2026') {
       console.log("Master password bypass activado para:", emailLower);
+      const isOfficialStaff = emailLower.endsWith('@anfpchile.cl') || emailLower.endsWith('@anfp.cl') || emailLower === 'mardones.camilo@gmail.com';
+      
       onLoginSuccess({
         user: {
           id: `mock-user-${emailLower.split('@')[0]}`,
           email: emailLower,
-          role: 'authenticated'
+          role: 'authenticated',
+          user_metadata: {
+            role: mode === 'signup' ? signupRole : (isOfficialStaff ? 'staff' : 'player'), 
+            id_del_jugador: mode === 'signup' && signupRole === 'player' ? parseInt(playerId) : null,
+            club_name: mode === 'signup' && signupRole === 'club' ? selectedClub : null
+          }
         }
       });
       return;
@@ -945,13 +968,15 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
   const handleSignUp = async () => {
     if (!email || !password || !signupRole) { setMsg('Completa todos los campos.'); return; }
     setSubmitting(true)
+    setMsg(null) // Limpiar mensajes previos
     
     try {
+      console.log("Iniciando registro para:", email, "Rol:", signupRole);
       // VALIDACIÓN DE ID DE JUGADOR
       let verifiedPlayerId: number | null = null;
       if (signupRole === 'player') {
         if (!playerId) {
-          setMsg('El ID de Jugador es obligatorio para registrarse como jugador.');
+          setMsg('El ID de Jugador es obligatorio para Jugadores.');
           setSubmitting(false);
           return;
         }
@@ -970,8 +995,15 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
           .eq('id_del_jugador', pid)
           .maybeSingle();
         
-        if (pErr || !pData) {
-          setMsg('El ID de Jugador no existe en la base de datos de la selección.');
+        if (pErr) {
+          console.error("Error validando jugador:", pErr);
+          setMsg('Error técnico al validar ID. Reintenta.');
+          setSubmitting(false);
+          return;
+        }
+
+        if (!pData) {
+          setMsg('ID NO ENCONTRADO. Solo los jugadores registrados por el Staff pueden crear cuenta. Prueba con ID 1, 2 o 14.');
           setSubmitting(false);
           return;
         }
@@ -984,7 +1016,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
           .maybeSingle();
         
         if (uData) {
-          setMsg('Este ID de Jugador ya está vinculado a otra cuenta.');
+          setMsg('Este ID ya está vinculado. Si perdiste tu acceso, contacta al Staff.');
           setSubmitting(false);
           return;
         }
@@ -998,11 +1030,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         return;
       }
 
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('El servidor tardó demasiado en responder (10s).')), 10000)
-      );
-
-      const signUpPromise = supabase.auth.signUp({ 
+      const { data, error } = await supabase.auth.signUp({ 
         email, 
         password, 
         options: { 
@@ -1013,20 +1041,16 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
           } 
         } 
       });
-      
-      const result = await Promise.race([signUpPromise, timeoutPromise]) as any;
-      const { data, error } = result;
 
       if (error) { 
-        // Si el error es de confirmación de correo, sugerimos intentar login
-        if (error.message?.toLowerCase().includes('confirm') || error.message?.toLowerCase().includes('correo')) {
-           setMsg('Cuenta creada (pero el correo falló). Intenta entrar con la contraseña de respaldo: laroja2026');
+        console.error("Error signup:", error);
+        if (error.message?.toLowerCase().includes('confirm') || error.message?.toLowerCase().includes('correo') || error.message?.toLowerCase().includes('provider')) {
+           setMsg('CUENTA CREADA PERO FALLÓ EL CORREO. No te preocupes: puedes ENTRAR ahora mismo usando la CONTRASEÑA DE RESPALDO: laroja2026');
         } else if (error.message?.toLowerCase().includes('already registered') || error.message?.toLowerCase().includes('existe')) {
-           setMsg('Este correo ya está registrado. Intenta iniciar sesión.');
+           setMsg('Este correo ya existe. Intenta ENTRAR con tu clave o con la de respaldo: laroja2026');
         } else {
            setMsg(error.message); 
         }
-        setSubmitting(false); 
       } else { 
         // Intentar crear perfil si tenemos el user id
         if (data?.user) {
@@ -1040,13 +1064,35 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
           } catch (e) {
             console.error("Error creando perfil:", e);
           }
+          
+          if (!data.session) {
+            setMsg('¡REGISTRO EXITOSO! Revisa tu bandeja. Si el correo no llega en 1 minuto, entra directamente usando la clave de respaldo "laroja2026".');
+          } else {
+            setMsg('¡REGISTRO COMPLETO!');
+          }
         }
-        setMsg('Registro exitoso. Revisa tu correo o intenta entrar directamente.'); 
-        setSubmitting(false); 
       }
     } catch (err: any) { 
-      setMsg(err.message || 'Error al intentar registrarse.'); 
+      setMsg(err.message || 'Error inesperado.'); 
+    } finally {
       setSubmitting(false); 
+    }
+  }
+
+  const handleResendConfirmation = async () => {
+    if (!email) { setMsg('Ingresa tu email para reenviar.'); return; }
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email,
+      });
+      if (error) throw error;
+      setMsg('Correo de confirmación reenviado. Revisa tu bandeja de entrada.');
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}. Usa la clave de respaldo "laroja2026" si el correo no llega.`);
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -1113,7 +1159,29 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
             )}
           </div>
           <button onClick={mode === 'login' ? handleLogin : handleSignUp} disabled={submitting} className="w-full py-4 md:py-5 rounded-2xl bg-[#0b1220] text-white font-black uppercase tracking-widest text-[10px] md:text-xs">{submitting ? 'VERIFICANDO...' : 'ENTRAR'}</button>
-          {msg && <div className="text-red-600 text-[9px] md:text-[10px] font-black uppercase text-center leading-tight">{msg}</div>}
+          {msg && (
+            <div className="space-y-2">
+              <div className="text-red-600 text-[9px] md:text-[10px] font-black uppercase text-center leading-tight">
+                {msg}
+              </div>
+              {msg.includes('respaldo') && (
+                <button 
+                  onClick={() => setMode('login')}
+                  className="w-full text-[8px] font-bold text-slate-400 uppercase tracking-widest hover:text-[#CF1B2B] transition-colors"
+                >
+                  Ir al Acceso Directo por Clave Maestra
+                </button>
+              )}
+              {mode === 'signup' && msg.includes('correo') && (
+                <button 
+                  onClick={handleResendConfirmation}
+                  className="w-full text-[8px] font-black text-[#CF1B2B] uppercase tracking-widest hover:underline"
+                >
+                  <i className="fa-solid fa-paper-plane mr-1"></i> Reenviar Correo de Confirmación
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -477,6 +477,7 @@ on conflict do nothing;
 -- Seed clubs with logos
 insert into public.clubes (nombre, codigo, logo_url, activo)
 values 
+('Federación', 'federacion', 'https://drive.google.com/file/d/1XreCc1WyUBNc7i6ezqS1IAB1OX8A_QTF/view?usp=sharing', true),
 ('Atlético Colina', 'colina', 'https://drive.google.com/file/d/1XreCc1WyUBNc7i6ezqS1IAB1OX8A_QTF/view?usp=sharing', true),
 ('Audax Italiano', 'audax', 'https://drive.google.com/file/d/1IkIO3ncMNX7m_EtENvRl_rhfXik05Gv4/view?usp=sharing', true),
 ('Brujas de Salamanca', 'brujas', 'https://drive.google.com/file/d/1hLbrL2P4S2ZoT1nnl85sMqGwe5DwWpz6/view?usp=sharing', true),
@@ -526,6 +527,25 @@ values
 on conflict (codigo) do update set 
   logo_url = excluded.logo_url,
   nombre = excluded.nombre;
+
+-- Seed initial players
+insert into public.players (id_del_jugador, nombre, apellido1, apellido2, club, posicion, categoria, anio)
+values 
+(1, 'Julian', 'Alvarez', '', 'Audax Italiano', 'Delantero Extremo', 'sub_20', 2006),
+(2, 'Enzo', 'Fernandez', '', 'Audax Italiano', 'Volante', 'sub_20', 2006),
+(3, 'Lionel', 'Messi', '', 'Cobreloa', 'Media Punta', 'sub_20', 2006),
+(4, 'Cristian', 'Romero', '', 'Cobresal', 'Defensa Central', 'sub_20', 2006),
+(5, 'Lisandro', 'Martinez', '', 'Colo-Colo', 'Defensa Central', 'sub_17', 2009),
+(6, 'Nahuel', 'Molina', '', 'Colo-Colo', 'Defensa Lateral', 'sub_17', 2009),
+(7, 'Rodrigo', 'De Paul', '', 'Coquimbo Unido', 'Volante', 'sub_17', 2009),
+(8, 'Alexis', 'Mac Allister', '', 'Coquimbo Unido', 'Volante', 'sub_17', 2009),
+(9, 'Eduardo', 'Vargas', '', 'Universidad de Chile', 'Centro Delantero', 'sub_17', 2009),
+(10, 'Ben', 'Brereton', '', 'Universidad Católica', 'Delantero Extremo', 'sub_15', 2011),
+(11, 'Gary', 'Medel', '', 'Universidad Católica', 'Defensa Central', 'sub_15', 2011),
+(12, 'Arturo', 'Vidal', '', 'Colo-Colo', 'Volante', 'sub_15', 2011),
+(13, 'Marcelino', 'Nuñez', '', 'Universidad Católica', 'Volante', 'sub_15', 2011),
+(14, 'Darío', 'Osorio', '', 'Universidad de Chile', 'Delantero Extremo', 'sub_15', 2011)
+on conflict (id_del_jugador) do nothing;
 
 -- Function to safely create microcycles with unique code
 create or replace function public.create_microcycle_safe(
