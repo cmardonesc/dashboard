@@ -8,7 +8,7 @@ import { getDriveDirectLink } from '../lib/utils';
 import { FEDERATION_LOGO } from '../constants';
 
 type ViewMode = 'selection' | 'management';
-type SubTab = 'cronograma' | 'tareas' | 'evaluacion';
+type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia';
 
 interface Tarea {
   id: string;
@@ -70,6 +70,7 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'Partido Oficial', emoji: '🏆' },
   { label: 'Citación', emoji: '📢' },
   { label: 'Liberación jug.', emoji: '🏠' },
+  { label: 'Descanso', emoji: '🛌' },
   { label: 'OTRA', emoji: '📝' },
 ];
 
@@ -99,6 +100,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const [biblioteca, setBiblioteca] = useState<Tarea[]>([]);
   const [weeklySchedule, setWeeklySchedule] = useState<Record<string, (ItineraryActivity & { db_id?: any })[]>>({});
   const [fieldTasks, setFieldTasks] = useState<Record<string, Tarea[]>>({});
+  const [matchReports, setMatchReports] = useState<any[]>([]);
 
   // Modales
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -109,6 +111,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [searchTermBiblioteca, setSearchTermBiblioteca] = useState('');
+  const [specialNote, setSpecialNote] = useState('');
 
   const [activityForm, setActivityForm] = useState({
     time: '08:00',
@@ -254,10 +257,35 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     setSelectedMicro(mc);
     setWeeklySchedule({});
     setFieldTasks({});
+    setMatchReports([]);
     fetchSchedule(mc.id);
     fetchWeeklyTasks(mc.id);
+    fetchMatchReports(mc.category_id);
     setViewMode('management');
     setActiveTab('cronograma');
+  };
+
+  const fetchMatchReports = async (categoryId: number) => {
+    try {
+      // Primero obtener los IDs de los jugadores de esta categoría
+      // En este sistema, la categoría está en el microciclo, pero los reportes están vinculados al jugador.
+      // Así que buscamos los reportes de los jugadores que han sido citados en este microciclo o categoría.
+      
+      const { data, error } = await supabase
+        .from('match_reports')
+        .select('*, players(nombre, apellido1, club, id_del_jugador)')
+        .order('fecha', { ascending: false });
+
+      if (error) throw error;
+      
+      // Filtrar por categoría (esto es una simplificación, idealmente el reporte debería tener categoría)
+      // Pero como no la tiene, mostramos todos los reportes por ahora o filtramos si tenemos performanceRecords.
+      if (data) {
+        setMatchReports(data);
+      }
+    } catch (err) {
+      console.error("Error cargando reportes de competencia:", err);
+    }
   };
 
   const currentWeekDays = useMemo(() => {
@@ -590,6 +618,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     if (t.includes('GYM') || t.includes('GIMNASIO')) return 'bg-[#0b1220] text-white font-black';
     if (t.includes('PSICOLÓGICA') || t.includes('PSICOLOGO') || t.includes('CHARLA')) return 'bg-[#a3d977] text-[#0b1220] font-black';
     if (t.includes('DESAYUNO') || t.includes('ALMUERZO') || t.includes('MERIENDA') || t.includes('SNACK') || t.includes('CENA')) return 'bg-slate-200 text-[#0b1220] font-bold';
+    if (t.includes('DESCANSO')) return 'bg-sky-100 text-sky-700 font-black';
     return 'bg-white text-[#0b1220] font-medium';
   };
 
@@ -708,6 +737,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         </button>
         <button onClick={() => setActiveTab('tareas')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'tareas' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
           <i className="fa-solid fa-futbol text-sm"></i> Tareas Semanales
+        </button>
+        <button onClick={() => setActiveTab('competencia')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'competencia' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+          <i className="fa-solid fa-trophy text-sm"></i> Reportes Competición
         </button>
       </div>
 
@@ -919,21 +951,33 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
            <div className="relative bg-white w-full max-w-[210mm] min-h-[297mm] rounded-[24px] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 transform-gpu my-8">
               
               {/* Header Actions (No Printable) */}
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-50 print:hidden">
-                 <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter">Vista Previa Reporte Diario</h3>
-                 <div className="flex gap-3">
-                   <button 
-                     onClick={() => window.print()} 
-                     className="bg-red-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:bg-red-700 transition-all"
-                   >
-                     <i className="fa-solid fa-print"></i> Imprimir
-                   </button>
-                   <button 
-                     onClick={() => setShowDailyReportModal(false)} 
-                     className="bg-slate-100 text-slate-500 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
-                   >
-                     Cerrar
-                   </button>
+              <div className="p-6 border-b border-slate-100 bg-white sticky top-0 z-50 print:hidden">
+                 <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter">Vista Previa Reporte Diario</h3>
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => window.print()} 
+                        className="bg-red-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:bg-red-700 transition-all"
+                      >
+                        <i className="fa-solid fa-print"></i> Imprimir
+                      </button>
+                      <button 
+                        onClick={() => setShowDailyReportModal(false)} 
+                        className="bg-slate-100 text-slate-500 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                 </div>
+                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 italic">Mensaje Especial (Opcional - Sólo aparecerá si escribes algo)</label>
+                    <textarea 
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 transition-all resize-none"
+                      placeholder="Escribe un mensaje que aparecerá al final del reporte..."
+                      rows={2}
+                      value={specialNote}
+                      onChange={(e) => setSpecialNote(e.target.value)}
+                    />
                  </div>
               </div>
 
@@ -1061,6 +1105,19 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                     <span>{new Date().toLocaleDateString()}</span>
                  </div>
 
+                 {/* 4. NOTA ESPECIAL (Solo si existe) */}
+                 {specialNote.trim() && (
+                   <div className="mt-8 bg-slate-50 border-2 border-slate-100 rounded-2xl p-6 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-16 h-16 bg-red-600/5 rotate-45 translate-x-8 -translate-y-8"></div>
+                      <h4 className="text-[10px] font-black text-[#02428c] uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <i className="fa-solid fa-note-sticky text-red-600"></i> NOTA DEL CUERPO TÉCNICO
+                      </h4>
+                      <p className="text-xs font-bold text-slate-700 leading-relaxed whitespace-pre-wrap italic">
+                        "{specialNote}"
+                      </p>
+                   </div>
+                 )}
+
               </div>
            </div>
         </div>
@@ -1101,6 +1158,86 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                 {savingActivity ? 'Guardando...' : (editingActivityId ? 'Actualizar Actividad' : 'Confirmar y Agendar')}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'competencia' && (
+        <div className="space-y-6 animate-in fade-in duration-500">
+          <div className="bg-white rounded-[40px] p-10 border border-slate-100 shadow-sm relative overflow-hidden">
+            <div className="flex items-center justify-between mb-10">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
+                <span className="w-2 h-6 bg-red-600 rounded-full"></span>
+                Reportes de Jugadores en Competencia
+              </h3>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
+                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
+                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Compromiso</th>
+                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Minutos</th>
+                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">RPE</th>
+                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Molestias</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {matchReports.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-20 text-center text-slate-300 font-black uppercase italic tracking-widest">
+                        Sin reportes registrados en este periodo
+                      </td>
+                    </tr>
+                  ) : (
+                    matchReports.map((report) => (
+                      <tr key={report.id} className="group hover:bg-slate-50/50 transition-colors">
+                        <td className="py-6">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-black text-xs italic">
+                              {report.players?.nombre?.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{report.players?.club}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-6 text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
+                          {new Date(report.fecha + 'T12:00:00').toLocaleDateString()}
+                        </td>
+                        <td className="py-6">
+                          <p className="text-[10px] font-black text-red-600 uppercase italic tracking-tight">{report.resultado === 'Titular' ? 'TITULAR' : 'SUPLENTE'}</p>
+                          <p className="text-[9px] font-bold text-slate-900 uppercase tracking-widest">vs {report.rival}</p>
+                        </td>
+                        <td className="py-6 text-center">
+                          <span className="bg-[#0b1220] text-white px-3 py-1 rounded-lg text-[10px] font-black tracking-tighter italic">
+                            {report.minutos_jugados || 0}'
+                          </span>
+                        </td>
+                        <td className="py-6 text-center">
+                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${
+                            (report.rpe || 0) > 7 ? 'bg-red-100 text-red-600' : 
+                            (report.rpe || 0) > 4 ? 'bg-amber-100 text-amber-600' : 
+                            'bg-emerald-100 text-emerald-600'
+                          }`}>
+                            {report.rpe || 0}
+                          </span>
+                        </td>
+                        <td className="py-6">
+                          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tight leading-relaxed max-w-[200px]">
+                            {report.molestias || 'Sin molestias'}
+                            {report.enfermedad && <span className="text-red-500 block">Síntomas: {report.enfermedad}</span>}
+                          </p>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

@@ -50,6 +50,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // Filtros específicos del Reporte Diario
   const [selectedPlayersReport, setSelectedPlayersReport] = useState<Set<number>>(new Set());
   const [dailyTaskGps, setDailyTaskGps] = useState<any[]>([]);
+  const [specialNote, setSpecialNote] = useState('');
 
   // NUEVO: Estado para datos de gps_import (Totales)
   const [gpsImportData, setGpsImportData] = useState<any[]>([]);
@@ -1136,6 +1137,19 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     }
                   </div>
                 </div>
+
+                <div className="md:col-span-12 mt-6">
+                   <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 italic">Mensaje Especial (Opcional - Sólo aparecerá si escribes algo)</label>
+                      <textarea 
+                        className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 transition-all resize-none shadow-sm"
+                        placeholder="Escribe un mensaje que aparecerá al final del reporte..."
+                        rows={3}
+                        value={specialNote}
+                        onChange={(e) => setSpecialNote(e.target.value)}
+                      />
+                   </div>
+                </div>
              </div>
           </div>
 
@@ -1499,7 +1513,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
               <section className="mt-20 pt-10 border-t-2 border-slate-100">
                 <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center mb-16">VALIDEZ TÉCNICA Y FIRMAS</h4>
-                <div className="grid grid-cols-2 gap-20 px-10">
+                <div className="grid grid-cols-2 gap-20 px-10 mb-12">
                   <div className="text-center">
                      <div className="h-px bg-slate-900 mb-4"></div>
                      <p className="text-[10px] font-black uppercase text-slate-900 tracking-tighter">PREPARADOR FÍSICO</p>
@@ -1511,6 +1525,18 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                      <p className="text-[8px] text-slate-400 uppercase">Selección Nacional de Fútbol</p>
                   </div>
                 </div>
+
+                {specialNote.trim() && (
+                  <div className="bg-slate-50 border-2 border-slate-100 rounded-3xl p-8 relative overflow-hidden mb-8">
+                     <div className="absolute top-0 right-0 w-24 h-24 bg-red-600/5 rotate-45 translate-x-12 -translate-y-12"></div>
+                     <h4 className="text-xs font-black text-[#02428c] uppercase tracking-widest mb-4 flex items-center gap-2">
+                       <i className="fa-solid fa-note-sticky text-red-600"></i> OBSERVACIONES DEL ÁREA DE RENDIMIENTO
+                     </h4>
+                     <p className="text-sm font-bold text-slate-700 leading-relaxed whitespace-pre-wrap italic">
+                       "{specialNote}"
+                     </p>
+                  </div>
+                )}
               </section>
               <PrintFooter page={currentPageNum} />
             </div>

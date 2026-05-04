@@ -277,6 +277,49 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     }
   };
 
+  const handleMatchSubmit = async (data: any) => {
+    if (player?.isUnlinked || !player?.id_del_jugador) {
+      alert("⚠️ CUENTA NO VINCULADA: No se detectó un vínculo oficial con la base de datos.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const today = new Date().toISOString().split('T')[0];
+
+      const payload = {
+        id_del_jugador: player.id_del_jugador,
+        fecha: today,
+        rival: data.rival,
+        resultado: data.resultado,
+        minutos_jugados: data.minutos,
+        rpe: data.rpe,
+        molestias: data.sorenessAreas.join(', '),
+        enfermedad: data.illnessSymptoms.join(', '),
+        created_by: user?.id
+      };
+
+      const { error } = await supabase
+        .from('match_reports')
+        .insert(payload);
+      
+      if (error) throw error;
+      
+      logActivity('Envío Reporte de Competencia', { playerId: player.id_del_jugador, date: today, rival: data.rival });
+
+      setSuccessModalConfig({
+        show: true,
+        title: 'Reporte de Partido Listo',
+        subtitle: 'Tu información de competencia ha sido sincronizada correctamente.'
+      });
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert("❌ Error al guardar reporte: " + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!player?.id_del_jugador) return;
@@ -525,11 +568,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       case 'reportes_match':
         return (
           <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <MatchReportForm onSubmit={() => setSuccessModalConfig({
-              show: true,
-              title: 'Reporte Listo',
-              subtitle: 'Tu información ha sido sincronizada correctamente.'
-            })} />
+            <MatchReportForm onSubmit={handleMatchSubmit} />
           </div>
         )
       case 'nutricion_antropometria':

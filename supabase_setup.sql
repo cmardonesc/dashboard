@@ -555,3 +555,23 @@ begin
   );
 end;
 $$;
+
+-- Tabla para reportes de competencia/partido
+create table if not exists public.match_reports (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  id_del_jugador int not null references public.players(id_del_jugador),
+  fecha date default current_date,
+  rival text,
+  resultado text,
+  minutos_jugados int,
+  rpe int,
+  molestias text,
+  enfermedad text,
+  created_by uuid references auth.users
+);
+
+-- RLS para match_reports
+alter table public.match_reports enable row level security;
+create policy "Enable all access for match_reports" on public.match_reports for all using (true) with check (true);
+

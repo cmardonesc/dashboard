@@ -9,6 +9,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
+import ClubBadge from './ClubBadge'
 
 type ViewMode = 'grid' | 'selection' | 'clubs'
 
@@ -27,7 +28,17 @@ const TIPO_PROCESO_OPTIONS = [
   'Mundial'
 ];
 
-export default function CitacionesArea() {
+interface CitacionesAreaProps {
+  performanceRecords?: any[];
+  onMenuChange?: (id: any) => void;
+  clubs?: any[];
+}
+
+export default function CitacionesArea({ 
+  performanceRecords = [], 
+  onMenuChange = () => {}, 
+  clubs: propClubs = [] 
+}: CitacionesAreaProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [selectedMicro, setSelectedMicro] = useState<MicrocicloUI | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -43,11 +54,13 @@ export default function CitacionesArea() {
   const [loadingCitados, setLoadingCitados] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [microciclos, setMicrociclos] = useState<MicrocicloUI[]>([])
   const [allPlayers, setAllPlayers] = useState<User[]>([])
   const [citadosIds, setCitadosIds] = useState<number[]>([])
   const [clubContacts, setClubContacts] = useState<any[]>([])
+  const [clubs, setClubs] = useState<any[]>(propClubs)
 
   // Modal State
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -61,13 +74,33 @@ export default function CitacionesArea() {
   })
   const [copyLastNomina, setCopyLastNomina] = useState(true)
 
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Carta Convocatoria Editable State
+  const [letterConfig, setLetterConfig] = useState({
+    showEditor: false,
+    headerRef: 'Ref.: Carta Convocatoria Selección Nacional',
+    bodyPart1: 'El Cuerpo Técnico de la Selección Chilena de Fútbol, junto con la Gerencia de Selecciones Nacionales, tiene el agrado de convocar al jugador de sus registros, ',
+    bodyPart2: ', al Microciclo que se desarrollará entre los días ',
+    presentation: 'El jugador debe presentarse en el CAR José Sulantay el día ',
+    presentationSuffix: ' en horario por confirmar.',
+    guidelines: 'Asimismo, queremos recordar que, en el marco de la formación integral de nuestros futbolistas, se solicita que los jugadores mantengan una presentación acorde a los lineamientos establecidos. Por ello, queda prohibido el uso de aros, piercings, cortes en la ceja, cabello teñido u otros elementos que no se ajusten a la imagen profesional que buscamos proyectar en nuestros seleccionados.',
+    closing: 'Aprovechamos la ocasión para agradecer desde ya la buena disposición de su club para con nuestra Selección Nacional, y esperamos una favorable acogida.',
+    signatureName: 'Felipe Correa',
+    signatureRole: 'Gerente de Selecciones Nacionales'
+  });
 
   useEffect(() => {
     fetchMicrocycles();
     fetchAllPlayers();
     fetchClubContacts();
+    if (propClubs.length === 0) {
+      fetchClubs();
+    }
   }, []);
+
+  const fetchClubs = async () => {
+    const { data } = await supabase.from('clubes').select('*').eq('activo', true);
+    if (data) setClubs(data);
+  };
 
   const fetchClubContacts = async () => {
     const { data } = await supabase.from('contactos_solicitudes').select('*');
@@ -666,7 +699,7 @@ export default function CitacionesArea() {
       // Ref
       doc.setFont("helvetica", "bold");
       const categoryName = formatCategoryLabel(selectedMicro?.category_id);
-      const refText = `Ref.: Carta Convocatoria Selección Nacional ${categoryName}.`;
+      const refText = `${letterConfig.headerRef} ${categoryName}.`;
       doc.text(refText, 25, 105);
       const refWidth = doc.getTextWidth(refText);
       doc.setLineWidth(0.2);
@@ -684,9 +717,9 @@ export default function CitacionesArea() {
       const monthName = months[startDate.getMonth()];
       const year = startDate.getFullYear();
 
-      const text1 = `El Cuerpo Técnico de la Selección Chilena de Fútbol, junto con la Gerencia de Selecciones Nacionales, tiene el agrado de convocar al jugador de sus registros, `;
+      const text1 = letterConfig.bodyPart1;
       const playerNamesStr = players.map(p => p.name).join(', ');
-      const text2 = `, al Microciclo que se desarrollará entre los días ${startDay} al ${endDay} de ${monthName} del ${year}.`;
+      const text2 = `${letterConfig.bodyPart2} ${startDay} al ${endDay} de ${monthName} del ${year}.`;
       
       const marginX = 25;
       const textMaxWidth = 160;
@@ -698,17 +731,17 @@ export default function CitacionesArea() {
       doc.text(lines1, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
       currentY += lines1.length * lineHeight + 8;
 
-      const text3 = `El jugador debe presentarse en el CAR José Sulantay el día ${startDay} de ${monthName} en horario por confirmar.`;
+      const text3 = `${letterConfig.presentation} ${startDay} de ${monthName} ${letterConfig.presentationSuffix}`;
       const lines3 = doc.splitTextToSize(text3, textMaxWidth);
       doc.text(lines3, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
       currentY += lines3.length * lineHeight + 10;
 
-      const text4 = `Asimismo, queremos recordar que, en el marco de la formación integral de nuestros futbolistas, se solicita que los jugadores mantengan una presentación acorde a los lineamientos establecidos. Por ello, queda prohibido el uso de aros, piercings, cortes en la ceja, cabello teñido u otros elementos que no se ajusten a la imagen profesional que buscamos proyectar en nuestros seleccionados.`;
+      const text4 = letterConfig.guidelines;
       const lines4 = doc.splitTextToSize(text4, textMaxWidth);
       doc.text(lines4, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
       currentY += lines4.length * lineHeight + 10;
 
-      const text5 = `Aprovechamos la ocasión para agradecer desde ya la buena disposición de su club para con nuestra Selección Nacional, y esperamos una favorable acogida.`;
+      const text5 = letterConfig.closing;
       const lines5 = doc.splitTextToSize(text5, textMaxWidth);
       doc.text(lines5, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
       currentY += lines5.length * lineHeight + 15;
@@ -722,9 +755,9 @@ export default function CitacionesArea() {
       }
 
       doc.setFont("helvetica", "bold");
-      doc.text("Felipe Correa", 105, 265, { align: 'center' });
+      doc.text(letterConfig.signatureName, 105, 265, { align: 'center' });
       doc.setFontSize(9);
-      doc.text("Gerente de Selecciones Nacionales", 105, 270, { align: 'center' });
+      doc.text(letterConfig.signatureRole, 105, 270, { align: 'center' });
 
       // Save
       doc.save(`Carta_Convocatoria_${clubName.replace(/\s+/g, '_')}.pdf`);
@@ -1012,23 +1045,124 @@ export default function CitacionesArea() {
               </div>
             </div>
             
-            <button 
-              onClick={generateAllClubsPDF}
-              className="bg-white text-slate-900 px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-slate-50 transition-all flex items-center gap-3 transform active:scale-95"
-            >
-              <i className="fa-solid fa-file-zipper text-lg text-[#CF1B2B]"></i> DESCARGAR TODO (.ZIP)
-            </button>
+            <div className="flex gap-4">
+               <button 
+                onClick={() => setLetterConfig({...letterConfig, showEditor: !letterConfig.showEditor})}
+                className={`px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl transition-all flex items-center gap-3 transform active:scale-95 ${letterConfig.showEditor ? 'bg-red-600 text-white' : 'bg-white/10 text-white border border-white/20 hover:bg-white hover:text-slate-900'}`}
+              >
+                <i className={`fa-solid ${letterConfig.showEditor ? 'fa-check' : 'fa-pen-to-square'}`}></i> 
+                {letterConfig.showEditor ? 'LISTO' : 'EDITAR TEXTO CARTAS'}
+              </button>
+              <button 
+                onClick={generateAllClubsPDF}
+                className="bg-white text-slate-900 px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-slate-50 transition-all flex items-center gap-3 transform active:scale-95"
+              >
+                <i className="fa-solid fa-file-zipper text-lg text-[#CF1B2B]"></i> DESCARGAR TODO (.ZIP)
+              </button>
+            </div>
           </div>
         </div>
+
+        {letterConfig.showEditor && (
+          <div className="bg-white rounded-[40px] p-10 border border-slate-100 shadow-xl space-y-8 animate-in slide-in-from-top-4 duration-300">
+             <div className="flex items-center gap-4 mb-2">
+                <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center text-white">
+                   <i className="fa-solid fa-pen-fancy"></i>
+                </div>
+                <div>
+                   <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest italic">EDITOR DE CARTA DE CONVOCATORIA</h3>
+                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.3em]">PERSONALIZA EL CONTENIDO DE LOS ARCHIVOS PDF</p>
+                </div>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">REFERENCIA (ASUNTO)</label>
+                      <input 
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                        value={letterConfig.headerRef}
+                        onChange={e => setLetterConfig({...letterConfig, headerRef: e.target.value})}
+                      />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">INTRODUCCIÓN JUGADOR</label>
+                      <textarea 
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all h-24 resize-none"
+                        value={letterConfig.bodyPart1}
+                        onChange={e => setLetterConfig({...letterConfig, bodyPart1: e.target.value})}
+                      />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">CUERPO MICROCICLO (FECHAS)</label>
+                      <textarea 
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all h-24 resize-none"
+                        value={letterConfig.bodyPart2}
+                        onChange={e => setLetterConfig({...letterConfig, bodyPart2: e.target.value})}
+                      />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">PRESENTACIÓN (DIRECCIÓN)</label>
+                      <input 
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                        value={letterConfig.presentation}
+                        onChange={e => setLetterConfig({...letterConfig, presentation: e.target.value})}
+                      />
+                   </div>
+                </div>
+
+                <div className="space-y-4">
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">LINEAMIENTOS DE PRESENTACIÓN (CONDUCTA)</label>
+                      <textarea 
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all h-32 resize-none"
+                        value={letterConfig.guidelines}
+                        onChange={e => setLetterConfig({...letterConfig, guidelines: e.target.value})}
+                      />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">CIERRE / DESPEDIDA</label>
+                      <textarea 
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all h-24 resize-none"
+                        value={letterConfig.closing}
+                        onChange={e => setLetterConfig({...letterConfig, closing: e.target.value})}
+                      />
+                   </div>
+                   <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">FIRMA NOMBRE</label>
+                        <input 
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                          value={letterConfig.signatureName}
+                          onChange={e => setLetterConfig({...letterConfig, signatureName: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">FIRMA CARGO</label>
+                        <input 
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                          value={letterConfig.signatureRole}
+                          onChange={e => setLetterConfig({...letterConfig, signatureRole: e.target.value})}
+                        />
+                      </div>
+                   </div>
+                </div>
+             </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
           {Object.entries(citadosByClub).sort((a,b) => a[0].localeCompare(b[0])).map(([clubName, players]) => (
             <div key={clubName} className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden flex flex-col group hover:shadow-xl transition-all">
               <div className="p-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-slate-900 font-black italic border border-slate-200">
-                    {clubName.charAt(0)}
-                  </div>
+                  <ClubBadge 
+                    clubName={clubName} 
+                    clubs={clubs} 
+                    showName={false} 
+                    logoSize="w-12 h-12" 
+                    className="bg-white rounded-2xl shadow-sm border border-slate-200 p-2"
+                  />
                   <div>
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-tighter leading-none mb-1">{clubName}</h4>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{players.length} JUGADORES</p>
@@ -1041,13 +1175,6 @@ export default function CitacionesArea() {
                     title="Generar Carta Formal de Convocatoria"
                   >
                     <i className="fa-solid fa-file-invoice"></i>
-                  </button>
-                  <button 
-                    onClick={() => generatePDFByClub(clubName, players)}
-                    className="w-10 h-10 bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 rounded-xl flex items-center justify-center transition-all shadow-sm"
-                    title="Descargar Nómina (Lista)"
-                  >
-                    <i className="fa-solid fa-download"></i>
                   </button>
                 </div>
               </div>
@@ -1108,10 +1235,10 @@ export default function CitacionesArea() {
               <div key={p.id} className="bg-white/5 p-5 rounded-[28px] border border-white/5 group hover:bg-white/10 transition-all border-l-4 border-l-[#CF1B2B]">
                 <div className="flex items-center justify-between text-white">
                   <div>
-                    <p className="text-[11px] font-black uppercase italic leading-none mb-1">{p.name}</p>
-                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest truncate w-48">
-                      <span className="text-[#CF1B2B]">{p.position}</span> | {p.club}
-                    </p>
+                    <div className="text-[11px] font-black uppercase italic leading-none mb-1">{p.name}</div>
+                    <div className="text-[9px] text-slate-500 uppercase font-bold tracking-widest truncate w-48 flex items-center gap-2">
+                      <span className="text-[#CF1B2B]">{p.position}</span> | <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-500 font-bold" />
+                    </div>
                   </div>
                   <button onClick={() => p.id_del_jugador && handleUncite(p.id_del_jugador)} className="w-8 h-8 rounded-lg bg-[#CF1B2B]/10 text-[#CF1B2B] flex items-center justify-center hover:bg-[#CF1B2B] hover:text-white transition-all">
                     <i className="fa-solid fa-user-minus text-[10px]"></i>
@@ -1231,12 +1358,12 @@ export default function CitacionesArea() {
                         {p.name?.charAt(0)}
                       </div>
                       <div className="overflow-hidden pr-4">
-                        <p className={`text-[11px] font-black uppercase italic tracking-tighter leading-none mb-1 truncate ${isCited ? 'text-emerald-700' : 'text-slate-900'}`}>
+                        <div className={`text-[11px] font-black uppercase italic tracking-tighter leading-none mb-1 truncate ${isCited ? 'text-emerald-700' : 'text-slate-900'}`}>
                           {p.name}
-                        </p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate flex items-center gap-1.5 opacity-90">
-                          {p.club} <span className="text-slate-200">|</span> <span className={isCited ? 'text-emerald-500' : 'text-slate-500'}>{p.position}</span>
-                        </p>
+                        </div>
+                        <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate flex items-center gap-1.5 opacity-90">
+                          <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-400 font-bold" /> <span className="text-slate-200">|</span> <span className={isCited ? 'text-emerald-500' : 'text-slate-500'}>{p.position}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
