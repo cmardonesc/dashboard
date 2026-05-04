@@ -30,6 +30,7 @@ interface PlayerDashboardProps {
   gps?: GPSData[]
   nutrition?: any[]
   onRefresh?: () => void
+  refreshing?: boolean
 }
 
 type AthleteView = 'menu' | 'wellness' | 'load' | 'match' | 'nutrition'
@@ -45,7 +46,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   loads = [],
   gps = [],
   nutrition = [],
-  onRefresh
+  onRefresh,
+  refreshing
 }) => {
   const [activeMenu, setActiveMenu] = useState<PlayerMenuId>('inicio')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
@@ -1005,6 +1007,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           }} 
           isCollapsed={isSidebarCollapsed} 
           setIsCollapsed={setIsSidebarCollapsed} 
+          onRefresh={onRefresh}
+          refreshing={refreshing}
         />
       </div>
       
@@ -1027,7 +1031,17 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             </h2>
           </div>
           <div className="flex items-center gap-3 md:gap-6">
-            <button onClick={async () => { await supabase.auth.signOut() }} className="text-slate-500 hover:text-red-500 transition-colors p-2">
+            {onRefresh && (
+              <button 
+                onClick={onRefresh}
+                disabled={refreshing}
+                title="Sincronizar datos"
+                className={`w-10 h-10 flex lg:hidden items-center justify-center rounded-xl transition-all ${refreshing ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 text-[#CF1B2B] hover:bg-[#0b1220] hover:text-white shadow-sm'}`}
+              >
+                <i className={`fa-solid fa-arrows-rotate ${refreshing ? 'animate-spin' : ''}`}></i>
+              </button>
+            )}
+            <button onClick={async () => { await supabase.auth.signOut() }} className="text-slate-500 hover:text-red-500 transition-colors p-2 text-xl">
               <i className="fa-solid fa-arrow-right-from-bracket"></i>
             </button>
           </div>

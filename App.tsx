@@ -37,6 +37,8 @@ export default function App() {
     nutrition: []
   })
 
+  const [refreshing, setRefreshing] = useState(false)
+
   const fetchPerformanceData = useCallback(async (userRole: Role, pId: number | null) => {
     try {
       let wellnessQuery = supabase.from('wellness_checkin').select('*');
@@ -166,7 +168,7 @@ export default function App() {
     }
   }, []);
 
-  const fetchRealPlayers = async () => {
+  const fetchRealPlayers = useCallback(async () => {
     try {
       const [{ data: playersData, error: playersError }, { data: clubsData, error: clubsError }] = await Promise.all([
         supabase
@@ -225,7 +227,23 @@ export default function App() {
     } finally {
       setPlayersLoading(false)
     }
-  }
+  }, []);
+
+  const handleManualRefresh = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchRealPlayers(),
+        fetchPerformanceData(role, linkedPlayerId)
+      ]);
+      console.log("Manual refresh completed successfully.");
+    } catch (err) {
+      console.error("Error during manual refresh:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [role, linkedPlayerId, fetchPerformanceData, refreshing, fetchRealPlayers]);
 
   const fetchUserData = async (
     userId: string
@@ -757,7 +775,15 @@ export default function App() {
               </h2>
             </div>
             <div className="flex items-center gap-3 md:gap-6">
-              <button onClick={async () => { await supabase.auth.signOut() }} className="text-slate-500 hover:text-red-500 transition-colors p-2">
+              <button 
+                onClick={handleManualRefresh}
+                disabled={refreshing}
+                title="Sincronizar datos"
+                className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${refreshing ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 text-[#CF1B2B] hover:bg-[#0b1220] hover:text-white shadow-sm'}`}
+              >
+                <i className={`fa-solid fa-arrows-rotate ${refreshing ? 'animate-spin' : ''}`}></i>
+              </button>
+              <button onClick={async () => { await supabase.auth.signOut() }} className="text-slate-500 hover:text-red-500 transition-colors p-2 text-xl">
                 <i className="fa-solid fa-arrow-right-from-bracket"></i>
               </button>
             </div>
@@ -798,7 +824,8 @@ export default function App() {
           loads={currentPlayerRecord.loads} 
           gps={currentPlayerRecord.gps} 
           nutrition={currentPlayerRecord.nutrition}
-          onRefresh={() => fetchPerformanceData(role, linkedPlayerId)} 
+          onRefresh={handleManualRefresh}
+          refreshing={refreshing}
         />
       ) : (
         <div className="min-h-screen flex items-center justify-center p-6">

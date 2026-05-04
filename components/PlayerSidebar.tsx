@@ -8,9 +8,11 @@ interface PlayerSidebarProps {
   onMenuChange: (id: PlayerMenuId) => void;
   isCollapsed: boolean;
   setIsCollapsed: (val: boolean) => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }
 
-const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange, isCollapsed, setIsCollapsed }) => {
+const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange, isCollapsed, setIsCollapsed, onRefresh, refreshing }) => {
   
   const [reportesOpen, setReportesOpen] = React.useState(activeMenu.startsWith('reportes_'));
   const [nutricionOpen, setNutricionOpen] = React.useState(activeMenu.startsWith('nutricion_'));
@@ -128,7 +130,17 @@ const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange,
         </button>
       </nav>
 
-      <div className="p-6 border-t border-white/5">
+      <div className="p-6 border-t border-white/5 space-y-4">
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={refreshing}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-6'} py-4 rounded-2xl transition-all bg-white/5 text-slate-400 hover:text-white disabled:opacity-50`}
+          >
+            <i className={`fa-solid fa-arrows-rotate text-lg ${refreshing ? 'animate-spin' : ''}`}></i>
+            {!isCollapsed && <span className="font-bold text-sm">{refreshing ? 'Sincronizando...' : 'Sincronizar'}</span>}
+          </button>
+        )}
         <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest text-center">ANFP v2026.1</p>
       </div>
     </aside>
