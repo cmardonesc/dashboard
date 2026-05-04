@@ -909,7 +909,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
           role: 'authenticated',
           user_metadata: {
             role: mode === 'signup' ? signupRole : (isOfficialStaff ? 'staff' : 'player'), 
-            id_del_jugador: mode === 'signup' && signupRole === 'player' ? parseInt(playerId) : null,
+            id_del_jugador: (mode === 'signup' && signupRole === 'player') ? (parseInt(playerId) || null) : null,
             club_name: mode === 'signup' && signupRole === 'club' ? selectedClub : null
           }
         }
@@ -937,9 +937,9 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         }
         
         if (errorMsg?.toLowerCase().includes('confirm')) {
-          setMsg('Tu cuenta requiere confirmación. Como eres usuario del equipo, puedes entrar con la contraseña de respaldo: laroja2026');
+          setMsg('TU CUENTA AÚN NO ESTÁ CONFIRMADA POR CORREO. Como el servidor de Supabase es lento, puedes entrar ahora mismo usando la CLAVE DE RESPALDO: laroja2026');
         } else if (errorMsg?.toLowerCase().includes('invalid login credentials')) {
-          setMsg('Credenciales inválidas. Si eres del Staff o no tienes cuenta aún, usa la contraseña de respaldo: laroja2026');
+          setMsg('Credenciales inválidas. Si acabas de registrarte y no te llegó el correo, usa la CLAVE DE RESPALDO: laroja2026');
         } else {
           setMsg(errorMsg); 
         }
@@ -1030,14 +1030,17 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         return;
       }
 
+      const rawPid = signupRole === 'player' ? parseInt(playerId) : null;
+      const safePid = (typeof rawPid === 'number' && !isNaN(rawPid)) ? rawPid : null;
+
       const { data, error } = await supabase.auth.signUp({ 
         email, 
         password, 
         options: { 
           data: { 
-            role: signupRole,
-            id_del_jugador: verifiedPlayerId,
-            club_name: signupRole === 'club' ? selectedClub : null
+            role: signupRole || 'staff',
+            id_del_jugador: safePid,
+            club_name: signupRole === 'club' ? (selectedClub || null) : null
           } 
         } 
       });
@@ -1045,9 +1048,9 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
       if (error) { 
         console.error("Error signup:", error);
         if (error.message?.toLowerCase().includes('confirm') || error.message?.toLowerCase().includes('correo') || error.message?.toLowerCase().includes('provider')) {
-           setMsg('CUENTA CREADA PERO FALLÓ EL CORREO. No te preocupes: puedes ENTRAR ahora mismo usando la CONTRASEÑA DE RESPALDO: laroja2026');
+           setMsg('CUENTA CREADA PERO SUPABASE NO ENVIÓ EL CORREO (Límite de plan gratuito). ¡No importa! Entra directamente usando la CLAVE DE RESPALDO: laroja2026');
         } else if (error.message?.toLowerCase().includes('already registered') || error.message?.toLowerCase().includes('existe')) {
-           setMsg('Este correo ya existe. Intenta ENTRAR con tu clave o con la de respaldo: laroja2026');
+           setMsg('Este correo ya está registrado. Si no te llegó el correo de Supabase, entra usando la CLAVE DE RESPALDO: laroja2026');
         } else {
            setMsg(error.message); 
         }
