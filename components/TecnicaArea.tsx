@@ -535,10 +535,27 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   };
 
   const handleCopyDay = async (targetDateKey: string) => {
-    const sourceDateKey = window.prompt("Ingresa la fecha de origen para copiar (AAAA-MM-DD):", targetDateKey);
-    if (!sourceDateKey || sourceDateKey === targetDateKey || !selectedMicro) return;
+    const sourceInput = window.prompt(`Copiando actividades hacia el día ${targetDateKey}.\n\nIngresa el NÚMERO DE DÍA de origen (1, 2, 3...) o la FECHA (AAAA-MM-DD) de origen:`);
+    if (!sourceInput) return;
+
+    let sourceDateKey = sourceInput.trim();
+    
+    // Si el usuario ingresó un número (ej: 1), buscamos la fecha correspondiente en los días del microciclo
+    const dayNum = parseInt(sourceDateKey, 10);
+    if (!isNaN(dayNum) && dayNum > 0 && dayNum <= currentWeekDays.length) {
+      sourceDateKey = formatDateKey(currentWeekDays[dayNum - 1]);
+    }
+
+    if (sourceDateKey === targetDateKey || !selectedMicro) {
+      if (sourceDateKey === targetDateKey) alert("La fecha de origen y destino no pueden ser la misma.");
+      return;
+    }
 
     try {
+      // 1. Verificar primero en el estado local para dar feedback rápido
+      const localSource = weeklySchedule[sourceDateKey];
+      
+      // Intentamos obtener de la base de datos para estar seguros
       const { data: sourceActivities, error: fetchError } = await supabase
         .from('cronograma_semanal')
         .select('*')
@@ -546,8 +563,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         .eq('fecha', sourceDateKey);
 
       if (fetchError) throw fetchError;
+      
       if (!sourceActivities || sourceActivities.length === 0) {
-        alert("No se encontraron actividades en la fecha de origen.");
+        alert(`No se encontraron actividades en el día de origen: ${sourceDateKey}.\nVerifica que la fecha u número de día sea correcto.`);
         return;
       }
 
@@ -568,7 +586,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
 
       if (insertError) throw insertError;
 
-      alert(`Se copiaron ${newActivities.length} actividades con éxito.`);
+      alert(`Se copiaron ${newActivities.length} actividades con éxito hacia la fecha ${targetDateKey}.`);
       fetchSchedule(selectedMicro.id);
     } catch (err: any) {
       alert("Error al copiar día: " + err.message);
@@ -712,7 +730,15 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
         <div className="flex items-center gap-6">
-          <button onClick={() => setViewMode('selection')} className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center hover:bg-[#0b1220] hover:text-white transition-all flex items-center justify-center shadow-inner">
+          <button 
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              setViewMode('selection');
+              setSelectedMicro(null);
+            }} 
+            className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-[#0b1220] hover:text-white transition-all shadow-inner active:scale-95 cursor-pointer z-10"
+          >
             <i className="fa-solid fa-arrow-left"></i>
           </button>
           <div>
@@ -982,7 +1008,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
               </div>
 
               {/* Printable Content (A4 Ratio) */}
-              <div className="flex-1 p-12 bg-white print:p-0" id="daily-report-print">
+              <div className="flex-1 p-12 bg-white flex flex-col print:p-0" id="daily-report-print">
                  
                   {/* 1. HEADER: Título y Datos del Microciclo (Rediseño con Diagonales y Colores Reales) */}
                  <div className="mb-10 font-sans">
@@ -1099,15 +1125,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                     </table>
                  </div>
 
-                 {/* 4. FOOTER / NOTAS (Opcional) */}
-                 <div className="mt-auto pt-8 border-t border-slate-100 flex justify-between items-end text-[9px] font-bold text-slate-300 uppercase tracking-widest">
-                    <span>Generado automáticamente por el Sistema de Gestión</span>
-                    <span>{new Date().toLocaleDateString()}</span>
-                 </div>
-
                  {/* 4. NOTA ESPECIAL (Solo si existe) */}
                  {specialNote.trim() && (
-                   <div className="mt-8 bg-slate-50 border-2 border-slate-100 rounded-2xl p-6 relative overflow-hidden">
+                   <div className="mt-8 bg-slate-50 border-2 border-slate-100 rounded-2xl p-6 relative overflow-hidden break-inside-avoid">
                       <div className="absolute top-0 right-0 w-16 h-16 bg-red-600/5 rotate-45 translate-x-8 -translate-y-8"></div>
                       <h4 className="text-[10px] font-black text-[#02428c] uppercase tracking-widest mb-3 flex items-center gap-2">
                         <i className="fa-solid fa-note-sticky text-red-600"></i> NOTA DEL CUERPO TÉCNICO
@@ -1117,6 +1137,12 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                       </p>
                    </div>
                  )}
+
+                 {/* 5. FOOTER (Opcional) */}
+                 <div className="mt-auto pt-8 border-t border-slate-100 flex justify-between items-end text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                    <span>Generado automáticamente por el Sistema de Gestión</span>
+                    <span>{new Date().toLocaleDateString()}</span>
+                 </div>
 
               </div>
            </div>
@@ -1256,7 +1282,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
             print-color-adjust: exact;
           }
           #daily-report-print, #weekly-report-print {
-            position: fixed;
+            position: absolute;
             left: 0;
             top: 0;
             width: 100%;
@@ -1264,6 +1290,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
             margin: 0;
             z-index: 9999;
             background: white;
+            overflow: visible !important;
           }
           @page { size: A4; margin: 0; }
         }

@@ -4,11 +4,12 @@ import { BODY_PARTS } from '../constants';
 
 interface TrainingLoadFormProps {
   onSubmit: (data: any) => void;
+  submitting?: boolean;
 }
 
 type LoadStep = 'details' | 'rpe' | 'soreness' | 'illness';
 
-const TrainingLoadForm: React.FC<TrainingLoadFormProps> = ({ onSubmit }) => {
+const TrainingLoadForm: React.FC<TrainingLoadFormProps> = ({ onSubmit, submitting }) => {
   const [step, setStep] = useState<LoadStep>('details');
   const [view, setView] = useState<'ANTERIOR' | 'POSTERIOR'>('ANTERIOR');
   const [formData, setFormData] = useState({
@@ -245,8 +246,29 @@ const TrainingLoadForm: React.FC<TrainingLoadFormProps> = ({ onSubmit }) => {
         </div>
 
         <div className="flex gap-4">
-          <button type="button" onClick={handleBack} className="flex-1 py-6 bg-slate-50 text-slate-400 rounded-[24px] text-xs font-black uppercase tracking-widest">ATRÁS</button>
-          <button type="button" onClick={handleNext} className="flex-[2] py-6 bg-[#CF1B2B] text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-xl">FINALIZAR REPORTE ✅</button>
+          <button 
+            type="button" 
+            onClick={handleBack} 
+            disabled={submitting}
+            className="flex-1 py-6 bg-slate-50 text-slate-400 rounded-[24px] text-xs font-black uppercase tracking-widest disabled:opacity-50"
+          >
+            ATRÁS
+          </button>
+          <button 
+            type="button" 
+            onClick={handleNext} 
+            disabled={submitting}
+            className="flex-[2] py-6 bg-[#CF1B2B] text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-xl disabled:bg-slate-400 disabled:shadow-none flex items-center justify-center gap-2"
+          >
+            {submitting ? (
+              <>
+                <i className="fa-solid fa-circle-notch animate-spin"></i>
+                ENVIANDO...
+              </>
+            ) : (
+              'FINALIZAR REPORTE ✅'
+            )}
+          </button>
         </div>
       </div>
     );

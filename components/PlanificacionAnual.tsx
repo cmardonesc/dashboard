@@ -218,8 +218,23 @@ const PlanificacionAnual: React.FC = () => {
   const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
 
   const handleCopyDay = async (targetDate: string) => {
-    const sourceDate = window.prompt("Ingresa la fecha de origen para copiar (AAAA-MM-DD):", targetDate);
-    if (!sourceDate || sourceDate === targetDate) return;
+    const targetDateObj = new Date(targetDate + 'T12:00:00');
+    const sourceInput = window.prompt(`Copiando hacia el ${targetDate}.\n\nIngresa el NÚMERO DE DÍA (1-31) del mes mostrado o la FECHA (AAAA-MM-DD) de origen:`);
+    
+    if (!sourceInput) return;
+
+    let sourceDate = sourceInput.trim();
+    const dayNum = parseInt(sourceDate, 10);
+    
+    // Si es un número entre 1 y 31, asumimos que es un día del mes que se está visualizando
+    if (!isNaN(dayNum) && dayNum >= 1 && dayNum <= 31) {
+      sourceDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+    }
+
+    if (sourceDate === targetDate) {
+      alert("La fecha de origen y destino no pueden ser la misma.");
+      return;
+    }
 
     setIsCopying(true);
     try {
@@ -231,7 +246,7 @@ const PlanificacionAnual: React.FC = () => {
 
       if (fetchError) throw fetchError;
       if (!sourceActivities || sourceActivities.length === 0) {
-        alert("No se encontraron actividades en la fecha de origen.");
+        alert(`No se encontraron actividades en la fecha de origen: ${sourceDate}.\nVerifica que la fecha sea correcta.`);
         return;
       }
 
@@ -250,7 +265,7 @@ const PlanificacionAnual: React.FC = () => {
 
       if (insertError) throw insertError;
 
-      setSuccessMessage(`Se copiaron ${newActivities.length} actividades con éxito.`);
+      setSuccessMessage(`Se copiaron ${newActivities.length} actividades con éxito desde el día ${sourceDate}.`);
       fetchMonthActivities();
     } catch (err: any) {
       setErrorMessage("Error al copiar día: " + err.message);

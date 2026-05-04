@@ -4,11 +4,12 @@ import { BODY_PARTS } from '../constants';
 
 interface WellnessFormProps {
   onSubmit: (data: any) => void;
+  submitting?: boolean;
 }
 
 type WellnessStep = 'fatigue' | 'sleep' | 'stress' | 'mood' | 'soreness' | 'illness';
 
-const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit }) => {
+const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => {
   const [step, setStep] = useState<WellnessStep>('fatigue');
   const [view, setView] = useState<'ANTERIOR' | 'POSTERIOR'>('ANTERIOR');
   const [formData, setFormData] = useState({
@@ -203,8 +204,29 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit }) => {
         </div>
 
         <div className="flex gap-4">
-          <button type="button" onClick={handleBack} className="flex-1 py-6 bg-slate-50 text-slate-400 rounded-[24px] text-xs font-black uppercase tracking-widest">ATRÁS</button>
-          <button type="button" onClick={handleNext} className="flex-[2] py-6 bg-[#CF1B2B] text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-xl">FINALIZAR 🏆</button>
+          <button 
+            type="button" 
+            onClick={handleBack} 
+            disabled={submitting}
+            className="flex-1 py-6 bg-slate-50 text-slate-400 rounded-[24px] text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ATRÁS
+          </button>
+          <button 
+            type="button" 
+            onClick={handleNext} 
+            disabled={submitting}
+            className="flex-[2] py-6 bg-[#CF1B2B] text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-xl disabled:bg-slate-400 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {submitting ? (
+              <>
+                <i className="fa-solid fa-circle-notch animate-spin"></i>
+                ENVIANDO...
+              </>
+            ) : (
+              'FINALIZAR 🏆'
+            )}
+          </button>
         </div>
       </div>
     );

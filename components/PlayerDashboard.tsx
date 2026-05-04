@@ -325,6 +325,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     if (!player?.id_del_jugador) return;
     
     setSubmitting(true);
+    console.log("Attempting profile update for player ID:", player.id_del_jugador);
+    
     try {
       const finalClub = isOtherClub ? customClub : profileData.club;
       
@@ -335,35 +337,54 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         if (foundClub) idClubToAssign = foundClub.id_club;
       }
 
+      // Validar datos antes de enviar
       const payload = {
-        nombre: profileData.nombre,
-        apellido1: profileData.apellido1,
-        apellido2: profileData.apellido2,
-        club: finalClub,
+        nombre: profileData.nombre?.trim() || null,
+        apellido1: profileData.apellido1?.trim() || null,
+        apellido2: profileData.apellido2?.trim() || null,
+        club: finalClub?.trim() || null,
         id_club: idClubToAssign,
-        posicion: profileData.position,
-        fecha_nacimiento: profileData.fecha_nacimiento,
-        celular: profileData.celular
+        posicion: profileData.position || null,
+        fecha_nacimiento: profileData.fecha_nacimiento || null,
+        celular: profileData.celular?.trim() || null
       };
 
-      const { error } = await supabase
+      console.log("Profile update payload:", payload);
+
+      const { error, data } = await supabase
         .from('players')
         .update(payload)
-        .eq('id_del_jugador', player.id_del_jugador);
+        .eq('id_del_jugador', Number(player.id_del_jugador))
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase update error:", error);
+        throw error;
+      }
       
-      logActivity('Actualización Perfil Jugador', { playerId: player.id_del_jugador });
+      console.log("Update successful, data:", data);
+      
+      try {
+        logActivity('Actualización Perfil Jugador', { playerId: player.id_del_jugador });
+      } catch (logErr) {
+        console.warn("Failed to log activity, but profile was updated:", logErr);
+      }
 
       setSuccessModalConfig({
         show: true,
         title: 'Datos Actualizados',
         subtitle: 'Tu perfil ha sido actualizado correctamente en el sistema.'
       });
-      if (onRefresh) onRefresh();
+      
+      if (onRefresh) {
+        console.log("Triggering onRefresh...");
+        onRefresh();
+      }
     } catch (err: any) {
-      alert("❌ Error al actualizar perfil: " + err.message);
+      console.error("Caught error in handleProfileUpdate:", err);
+      alert("❌ Error al actualizar perfil: " + (err.message || "Error desconocido"));
     } finally {
+      console.log("Completing update process, resetting submitting state.");
       setSubmitting(false);
     }
   };
@@ -562,9 +583,9 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           </div>
         )
       case 'reportes_wellness':
-        return <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300"><WellnessForm onSubmit={handleWellnessSubmit} /></div>
+        return <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300"><WellnessForm onSubmit={handleWellnessSubmit} submitting={submitting} /></div>
       case 'reportes_load':
-        return <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300"><TrainingLoadForm onSubmit={handleLoadSubmit} /></div>
+        return <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300"><TrainingLoadForm onSubmit={handleLoadSubmit} submitting={submitting} /></div>
       case 'reportes_match':
         return (
           <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
