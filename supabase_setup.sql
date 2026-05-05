@@ -153,7 +153,8 @@ create table if not exists public.wellness_checkin (
   soreness int default 0,
   mood int default 0,
   molestias text,
-  enfermedad text
+  enfermedad text,
+  unique(id_del_jugador, checkin_date)
 );
 
 -- Create internal_load table
@@ -165,7 +166,8 @@ create table if not exists public.internal_load (
   rpe int default 0,
   duration_min int default 0,
   srpe int,
-  type text default 'FIELD'
+  type text default 'FIELD',
+  unique(id_del_jugador, session_date)
 );
 
 -- Create antropometria table
@@ -179,7 +181,8 @@ create table if not exists public.antropometria (
   masa_muscular_pct float8,
   masa_adiposa_pct float8,
   sumatoria_6_pliegues float8,
-  nombre_raw text
+  nombre_raw text,
+  unique(id_del_jugador, fecha_medicion)
 );
 
 -- Create citaciones table
@@ -302,7 +305,8 @@ create table if not exists public.physical_tests (
   test_type text not null, -- 'IMTP', 'VELOCIDAD', 'ACELERACION', 'VO2MAX'
   value float8 not null,
   unit text,
-  observation text
+  observation text,
+  unique(id_del_jugador, fecha, test_type)
 );
 
 -- Create evaluaciones_imtp_salto table
@@ -340,7 +344,8 @@ create table if not exists public.evaluaciones_imtp_salto (
   slcmj_diferencia_pct_im numeric,
   slcmj_diferencia_pct_tv numeric,
   deficit_bilateral numeric,
-  altura_x_rsi_mod numeric
+  altura_x_rsi_mod numeric,
+  unique(id_del_jugador, fecha_test)
 );
 
 -- Create velocidad_tests table
@@ -357,7 +362,8 @@ create table if not exists public.velocidad_tests (
   tiempo_20_30m float8,
   vel_20_30m float8,
   vel_max_kmh float8,
-  tiempo_total float8 not null
+  tiempo_total float8 not null,
+  unique(id_del_jugador, fecha)
 );
 
 -- Create vo2max_tests table
@@ -381,7 +387,8 @@ create table if not exists public.vo2max_tests (
   pasada float8,
   mts float8,
   vfa float8,
-  observaciones text
+  observaciones text,
+  unique(id_del_jugador, fecha)
 );
 
 -- Enable RLS for physical_tests

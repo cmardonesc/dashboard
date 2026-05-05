@@ -157,7 +157,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'physical_tests',
     icon: 'fa-solid fa-gauge-high',
     description: 'Tests de aceleración específica.',
-    conflictColumns: ['id_del_jugador', 'fecha'],
+    conflictColumns: ['id_del_jugador', 'fecha', 'test_type'],
     fields: [
       { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
