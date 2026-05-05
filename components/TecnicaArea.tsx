@@ -6,6 +6,8 @@ import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activityLogger';
 import { getDriveDirectLink } from '../lib/utils';
 import { FEDERATION_LOGO } from '../constants';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 type ViewMode = 'selection' | 'management';
 type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia';
@@ -84,6 +86,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const [savingActivity, setSavingActivity] = useState(false);
   const [savingDayTasks, setSavingDayTasks] = useState<Record<string, boolean>>({});
   const [loadingBiblioteca, setLoadingBiblioteca] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['TODOS LOS PROCESOS']);
 
   const toggleCategory = (cat: string) => {
@@ -620,6 +623,152 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     });
     setShowActivityModal(true);
   };
+  
+  const generateWeeklyTechnicalReport = async () => {
+    if (!selectedMicro) return;
+    setGeneratingReport(true);
+    
+    try {
+      const doc = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // --- Estilos Base ---
+      const primaryColor = [2, 66, 140] as [number, number, number]; // Azul Selección
+      const secondaryColor = [226, 35, 26] as [number, number, number]; // Rojo Selección
+      const margin = 15;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // --- HEADER ---
+      // Franja Roja Superior
+      doc.setFillColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.rect(0, 0, pageWidth, 5, 'F');
+      
+      // Logo
+      const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+      try {
+        doc.addImage(logoUrl, 'PNG', margin, 15, 25, 25);
+      } catch (e) {
+        console.error("Error loading logo for PDF:", e);
+      }
+      
+      // Títulos
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('REPORTE TÉCNICO SEMANAL', 45, 25);
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      doc.text('PLANIFICACIÓN TÉCNICA DE CAMPO - LA ROJA PERFORMANCE', 45, 30);
+      
+      // Meta Datos
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text(`CATEGORÍA: ${formatCategoryLabel(selectedMicro.category_id)}`, 45, 38);
+      
+      doc.setTextColor(150, 150, 150);
+      const microName = selectedMicro.nombre_display || 'MICROCICLO';
+      doc.text(`${microName} #${selectedMicro.id || 'N/A'}`, pageWidth - margin, 25, { align: 'right' });
+      doc.text(`${selectedMicro.city?.toUpperCase()}, ${selectedMicro.country?.toUpperCase()}`, pageWidth - margin, 31, { align: 'right' });
+      doc.text(`${new Date(selectedMicro.start_date + 'T12:00:00').toLocaleDateString()} - ${new Date(selectedMicro.end_date + 'T12:00:00').toLocaleDateString()}`, pageWidth - margin, 37, { align: 'right' });
+
+      // Línea divisoria
+      doc.setDrawColor(230, 230, 230);
+      doc.line(margin, 45, pageWidth - margin, 45);
+
+      // --- CUERPO: TAREAS POR DÍA ---
+      let currentY = 55;
+
+      currentWeekDays.forEach((date, index) => {
+        const dateKey = formatDateKey(date);
+        const tasks = fieldTasks[dateKey] || [];
+        
+        // Encabezado de Día
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+        doc.text(`DÍA ${index + 1} - ${date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}`, margin, currentY);
+        
+        currentY += 6;
+
+        if (tasks.length === 0) {
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'italic');
+          doc.setTextColor(180, 180, 180);
+          doc.text('No hay tareas técnicas asignadas para este día.', margin + 5, currentY);
+          currentY += 10;
+        } else {
+          // Tabla de Tareas
+          const tableData = tasks.map(t => [
+            t.jornada || 'AM',
+            t.nombre.toUpperCase(),
+            t.tipoDinamica.toUpperCase(),
+            t.descripcion || '-'
+          ]);
+
+          autoTable(doc, {
+            startY: currentY,
+            head: [['JORNADA', 'NOMBRE DE LA TAREA', 'DINÁMICA', 'OBSERVACIONES']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: {
+              fillColor: primaryColor,
+              textColor: [255, 255, 255],
+              fontSize: 8,
+              fontStyle: 'bold',
+              halign: 'center'
+            },
+            bodyStyles: {
+              fontSize: 8,
+              textColor: [60, 60, 60]
+            },
+            columnStyles: {
+              0: { cellWidth: 20, halign: 'center' },
+              1: { cellWidth: 50, fontStyle: 'bold' },
+              2: { cellWidth: 40 },
+              3: { cellWidth: 'auto' }
+            },
+            margin: { left: margin, right: margin },
+            didDrawPage: (data) => {
+              // Footer en cada página
+              doc.setFontSize(7);
+              doc.setTextColor(200, 200, 200);
+              doc.text(`Página ${data.pageNumber}`, pageWidth - margin, doc.internal.pageSize.getHeight() - 10, { align: 'right' });
+            }
+          });
+          
+          currentY = (doc as any).lastAutoTable.finalY + 12;
+        }
+
+        // Si estamos cerca del final de la página, saltamos
+        if (currentY > 260 && index < currentWeekDays.length - 1) {
+          doc.addPage();
+          currentY = 25;
+        }
+      });
+
+      // Pie de página final con nota
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bolditalic');
+      doc.setTextColor(150, 150, 150);
+      doc.text('* NOTA: El color gris en la planificación indica actividades para jugadores concentrados.', margin, doc.internal.pageSize.getHeight() - 15);
+
+      // Guardar PDF
+      const fileName = `Reporte_Tecnico_${selectedMicro.category_id}_${selectedMicro.start_date}.pdf`;
+      doc.save(fileName);
+      
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("Hubo un error al generar el reporte PDF.");
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
 
   const formatCategoryLabel = (idOrName: any) => {
     if (idOrName === 'TODOS LOS PROCESOS') return idOrName;
@@ -866,10 +1015,16 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
             
             <div className="flex flex-wrap items-center gap-3">
               <button 
-                onClick={() => setShowWeeklyReportModal(true)} 
-                className="bg-white border-2 border-slate-200 text-slate-500 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#0b1220] hover:text-white hover:border-[#0b1220] transition-all"
+                onClick={generateWeeklyTechnicalReport} 
+                disabled={generatingReport}
+                className="bg-white border-2 border-slate-200 text-slate-500 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#0b1220] hover:text-white hover:border-[#0b1220] transition-all disabled:opacity-50"
               >
-                <i className="fa-solid fa-file-pdf text-red-500"></i> Generar Reporte Semanal Técnico
+                {generatingReport ? (
+                  <i className="fa-solid fa-spinner fa-spin"></i>
+                ) : (
+                  <i className="fa-solid fa-file-pdf text-red-500"></i>
+                )}
+                {generatingReport ? 'Generando...' : 'Generar Reporte Semanal Técnico'}
               </button>
               <button 
                 onClick={() => setShowBibliotecaAddModal(true)} 
@@ -1139,10 +1294,15 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                  )}
 
                  {/* 5. FOOTER (Opcional) */}
-                 <div className="mt-auto pt-8 border-t border-slate-100 flex justify-between items-end text-[9px] font-bold text-slate-300 uppercase tracking-widest">
-                    <span>Generado automáticamente por el Sistema de Gestión</span>
-                    <span>{new Date().toLocaleDateString()}</span>
-                 </div>
+                 <div className="mt-auto pt-8 border-t border-slate-100 flex flex-col gap-2">
+                     <p className="text-[8px] font-black italic text-slate-400 uppercase tracking-widest">
+                       * NOTA: EL COLOR GRIS EN LA PLANIFICACIÓN INDICA ACTIVIDADES PARA JUGADORES CONCENTRADOS.
+                     </p>
+                     <div className="flex justify-between items-end text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                        <span>Generado automáticamente por el Sistema de Gestión</span>
+                        <span>{new Date().toLocaleDateString()}</span>
+                     </div>
+                  </div>
 
               </div>
            </div>

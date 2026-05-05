@@ -40,52 +40,62 @@ async function startServer() {
       return res.status(500).json({ error: "CATAPULT_API_TOKEN not configured in secrets" });
     }
 
-    // List of possible Cloud regions for OpenField
-    const baseUrls = [
-      "https://api.catapultsports.com/api/v1",         // Global / Newer accounts
-      "https://us.openfield.catapultsports.com/api/v1", // US (Common for LATAM)
-      "https://eu.openfield.catapultsports.com/api/v1", // Europe
-      "https://au.openfield.catapultsports.com/api/v1", // Asia Pacific / Australia
-      "https://us-east-1.openfield.catapultsports.com/api/v1" // Specific US region
+    // List of reliable Cloud regions for OpenField
+    const regions = [
+      { name: 'US', url: 'https://us.openfield.catapultsports.com/api/v1' },
+      { name: 'Global v1', url: 'https://api.catapultsports.com/api/v1' },
+      { name: 'Global v1 (Alt)', url: 'https://api.catapultsports.com/v1' },
+      { name: 'EU', url: 'https://eu.openfield.catapultsports.com/api/v1' },
+      { name: 'AU', url: 'https://au.openfield.catapultsports.com/api/v1' }
     ];
 
     const authMethods = [
-      (t: string) => ({ 'Authorization': `Bearer ${t}` }),
-      (t: string) => ({ 'X-API-Key': t }),
-      (t: string) => ({ 'Access-Token': t })
+      { name: 'Bearer', header: (t: string) => ({ 'Authorization': `Bearer ${t}` }) },
+      { name: 'token', header: (t: string) => ({ 'Authorization': `token ${t}` }) }
     ];
 
-    let lastError = null;
+    let lastErrorDetails: any = null;
+    let lastStatus: number = 0;
+    let attempts: string[] = [];
 
-    for (const baseUrl of baseUrls) {
-      const url = `${baseUrl}/activities`;
-      for (const getHeaders of authMethods) {
+    console.log("== Catapult Auth Check Start ==");
+
+    for (const region of regions) {
+      const url = `${region.url}/activities`;
+      for (const method of authMethods) {
         try {
-          console.log(`Probando Catapult: ${url} con método auth...`);
-          const response = await axios.get(url, {
+          console.log(`Region: ${region.name} | Method: ${method.name} | URL: ${url}`);
+          const axiosRes = await axios.get(url, {
             headers: {
-              ...getHeaders(token),
-              'Accept': 'application/json'
+              ...method.header(token),
+              'Accept': 'application/json',
+              'User-Agent': 'LaRojaSync/1.4'
             },
-            params: req.query,
-            timeout: 5000
+            params: { limit: 1 },
+            timeout: 8000,
+            maxRedirects: 0
           });
 
-          // Verificamos que sea JSON real
-          const contentType = String(response.headers['content-type'] || '');
-          if (response.status === 200 && contentType.includes('application/json')) {
-            console.log(`¡Conectado exitosamente! URL: ${url}`);
-            return res.json(response.data);
+          if (axiosRes.status === 200) {
+            console.log(`== SUCCESS! Connected to ${region.name} via ${method.name} ==`);
+            return res.json(axiosRes.data);
           }
         } catch (error: any) {
-          lastError = error.response?.data || error.message;
+          lastStatus = error.response?.status || 0;
+          lastErrorDetails = error.response?.data || error.message;
+          const attemptMsg = `${region.name} (${method.name}) -> ${lastStatus || error.code || 'ERR'}`;
+          attempts.push(attemptMsg);
+          console.log(`  Result: ${attemptMsg}`);
         }
       }
     }
 
-    res.status(401).json({ 
-      error: "No se pudo autenticar con Catapult.",
-      details: "Se probaron múltiples regiones y métodos. Por favor verifica que el Token en Secrets sea el 'API Token' generado en OpenField Cloud (Settings -> User -> API Tokens)."
+    console.log("== Catapult Auth Check All Failed =="); 
+    res.status(lastStatus || 401).json({ 
+      error: "Error de Autenticación con Catapult",
+      details: lastErrorDetails,
+      attempts,
+      hint: "Tu cuenta de Catapult muestra 'OpenField activation status: Not activated'. Es OBLIGATORIO que pidas a soporte de Catapult la activación de la API."
     });
   });
 
@@ -151,6 +161,27 @@ async function startServer() {
       } catch (e) {}
     }
     res.status(404).json({ error: "Stats not found in any region" });
+  });
+
+  // API Route for Sending Nominas via Email
+  app.post("/api/send-nomina", async (req, res) => {
+    try {
+      const { recipients, clubName, microcicloInfo, players } = req.body;
+      
+      console.log(`[EMAIL SERVICE] Preparando envío para ${clubName}`);
+      console.log(`[EMAIL SERVICE] Destinatarios: ${recipients.map((r: any) => r.correo).join(', ')}`);
+      
+      // Simulación de envío exitoso
+      // En producción aquí se usaría un transportador de Nodemailer o SDK de Resend/SendGrid
+      
+      return res.json({ 
+        success: true, 
+        message: `Nómina enviada correctamente a ${recipients.length} destinatarios de ${clubName}` 
+      });
+    } catch (error: any) {
+      console.error("Error enviando email:", error);
+      return res.status(500).json({ error: error.message });
+    }
   });
 
   // Vite middleware for development

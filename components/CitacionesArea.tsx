@@ -10,6 +10,7 @@ import autoTable from 'jspdf-autotable'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import ClubBadge from './ClubBadge'
+import { motion, AnimatePresence } from 'motion/react'
 
 type ViewMode = 'grid' | 'selection' | 'clubs'
 
@@ -73,6 +74,12 @@ export default function CitacionesArea({
     country: 'Chile'
   })
   const [copyLastNomina, setCopyLastNomina] = useState(true)
+
+  // Email States
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [emailClub, setEmailClub] = useState('')
+  const [selectedRecipientIds, setSelectedRecipientIds] = useState<number[]>([])
+  const [sendingEmails, setSendingEmails] = useState(false)
 
   // Carta Convocatoria Editable State
   const [letterConfig, setLetterConfig] = useState({
@@ -800,6 +807,54 @@ export default function CitacionesArea({
     }
   };
 
+  const handleOpenEmailModal = (clubName: string) => {
+    setEmailClub(clubName);
+    const clubContactsFiltered = clubContacts.filter(c => 
+      (c.club?.toLowerCase() || "").includes(clubName.toLowerCase()) || 
+      clubName.toLowerCase().includes(c.club?.toLowerCase() || "")
+    );
+    // Seleccionar todos por defecto
+    setSelectedRecipientIds(clubContactsFiltered.map(c => c.id));
+    setShowEmailModal(true);
+  };
+
+  const handleSendNominaEmail = async () => {
+    if (selectedRecipientIds.length === 0) {
+      alert("Debes seleccionar al menos un destinatario.");
+      return;
+    }
+
+    setSendingEmails(true);
+    try {
+      const recipients = clubContacts.filter(c => selectedRecipientIds.includes(c.id));
+      const clubPlayers = citadosByClub[emailClub];
+      
+      const response = await fetch('/api/send-nomina', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipients,
+          clubName: emailClub,
+          microcicloInfo: selectedMicro,
+          players: clubPlayers
+        })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        alert(result.message);
+        setShowEmailModal(false);
+      } else {
+        throw new Error(result.error || "Error desconocido al enviar.");
+      }
+    } catch (err: any) {
+      console.error("Error sending email:", err);
+      alert("Error al enviar correos: " + err.message);
+    } finally {
+      setSendingEmails(false);
+    }
+  };
+
   if (viewMode === 'grid') {
     return (
       <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -1176,6 +1231,13 @@ export default function CitacionesArea({
                   >
                     <i className="fa-solid fa-file-invoice"></i>
                   </button>
+                  <button 
+                    onClick={() => handleOpenEmailModal(clubName)}
+                    className="w-10 h-10 bg-blue-50 border border-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-sm"
+                    title="Enviar Nómina por Email"
+                  >
+                    <i className="fa-solid fa-paper-plane"></i>
+                  </button>
                 </div>
               </div>
               
@@ -1374,6 +1436,105 @@ export default function CitacionesArea({
         </div>
       </div>
       <style>{`.custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }`}</style>
+      
+      {/* Modal Envío Email */}
+      <AnimatePresence>
+        {showEmailModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-[#0b1220]/95 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white w-full max-w-lg rounded-[48px] shadow-2xl overflow-hidden"
+            >
+              <div className="bg-[#0b1220] p-10 text-white relative">
+                <button onClick={() => setShowEmailModal(false)} className="absolute top-8 right-8 text-white/20 hover:text-white transition-colors">
+                  <i className="fa-solid fa-xmark text-xl"></i>
+                </button>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-900/40">
+                    <i className="fa-solid fa-paper-plane text-xl"></i>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black uppercase italic tracking-tighter">ENVIAR NÓMINA</h3>
+                    <p className="text-blue-500 font-black uppercase text-[10px] tracking-[0.3em] mt-1">{emailClub.toUpperCase()}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-10 space-y-6">
+                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">SELECCIONAR DESTINATARIOS</h4>
+                  <div className="space-y-3">
+                    {clubContacts.filter(c => 
+                      (c.club?.toLowerCase() || "").includes(emailClub.toLowerCase()) || 
+                      emailClub.toLowerCase().includes(c.club?.toLowerCase() || "")
+                    ).length === 0 ? (
+                      <p className="text-slate-400 text-xs italic">No hay contactos registrados para este club.</p>
+                    ) : (
+                      clubContacts.filter(c => 
+                        (c.club?.toLowerCase() || "").includes(emailClub.toLowerCase()) || 
+                        emailClub.toLowerCase().includes(c.club?.toLowerCase() || "")
+                      ).map(contact => (
+                        <label key={contact.id} className={`flex items-center gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${selectedRecipientIds.includes(contact.id) ? 'bg-white border-blue-200 shadow-sm' : 'bg-transparent border-transparent opacity-60 hover:opacity-100'}`}>
+                          <div className="shrink-0">
+                            <input 
+                              type="checkbox"
+                              className="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500 border-slate-300"
+                              checked={selectedRecipientIds.includes(contact.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedRecipientIds([...selectedRecipientIds, contact.id]);
+                                } else {
+                                  setSelectedRecipientIds(selectedRecipientIds.filter(id => id !== contact.id));
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 shrink-0">
+                            <ClubBadge 
+                              clubName={emailClub} 
+                              clubs={clubs} 
+                              showName={false} 
+                              logoSize="w-6 h-6"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-xs font-black text-slate-900 uppercase tracking-tighter leading-none">{contact.nombres || contact.presidente}</p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">{contact.cargo} • <span className="text-blue-500">{contact.correo}</span></p>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-start gap-4 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                    <i className="fa-solid fa-circle-info text-amber-500 mt-0.5"></i>
+                    <p className="text-[10px] text-amber-700 font-medium leading-relaxed">
+                      Se enviará una nómina oficial con los {citadosByClub[emailClub]?.length} jugadores citados de este club, incluyendo detalles del microciclo y cuerpo técnico responsable.
+                    </p>
+                  </div>
+
+                  <button 
+                    onClick={handleSendNominaEmail}
+                    disabled={sendingEmails || selectedRecipientIds.length === 0}
+                    className="w-full py-5 bg-blue-600 text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-3 disabled:opacity-30 disabled:cursor-not-allowed group"
+                  >
+                    {sendingEmails ? (
+                      <i className="fa-solid fa-circle-notch fa-spin"></i>
+                    ) : (
+                      <i className="fa-solid fa-envelope-open-text group-hover:scale-110 transition-transform"></i>
+                    )}
+                    {sendingEmails ? 'ENVIANDO...' : 'ENVIAR NÓMINA AHORA'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
