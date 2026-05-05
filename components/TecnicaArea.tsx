@@ -781,10 +781,10 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
 
   const getActivityStyle = (type: string) => {
     const t = type.toUpperCase();
-    if (t.includes('ENTRENAMIENTO')) return 'bg-red-600 text-white font-black';
+    if (t.includes('ENTRENAMIENTO') || t.includes('PARTIDO AMISTOSO')) return 'bg-red-600 text-white font-black';
     if (t.includes('GYM') || t.includes('GIMNASIO')) return 'bg-[#0b1220] text-white font-black';
     if (t.includes('PSICOLÓGICA') || t.includes('PSICOLOGO') || t.includes('CHARLA')) return 'bg-[#a3d977] text-[#0b1220] font-black';
-    if (t.includes('DESAYUNO') || t.includes('ALMUERZO') || t.includes('MERIENDA') || t.includes('SNACK') || t.includes('CENA')) return 'bg-slate-200 text-[#0b1220] font-bold';
+    if (t.includes('DESAYUNO') || t.includes('ALMUERZO') || t.includes('MERIENDA') || t.includes('SNACK') || t.includes('CENA') || t.includes('SALIDA') || t.includes('RETORNO')) return 'bg-slate-200 text-[#0b1220] font-bold';
     if (t.includes('DESCANSO')) return 'bg-sky-100 text-sky-700 font-black';
     return 'bg-white text-[#0b1220] font-medium';
   };

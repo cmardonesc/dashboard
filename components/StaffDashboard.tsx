@@ -1065,7 +1065,13 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         const selectedCategoryName = selectedCategoryId 
           ? Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === selectedCategoryId)?.[0].replace('_', ' ').toUpperCase()
           : null;
-        return <GPSIntelligenceDashboard performanceRecords={filteredPerformanceRecords} clubs={clubs} categoryName={selectedCategoryName} />;
+        return <GPSIntelligenceDashboard 
+          performanceRecords={filteredPerformanceRecords} 
+          clubs={clubs} 
+          categoryName={selectedCategoryName} 
+          userRole={userRole}
+          userClub={userClub}
+        />;
       case 'fisica_reporte':
         return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
       case 'fisica_pronostico':

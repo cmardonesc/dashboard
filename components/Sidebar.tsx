@@ -173,44 +173,46 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
         })}
 
         {/* MENÚ PLANIFICACIÓN COLLAPSIBLE */}
-        <div className="pt-2">
-          <button
-            onClick={() => handleSubmenuClick(setPlanificacionOpen, !planificacionOpen)}
-            title={isCollapsed ? 'Planificación' : ''}
-            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 ${
-              planificacionOpen ? 'text-white bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
-              <i className={`fa-solid fa-calendar-check text-xl ${isCollapsed ? '' : 'w-6'} ${planificacionOpen ? 'text-red-500' : 'text-slate-500'}`}></i>
-              {!isCollapsed && <span className="font-bold text-sm tracking-tight">Planificación</span>}
-            </div>
-            {!isCollapsed && <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${planificacionOpen ? 'rotate-180' : ''}`}></i>}
-          </button>
-          
-          {planificacionOpen && !isCollapsed && (
-            <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
-              <button
-                onClick={() => onMenuChange('planificacion_anual')}
-                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                  activeMenu === 'planificacion_anual' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_anual' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
-                <span className="text-[10px] font-bold">Planificación Anual</span>
-              </button>
-              <button
-                onClick={() => onMenuChange('planificacion_semanal')}
-                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                  activeMenu === 'planificacion_semanal' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_semanal' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
-                <span className="text-[10px] font-bold">Cronograma Semanal</span>
-              </button>
-            </div>
-          )}
-        </div>
+        {userRole !== 'club' && (
+          <div className="pt-2">
+            <button
+              onClick={() => handleSubmenuClick(setPlanificacionOpen, !planificacionOpen)}
+              title={isCollapsed ? 'Planificación' : ''}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 ${
+                planificacionOpen ? 'text-white bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
+                <i className={`fa-solid fa-calendar-check text-xl ${isCollapsed ? '' : 'w-6'} ${planificacionOpen ? 'text-red-500' : 'text-slate-500'}`}></i>
+                {!isCollapsed && <span className="font-bold text-sm tracking-tight">Planificación</span>}
+              </div>
+              {!isCollapsed && <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${planificacionOpen ? 'rotate-180' : ''}`}></i>}
+            </button>
+            
+            {planificacionOpen && !isCollapsed && (
+              <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
+                <button
+                  onClick={() => onMenuChange('planificacion_anual')}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeMenu === 'planificacion_anual' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_anual' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                  <span className="text-[10px] font-bold">Planificación Anual</span>
+                </button>
+                <button
+                  onClick={() => onMenuChange('planificacion_semanal')}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeMenu === 'planificacion_semanal' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_semanal' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                  <span className="text-[10px] font-bold">Cronograma Semanal</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* MENÚ DIARIO COLLAPSIBLE */}
         <div className="pt-2">
@@ -280,55 +282,57 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
         </div>
 
         {/* ÁREA FÍSICA COLLAPSIBLE */}
-        <div className="pt-2">
-          <button
-            onClick={() => handleSubmenuClick(setFisicaOpen, !fisicaOpen)}
-            title={isCollapsed ? 'Área Física' : ''}
-            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 ${
-              fisicaOpen ? 'text-white bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
-              <i className={`fa-solid fa-wave-square text-xl ${isCollapsed ? '' : 'w-6'} ${fisicaOpen ? 'text-blue-500' : 'text-slate-500'}`}></i>
-              {!isCollapsed && <span className="font-bold text-sm tracking-tight">Área Física</span>}
-            </div>
-            {!isCollapsed && <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${fisicaOpen ? 'rotate-180' : ''}`}></i>}
-          </button>
-          
-          {fisicaOpen && !isCollapsed && (
-            <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
-              {userRole !== 'club' && (
-                <>
-                  {/* REPORTE DE SESIÓN */}
-                  <button
-                    onClick={() => onMenuChange('fisica_reporte')}
-                    className={`w-full flex items-center gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
-                      activeMenu === 'fisica_reporte' 
-                        ? 'bg-blue-600 text-white shadow-lg' 
-                        : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_reporte' ? 'bg-white' : 'bg-slate-700'}`}></div>
-                    <span className="text-xs font-bold tracking-tight">Reporte Sesión</span>
-                  </button>
+        {userRole !== 'club' && (
+          <div className="pt-2">
+            <button
+              onClick={() => handleSubmenuClick(setFisicaOpen, !fisicaOpen)}
+              title={isCollapsed ? 'Área Física' : ''}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 ${
+                fisicaOpen ? 'text-white bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
+                <i className={`fa-solid fa-wave-square text-xl ${isCollapsed ? '' : 'w-6'} ${fisicaOpen ? 'text-blue-500' : 'text-slate-500'}`}></i>
+                {!isCollapsed && <span className="font-bold text-sm tracking-tight">Área Física</span>}
+              </div>
+              {!isCollapsed && <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${fisicaOpen ? 'rotate-180' : ''}`}></i>}
+            </button>
+            
+            {fisicaOpen && !isCollapsed && (
+              <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
+                {userRole !== 'club' && (
+                  <>
+                    {/* REPORTE DE SESIÓN */}
+                    <button
+                      onClick={() => onMenuChange('fisica_reporte')}
+                      className={`w-full flex items-center gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
+                        activeMenu === 'fisica_reporte' 
+                          ? 'bg-blue-600 text-white shadow-lg' 
+                          : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_reporte' ? 'bg-white' : 'bg-slate-700'}`}></div>
+                      <span className="text-xs font-bold tracking-tight">Reporte Sesión</span>
+                    </button>
 
-                  {/* PRONÓSTICO DE CARGAS */}
-                  <button
-                    onClick={() => onMenuChange('fisica_pronostico')}
-                    className={`w-full flex items-center gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
-                      activeMenu === 'fisica_pronostico' 
-                        ? 'bg-blue-600 text-white shadow-lg' 
-                        : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_pronostico' ? 'bg-white' : 'bg-slate-700'}`}></div>
-                    <span className="text-xs font-bold tracking-tight">Pronóstico de Cargas</span>
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+                    {/* PRONÓSTICO DE CARGAS */}
+                    <button
+                      onClick={() => onMenuChange('fisica_pronostico')}
+                      className={`w-full flex items-center gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
+                        activeMenu === 'fisica_pronostico' 
+                          ? 'bg-blue-600 text-white shadow-lg' 
+                          : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_pronostico' ? 'bg-white' : 'bg-slate-700'}`}></div>
+                      <span className="text-xs font-bold tracking-tight">Pronóstico de Cargas</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {userRole !== 'club' && (
           <button

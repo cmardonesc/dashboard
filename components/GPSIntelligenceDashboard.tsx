@@ -2,6 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { AthletePerformanceRecord, User } from '../types';
 import { supabase } from '../lib/supabase';
+import { normalizeClub } from '../lib/utils';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   Legend, ScatterChart, Scatter, ZAxis, Cell, ReferenceLine, ComposedChart, Line,
@@ -13,6 +14,8 @@ interface GPSIntelligenceDashboardProps {
   performanceRecords: AthletePerformanceRecord[];
   clubs?: any[];
   categoryName?: string | null;
+  userRole?: string | null;
+  userClub?: string | null;
 }
 
 const POSITIONS = ['DEFENSA', 'VOLANTE', 'DELANTERO'];
@@ -26,7 +29,7 @@ const METRICS_CONFIG = [
   { id: 'sprints_n', name: 'Cantidad Sprints', unit: 'n', color: '#64748b' }
 ];
 
-export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [], categoryName }: GPSIntelligenceDashboardProps) {
+export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [], categoryName, userRole, userClub }: GPSIntelligenceDashboardProps) {
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [sessionData, setSessionData] = useState<any[]>([]);
@@ -150,13 +153,30 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
             const rawPos = p?.posicion?.toUpperCase() || 'S/D';
             const catName = playerCategoryMap.get(d.id_del_jugador) || 'SIN CATEGORÍA';
             
+            let finalPlayer = {
+              ...p,
+              name: `${p?.nombre} ${p?.apellido1}`.trim(),
+              id: `player-${p?.id_del_jugador}`
+            };
+
+            // Anonymization logic for club profile
+            if (userRole === 'club' && userClub) {
+              const pClub = p?.club || '';
+              const uClubNorm = normalizeClub(userClub);
+              const pClubNorm = normalizeClub(pClub);
+
+              if (pClubNorm !== uClubNorm) {
+                finalPlayer.name = `JUGADOR X [${p?.id_del_jugador || 'EXT'}]`;
+                finalPlayer.nombre = 'JUGADOR X';
+                finalPlayer.apellido1 = `[${p?.id_del_jugador || 'EXT'}]`;
+                finalPlayer.apellido2 = '';
+                finalPlayer.club = 'OTRO CLUB';
+              }
+            }
+            
             return {
               ...d,
-              player: {
-                ...p,
-                name: `${p?.nombre} ${p?.apellido1}`.trim(),
-                id: `player-${p?.id_del_jugador}`
-              },
+              player: finalPlayer,
               posicion: rawPos,
               categoria: catName,
               posGroup: rawPos.includes('DEF') ? 'DEFENSA' :
