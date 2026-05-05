@@ -3,7 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AthletePerformanceRecord } from '../types';
 
 export const getPerformanceInsights = async (data: AthletePerformanceRecord[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const summary = data.map(record => ({
       name: record.player.name,
@@ -39,7 +39,7 @@ export const getPerformanceInsights = async (data: AthletePerformanceRecord[]) =
 };
 
 export const queryCoachAssistant = async (query: string, data: AthletePerformanceRecord[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const context = data.map(r => ({
       name: r.player.name,
@@ -91,7 +91,7 @@ export const getWeatherForecast = async (city: string, country: string): Promise
     return { data: weatherCache[cacheKey].data, sources: [] };
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const prompt = `
       Proporciona el pronóstico del tiempo detallado para ${city}, ${country}.
@@ -173,7 +173,7 @@ export const getWeatherForecast = async (city: string, country: string): Promise
 };
 
 export const getChartSummary = async (chartTitle: string, data: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const prompt = `
       Actúa como un Científico del Deporte de élite.
@@ -201,7 +201,7 @@ export const getChartSummary = async (chartTitle: string, data: any) => {
 };
 
 export const getAthleteFootprintSummary = async (player: any, metrics: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const prompt = `
       Actúa como un Director de Ciencias del Deporte de una Selección Nacional de Fútbol.
