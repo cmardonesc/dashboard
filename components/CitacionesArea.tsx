@@ -612,6 +612,11 @@ export default function CitacionesArea({
     doc.text("Generado por La Roja Performance Hub - Centro de Inteligencia Deportiva", 105, finalY + 20, { align: 'center' });
     doc.text(`Fecha de emisión: ${new Date().toLocaleDateString('es-CL')}`, 105, finalY + 26, { align: 'center' });
     
+    // Watermark
+    doc.setFontSize(7);
+    doc.setTextColor(200, 200, 200);
+    doc.text("CMSPORTECH.COM", 190, 287, { align: 'right' });
+    
     return doc.output('blob');
   };
 
@@ -765,6 +770,11 @@ export default function CitacionesArea({
       doc.text(letterConfig.signatureName, 105, 265, { align: 'center' });
       doc.setFontSize(9);
       doc.text(letterConfig.signatureRole, 105, 270, { align: 'center' });
+
+      // Watermark
+      doc.setFontSize(7);
+      doc.setTextColor(200, 200, 200);
+      doc.text("CMSPORTECH.COM", 190, 287, { align: 'right' });
 
       // Save
       doc.save(`Carta_Convocatoria_${clubName.replace(/\s+/g, '_')}.pdf`);

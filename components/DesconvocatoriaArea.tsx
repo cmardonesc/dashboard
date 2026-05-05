@@ -529,9 +529,14 @@ export default function DesconvocatoriaArea() {
                </div>
             </div>
             
-            <div className="text-center border-t border-slate-100 pt-8">
+            <div className="text-center border-t border-slate-100 pt-8 relative">
                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.6em] mb-2">L A R O J A P E R F O R M A N C E H U B</p>
                <p className="text-[8px] font-bold text-slate-300 uppercase">FEDERACIÓN DE FÚTBOL DE CHILE</p>
+               
+               {/* Watermark */}
+               <div className="absolute bottom-0 right-0 text-[8px] font-black text-slate-200 italic tracking-widest">
+                 CMSPORTECH.COM
+               </div>
             </div>
           </div>
         </div>

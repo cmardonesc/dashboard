@@ -738,7 +738,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
               // Footer en cada página
               doc.setFontSize(7);
               doc.setTextColor(200, 200, 200);
-              doc.text(`Página ${data.pageNumber}`, pageWidth - margin, doc.internal.pageSize.getHeight() - 10, { align: 'right' });
+              doc.text(`Página ${data.pageNumber}`, margin, doc.internal.pageSize.getHeight() - 10);
+              doc.text('CMSPORTECH.COM', pageWidth - margin, doc.internal.pageSize.getHeight() - 10, { align: 'right' });
             }
           });
           
@@ -1299,8 +1300,11 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                        * NOTA: EL COLOR GRIS EN LA PLANIFICACIÓN INDICA ACTIVIDADES PARA JUGADORES CONCENTRADOS.
                      </p>
                      <div className="flex justify-between items-end text-[9px] font-bold text-slate-300 uppercase tracking-widest">
-                        <span>Generado automáticamente por el Sistema de Gestión</span>
-                        <span>{new Date().toLocaleDateString()}</span>
+                        <div className="flex flex-col gap-0.5">
+                           <span>Generado automáticamente por el Sistema de Gestión</span>
+                           <span>{new Date().toLocaleDateString()}</span>
+                        </div>
+                        <span className="text-slate-400 font-black">CMSPORTECH.COM</span>
                      </div>
                   </div>
 

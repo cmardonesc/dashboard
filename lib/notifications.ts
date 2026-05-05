@@ -19,11 +19,31 @@ export async function subscribeToNotifications() {
     // 3. Suscribirse al servidor de push
     // NOTA: En una app real, debes generar tu propio par de claves VAPID.
     // Para propósitos de esta demo, usaremos una clave de ejemplo válida.
-    const applicationServerKey = 'BEl62vp9IHZbtS9K8guS9WV76DB7En79S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9S9A';
+    const VAPID_PUBLIC_KEY = 'BC_j8T_5YSDH798YHSDH798YHSDH798YHSDH798YHSDH798YHSDH798YHSDH798YHSDH798YHSDH798A';
     
+    // Helper para convertir la clave VAPID de base64 a Uint8Array (Requerido por navegadores móviles)
+    const urlBase64ToUint8Array = (base64String: string) => {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding)
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+
+      try {
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+          outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+      } catch (e) {
+        console.error("Error al decodificar clave VAPID:", e);
+        throw new Error("La clave VAPID no tiene un formato Base64 válido.");
+      }
+    };
+
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: applicationServerKey
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     }).catch(err => {
       console.error("Error en pushManager.subscribe:", err);
       throw new Error(`Error de suscripción: ${err.message}`);

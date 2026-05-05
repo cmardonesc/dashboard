@@ -1691,7 +1691,10 @@ function PrintFooter({ page }: { page: number }) {
     <div className="hidden print:block absolute bottom-4 left-10 right-10 border-t border-slate-100 pt-1">
       <div className="flex justify-between items-center">
         <p className="text-[5px] font-black text-slate-300 uppercase tracking-[0.2em]">Documento Confidencial • Área Física Selección Nacional • © 2026</p>
-        <p className="text-[6px] font-black text-slate-900">Pág {page}</p>
+        <div className="flex items-center gap-4">
+          <p className="text-[7px] font-black text-slate-300 italic tracking-widest">CMSPORTECH.COM</p>
+          <p className="text-[6px] font-black text-slate-900">Pág {page}</p>
+        </div>
       </div>
     </div>
   );

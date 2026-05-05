@@ -499,11 +499,16 @@ function ChartCard({ title, children, legend = false }: { title: string, childre
 
 function StatBox({ label, value, unit, highlight = false }: { label: string, value: string, unit: string, highlight?: boolean }) {
   return (
-    <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border ${highlight ? 'bg-[#0b1220] border-[#0b1220] text-white' : 'bg-slate-50 border-slate-100'}`}>
+    <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border ${highlight ? 'bg-[#0b1220] border-[#0b1220] text-white' : 'bg-slate-50 border-slate-100'} relative`}>
       <p className={`text-[8px] md:text-[9px] font-black uppercase tracking-widest mb-1 ${highlight ? 'text-slate-400' : 'text-slate-400'}`}>{label}</p>
       <p className="text-lg md:text-2xl font-black italic tracking-tighter leading-none">
         {value} <span className={`text-[8px] md:text-[10px] not-italic font-bold ${highlight ? 'text-slate-500' : 'text-slate-400'}`}>{unit}</span>
       </p>
+      {label === 'IMC' && (
+        <div className="absolute -bottom-8 right-0 text-[10px] font-black text-slate-300 italic tracking-widest print:block hidden">
+          CMSPORTECH.COM
+        </div>
+      )}
     </div>
   );
 }
