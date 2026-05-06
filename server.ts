@@ -40,7 +40,8 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // Helper to get Catapult Base URL (defaulting to Openfield US region)
   const getCatapultBaseUrl = (regionOverride?: string) => {
@@ -195,7 +196,11 @@ async function startServer() {
     try {
       const { recipients, clubName, microcicloInfo, players, attachment } = req.body;
       
-      console.log(`[EMAIL SERVICE] Preparando envío para ${clubName}`);
+      if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+        return res.status(400).json({ error: "No se proporcionaron destinatarios válidos." });
+      }
+
+      console.log(`[EMAIL SERVICE] Preparando envío para ${clubName} a ${recipients.length} destinatarios`);
       
       const mailTransporter = getTransporter();
       if (!mailTransporter) {
@@ -209,48 +214,57 @@ async function startServer() {
 
       // Enviar correos a cada destinatario
       const sendPromises = recipients.map(async (recipient: any) => {
-        const playerListHtml = players
-          .map((p: any) => `<li><b>${p.name}</b> (${p.position})</li>`)
-          .join("");
+        try {
+          const playerListHtml = players
+            .map((p: any) => `<li><b>${p.name}</b> (${p.position})</li>`)
+            .join("");
 
-        const mailOptions: any = {
-          from: `"${fromName}" <${fromEmail}>`,
-          to: recipient.correo,
-          subject: `Convocatoria Selección Nacional - ${clubName}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
-              <div style="background-color: #0b1220; padding: 30px; text-align: center; color: white;">
-                <h1 style="margin: 0; font-size: 20px; font-weight: 900; letter-spacing: -0.05em; text-transform: uppercase;">CITACIÓN OFICIAL</h1>
-                <p style="color: #CF1B2B; margin: 5px 0 0; font-size: 10px; font-weight: 900; letter-spacing: 0.2em;">LA ROJA PERFORMANCE HUB</p>
+          const mailOptions: any = {
+            from: `"${fromName}" <${fromEmail}>`,
+            to: recipient.correo,
+            subject: `Convocatoria Selección Nacional - ${clubName}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+                <div style="background-color: #0b1220; padding: 30px; text-align: center; color: white;">
+                  <h1 style="margin: 0; font-size: 20px; font-weight: 900; letter-spacing: -0.05em; text-transform: uppercase;">CITACIÓN OFICIAL</h1>
+                  <p style="color: #CF1B2B; margin: 5px 0 0; font-size: 10px; font-weight: 900; letter-spacing: 0.2em;">LA ROJA PERFORMANCE HUB</p>
+                </div>
+                <div style="padding: 40px; color: #1e293b; line-height: 1.6;">
+                  <p>Estimado(a) <b>${recipient.nombres || recipient.presidente || 'Encargado'}</b>,</p>
+                  <p>Por intermendio de la presente, se comunica oficialmente la citación de los siguientes jugadores de sus registros:</p>
+                  <ul style="background-color: #f8fafc; padding: 20px 40px; border-radius: 8px; list-style-type: none;">
+                    ${playerListHtml}
+                  </ul>
+                  <p>Para participar en el <b>${microcicloInfo.type}</b> que se llevará a cabo desde el <b>${microcicloInfo.start_date}</b> hasta el <b>${microcicloInfo.end_date}</b> en la ciudad de ${microcicloInfo.city}.</p>
+                  <p>Se adjunta la carta formal de citación en formato PDF.</p>
+                  <p style="margin-top: 30px; font-size: 13px;">Favor confirmar recepción y disponibilidad de los atletas.</p>
+                  <p style="margin-top: 20px; font-size: 11px; color: #64748b;">Este es un envío automático desde La Roja Performance Hub.</p>
+                </div>
+                <div style="background-color: #f8fafc; padding: 20px; text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px solid #e2e8f0;">
+                  <p>© 2026 CMSPORTECH.COM | Centro de Inteligencia Deportiva</p>
+                </div>
               </div>
-              <div style="padding: 40px; color: #1e293b; line-height: 1.6;">
-                <p>Estimado(a) <b>${recipient.nombres || recipient.presidente}</b>,</p>
-                <p>Por intermendio de la presente, se comunica oficialmente la citación de los siguientes jugadores de sus registros:</p>
-                <ul style="background-color: #f8fafc; padding: 20px 40px; border-radius: 8px; list-style-type: none;">
-                  ${playerListHtml}
-                </ul>
-                <p>Para participar en el <b>${microcicloInfo.type}</b> que se llevará a cabo desde el <b>${microcicloInfo.start_date}</b> hasta el <b>${microcicloInfo.end_date}</b> en la ciudad de ${microcicloInfo.city}.</p>
-                <p>Se adjunta la carta formal de citación en formato PDF.</p>
-                <p style="margin-top: 30px; font-size: 13px;">Favor confirmar recepción y disponibilidad de los atletas.</p>
-              </div>
-              <div style="background-color: #f8fafc; padding: 20px; text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px solid #e2e8f0;">
-                <p>© 2026 CMSPORTECH.COM | Centro de Inteligencia Deportiva</p>
-              </div>
-            </div>
-          `
-        };
+            `
+          };
 
-        if (attachment && attachment.content) {
-          mailOptions.attachments = [
-            {
-              filename: attachment.filename || 'Citacion.pdf',
-              content: attachment.content,
-              encoding: 'base64'
-            }
-          ];
+          if (attachment && attachment.content) {
+            mailOptions.attachments = [
+              {
+                filename: attachment.filename || 'Citacion.pdf',
+                content: attachment.content,
+                encoding: 'base64'
+              }
+            ];
+          }
+
+          console.log(`[MAIL] Intentando enviar a: ${recipient.correo}`);
+          const info = await mailTransporter.sendMail(mailOptions);
+          console.log(`[MAIL] Enviado con éxito a ${recipient.correo}:`, info.messageId);
+          return info;
+        } catch (sendError: any) {
+          console.error(`[MAIL] Error enviando a ${recipient.correo}:`, sendError);
+          throw new Error(`Error al enviar a ${recipient.correo}: ${sendError.message}`);
         }
-
-        return mailTransporter.sendMail(mailOptions);
       });
 
       await Promise.all(sendPromises);

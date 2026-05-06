@@ -80,6 +80,7 @@ export default function CitacionesArea({
   const [emailClub, setEmailClub] = useState('')
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<number[]>([])
   const [sendingEmails, setSendingEmails] = useState(false)
+  const [emailStatus, setEmailStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' })
 
   // Carta Convocatoria Editable State
   const [letterConfig, setLetterConfig] = useState({
@@ -817,42 +818,70 @@ export default function CitacionesArea({
     }
   };
 
+  const normalize = (str: string) => 
+    str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : "";
+
   const handleOpenEmailModal = (clubName: string) => {
+    setSendingEmails(false); // Reset sending state
+    setEmailStatus({ type: null, message: '' }); // Reset status
+    console.log("[MAIL] Abriendo modal para club:", clubName);
     setEmailClub(clubName);
-    const clubContactsFiltered = clubContacts.filter(c => 
-      (c.club?.toLowerCase() || "").includes(clubName.toLowerCase()) || 
-      clubName.toLowerCase().includes(c.club?.toLowerCase() || "")
-    );
+    
+    const normalizedClubName = normalize(clubName);
+    
+    const clubContactsFiltered = clubContacts.filter(c => {
+      const normalizedContactClub = normalize(c.club);
+      return normalizedContactClub.includes(normalizedClubName) || 
+             normalizedClubName.includes(normalizedContactClub);
+    });
+
+    console.log(`[MAIL] Contactos encontrados para ${clubName}:`, clubContactsFiltered.length);
+    
     // Seleccionar todos por defecto
     setSelectedRecipientIds(clubContactsFiltered.map(c => c.id));
     setShowEmailModal(true);
   };
 
   const handleSendNominaEmail = async () => {
+    console.log("[MAIL] Click Detectado en botón de envío. recipients count:", selectedRecipientIds.length);
     if (selectedRecipientIds.length === 0) {
       alert("Debes seleccionar al menos un destinatario.");
       return;
     }
 
     setSendingEmails(true);
+    setEmailStatus({ type: null, message: '' });
+
     try {
+      console.log("[MAIL] Iniciando proceso de envío...");
       const recipients = clubContacts.filter(c => selectedRecipientIds.includes(c.id));
       const clubPlayers = citadosByClub[emailClub];
       
+      if (!clubPlayers || clubPlayers.length === 0) {
+        throw new Error("No hay jugadores citados para este club.");
+      }
+
       // Generar PDF y convertir a Base64 para enviar como adjunto
+      console.log("[MAIL] Generando PDF...");
       const pdfBlob = generatePDFBlob(emailClub, clubPlayers);
       const reader = new FileReader();
       
-      const pdfBase64Promise = new Promise<string>((resolve) => {
+      const pdfBase64Promise = new Promise<string>((resolve, reject) => {
         reader.onloadend = () => {
           const base64data = reader.result as string;
-          // Quitar el header "data:application/pdf;base64,"
-          resolve(base64data.split(',')[1]);
+          if (typeof base64data === 'string') {
+            // Quitar el header "data:application/pdf;base64,"
+            resolve(base64data.split(',')[1]);
+          } else {
+            reject(new Error("Error al convertir PDF a base64"));
+          }
         };
+        reader.onerror = () => reject(new Error("Error al leer PDF"));
         reader.readAsDataURL(pdfBlob);
       });
 
       const pdfBase64 = await pdfBase64Promise;
+      console.log("[MAIL] PDF base64 generado. Llamando a API...");
 
       const response = await fetch('/api/send-nomina', {
         method: 'POST',
@@ -870,15 +899,24 @@ export default function CitacionesArea({
       });
 
       const result = await response.json();
+      console.log("[MAIL] Respuesta de API:", result);
+
       if (result.success) {
-        alert(result.message);
-        setShowEmailModal(false);
+        setEmailStatus({ 
+          type: 'success', 
+          message: result.message || "Correos enviados exitosamente." 
+        });
+        // Cerrar modal automáticamente después de 2 segundos de éxito
+        setTimeout(() => setShowEmailModal(false), 2500);
       } else {
         throw new Error(result.error || "Error desconocido al enviar.");
       }
     } catch (err: any) {
       console.error("Error sending email:", err);
-      alert("Error al enviar correos: " + err.message);
+      setEmailStatus({ 
+        type: 'error', 
+        message: err.message || "Error al conectar con el servidor de correo." 
+      });
     } finally {
       setSendingEmails(false);
     }
@@ -1495,16 +1533,20 @@ export default function CitacionesArea({
                 <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">SELECCIONAR DESTINATARIOS</h4>
                   <div className="space-y-3">
-                    {clubContacts.filter(c => 
-                      (c.club?.toLowerCase() || "").includes(emailClub.toLowerCase()) || 
-                      emailClub.toLowerCase().includes(c.club?.toLowerCase() || "")
-                    ).length === 0 ? (
+                    {clubContacts.filter(c => {
+                      const normalizedClub = normalize(emailClub);
+                      const normalizedContactClub = normalize(c.club);
+                      return normalizedContactClub.includes(normalizedClub) || 
+                             normalizedClub.includes(normalizedContactClub);
+                    }).length === 0 ? (
                       <p className="text-slate-400 text-xs italic">No hay contactos registrados para este club.</p>
                     ) : (
-                      clubContacts.filter(c => 
-                        (c.club?.toLowerCase() || "").includes(emailClub.toLowerCase()) || 
-                        emailClub.toLowerCase().includes(c.club?.toLowerCase() || "")
-                      ).map(contact => (
+                      clubContacts.filter(c => {
+                        const normalizedClub = normalize(emailClub);
+                        const normalizedContactClub = normalize(c.club);
+                        return normalizedContactClub.includes(normalizedClub) || 
+                               normalizedClub.includes(normalizedContactClub);
+                      }).map(contact => (
                         <label key={contact.id} className={`flex items-center gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${selectedRecipientIds.includes(contact.id) ? 'bg-white border-blue-200 shadow-sm' : 'bg-transparent border-transparent opacity-60 hover:opacity-100'}`}>
                           <div className="shrink-0">
                             <input 
@@ -1539,6 +1581,17 @@ export default function CitacionesArea({
                 </div>
 
                 <div className="space-y-4">
+                  {emailStatus.type && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`p-4 rounded-2xl border flex items-center gap-4 ${emailStatus.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-rose-50 border-rose-100 text-rose-700'}`}
+                    >
+                      <i className={`fa-solid ${emailStatus.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'} text-lg`}></i>
+                      <p className="text-[11px] font-bold uppercase tracking-tight">{emailStatus.message}</p>
+                    </motion.div>
+                  )}
+
                   <div className="flex items-start gap-4 p-4 bg-amber-50 rounded-2xl border border-amber-100">
                     <i className="fa-solid fa-circle-info text-amber-500 mt-0.5"></i>
                     <p className="text-[10px] text-amber-700 font-medium leading-relaxed">

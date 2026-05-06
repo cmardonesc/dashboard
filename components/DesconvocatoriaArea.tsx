@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { User, UserRole, Category, CATEGORY_ID_MAP } from '../types'
+import { FEDERATION_LOGO } from '../constants'
+import { getDriveDirectLink } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 import {
   LineChart,
@@ -11,7 +13,11 @@ import {
   AreaChart,
   Area,
   Tooltip,
-  Legend
+  Legend,
+  BarChart,
+  Bar,
+  ComposedChart,
+  LabelList
 } from 'recharts'
 
 type ViewMode = 'grid' | 'details' | 'report' | 'club_list' | 'club_print'
@@ -32,6 +38,8 @@ interface MicrocicloBajas {
 interface HistoricalData {
   wellness: any[]
   loads: any[]
+  gps: any[]
+  medical: any[]
 }
 
 interface ClubGroup {
@@ -62,7 +70,7 @@ export default function DesconvocatoriaArea() {
 
   const [processingBajaAtleta, setProcessingBajaAtleta] = useState<User | null>(null)
   const [selectedClubForPrint, setSelectedClubForPrint] = useState<ClubGroup | null>(null)
-  const [historicalData, setHistoricalData] = useState<HistoricalData>({ wellness: [], loads: [] })
+  const [historicalData, setHistoricalData] = useState<HistoricalData>({ wellness: [], loads: [], gps: [], medical: [] })
   
   // Para reporte por club: datos de todos los jugadores del club
   const [clubHistoryData, setClubHistoryData] = useState<Record<number, HistoricalData>>({})
@@ -182,6 +190,22 @@ export default function DesconvocatoriaArea() {
         .lte('session_date', end)
         .order('session_date', { ascending: true });
 
+      const { data: gpsRaw } = await supabase
+        .from('gps_import')
+        .select('*')
+        .eq('id_del_jugador', playerId)
+        .gte('fecha', start)
+        .lte('fecha', end)
+        .order('fecha', { ascending: true });
+
+      const { data: medicalRaw } = await supabase
+        .from('medical_daily_reports')
+        .select('*')
+        .eq('id_del_jugador', playerId)
+        .gte('report_date', start)
+        .lte('report_date', end)
+        .order('report_date', { ascending: true });
+
       const mappedWellness = (wellnessRaw || []).map(w => ({
         date: w.checkin_date,
         fatigue: w.fatigue,
@@ -198,10 +222,33 @@ export default function DesconvocatoriaArea() {
         srpe: l.srpe || (l.rpe * l.duration_min)
       }));
 
-      return { wellness: mappedWellness, loads: mappedLoads };
+      const mappedGps = (gpsRaw || []).map(g => ({
+        date: g.fecha,
+        minutos: g.minutos || 0,
+        dist_total_m: g.dist_total_m || 0,
+        m_por_min: g.m_por_min || 0,
+        dist_ai_m_15_kmh: g.dist_ai_m_15_kmh || 0,
+        dist_mai_m_20_kmh: g.dist_mai_m_20_kmh || 0,
+        dist_sprint_m_25_kmh: g.dist_sprint_m_25_kmh || 0,
+        sprints_n: g.sprints_n || 0,
+        vel_max_kmh: g.vel_max_kmh || 0,
+        acc_decc_ai_n: g.acc_decc_ai_n || 0,
+        // Assuming columns for max acc/decel if we decide to add them later
+        max_acc: g.max_acc || 0, 
+        max_decel: g.max_decel || 0
+      }));
+
+      const mappedMedical = (medicalRaw || []).map(m => ({
+        date: m.report_date,
+        observation: m.observation,
+        diagnosis: m.diagnostico_medico,
+        severity: m.severity
+      }));
+
+      return { wellness: mappedWellness, loads: mappedLoads, gps: mappedGps, medical: mappedMedical };
     } catch (err) {
       console.error("Error en historia:", err);
-      return { wellness: [], loads: [] };
+      return { wellness: [], loads: [], gps: [], medical: [] };
     }
   };
 
@@ -342,18 +389,40 @@ export default function DesconvocatoriaArea() {
       srpe: l.srpe
     }));
 
+    const gpsChartData = history.gps.map(g => ({
+      fecha: formatDateShort(g.date),
+      dist_total: g.dist_total_m,
+      dist_15: g.dist_ai_m_15_kmh,
+      dist_20: g.dist_mai_m_20_kmh,
+      dist_25: g.dist_sprint_m_25_kmh,
+      sprints: g.sprints_n,
+      acc_dec: g.acc_decc_ai_n
+    }));
+
+    const formatNum = (val: any) => {
+      if (val === undefined || val === null || isNaN(val)) return '-';
+      return Number(val).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+    };
+
     const Header = () => (
-      <div className="flex justify-between items-start mb-10 border-b-4 border-slate-900 pb-6">
+      <div className="flex justify-between items-start mb-10 border-b-4 border-[#0b1220] pb-6">
         <div className="flex items-center gap-6">
-          <div className="w-16 h-16 bg-slate-900 text-white flex items-center justify-center font-black text-3xl italic rounded-xl">LR</div>
+          <div className="w-20 h-20 overflow-hidden flex items-center justify-center shrink-0">
+            <img 
+              src={getDriveDirectLink(FEDERATION_LOGO)} 
+              alt="ANFP Logo" 
+              className="w-full h-full object-contain"
+              referrerPolicy="no-referrer"
+            />
+          </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-900 leading-none uppercase tracking-tighter italic">CERTIFICADO DE<br/><span className="text-red-600">DESCONVOCATORIA</span></h1>
+            <h1 className="text-2xl font-black text-[#0b1220] leading-none uppercase tracking-tighter italic">CERTIFICADO DE<br/><span className="text-[#CF1B2B]">DESCONVOCATORIA</span></h1>
             <p className="text-[7px] font-bold text-slate-400 uppercase tracking-[0.4em] mt-1">DEPARTAMENTO DE SELECCIÓN • FFCH</p>
           </div>
         </div>
         <div className="text-right">
            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">DOCUMENTO TÉCNICO RESERVADO</p>
-           <p className="text-xs font-black text-slate-900 uppercase italic tracking-tighter">ID: {player.id.split('-')[1] || 'RA7Z98'}-{selectedMicro?.id || 'A00107'}</p>
+           <p className="text-xs font-black text-[#0b1220] uppercase italic tracking-tighter">ID: {player.id.split('-')[1] || 'RA7Z98'}-{selectedMicro?.id || 'A00107'}</p>
         </div>
       </div>
     );
@@ -368,12 +437,12 @@ export default function DesconvocatoriaArea() {
           <div className="grid grid-cols-2 gap-10 mb-8 bg-slate-50 p-8 rounded-[32px]">
             <div>
                <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">IDENTIFICACIÓN DEL ATLETA:</p>
-               <p className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-2">{player.name}</p>
-               <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest">{player.position} | {player.club}</p>
+               <p className="text-3xl font-black text-[#0b1220] uppercase italic tracking-tighter leading-none mb-2">{player.name}</p>
+               <p className="text-[10px] font-bold text-[#CF1B2B] uppercase tracking-widest">{player.position} | {player.club}</p>
             </div>
             <div className="text-right">
                <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">PERÍODO SELECCIONADO:</p>
-               <p className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">{formatCategoryLabel(selectedMicro?.category_id)}</p>
+               <p className="text-2xl font-black text-[#0b1220] uppercase italic tracking-tighter leading-none">{formatCategoryLabel(selectedMicro?.category_id)}</p>
                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">MICROCICLO Nº {selectedMicro?.micro_number || selectedMicro?.id}</p>
             </div>
           </div>
@@ -399,11 +468,11 @@ export default function DesconvocatoriaArea() {
                     {history.wellness.map((w, idx) => (
                       <tr key={idx} className="border-b border-slate-50">
                         <td className="px-4 py-3 text-left pl-8 font-bold">{formatDateShort(w.date)}</td>
-                        <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.fatigue)}`}>{w.fatigue}</span></td>
-                        <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.sleep)}`}>{w.sleep}</span></td>
-                        <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.soreness)}`}>{w.soreness}</span></td>
-                        <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.stress)}`}>{w.stress}</span></td>
-                        <td className="px-2 py-3 pr-8"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.mood)}`}>{w.mood}</span></td>
+                        <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.fatigue)}`}>{formatNum(w.fatigue)}</span></td>
+                        <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.sleep)}`}>{formatNum(w.sleep)}</span></td>
+                        <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.soreness)}`}>{formatNum(w.soreness)}</span></td>
+                        <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.stress)}`}>{formatNum(w.stress)}</span></td>
+                        <td className="px-2 py-3 pr-8"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.mood)}`}>{formatNum(w.mood)}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -413,8 +482,8 @@ export default function DesconvocatoriaArea() {
 
           {/* Gráfico Fatiga y Dolor */}
           <div className="mt-auto">
-            <h3 className="text-[9px] font-black text-slate-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <i className="fa-solid fa-chart-line text-red-600"></i> EVOLUCIÓN FATIGA Y DOLOR
+            <h3 className="text-[9px] font-black text-[#0b1220] uppercase tracking-widest mb-4 flex items-center gap-2">
+              <i className="fa-solid fa-chart-line text-[#CF1B2B]"></i> EVOLUCIÓN FATIGA Y DOLOR
             </h3>
             <div className="h-64 w-full bg-slate-50/50 rounded-[32px] p-8">
               <ResponsiveContainer width="100%" height="100%">
@@ -424,8 +493,12 @@ export default function DesconvocatoriaArea() {
                   <YAxis domain={[1, 5]} ticks={[1,2,3,4,5]} axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} />
                   <Tooltip />
                   <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase' }} />
-                  <Line type="monotone" name="Dolor" dataKey="dolor" stroke="#0b1220" strokeWidth={4} dot={{ r: 4, fill: '#0b1220' }} activeDot={{ r: 6 }} />
-                  <Line type="monotone" name="Fatiga" dataKey="fatiga" stroke="#ef4444" strokeWidth={4} dot={{ r: 4, fill: '#ef4444' }} activeDot={{ r: 6 }} />
+                  <Line type="monotone" name="Dolor" dataKey="dolor" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }} activeDot={{ r: 6 }}>
+                    <LabelList dataKey="dolor" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0038A8' }} />
+                  </Line>
+                  <Line type="monotone" name="Fatiga" dataKey="fatiga" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }} activeDot={{ r: 6 }}>
+                    <LabelList dataKey="fatiga" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#CF1B2B' }} />
+                  </Line>
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -437,8 +510,8 @@ export default function DesconvocatoriaArea() {
           <Header />
           
           <div className="mb-12">
-            <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
-              <i className="fa-solid fa-brain text-purple-600"></i> PERFIL PSICO-EMOCIONAL
+            <h3 className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
+              <i className="fa-solid fa-brain text-[#CF1B2B]"></i> PERFIL PSICO-EMOCIONAL
             </h3>
             <div className="h-64 w-full bg-slate-50/50 rounded-[32px] p-8">
               <ResponsiveContainer width="100%" height="100%">
@@ -448,17 +521,23 @@ export default function DesconvocatoriaArea() {
                   <YAxis domain={[1, 5]} ticks={[1,2,3,4,5]} axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} />
                   <Tooltip />
                   <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase' }} />
-                  <Line type="monotone" name="Estrés" dataKey="estres" stroke="#f59e0b" strokeWidth={4} dot={{ r: 4, fill: '#f59e0b' }} />
-                  <Line type="monotone" name="Sueño" dataKey="sueno" stroke="#10b981" strokeWidth={4} dot={{ r: 4, fill: '#10b981' }} />
-                  <Line type="monotone" name="Ánimo" dataKey="animo" stroke="#8b5cf6" strokeWidth={4} dot={{ r: 4, fill: '#8b5cf6' }} />
+                  <Line type="monotone" name="Estrés" dataKey="estres" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }}>
+                    <LabelList dataKey="estres" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#CF1B2B' }} />
+                  </Line>
+                  <Line type="monotone" name="Sueño" dataKey="sueno" stroke="#10b981" strokeWidth={4} dot={{ r: 4, fill: '#10b981' }}>
+                    <LabelList dataKey="sueno" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#10b981' }} />
+                  </Line>
+                  <Line type="monotone" name="Ánimo" dataKey="animo" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }}>
+                    <LabelList dataKey="animo" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0038A8' }} />
+                  </Line>
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
           <div className="space-y-6 mb-12">
-            <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.3em] flex items-center gap-2">
-              <i className="fa-solid fa-stopwatch text-red-600"></i> ANÁLISIS CHECK-OUT ( P S E )
+            <h3 className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.3em] flex items-center gap-2">
+              <i className="fa-solid fa-stopwatch text-[#CF1B2B]"></i> ANÁLISIS CHECK-OUT ( P S E )
             </h3>
             <div className="rounded-[24px] overflow-hidden border border-slate-100 shadow-sm">
                 <table className="w-full text-center text-[10px] border-collapse">
@@ -474,9 +553,9 @@ export default function DesconvocatoriaArea() {
                     {history.loads.map((l, idx) => (
                       <tr key={idx} className="border-b border-slate-50">
                         <td className="px-6 py-4 text-left pl-8 font-bold">{formatDateShort(l.date)}</td>
-                        <td className="px-4 py-4">{l.rpe}</td>
-                        <td className="px-4 py-4">{l.duration}'</td>
-                        <td className="px-6 py-4 text-right pr-8 text-red-600 font-black">{l.srpe}</td>
+                        <td className="px-4 py-4">{formatNum(l.rpe)}</td>
+                        <td className="px-4 py-4">{formatNum(l.duration)}'</td>
+                        <td className="px-6 py-4 text-right pr-8 text-red-600 font-black">{formatNum(l.srpe)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -485,35 +564,166 @@ export default function DesconvocatoriaArea() {
           </div>
 
           <div className="mt-auto">
-            <h3 className="text-[9px] font-black text-slate-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <i className="fa-solid fa-chart-area text-slate-900"></i> DINÁMICA DE CARGA (UA)
+            <h3 className="text-[9px] font-black text-[#0b1220] uppercase tracking-widest mb-4 flex items-center gap-2">
+              <i className="fa-solid fa-chart-area text-[#0b1220]"></i> DINÁMICA DE CARGA (UA)
             </h3>
-            <div className="h-64 w-full bg-[#0b1220] rounded-[32px] p-8">
+            <div className="h-64 w-full bg-slate-50/50 rounded-[32px] p-8">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={loadChartData}>
-                  <defs>
-                    <linearGradient id="colorSrpe" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#475569" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#475569" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                <LineChart data={loadChartData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                   <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#475569'}} />
                   <YAxis hide />
                   <Tooltip />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', color: '#fff' }} />
-                  <Area type="monotone" name="Carga (UA)" dataKey="srpe" stroke="#fff" fillOpacity={1} fill="url(#colorSrpe)" strokeWidth={4} />
-                </AreaChart>
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase' }} />
+                  <Line type="monotone" name="Carga (UA)" dataKey="srpe" stroke="#0b1220" strokeWidth={4} dot={{ r: 4, fill: '#0b1220' }} activeDot={{ r: 6 }}>
+                    <LabelList dataKey="srpe" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0b1220' }} />
+                  </Line>
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
         </div>
 
-        {/* PÁGINA 3: FIRMAS */}
-        <div className="bg-white p-12 min-h-[297mm] flex flex-col shadow-sm print:shadow-none">
+        {/* PÁGINA 3: CARGA EXTERNA (GPS) */}
+        <div className="bg-white p-12 min-h-[297mm] flex flex-col break-after-page shadow-sm mb-8 print:shadow-none print:mb-0">
           <Header />
 
-          <div className="flex-1 flex flex-col justify-center py-20">
+          <div className="space-y-6 mb-8">
+            <h3 className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.3em] flex items-center gap-2">
+              <i className="fa-solid fa-satellite-dish text-[#CF1B2B]"></i> CARGA EXTERNA ( G P S )
+            </h3>
+            <div className="rounded-[24px] overflow-hidden border border-slate-100 shadow-sm">
+                <table className="w-full text-center text-[8px] border-collapse">
+                  <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest">
+                    <tr>
+                      <th className="px-2 py-3 text-left pl-4">FECHA</th>
+                      <th className="px-1 py-3">MIN</th>
+                      <th className="px-1 py-3">TOT DIST (M)</th>
+                      <th className="px-1 py-3">M/MIN</th>
+                      <th className="px-1 py-3">AINT {">"}15</th>
+                      <th className="px-1 py-3">MAINT {">"}20</th>
+                      <th className="px-1 py-3">SPR {">"}25</th>
+                      <th className="px-1 py-3"># SP</th>
+                      <th className="px-1 py-3">VEL MAX</th>
+                      <th className="px-1 py-3 pr-4">#ACC+DEC AI</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-black text-slate-700 uppercase italic">
+                    {history.gps.map((g, idx) => (
+                      <tr key={idx} className="border-b border-slate-50">
+                        <td className="px-2 py-2 text-left pl-4 font-bold">{formatDateShort(g.date)}</td>
+                        <td className="px-1 py-2">{formatNum(g.minutos)}</td>
+                        <td className="px-1 py-2 font-bold">{formatNum(g.dist_total_m)}</td>
+                        <td className="px-1 py-2">{formatNum(g.m_por_min)}</td>
+                        <td className="px-1 py-2">{formatNum(g.dist_ai_m_15_kmh)}</td>
+                        <td className="px-1 py-2">{formatNum(g.dist_mai_m_20_kmh)}</td>
+                        <td className="px-1 py-2">{formatNum(g.dist_sprint_m_25_kmh)}</td>
+                        <td className="px-1 py-2">{formatNum(g.sprints_n)}</td>
+                        <td className="px-1 py-2">{formatNum(g.vel_max_kmh)}</td>
+                        <td className="px-1 py-2 pr-4">{formatNum(g.acc_decc_ai_n)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 mt-auto">
+            {/* Chart 1: Total Distance (Line) & Distances >15 and >20 (Bars) */}
+            <div className="h-52 w-full bg-slate-50/50 rounded-[32px] p-6">
+              <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 px-2">VOLUMEN E INTENSIDAD (TOT DIST, &gt;15, &gt;20 KM/H)</h4>
+              <ResponsiveContainer width="100%" height="85%">
+                <ComposedChart data={gpsChartData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                  <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} />
+                  <Tooltip />
+                  <Legend verticalAlign="top" align="right" iconType="square" wrapperStyle={{ fontSize: '7px', fontWeight: '900', textTransform: 'uppercase' }} />
+                  <Bar name="Dist. >15 km/h" dataKey="dist_15" fill="#CF1B2B" radius={[4, 4, 0, 0]} barSize={15}>
+                    <LabelList dataKey="dist_15" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#CF1B2B' }} />
+                  </Bar>
+                  <Bar name="Dist. >20 km/h" dataKey="dist_20" fill="#0038A8" radius={[4, 4, 0, 0]} barSize={15}>
+                    <LabelList dataKey="dist_20" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#0038A8' }} />
+                  </Bar>
+                  <Line type="monotone" name="Dist. Total (m)" dataKey="dist_total" stroke="#0038A8" strokeWidth={3} dot={{ r: 3, fill: '#0038A8' }}>
+                    <LabelList dataKey="dist_total" position="top" offset={10} formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#0038A8' }} />
+                  </Line>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Chart 2: Dist >25, Acc+Dec (Bars) and Efforts >25 (Line) */}
+            <div className="h-52 w-full bg-slate-50/50 rounded-[32px] p-6">
+              <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 px-2">ALTA VELOCIDAD Y ACCIONES EXPLOSIVAS (&gt;25 KM/H, ACC+DEC)</h4>
+              <ResponsiveContainer width="100%" height="85%">
+                <ComposedChart data={gpsChartData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                  <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} />
+                  <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} />
+                  <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} />
+                  <Tooltip />
+                  <Legend verticalAlign="top" align="right" iconType="square" wrapperStyle={{ fontSize: '7px', fontWeight: '900', textTransform: 'uppercase' }} />
+                  <Bar yAxisId="left" name="Dist. >25 km/h" dataKey="dist_25" fill="#CF1B2B" radius={[4, 4, 0, 0]} barSize={15}>
+                    <LabelList dataKey="dist_25" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#CF1B2B' }} />
+                  </Bar>
+                  <Bar yAxisId="left" name="Acc + Dec (AI)" dataKey="acc_dec" fill="#0038A8" radius={[4, 4, 0, 0]} barSize={15}>
+                    <LabelList dataKey="acc_dec" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#0038A8' }} />
+                  </Bar>
+                  <Line yAxisId="right" type="monotone" name="Esfuerzos >25 km/h" dataKey="sprints" stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981' }}>
+                    <LabelList dataKey="sprints" position="top" offset={10} formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#10b981' }} />
+                  </Line>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* PÁGINA 4: FIRMAS */}
+        <div className="bg-white p-12 min-h-[297mm] flex flex-col shadow-sm print:shadow-none">
+          <Header />
+          
+          <div className="mb-8">
+            <h3 className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.3em] mb-4 flex items-center gap-2">
+              <i className="fa-solid fa-stethoscope text-[#CF1B2B]"></i> INFORME MÉDICO INSTITUCIONAL
+            </h3>
+            <div className="bg-slate-50 p-8 rounded-[32px] border border-slate-100 italic relative overflow-hidden">
+               {/* Decorative background element */}
+               <div className="absolute top-0 right-0 p-4 opacity-[0.03]">
+                 <i className="fa-solid fa-staff-aesculapius text-8xl"></i>
+               </div>
+               
+               <p className="text-[10px] font-bold text-slate-800 leading-relaxed relative z-10">
+                 Se certifica que el deportista <span className="text-[#0b1220] font-black">{player.name}</span> ha sido sometido a seguimiento clínico y fisioterapéutico permanente durante el transcurso del actual periodo de citación. 
+                 Basado en el registro diario del Área Médica y el Departamento de Ciencias del Deporte, se informa lo siguiente:
+               </p>
+               
+               <div className="mt-4 pt-4 border-t border-slate-200 relative z-10">
+                 {history.medical && history.medical.length > 0 ? (
+                   <div className="space-y-3">
+                     {history.medical.map((m: any, idx: number) => (
+                       <div key={idx} className="flex gap-4">
+                         <div className="text-[9px] font-black text-slate-400 shrink-0 mt-0.5">{formatDateShort(m.date)}</div>
+                         <div>
+                           <p className="text-[11px] font-black text-[#0b1220] leading-none mb-1">
+                             {m.diagnosis || 'CONTROL CLÍNICO RUTINARIO'}
+                           </p>
+                           <p className="text-[10px] font-medium text-slate-600">
+                             {m.observation}
+                           </p>
+                         </div>
+                       </div>
+                     ))}
+                   </div>
+                 ) : (
+                   <p className="text-xs font-black text-[#0b1220] uppercase tracking-tight">
+                     "EL DEPORTISTA COMPLETÓ EL MICROCICLO DE ENTRENAMIENTO SIN PRESENTAR HALLAZGOS CLÍNICOS DE SIGNIFICANCIA, NOVEDADES MÉDICAS NI LIMITACIONES FÍSICAS QUE CONDICIONEN SU RENDIMIENTO DEPORTIVO HABITUAL O REQUIERAN TRATAMIENTO ESPECÍFICO POST-CONVOCATORIA."
+                   </p>
+                 )}
+               </div>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col justify-center py-2">
             {/* Justificación técnica eliminada por solicitud */}
           </div>
 
@@ -530,8 +740,8 @@ export default function DesconvocatoriaArea() {
             </div>
             
             <div className="text-center border-t border-slate-100 pt-8 relative">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.6em] mb-2">L A R O J A P E R F O R M A N C E H U B</p>
-               <p className="text-[8px] font-bold text-slate-300 uppercase">FEDERACIÓN DE FÚTBOL DE CHILE</p>
+               <p className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.6em] mb-2">L A R O J A P E R F O R M A N C E H U B</p>
+               <p className="text-[8px] font-bold text-slate-300 uppercase italic">FEDERACIÓN DE FÚTBOL DE CHILE</p>
                
                {/* Watermark */}
                <div className="absolute bottom-0 right-0 text-[8px] font-black text-slate-200 italic tracking-widest">
@@ -560,7 +770,7 @@ export default function DesconvocatoriaArea() {
 
         <div className="max-w-[850px] mx-auto space-y-10 print:space-y-0">
           {selectedClubForPrint.players.map(p => (
-            <PlayerReportSheet key={p.id} player={p} history={clubHistoryData[p.id_del_jugador!] || { wellness: [], loads: [] }} />
+            <PlayerReportSheet key={p.id} player={p} history={clubHistoryData[p.id_del_jugador!] || { wellness: [], loads: [], gps: [], medical: [] }} />
           ))}
         </div>
       </div>
