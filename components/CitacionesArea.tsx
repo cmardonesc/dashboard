@@ -839,6 +839,21 @@ export default function CitacionesArea({
       const recipients = clubContacts.filter(c => selectedRecipientIds.includes(c.id));
       const clubPlayers = citadosByClub[emailClub];
       
+      // Generar PDF y convertir a Base64 para enviar como adjunto
+      const pdfBlob = generatePDFBlob(emailClub, clubPlayers);
+      const reader = new FileReader();
+      
+      const pdfBase64Promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => {
+          const base64data = reader.result as string;
+          // Quitar el header "data:application/pdf;base64,"
+          resolve(base64data.split(',')[1]);
+        };
+        reader.readAsDataURL(pdfBlob);
+      });
+
+      const pdfBase64 = await pdfBase64Promise;
+
       const response = await fetch('/api/send-nomina', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -846,7 +861,11 @@ export default function CitacionesArea({
           recipients,
           clubName: emailClub,
           microcicloInfo: selectedMicro,
-          players: clubPlayers
+          players: clubPlayers,
+          attachment: {
+            content: pdfBase64,
+            filename: `Citacion_${emailClub.replace(/\s+/g, '_')}.pdf`
+          }
         })
       });
 

@@ -5,8 +5,35 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 
+import nodemailer from "nodemailer";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Lazy initialization for Nodemailer transporter
+let transporter: nodemailer.Transporter | null = null;
+
+function getTransporter() {
+  if (!transporter) {
+    const host = process.env.SMTP_HOST || 'smtp.hostinger.com';
+    const port = parseInt(process.env.SMTP_PORT || '465');
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+
+    if (!user || !pass) {
+      console.warn("[MAIL] SMTP_USER or SMTP_PASS not configured. Emails will not be sent.");
+      return null;
+    }
+
+    transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465, // true for 465, false for other ports
+      auth: { user, pass },
+    });
+  }
+  return transporter;
+}
 
 async function startServer() {
   const app = express();
@@ -166,13 +193,67 @@ async function startServer() {
   // API Route for Sending Nominas via Email
   app.post("/api/send-nomina", async (req, res) => {
     try {
-      const { recipients, clubName, microcicloInfo, players } = req.body;
+      const { recipients, clubName, microcicloInfo, players, attachment } = req.body;
       
       console.log(`[EMAIL SERVICE] Preparando envío para ${clubName}`);
-      console.log(`[EMAIL SERVICE] Destinatarios: ${recipients.map((r: any) => r.correo).join(', ')}`);
       
-      // Simulación de envío exitoso
-      // En producción aquí se usaría un transportador de Nodemailer o SDK de Resend/SendGrid
+      const mailTransporter = getTransporter();
+      if (!mailTransporter) {
+        return res.status(503).json({ 
+          error: "Servicio de correo no configurado. Por favor configure SMTP_USER y SMTP_PASS en las variables de entorno." 
+        });
+      }
+
+      const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+      const fromName = process.env.SMTP_FROM_NAME || "La Roja Performance";
+
+      // Enviar correos a cada destinatario
+      const sendPromises = recipients.map(async (recipient: any) => {
+        const playerListHtml = players
+          .map((p: any) => `<li><b>${p.name}</b> (${p.position})</li>`)
+          .join("");
+
+        const mailOptions: any = {
+          from: `"${fromName}" <${fromEmail}>`,
+          to: recipient.correo,
+          subject: `Convocatoria Selección Nacional - ${clubName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+              <div style="background-color: #0b1220; padding: 30px; text-align: center; color: white;">
+                <h1 style="margin: 0; font-size: 20px; font-weight: 900; letter-spacing: -0.05em; text-transform: uppercase;">CITACIÓN OFICIAL</h1>
+                <p style="color: #CF1B2B; margin: 5px 0 0; font-size: 10px; font-weight: 900; letter-spacing: 0.2em;">LA ROJA PERFORMANCE HUB</p>
+              </div>
+              <div style="padding: 40px; color: #1e293b; line-height: 1.6;">
+                <p>Estimado(a) <b>${recipient.nombres || recipient.presidente}</b>,</p>
+                <p>Por intermendio de la presente, se comunica oficialmente la citación de los siguientes jugadores de sus registros:</p>
+                <ul style="background-color: #f8fafc; padding: 20px 40px; border-radius: 8px; list-style-type: none;">
+                  ${playerListHtml}
+                </ul>
+                <p>Para participar en el <b>${microcicloInfo.type}</b> que se llevará a cabo desde el <b>${microcicloInfo.start_date}</b> hasta el <b>${microcicloInfo.end_date}</b> en la ciudad de ${microcicloInfo.city}.</p>
+                <p>Se adjunta la carta formal de citación en formato PDF.</p>
+                <p style="margin-top: 30px; font-size: 13px;">Favor confirmar recepción y disponibilidad de los atletas.</p>
+              </div>
+              <div style="background-color: #f8fafc; padding: 20px; text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px solid #e2e8f0;">
+                <p>© 2026 CMSPORTECH.COM | Centro de Inteligencia Deportiva</p>
+              </div>
+            </div>
+          `
+        };
+
+        if (attachment && attachment.content) {
+          mailOptions.attachments = [
+            {
+              filename: attachment.filename || 'Citacion.pdf',
+              content: attachment.content,
+              encoding: 'base64'
+            }
+          ];
+        }
+
+        return mailTransporter.sendMail(mailOptions);
+      });
+
+      await Promise.all(sendPromises);
       
       return res.json({ 
         success: true, 
