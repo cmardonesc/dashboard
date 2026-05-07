@@ -127,6 +127,8 @@ export default function App() {
           rpe: rpe,
           load: l.srpe || l.carga || (rpe * duration), 
           type: l.type || 'FIELD',
+          molestias: l.molestias || '',
+          enfermedad: l.enfermedad || '',
           created_at: l.created_at
         };
       });

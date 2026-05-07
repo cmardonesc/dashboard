@@ -771,6 +771,219 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     }
   };
 
+  const generateWeeklySchedulePDF = async () => {
+    if (!selectedMicro) return;
+    setGeneratingReport(true);
+    
+    try {
+      const doc = new jsPDF({
+        orientation: 'l',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const primaryColor = [2, 66, 140] as [number, number, number];
+      const secondaryColor = [226, 35, 26] as [number, number, number];
+      const margin = 15;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      // Decorative Lines - Top
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(1.5);
+      doc.line(margin, 10, pageWidth - margin, 10);
+      
+      doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.setLineWidth(0.5);
+      doc.line(margin, 11.5, pageWidth - margin, 11.5);
+
+      // Logo (Upper Left)
+      const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+      try {
+        doc.addImage(logoUrl, 'PNG', margin, 15, 25, 25);
+      } catch (e) {
+        console.warn("Could not add logo to PDF", e);
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(28);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      
+      const startDate = new Date(selectedMicro.start_date + 'T12:00:00');
+      const endDate = new Date(selectedMicro.end_date + 'T12:00:00');
+      const weekNum = selectedMicro.micro_number || selectedMicro.id || '';
+      
+      const title = `MICROCICLO ${weekNum}`;
+      const dateRange = `${startDate.getDate().toString().padStart(2, '0')} AL ${endDate.getDate().toString().padStart(2, '0')} DE ${startDate.toLocaleDateString('es-ES', { month: 'long' }).toUpperCase()}`;
+      
+      // Simulating the condensed font with horizontalScale if supported, otherwise generic bold
+      const textOptions = { align: 'center' } as any;
+      try {
+        textOptions.horizontalScale = 0.75;
+      } catch(e) {}
+
+      doc.text(title, pageWidth / 2, 25, textOptions);
+      doc.setFontSize(20);
+      doc.text(dateRange, pageWidth / 2, 34, textOptions);
+
+      doc.setFontSize(22);
+      doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.text(formatCategoryLabel(selectedMicro.category_id).replace(' ', '.'), pageWidth / 2, 45, textOptions);
+
+      const dayNames = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO'];
+      const headers = currentWeekDays.map((date, i) => {
+          const dStr = `${date.getDate()}/${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+          return `${dayNames[i]} ${dStr}`;
+      });
+
+      let maxRows = 0;
+      currentWeekDays.forEach(date => {
+          const dateKey = formatDateKey(date);
+          const schedule = weeklySchedule[dateKey] || [];
+          if (schedule.length > maxRows) maxRows = schedule.length;
+      });
+
+      const body = [];
+      for (let r = 0; r < maxRows; r++) {
+          const row = currentWeekDays.map(date => {
+              const dateKey = formatDateKey(date);
+              const schedule = weeklySchedule[dateKey] || [];
+              const act = schedule[r];
+              if (!act) return '';
+              return `${act.time}   ${act.type.toUpperCase()}`;
+          });
+          body.push(row);
+      }
+
+      // Calculate centering for the table
+      const numCols = headers.length;
+      const totalUsableWidth = pageWidth - 2 * margin;
+      const colWidth = totalUsableWidth / 7;
+      const tableWidth = numCols * colWidth;
+      const tableLeftMargin = (pageWidth - tableWidth) / 2;
+
+      autoTable(doc, {
+        startY: 55,
+        head: [headers],
+        body: body,
+        theme: 'plain',
+        tableWidth: tableWidth,
+        margin: { left: tableLeftMargin },
+        headStyles: {
+          fillColor: [2, 66, 140],
+          textColor: [255, 255, 255],
+          fontSize: 9,
+          fontStyle: 'bold',
+          halign: 'center',
+          cellPadding: 3,
+        },
+        bodyStyles: {
+          fontSize: 7,
+          fontStyle: 'bold',
+          textColor: [0, 0, 0],
+          cellPadding: 2,
+          minCellHeight: 8,
+          valign: 'middle',
+          halign: 'center'
+        },
+        didParseCell: (data) => {
+          // Transparent by default to let us draw custom backgrounds
+          if (data.section === 'body') {
+            data.cell.styles.fillColor = undefined;
+          }
+        },
+        willDrawCell: (data) => {
+          if (data.section === 'head') {
+            doc.saveGraphicsState();
+            doc.setFillColor(2, 66, 140);
+            // Draw a rounded rectangle for the entire header if it's the first or last cell specifically
+            // But simpler: just draw rounded rect for each header cell with small gap
+            doc.roundedRect(data.cell.x + 0.5, data.cell.y + 0.5, data.cell.width - 1, data.cell.height - 1, 2, 2, 'F');
+            doc.restoreGraphicsState();
+          }
+        },
+        didDrawCell: (data) => {
+          if (data.section === 'body' && data.cell.text[0]) {
+            const text = data.cell.text[0].toUpperCase();
+            let fillColor: [number, number, number] = [245, 245, 245];
+            let textColor: [number, number, number] = [60, 60, 60];
+            let hasSpecialColor = false;
+
+            if (text.includes('ENTRENAMIENTO') || text.includes('PARTIDO')) {
+                fillColor = [226, 35, 26];
+                textColor = [255, 255, 255];
+                hasSpecialColor = true;
+            } else if (text.includes('GYM') || text.includes('GIMNASIO')) {
+                fillColor = [11, 18, 32];
+                textColor = [255, 255, 255];
+                hasSpecialColor = true;
+            } else if (text.includes('ACTIVACIÓN') || text.includes('ACTIVACION')) {
+                fillColor = [100, 180, 255];
+                textColor = [255, 255, 255];
+                hasSpecialColor = true;
+            } else if (text.includes('PSICOLÓGICA') || text.includes('CHARLA')) {
+                fillColor = [163, 217, 119];
+                hasSpecialColor = true;
+            } else if (text.includes('DESAYUNO') || text.includes('ALMUERZO') || text.includes('MERIENDA') || text.includes('CENA') || text.includes('SNACK')) {
+                fillColor = [215, 215, 215];
+            }
+
+            doc.saveGraphicsState();
+            doc.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
+            // Draw rounded "pill" or "card" for the activity
+            doc.roundedRect(data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, data.cell.height - 2, 1.5, 1.5, 'F');
+            
+            // Re-draw text because we cleared the cell earlier
+            doc.setFontSize(hasSpecialColor ? 7.5 : 7);
+            doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+            doc.setFont('helvetica', 'bold');
+            
+            const lines = doc.splitTextToSize(text, data.cell.width - 4);
+            doc.text(lines, data.cell.x + data.cell.width / 2, data.cell.y + data.cell.height / 2 + (lines.length > 1 ? -1 : 1), { align: 'center' });
+            
+            doc.restoreGraphicsState();
+          }
+        }
+      });
+
+      // Watermark CMSPORTECH - Small bottom right
+      doc.saveGraphicsState();
+      doc.setTextColor(240, 240, 240);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.text("CMSPORTECH", pageWidth - margin, pageHeight - 5, { align: 'right' });
+      doc.restoreGraphicsState();
+
+      // Footer Note - Lowered
+      doc.setFontSize(7);
+      doc.setTextColor(150, 150, 150);
+      doc.setFont('helvetica', 'italic');
+      doc.text("* LAS ACTIVIDADES RESALTADAS EN GRIS CORRESPONDEN A BLOQUES PARA JUGADORES EN RÉGIMEN DE CONCENTRACIÓN.", margin, pageHeight - 15);
+
+      // Decorative Lines - Bottom
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(1.5);
+      doc.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
+      
+      doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.setLineWidth(0.5);
+      doc.line(margin, pageHeight - 8.5, pageWidth - margin, pageHeight - 8.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.text("FFCH - DEPARTAMENTO DE SELECCIONES NACIONALES", pageWidth / 2, pageHeight - 5, { align: 'center' });
+
+      const fileName = `Cronograma_Semanal_${formatCategoryLabel(selectedMicro.category_id)}_${selectedMicro.start_date}.pdf`;
+      doc.save(fileName);
+      
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("Hubo un error al generar el reporte PDF.");
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
   const formatCategoryLabel = (idOrName: any) => {
     if (idOrName === 'TODOS LOS PROCESOS') return idOrName;
     if (typeof idOrName === 'number') {
@@ -921,6 +1134,20 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
 
       {activeTab === 'cronograma' && (
         <div className="space-y-12 relative animate-in fade-in duration-300 transform-gpu">
+          <div className="flex justify-end gap-3 px-4">
+            <button 
+              onClick={generateWeeklySchedulePDF} 
+              disabled={generatingReport}
+              className="bg-white border-2 border-slate-200 text-slate-500 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#0b1220] hover:text-white hover:border-[#0b1220] transition-all disabled:opacity-50"
+            >
+              {generatingReport ? (
+                <i className="fa-solid fa-spinner fa-spin"></i>
+              ) : (
+                <i className="fa-solid fa-file-pdf text-red-500"></i>
+              )}
+              {generatingReport ? 'Generando...' : 'Descargar Cronograma PDF'}
+            </button>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             {currentWeekDays.map((date, i) => {
               const dateKey = formatDateKey(date);
@@ -943,7 +1170,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                   <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
                     {schedule.map(act => {
                       const groupStyles = act.grupo === 'Concentrados' 
-                        ? 'bg-amber-50 border-amber-200' 
+                        ? 'bg-slate-200 border-slate-300 shadow-inner' 
                         : act.grupo === 'Santiago' 
                           ? 'bg-blue-50 border-blue-200' 
                           : 'bg-slate-50/80 border-slate-100';

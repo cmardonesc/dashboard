@@ -880,33 +880,35 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           </div>
 
           <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-center min-w-[1000px]">
-              <thead className="bg-[#0b1220] text-white font-black uppercase text-[9px] md:text-[10px]">
+            <table className="w-full text-center min-w-full md:min-w-[1000px] border-separate border-spacing-y-2 px-1 md:px-4">
+              <thead className="bg-[#0b1220] text-white font-black uppercase text-[8px] md:text-[10px]">
                 <tr>
-                  <th className="px-4 md:px-8 py-4 md:py-5 text-left">Atleta</th>
+                  <th className="px-2 md:px-8 py-3 md:py-5 text-left first:rounded-l-2xl">Atleta</th>
                   {(view === 'wellness' || view === 'report') && (
                     <>
-                      <th className="px-2 py-4 md:py-5">Fatiga</th>
-                      <th className="px-2 py-4 md:py-5">Sueño</th>
-                      <th className="px-2 py-4 md:py-5">Dolor</th>
-                      <th className="px-2 py-4 md:py-5">Estrés</th>
-                      <th className="px-2 py-4 md:py-5">Ánimo</th>
-                      <th className="px-2 py-4 md:py-5">Prom.</th>
-                      <th className="px-2 md:px-4 py-4 md:py-5">Zona Molestia</th>
-                      <th className="px-2 md:px-4 py-4 md:py-5">Estado Salud</th>
+                      <th className="px-1 py-3 md:py-5">Fat</th>
+                      <th className="px-1 py-3 md:py-5">Sue</th>
+                      <th className="px-1 py-3 md:py-5">Dol</th>
+                      <th className="px-1 py-3 md:py-5 hidden sm:table-cell">Est</th>
+                      <th className="px-1 py-3 md:py-5 hidden sm:table-cell">Áni</th>
+                      <th className="px-1 py-3 md:py-5">Prom</th>
+                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Zona Molestia</th>
+                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Estado Salud</th>
                     </>
                   )}
                   {(view === 'pse' || view === 'report') && (
                     <>
-                      <th className="px-2 py-4 md:py-5">Duración</th>
-                      <th className="px-2 py-4 md:py-5">RPE</th>
-                      <th className="px-2 py-4 md:py-5">Carga</th>
+                      <th className="px-1 py-3 md:py-5 hidden sm:table-cell">Dur</th>
+                      <th className="px-1 py-3 md:py-5">RPE</th>
+                      <th className="px-1 py-3 md:py-5">Carga</th>
+                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Molestias</th>
+                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Enfermedad</th>
                     </>
                   )}
-                  <th className="px-4 md:px-8 py-4 md:py-5 text-right">Status</th>
+                  <th className="px-2 md:px-8 py-3 md:py-5 text-right last:rounded-r-2xl">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="">
                 {unifiedList.map((row, idx) => {
                   const isPending = !row.hasReported;
                   const avg = row.wellness ? (row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3 : 0;
@@ -914,41 +916,43 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   const isHighlighted = highlightPlayerId && Number(row.player.id_del_jugador) === Number(highlightPlayerId);
                   
                   return (
-                    <tr key={idx} className={`transition-colors font-black uppercase italic text-[10px] md:text-xs ${isHighlighted ? 'bg-blue-50 border-l-4 border-blue-500' : isPending ? 'bg-slate-50/50 text-slate-300' : (row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '') ? 'bg-slate-100/80 hover:bg-slate-100' : 'hover:bg-slate-50 text-slate-900')}`}>
-                      <td className={`px-4 md:px-8 py-4 md:py-5 text-left ${isHighlighted ? 'bg-blue-50' : ''}`}>
-                        <div className="flex flex-col">
-                          <span>{row.player.name}</span>
-                          <ClubBadge 
-                            clubName={row.player.club_name || row.player.club} 
-                            clubs={clubs}
-                            className="mt-0.5"
-                            logoSize="w-3 h-3"
-                            showName={true}
-                          />
+                    <tr key={idx} className={`transition-all font-black uppercase italic text-[8px] md:text-xs shadow-sm hover:scale-[1.01] hover:shadow-md ${isHighlighted ? 'bg-blue-50 ring-2 ring-blue-500' : isPending ? 'bg-slate-50/50 text-slate-300' : (row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '') ? 'bg-slate-100/80 hover:bg-slate-100' : 'bg-white hover:bg-slate-50 text-slate-900')} rounded-2xl overflow-hidden`}>
+                      <td className={`px-2 md:px-8 py-3 md:py-5 text-left rounded-l-2xl ${isHighlighted ? 'bg-blue-50' : ''}`}>
+                        <div className="flex flex-col min-w-[70px]">
+                          <span className="truncate max-w-[80px] md:max-w-none">{row.player.name}</span>
+                          <div className="hidden md:block">
+                            <ClubBadge 
+                              clubName={row.player.club_name || row.player.club} 
+                              clubs={clubs}
+                              className="mt-0.5"
+                              logoSize="w-3 h-3"
+                              showName={true}
+                            />
+                          </div>
                         </div>
                       </td>
                       
                       {(view === 'wellness' || view === 'report') && (
                         <>
-                          <td className="px-2 py-4 md:py-5">
-                            {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.fatigue)}`}>{row.wellness.fatigue}</span> : '-'}
+                          <td className="px-1 py-3 md:py-5">
+                            {row.wellness ? <span className={`w-6 md:w-8 h-6 md:h-8 flex items-center justify-center mx-auto rounded-lg text-[7px] md:text-[10px] ${getScoreColor(row.wellness.fatigue)}`}>{row.wellness.fatigue}</span> : '-'}
                           </td>
-                          <td className="px-2 py-4 md:py-5">
-                            {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.sleep)}`}>{row.wellness.sleep}</span> : '-'}
+                          <td className="px-1 py-3 md:py-5">
+                            {row.wellness ? <span className={`w-6 md:w-8 h-6 md:h-8 flex items-center justify-center mx-auto rounded-lg text-[7px] md:text-[10px] ${getScoreColor(row.wellness.sleep)}`}>{row.wellness.sleep}</span> : '-'}
                           </td>
-                          <td className="px-2 py-4 md:py-5">
-                            {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.soreness)}`}>{row.wellness.soreness}</span> : '-'}
+                          <td className="px-1 py-3 md:py-5">
+                            {row.wellness ? <span className={`w-6 md:w-8 h-6 md:h-8 flex items-center justify-center mx-auto rounded-lg text-[7px] md:text-[10px] ${getScoreColor(row.wellness.soreness)}`}>{row.wellness.soreness}</span> : '-'}
                           </td>
-                          <td className="px-2 py-4 md:py-5">
+                          <td className="px-1 py-3 md:py-5 hidden sm:table-cell">
                             {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.stress)}`}>{row.wellness.stress}</span> : '-'}
                           </td>
-                          <td className="px-2 py-4 md:py-5">
+                          <td className="px-1 py-3 md:py-5 hidden sm:table-cell">
                             {row.wellness ? <span className={`w-8 h-8 flex items-center justify-center mx-auto rounded-lg ${getScoreColor(row.wellness.mood)}`}>{row.wellness.mood}</span> : '-'}
                           </td>
-                          <td className="px-2 py-4 md:py-5">
+                          <td className="px-1 py-3 md:py-5">
                             {row.wellness ? <span className="font-black text-slate-900">{avg.toFixed(1)}</span> : '-'}
                           </td>
-                          <td className="px-2 md:px-4 py-4 md:py-5">
+                          <td className="px-1 py-3 md:py-5 hidden lg:table-cell">
                             {row.wellness?.soreness_areas && row.wellness.soreness_areas.length > 0 ? (
                               <div className="flex flex-wrap gap-1 justify-center">
                                 {row.wellness.soreness_areas.map((area, i) => (
@@ -959,7 +963,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                               !isPending && <span className="text-slate-300 text-[9px] md:text-[10px] font-bold uppercase">SIN DOLOR</span>
                             )}
                           </td>
-                          <td className="px-2 md:px-4 py-4 md:py-5">
+                          <td className="px-1 py-3 md:py-5 hidden lg:table-cell">
                             {row.wellness?.illness_symptoms && row.wellness.illness_symptoms.length > 0 ? (
                               <div className="flex flex-wrap gap-1 justify-center">
                                 {row.wellness.illness_symptoms.map((sym, i) => (
@@ -975,17 +979,33 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
                       {(view === 'pse' || view === 'report') && (
                         <>
-                          <td className="px-2 py-4 md:py-5 text-base md:text-lg">{row.load?.duration || '-'}</td>
-                          <td className="px-2 py-4 md:py-5 text-base md:text-lg">{row.load?.rpe || '-'}</td>
-                          <td className="px-2 py-4 md:py-5">{row.load ? <span className="bg-slate-900 text-white px-2 md:px-3 py-1 rounded-lg">{row.load.load}</span> : '-'}</td>
+                          <td className="px-1 py-3 md:py-5 hidden sm:table-cell">{row.load?.duration || '-'}</td>
+                          <td className="px-1 py-3 md:py-5 text-sm md:text-lg">{row.load?.rpe || '-'}</td>
+                          <td className="px-1 py-3 md:py-5">
+                            {row.load ? <span className="bg-slate-900 text-white px-1.5 md:px-3 py-0.5 md:py-1 rounded-lg text-[8px] md:text-xs">{row.load.load}</span> : '-'}
+                          </td>
+                          <td className="px-1 py-3 md:py-5 hidden lg:table-cell">
+                            {row.load?.molestias ? (
+                              <span className="bg-red-100 text-red-600 px-2 py-1 rounded-lg text-[10px] font-black uppercase max-w-[100px] truncate block mx-auto" title={row.load.molestias}>
+                                {row.load.molestias}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td className="px-1 py-3 md:py-5 hidden lg:table-cell">
+                            {row.load?.enfermedad ? (
+                              <span className="bg-amber-100 text-amber-600 px-2 py-1 rounded-lg text-[10px] font-black uppercase max-w-[100px] truncate block mx-auto" title={row.load.enfermedad}>
+                                {row.load.enfermedad}
+                              </span>
+                            ) : '-'}
+                          </td>
                         </>
                       )}
 
-                      <td className="px-4 md:px-8 py-4 md:py-5 text-right">
+                      <td className="px-2 md:px-8 py-3 md:py-5 text-right rounded-r-2xl">
                         {isPending ? (
-                          <span className="text-slate-300 flex items-center justify-end gap-2"><i className="fa-solid fa-clock"></i> PENDIENTE</span>
+                          <span className="text-slate-300 flex items-center justify-end gap-1"><i className="fa-solid fa-clock scale-75"></i> <span className="hidden xs:inline">PEN</span></span>
                         ) : (
-                          <span className="text-emerald-500 flex items-center justify-end gap-2"><i className="fa-solid fa-check-double"></i> OK</span>
+                          <span className="text-emerald-500 flex items-center justify-end gap-1"><i className="fa-solid fa-check-double scale-75"></i> <span className="hidden xs:inline">OK</span></span>
                         )}
                       </td>
                     </tr>
@@ -1293,6 +1313,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             <th className="px-2 py-2">RPE MEDIA</th>
                             <th className="px-2 py-2">MINUTOS TOT</th>
                             <th className="px-2 py-2">CARGA (UA)</th>
+                            <th className="px-2 py-2">MOLESTIAS</th>
+                            <th className="px-2 py-2">ENFERMEDAD</th>
                             <th className="px-4 py-2 text-right">ESTADO</th>
                           </tr>
                         </thead>
@@ -1304,6 +1326,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             const status = getLoadStatus(totalLoad);
                             const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
                             
+                            // Aggregated molestias and illness from sessions
+                            const allMolestias = Array.from(new Set(sessions.map(s => s.molestias).filter(m => m && m.trim() !== ''))).join(', ');
+                            const allEnfermedad = Array.from(new Set(sessions.map(s => s.enfermedad).filter(e => e && e.trim() !== ''))).join(', ');
+
                             return (
                               <tr key={player.id} className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}>
                                 <td className="px-4 py-0.5 text-left">
@@ -1320,6 +1346,20 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <td className="px-2 py-0.5 font-black text-[10px] italic text-[#0b1220]">{rpeAvg ? rpeAvg.toFixed(1) : '—'}</td>
                                 <td className="px-2 py-0.5 text-slate-500 font-black italic text-[8px]">{totalMin}'</td>
                                 <td className="px-2 py-0.5 font-black text-[10px] italic text-red-600">{totalLoad}</td>
+                                <td className="px-2 py-0.5">
+                                  {allMolestias ? (
+                                    <span className="text-[6px] font-black italic uppercase px-1.5 py-0.5 rounded-full text-amber-600 bg-amber-50 border border-amber-100 uppercase truncate max-w-[80px] block mx-auto">
+                                      {allMolestias}
+                                    </span>
+                                  ) : <span className="text-slate-300">-</span>}
+                                </td>
+                                <td className="px-2 py-0.5">
+                                  {allEnfermedad ? (
+                                    <span className="text-[6px] font-black italic uppercase px-1.5 py-0.5 rounded-full text-red-600 bg-red-50 border border-red-100 uppercase truncate max-w-[80px] block mx-auto">
+                                      {allEnfermedad}
+                                    </span>
+                                  ) : <span className="text-slate-300">-</span>}
+                                </td>
                                 <td className="px-4 py-0.5 text-right">
                                   <span className={`px-1.5 py-0.5 rounded-full text-[6px] font-black italic tracking-widest border ${status.color.replace('text-', 'border-').replace('600', '200')} ${status.color.replace('text-', 'bg-').replace('600', '50')} ${status.color}`}>
                                     {status.label}
@@ -1336,6 +1376,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                               <td className="px-2 py-0.5 text-emerald-400 text-sm">{reportData.loadAvg.rpe.toFixed(1)}</td>
                               <td className="px-2 py-0.5 text-emerald-400 text-xs">{reportData.loadAvg.duration.toFixed(0)}'</td>
                               <td className="px-2 py-0.5 text-red-500 text-sm">{reportData.loadAvg.load.toFixed(0)}</td>
+                              <td colSpan={2} className="bg-[#0b1220]"></td>
                               <td className="px-4 py-0.5 text-right text-slate-400 text-[7px] tracking-widest bg-[#0b1220]">UA TOTAL</td>
                             </tr>
                           )}
@@ -1561,16 +1602,15 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           }
 
           .print-page-section {
-            break-after: page !important;
+            break-inside: avoid !important;
             position: relative !important;
-            height: 280mm !important;
-            width: 210mm !important;
-            margin: 0 !important;
-            padding: 10mm 15mm !important;
+            min-height: 270mm !important;
+            width: 190mm !important;
+            margin: 0 auto !important;
+            padding: 5mm 5mm !important;
             background: white !important;
             border: none !important;
             box-sizing: border-box !important;
-            overflow: hidden !important;
             display: block !important;
           }
 
@@ -1623,7 +1663,7 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
       <div className="flex items-center h-20 relative overflow-hidden">
         {/* Blue Segment */}
         <div className="bg-[#02428c] h-full flex items-center px-10 relative z-20 min-w-[380px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
-          <span className="text-4xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
+          <span className="text-4xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap font-['Bebas_Neue']">
             {dateDisplay}
           </span>
         </div>
@@ -1643,10 +1683,10 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
           </div>
           <div className="h-12 w-[2px] bg-slate-200"></div>
           <div className="flex flex-col">
-            <h2 className="text-2xl font-black text-[#02428c] uppercase tracking-tighter leading-tight">
+            <h2 className="text-2xl font-black text-[#02428c] uppercase tracking-tighter leading-tight font-['Bebas_Neue']">
               SELECCIÓN NACIONAL
             </h2>
-            <span className="text-2xl font-black text-red-600 uppercase tracking-tighter leading-none">
+            <span className="text-2xl font-black text-red-600 uppercase tracking-tighter leading-none font-['Bebas_Neue']">
               {formatCategoryLabel(selectedCategory)}
             </span>
           </div>

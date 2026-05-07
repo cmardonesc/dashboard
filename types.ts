@@ -164,6 +164,8 @@ export interface TrainingLoadData {
   soreness_areas?: string[];
   illness_symptoms?: string[];
   created_at?: string;
+  molestias?: string;
+  enfermedad?: string;
 }
 
 export interface GPSData {
