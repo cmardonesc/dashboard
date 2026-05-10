@@ -850,7 +850,10 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
               const schedule = weeklySchedule[dateKey] || [];
               const act = schedule[r];
               if (!act) return '';
-              return `${act.time}   ${act.type.toUpperCase()}`;
+              return { 
+                content: `${act.time}   ${act.type.toUpperCase()}`,
+                grupo: act.grupo 
+              };
           });
           body.push(row);
       }
@@ -903,9 +906,12 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
           }
         },
         didDrawCell: (data) => {
-          if (data.section === 'body' && data.cell.text[0]) {
-            const text = data.cell.text[0].toUpperCase();
-            let fillColor: [number, number, number] = [245, 245, 245];
+          if (data.section === 'body' && data.cell.raw) {
+            const raw = data.cell.raw as any;
+            const text = (raw.content || '').toUpperCase();
+            const grupo = raw.grupo;
+            
+            let fillColor: [number, number, number] = [255, 255, 255];
             let textColor: [number, number, number] = [60, 60, 60];
             let hasSpecialColor = false;
 
@@ -924,8 +930,13 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
             } else if (text.includes('PSICOLÓGICA') || text.includes('CHARLA')) {
                 fillColor = [163, 217, 119];
                 hasSpecialColor = true;
+            } else if (grupo === 'Concentrados') {
+                fillColor = [215, 215, 215]; // Gray for Concentrados
             } else if (text.includes('DESAYUNO') || text.includes('ALMUERZO') || text.includes('MERIENDA') || text.includes('CENA') || text.includes('SNACK')) {
-                fillColor = [215, 215, 215];
+                // For meals of non-concentrados, keep white (default) or light gray
+                fillColor = [255, 255, 255];
+            } else {
+                fillColor = [255, 255, 255];
             }
 
             doc.saveGraphicsState();
@@ -993,13 +1004,22 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     return String(idOrName).toUpperCase().replace('_', ' ');
   };
 
-  const getActivityStyle = (type: string) => {
+  const getActivityStyle = (type: string, grupo?: string) => {
     const t = type.toUpperCase();
-    if (t.includes('ENTRENAMIENTO') || t.includes('PARTIDO AMISTOSO')) return 'bg-red-600 text-white font-black';
+    
+    // 1. Actividades Específicas (Prioridad Máxima)
+    if (t.includes('ENTRENAMIENTO') || t.includes('PARTIDO AMISTOSO') || t.includes('PARTIDO OFICIAL')) return 'bg-red-600 text-white font-black';
     if (t.includes('GYM') || t.includes('GIMNASIO')) return 'bg-[#0b1220] text-white font-black';
     if (t.includes('PSICOLÓGICA') || t.includes('PSICOLOGO') || t.includes('CHARLA')) return 'bg-[#a3d977] text-[#0b1220] font-black';
-    if (t.includes('DESAYUNO') || t.includes('ALMUERZO') || t.includes('MERIENDA') || t.includes('SNACK') || t.includes('CENA') || t.includes('SALIDA') || t.includes('RETORNO')) return 'bg-slate-200 text-[#0b1220] font-bold';
     if (t.includes('DESCANSO')) return 'bg-sky-100 text-sky-700 font-black';
+    
+    // 2. Color por Grupo (Fallback)
+    if (grupo === 'Concentrados') return 'bg-slate-200 text-[#0b1220] font-bold';
+    
+    // 3. Actividades comunes (Solo si no es Concentrados o tiene grupo específico)
+    // Pero el usuario dice que si es "Todos" debe ser blanco.
+    // Si queremos mantener el gris para comidas de concentrados pero blanco si es para todos:
+    
     return 'bg-white text-[#0b1220] font-medium';
   };
 
@@ -1169,14 +1189,17 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                   </div>
                   <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
                     {schedule.map(act => {
-                      const groupStyles = act.grupo === 'Concentrados' 
-                        ? 'bg-slate-200 border-slate-300 shadow-inner' 
-                        : act.grupo === 'Santiago' 
-                          ? 'bg-blue-50 border-blue-200' 
-                          : 'bg-slate-50/80 border-slate-100';
+                      const rowStyle = getActivityStyle(act.type, act.grupo);
+                      const groupStyles = rowStyle.includes('bg-white') ? (
+                        act.grupo === 'Concentrados' 
+                          ? 'bg-slate-200 border-slate-300 shadow-inner' 
+                          : act.grupo === 'Santiago' 
+                            ? 'bg-blue-50 border-blue-200' 
+                            : 'bg-slate-50/80 border-slate-100'
+                      ) : rowStyle + ' border-transparent';
 
                       return (
-                        <div key={act.id} className={`${groupStyles} p-3 rounded-2xl border group/item relative`}>
+                        <div key={act.id} className={`${groupStyles} px-3 py-2 rounded-2xl border group/item relative`}>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-sm">{getEmojiForType(act.type)}</span>
                             <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{act.time}</span>
@@ -1391,15 +1414,15 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
               </div>
 
               {/* Printable Content (A4 Ratio) */}
-              <div className="flex-1 p-12 bg-white flex flex-col print:p-0" id="daily-report-print">
+              <div className="flex-1 p-8 bg-white flex flex-col print:p-0" id="daily-report-print">
                  
                   {/* 1. HEADER: Título y Datos del Microciclo (Rediseño con Diagonales y Colores Reales) */}
-                 <div className="mb-10 font-sans">
+                 <div className="mb-6 font-sans">
                     {/* Top Graphic Bar */}
-                    <div className="flex items-center h-20 relative overflow-hidden">
+                    <div className="flex items-center h-16 relative overflow-hidden">
                        {/* Blue Segment */}
-                       <div className="bg-[#02428c] h-full flex items-center px-10 relative z-20 min-w-[380px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
-                          <span className="text-4xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
+                       <div className="bg-[#02428c] h-full flex items-center px-8 relative z-20 min-w-[320px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
+                          <span className="text-3xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
                              {(() => {
                                 const d = currentWeekDays[selectedDayIndex];
                                 const weekday = d.toLocaleDateString('es-ES', { weekday: 'long' });
@@ -1436,7 +1459,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                     </div>
 
                     {/* Metadata Section */}
-                    <div className="mt-4 px-8 border-b-2 border-[#02428c] pb-2">
+                    <div className="mt-2 px-8 border-b-2 border-[#02428c] pb-2">
                        <div className="grid grid-cols-3 gap-8">
                           <div className="flex items-center gap-3">
                              <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
@@ -1451,10 +1474,19 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                              <span className="text-sm font-black text-red-600">
                                 {(() => {
                                    const dayActivities = weeklySchedule[formatDateKey(currentWeekDays[selectedDayIndex])] || [];
-                                   const training = dayActivities.find(a => a.type.toUpperCase().includes('ENTRENAMIENTO')) || dayActivities[0];
-                                   if (!training) return 'AM';
-                                   const hour = parseInt(training.time.split(':')[0]);
-                                   return hour < 12 ? 'AM' : 'PM';
+                                   if (dayActivities.length === 0) return 'AM';
+                                   
+                                   const hours = dayActivities.map(a => {
+                                     const h = parseInt(a.time.split(':')[0]);
+                                     return isNaN(h) ? 0 : h;
+                                   });
+                                   
+                                   const hasAM = hours.some(h => h < 12);
+                                   const hasPM = hours.some(h => h >= 12);
+                                   
+                                   if (hasAM && hasPM) return 'AM - PM';
+                                   if (hasPM) return 'PM';
+                                   return 'AM';
                                 })()}
                              </span>
                           </div>
@@ -1473,7 +1505,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                  {/* 3. TABLA DE ACTIVIDADES (REMOVED REDUNDANT HEADER) */}
 
                  {/* 3. TABLA DE ACTIVIDADES */}
-                 <div className="border-2 border-slate-100 rounded-2xl overflow-hidden mb-10">
+                 <div className="border-2 border-slate-100 rounded-2xl overflow-hidden mb-6">
                     <table className="w-full text-center border-collapse">
                        <thead>
                           <tr className="bg-slate-50 border-b-2 border-slate-100">
@@ -1486,12 +1518,12 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                           {(weeklySchedule[formatDateKey(currentWeekDays[selectedDayIndex])] || []).map((act, idx) => {
                              const rowStyle = getActivityStyle(act.type);
                              return (
-                               <tr key={idx} className={rowStyle}>
-                                  <td className="py-5 px-4 text-sm font-black tracking-tight border-r border-slate-50/20">{act.time}</td>
-                                  <td className="py-5 px-4 text-sm font-bold uppercase italic tracking-tight border-r border-slate-50/20">
+                               <tr key={idx} className={getActivityStyle(act.type, act.grupo)}>
+                                  <td className="py-2 px-4 text-xs font-black tracking-tight border-r border-slate-50/20">{act.time}</td>
+                                  <td className="py-2 px-4 text-xs font-bold uppercase italic tracking-tight border-r border-slate-50/20">
                                      {act.type}
                                   </td>
-                                  <td className="py-5 px-4 text-[10px] font-bold uppercase tracking-wider">
+                                  <td className="py-2 px-4 text-[9px] font-bold uppercase tracking-wider">
                                      {act.location}
                                   </td>
                                </tr>
