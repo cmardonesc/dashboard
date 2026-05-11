@@ -490,138 +490,6 @@ export default function DesconvocatoriaArea() {
     }
   };
 
-  const getDesconvocatoriaLetterBlob = async (clubName: string, players: User[]): Promise<Blob> => {
-    return new Promise((resolve) => {
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-
-      const contact = clubContacts.find(c => 
-        (c.club?.toLowerCase() || "").includes(clubName.toLowerCase()) || 
-        clubName.toLowerCase().includes(c.club?.toLowerCase() || "")
-      );
-
-      const presidentName = contact?.presidente || 'Presidente';
-      const recipientClub = clubName.toUpperCase();
-      
-      const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
-      const signatureUrl = getDriveDirectLink("https://drive.google.com/file/d/1ymLFGskIutsx2PpVJJQtjfGshSW5ul3R/view?usp=drive_link");
-      
-      let logoLoaded = false;
-      let signatureLoaded = false;
-      const logoImg = new Image();
-      const signatureImg = new Image();
-      
-      const checkAllLoaded = () => {
-        if (logoLoaded && signatureLoaded) {
-          finishPDF();
-        }
-      };
-
-      logoImg.crossOrigin = "anonymous";
-      logoImg.src = logoUrl;
-      logoImg.onload = () => {
-        logoLoaded = true;
-        checkAllLoaded();
-      };
-      logoImg.onerror = () => {
-        logoLoaded = true;
-        checkAllLoaded();
-      };
-
-      signatureImg.crossOrigin = "anonymous";
-      signatureImg.src = signatureUrl;
-      signatureImg.onload = () => {
-        signatureLoaded = true;
-        checkAllLoaded();
-      };
-      signatureImg.onerror = () => {
-        signatureLoaded = true;
-        checkAllLoaded();
-      };
-
-      const finishPDF = () => {
-        if (logoImg.complete && logoImg.naturalWidth !== 0) {
-          doc.addImage(logoImg, 'PNG', 91, 12, 28, 28); 
-        }
-
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "normal");
-        const today = new Date();
-        const dateStr = today.toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' });
-        doc.text(`Santiago de Chile, ${dateStr}`, 180, 55, { align: 'right' });
-
-        doc.setFont("helvetica", "bold");
-        doc.text("Señor Presidente", 25, 70);
-        doc.text(recipientClub, 25, 76);
-        doc.setFont("helvetica", "italic");
-        doc.text("Presente", 25, 82);
-        
-        doc.setFont("helvetica", "bold");
-        const categoryName = formatCategoryLabel(selectedMicro?.category_id);
-        doc.text(`Ref.: Carta de Desconvocatoria Selección Nacional ${categoryName}.`, 25, 100);
-        doc.setLineWidth(0.2);
-        doc.line(25, 101, 140, 101);
-
-        doc.setFont("helvetica", "normal");
-        doc.text("Estimado Presidente,", 25, 115);
-
-        const text1 = `El Cuerpo Técnico de la Selección Chilena de Fútbol, junto con la Gerencia de Selecciones Nacionales, tiene el agrado de comunicar la desconvocatoria ${players.length > 1 ? 'de los jugadores' : 'del jugador'} de sus registros, `;
-        const playerNames = players.map(p => p.name).join(', ');
-        const text2 = `, al Microciclo de entrenamientos que se desarrolla entre los días ${selectedMicro?.start_date} al ${selectedMicro?.end_date} de 2026 en ${selectedMicro?.city || 'Santiago'}.`;
-        
-        const fullBody = text1 + playerNames + text2;
-        const textMaxWidth = 160;
-        let currentY = 130;
-        const lineHeight = 6;
-
-        const lines = doc.splitTextToSize(fullBody, textMaxWidth);
-        doc.text(lines, 25, currentY, { align: 'justify', maxWidth: textMaxWidth });
-        currentY += (lines.length * lineHeight) + 10;
-
-        doc.text("Esta decisión se fundamenta en los siguientes reportes técnicos/médicos oficiales:", 25, currentY);
-        currentY += 8;
-
-        doc.setFont("helvetica", "normal");
-        players.forEach(p => {
-          const reason = bajaReasonsMap[p.id_del_jugador!] || "Motivos técnicos/médicos reservados";
-          const playerLine = `• ${p.name}: "${reason}"`;
-          const reasonLines = doc.splitTextToSize(playerLine, textMaxWidth - 10);
-          doc.text(reasonLines, 30, currentY);
-          currentY += (reasonLines.length * lineHeight) + 2;
-        });
-
-        currentY += 10;
-        const closingText = "Agradecemos de antemano su constante colaboración y disposición con nuestras Selecciones Nacionales Juveniles, permitiendo el desarrollo y seguimiento de los talentos de nuestro fútbol.";
-        const closingLines = doc.splitTextToSize(closingText, textMaxWidth);
-        doc.text(closingLines, 25, currentY, { align: 'justify', maxWidth: textMaxWidth });
-        currentY += (closingLines.length * lineHeight) + 10;
-
-        doc.text("Sin otro particular, le saluda atentamente,", 25, currentY);
-
-        // Signature image
-        if (signatureImg.complete && signatureImg.naturalWidth !== 0) {
-          doc.addImage(signatureImg, 'PNG', 85, 235, 40, 20); 
-        }
-
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.text("GERENCIA DE SELECCIONES", 105, 260, { align: 'center' });
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.text("FEDERACIÓN DE FÚTBOL DE CHILE", 105, 265, { align: 'center' });
-
-        doc.setFontSize(7);
-        doc.setTextColor(150);
-        doc.text("Documento Oficial • Departamento de Competiciones • ANFP", 105, 285, { align: 'center' });
-
-        resolve(doc.output('blob'));
-      };
-    });
-  };
-
   const downloadAllClubsZip = async () => {
     if (!selectedMicro || loading || isGeneratingZip) return;
     
@@ -766,94 +634,6 @@ export default function DesconvocatoriaArea() {
     });
   }, [microciclos, categoryFilters]);
 
-  // Fix: Explicitly typed PlayerReportSheet as React.FC to handle special React props like 'key' in sub-component render.
-  // Componente de Carta Formal de Desconvocatoria
-  const DesconvocatoriaLetter: React.FC<{ players: User[]; clubName: string; reason?: string }> = ({ players, clubName, reason }) => {
-    const today = new Date();
-    const dateStr = today.toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' });
-    const categoryName = formatCategoryLabel(selectedMicro?.category_id);
-    
-    return (
-      <div className="bg-white p-[25mm] min-h-[297mm] shadow-sm player-report-page font-serif text-[#0b1220] leading-relaxed">
-        {/* Header Logo */}
-        <div className="flex justify-center mb-12">
-          <img 
-            src={getDriveDirectLink(FEDERATION_LOGO)} 
-            alt="Federación Logo" 
-            className="h-32 w-auto object-contain"
-            referrerPolicy="no-referrer"
-          />
-        </div>
-
-        {/* Date and Location */}
-        <div className="text-right mb-10 text-sm">
-          Santiago de Chile, {dateStr}
-        </div>
-
-        {/* Recipient */}
-        <div className="mb-10 text-sm">
-          <p className="font-bold">Señor Presidente</p>
-          <p className="font-bold uppercase">{clubName}</p>
-          <p className="italic">Presente</p>
-        </div>
-
-        {/* Ref */}
-        <div className="mb-10 text-sm">
-          <p className="font-bold underline uppercase">Ref.: Carta de Desconvocatoria Selección Nacional {categoryName}.</p>
-        </div>
-
-        {/* Salutation */}
-        <div className="mb-6 text-sm">
-          <p>Estimado Presidente,</p>
-        </div>
-
-        {/* Body */}
-        <div className="mb-8 text-sm text-justify space-y-4">
-          <p>
-            El Cuerpo Técnico de la Selección Chilena de Fútbol, junto con la Gerencia de Selecciones Nacionales,
-            tiene el agrado de comunicar la desconvocatoria {players.length > 1 ? 'de los jugadores' : 'del jugador'} de sus registros, 
-            {players.length > 1 ? (
-              <span className="font-bold"> {players.map(p => p.name).join(', ')}</span>
-            ) : (
-              <span className="font-bold"> {players[0].name}</span>
-            )}, al Microciclo de entrenamientos que se desarrolla entre los días 
-            <span className="font-bold"> {selectedMicro?.start_date} al {selectedMicro?.end_date}</span> de 2026 en {selectedMicro?.city || 'Santiago'}.
-          </p>
-          
-          <div className="space-y-2">
-            <p>Esta decisión se fundamenta en los siguientes reportes técnicos/médicos oficiales:</p>
-            <ul className="list-disc pl-5">
-              {players.map(p => (
-                <li key={p.id}>
-                  <span className="font-bold">{p.name}:</span> <span className="italic">"{bajaReasonsMap[p.id_del_jugador!] || reason || bajaReason || 'Motivos técnicos/médicos reservados'}"</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <p>
-            Agradecemos de antemano su constante colaboración y disposición con nuestras Selecciones Nacionales Juveniles,
-            permitiendo el desarrollo y seguimiento de los talentos de nuestro fútbol.
-          </p>
-          <p>Sin otro particular, le saluda atentamente,</p>
-        </div>
-
-        {/* Closing Signature Area */}
-        <div className="mt-32 flex flex-col items-center">
-          <div className="w-48 border-t border-[#0b1220] pt-4 text-center">
-            <p className="text-[10px] font-bold uppercase tracking-widest">GERENCIA DE SELECCIONES</p>
-            <p className="text-[9px] uppercase tracking-tighter">FEDERACIÓN DE FÚTBOL DE CHILE</p>
-          </div>
-        </div>
-
-        {/* Footer Info */}
-        <div className="mt-auto pt-10 text-[8px] text-slate-400 text-center uppercase tracking-[0.3em]">
-          Documento Oficial • Departamento de Competiciones • ANFP
-        </div>
-      </div>
-    );
-  };
-
   // Componente Reutilizable para la Ficha del Jugador (Formato Oficial)
   const PlayerReportSheet: React.FC<{ player: User; history: HistoricalData }> = ({ player, history }) => {
     const wellnessChartData = history.wellness.map(w => ({
@@ -974,10 +754,10 @@ export default function DesconvocatoriaArea() {
                   <YAxis domain={[1, 5]} ticks={[1,2,3,4,5]} axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} padding={{ top: 20 }} />
                   <Tooltip />
                   <Legend verticalAlign="bottom" align="center" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', paddingTop: '20px' }} />
-                  <Line type="monotone" name="Dolor" dataKey="dolor" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }} activeDot={{ r: 6 }}>
+                  <Line isAnimationActive={false} type="monotone" name="Dolor" dataKey="dolor" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }} activeDot={{ r: 6 }}>
                     <LabelList dataKey="dolor" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0038A8' }} />
                   </Line>
-                  <Line type="monotone" name="Fatiga" dataKey="fatiga" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }} activeDot={{ r: 6 }}>
+                  <Line isAnimationActive={false} type="monotone" name="Fatiga" dataKey="fatiga" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }} activeDot={{ r: 6 }}>
                     <LabelList dataKey="fatiga" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#CF1B2B' }} />
                   </Line>
                 </LineChart>
@@ -1002,13 +782,13 @@ export default function DesconvocatoriaArea() {
                   <YAxis domain={[1, 5]} ticks={[1,2,3,4,5]} axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} padding={{ top: 20 }} />
                   <Tooltip />
                   <Legend verticalAlign="bottom" align="center" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', paddingTop: '20px' }} />
-                  <Line type="monotone" name="Estrés" dataKey="estres" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }}>
+                  <Line isAnimationActive={false} type="monotone" name="Estrés" dataKey="estres" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }}>
                     <LabelList dataKey="estres" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#CF1B2B' }} />
                   </Line>
-                  <Line type="monotone" name="Sueño" dataKey="sueno" stroke="#10b981" strokeWidth={4} dot={{ r: 4, fill: '#10b981' }}>
+                  <Line isAnimationActive={false} type="monotone" name="Sueño" dataKey="sueno" stroke="#10b981" strokeWidth={4} dot={{ r: 4, fill: '#10b981' }}>
                     <LabelList dataKey="sueno" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#10b981' }} />
                   </Line>
-                  <Line type="monotone" name="Ánimo" dataKey="animo" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }}>
+                  <Line isAnimationActive={false} type="monotone" name="Ánimo" dataKey="animo" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }}>
                     <LabelList dataKey="animo" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0038A8' }} />
                   </Line>
                 </LineChart>
@@ -1056,7 +836,7 @@ export default function DesconvocatoriaArea() {
                   <YAxis hide />
                   <Tooltip />
                   <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', paddingTop: '20px' }} />
-                  <Line type="monotone" name="Carga (UA)" dataKey="srpe" stroke="#0b1220" strokeWidth={4} dot={{ r: 4, fill: '#0b1220' }} activeDot={{ r: 6 }}>
+                  <Line isAnimationActive={false} type="monotone" name="Carga (UA)" dataKey="srpe" stroke="#0b1220" strokeWidth={4} dot={{ r: 4, fill: '#0b1220' }} activeDot={{ r: 6 }}>
                     <LabelList dataKey="srpe" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0b1220' }} />
                   </Line>
                 </LineChart>
@@ -1120,13 +900,13 @@ export default function DesconvocatoriaArea() {
                   <YAxis axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} width={40} />
                   <Tooltip />
                   <Legend verticalAlign="top" align="right" height={30} iconType="square" wrapperStyle={{ fontSize: '7px', fontWeight: '900', textTransform: 'uppercase', paddingBottom: '10px' }} />
-                  <Bar name="Dist. >15 km/h" dataKey="dist_15" fill="#CF1B2B" radius={[4, 4, 0, 0]} barSize={12}>
+                  <Bar isAnimationActive={false} name="Dist. >15 km/h" dataKey="dist_15" fill="#CF1B2B" radius={[4, 4, 0, 0]} barSize={12}>
                     <LabelList dataKey="dist_15" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#CF1B2B' }} />
                   </Bar>
-                  <Bar name="Dist. >20 km/h" dataKey="dist_20" fill="#0038A8" radius={[4, 4, 0, 0]} barSize={12}>
+                  <Bar isAnimationActive={false} name="Dist. >20 km/h" dataKey="dist_20" fill="#0038A8" radius={[4, 4, 0, 0]} barSize={12}>
                     <LabelList dataKey="dist_20" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#0038A8' }} />
                   </Bar>
-                  <Line type="monotone" name="Dist. Total (m)" dataKey="dist_total" stroke="#0038A8" strokeWidth={3} dot={{ r: 3, fill: '#0038A8' }}>
+                  <Line isAnimationActive={false} type="monotone" name="Dist. Total (m)" dataKey="dist_total" stroke="#0038A8" strokeWidth={3} dot={{ r: 3, fill: '#0038A8' }}>
                     <LabelList dataKey="dist_total" position="top" offset={10} formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#0038A8' }} />
                   </Line>
                 </ComposedChart>
@@ -1144,13 +924,13 @@ export default function DesconvocatoriaArea() {
                   <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} width={35} />
                   <Tooltip />
                   <Legend verticalAlign="top" align="right" height={30} iconType="square" wrapperStyle={{ fontSize: '7px', fontWeight: '900', textTransform: 'uppercase', paddingBottom: '10px' }} />
-                  <Bar yAxisId="left" name="Dist. >25 km/h" dataKey="dist_25" fill="#CF1B2B" radius={[4, 4, 0, 0]} barSize={12}>
+                  <Bar isAnimationActive={false} yAxisId="left" name="Dist. >25 km/h" dataKey="dist_25" fill="#CF1B2B" radius={[4, 4, 0, 0]} barSize={12}>
                     <LabelList dataKey="dist_25" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#CF1B2B' }} />
                   </Bar>
-                  <Bar yAxisId="left" name="Acc + Dec (AI)" dataKey="acc_dec" fill="#0038A8" radius={[4, 4, 0, 0]} barSize={12}>
+                  <Bar isAnimationActive={false} yAxisId="left" name="Acc + Dec (AI)" dataKey="acc_dec" fill="#0038A8" radius={[4, 4, 0, 0]} barSize={12}>
                     <LabelList dataKey="acc_dec" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#0038A8' }} />
                   </Bar>
-                  <Line yAxisId="right" type="monotone" name="Esfuerzos >25 km/h" dataKey="sprints" stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981' }}>
+                  <Line isAnimationActive={false} yAxisId="right" type="monotone" name="Esfuerzos >25 km/h" dataKey="sprints" stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981' }}>
                     <LabelList dataKey="sprints" position="top" offset={10} formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#10b981' }} />
                   </Line>
                 </ComposedChart>
@@ -1238,7 +1018,7 @@ export default function DesconvocatoriaArea() {
   const renderMainContent = () => {
     if (viewMode === 'club_print' && selectedClubForPrint && selectedMicro) {
       return (
-        <div className="space-y-6 animate-in fade-in duration-300 pb-20 print:bg-white">
+        <div className="space-y-6 pb-20 print:bg-white">
           <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm flex items-center justify-between print:hidden">
              <div className="flex items-center gap-6">
                 <div className="w-14 h-14 bg-[#0b1220] rounded-2xl flex items-center justify-center text-white shadow-xl"><i className="fa-solid fa-file-pdf"></i></div>
@@ -1266,11 +1046,6 @@ export default function DesconvocatoriaArea() {
           </div>
 
           <div id="club-report-container" className="max-w-[850px] mx-auto space-y-10 print:space-y-0">
-            <DesconvocatoriaLetter 
-              players={selectedClubForPrint.players} 
-              clubName={selectedClubForPrint.name} 
-              reason="Reporte técnico/médico consolidado"
-            />
             {selectedClubForPrint.players.map(p => (
               <PlayerReportSheet 
                 key={p.id} 
@@ -1285,11 +1060,11 @@ export default function DesconvocatoriaArea() {
 
     if (viewMode === 'club_list' && selectedMicro) {
       return (
-        <div className="space-y-6 animate-in fade-in duration-300 pb-20 relative">
+        <div className="space-y-6 pb-20 relative">
           {/* Progress Overlay for ZIP */}
           {zipProgress && (
             <div className="fixed inset-0 bg-[#0b1220]/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center text-white">
-              <div className="w-24 h-24 bg-red-600 rounded-3xl flex items-center justify-center mb-8 shadow-2xl animate-bounce">
+              <div className="w-24 h-24 bg-red-600 rounded-3xl flex items-center justify-center mb-8 shadow-2xl">
                 <i className="fa-solid fa-file-zipper text-4xl"></i>
               </div>
               <h2 className="text-3xl font-black italic tracking-tighter uppercase mb-2">Generando Reportes</h2>
@@ -1372,7 +1147,7 @@ export default function DesconvocatoriaArea() {
 
     if (viewMode === 'report' && processingBajaAtleta && selectedMicro) {
       return (
-        <div className="space-y-6 animate-in fade-in duration-300 pb-20 print:bg-white">
+        <div className="space-y-6 pb-20 print:bg-white">
           <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm flex items-center justify-between print:hidden">
             <div className="flex items-center gap-6">
               <div className="w-14 h-14 bg-red-600 rounded-2xl flex items-center justify-center text-white shadow-xl"><i className="fa-solid fa-file-contract"></i></div>
@@ -1400,11 +1175,6 @@ export default function DesconvocatoriaArea() {
           </div>
 
           <div id="report-printable" className="bg-white max-w-[850px] mx-auto shadow-2xl print:shadow-none print:p-0">
-            <DesconvocatoriaLetter 
-              players={[processingBajaAtleta]} 
-              clubName={processingBajaAtleta.club || 'CLUB'} 
-              reason={bajaReason}
-            />
             <PlayerReportSheet player={processingBajaAtleta} history={historicalData} />
           </div>
         </div>
@@ -1413,7 +1183,7 @@ export default function DesconvocatoriaArea() {
 
     if (viewMode === 'details' && selectedMicro) {
       return (
-        <div className="space-y-6 animate-in fade-in duration-300 transform-gpu">
+        <div className="space-y-6">
            <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-6">
               <button onClick={() => setViewMode('grid')} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center hover:bg-slate-900 hover:text-white transition-all shadow-inner"><i className="fa-solid fa-arrow-left"></i></button>
@@ -1441,7 +1211,7 @@ export default function DesconvocatoriaArea() {
             </div>
             <div className="p-10">
               {loadingPlayers ? (
-                <div className="py-20 text-center animate-pulse text-slate-400 font-black uppercase italic tracking-widest">Consultando Supabase...</div>
+                <div className="py-20 text-center text-slate-400 font-black uppercase italic tracking-widest">Consultando Supabase...</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {citedPlayers.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
@@ -1462,7 +1232,7 @@ export default function DesconvocatoriaArea() {
     }
 
     return (
-      <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="space-y-8">
         <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm flex items-center gap-6">
           <div className="w-14 h-14 bg-red-600 rounded-2xl flex items-center justify-center text-white shadow-xl"><i className="fa-solid fa-user-minus"></i></div>
           <div>
@@ -1493,7 +1263,7 @@ export default function DesconvocatoriaArea() {
         </div>
 
         {loading ? (
-          <div className="py-32 text-center animate-pulse">
+          <div className="py-32 text-center">
             <i className="fa-solid fa-spinner fa-spin text-slate-200 text-5xl mb-6"></i>
             <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest italic">Sincronizando procesos...</p>
           </div>
@@ -1546,7 +1316,7 @@ export default function DesconvocatoriaArea() {
       {/* Modal para Motivo de Baja */}
       {showBajaModal && (
         <div className="fixed inset-0 bg-[#0b1220]/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[40px] w-full max-w-xl p-10 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-[40px] w-full max-w-xl p-10 shadow-2xl border border-slate-100">
             <div className="flex items-center gap-6 mb-8">
               <div className="w-16 h-16 bg-red-600 rounded-3xl flex items-center justify-center text-white shadow-xl">
                 <i className="fa-solid fa-user-xmark text-2xl"></i>
