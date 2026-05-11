@@ -154,6 +154,27 @@ const LogisticaJugadores: React.FC = () => {
     }
   };
 
+  const handleDelete = async (e: React.MouseEvent, playerId: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!window.confirm('¿Estás seguro de eliminar este jugador? Esta acción no se puede deshacer y podría fallar si el jugador tiene registros técnicos asociados (GPS, Wellness, etc).')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('players')
+        .delete()
+        .eq('id_del_jugador', playerId);
+
+      if (error) throw error;
+      
+      await fetchPlayers();
+    } catch (err) {
+      console.error('Error deleting player:', err);
+      alert('No se pudo eliminar el jugador. Probablemente tiene datos vinculados en otras áreas (GPS, Médico, Física). Debes eliminar esos registros primero.');
+    }
+  };
+
   const openEdit = (player: User) => {
     setEditingPlayer(player);
     setIsModalOpen(true);
@@ -271,12 +292,22 @@ const LogisticaJugadores: React.FC = () => {
                       <p className="text-[11px] font-black text-slate-700 uppercase">{player.position || 'S/D'}</p>
                     </td>
                     <td className="px-8 py-6 text-right">
-                      <button 
-                        onClick={() => openEdit(player)}
-                        className="w-10 h-10 bg-slate-50 text-slate-400 rounded-xl hover:bg-[#0b1220] hover:text-white transition-all"
-                      >
-                        <i className="fa-solid fa-pen-to-square text-xs"></i>
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        <button 
+                          onClick={() => openEdit(player)}
+                          className="w-10 h-10 bg-slate-50 text-slate-400 rounded-xl hover:bg-[#0b1220] hover:text-white transition-all"
+                          title="Editar"
+                        >
+                          <i className="fa-solid fa-pen-to-square text-xs"></i>
+                        </button>
+                        <button 
+                          onClick={(e) => handleDelete(e, player.id_del_jugador!)}
+                          className="w-10 h-10 bg-red-50 text-red-300 rounded-xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-center"
+                          title="Eliminar"
+                        >
+                          <i className="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
