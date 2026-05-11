@@ -1116,12 +1116,23 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Incluidos</span>
                     <span className="text-sm font-black text-[#0b1220] italic">{selectedPlayersReport.size}</span>
                   </div>
-                  <button 
-                    onClick={handleTriggerPrint} 
-                    className="bg-red-600 text-white px-12 py-5 rounded-full text-[11px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-red-700 transition-all shadow-xl active:scale-95"
-                  >
-                    <i className="fa-solid fa-file-pdf"></i> GENERAR PDF / IMPRIMIR
-                  </button>
+                  <div className="flex gap-4">
+                    <button 
+                      onClick={() => {
+                          const text = encodeURIComponent(`*REPORTE FISIOLÓGICO DIARIO*\n\n📅 *Fecha:* ${selectedDate}\n\nSe han consolidado los datos de la Selección. Saludos!`);
+                          window.open(`https://wa.me/?text=${text}`, '_blank');
+                      }}
+                      className="bg-[#25D366] text-white px-8 py-5 rounded-full text-[11px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-[#128C7E] transition-all shadow-xl active:scale-95"
+                    >
+                      <i className="fa-brands fa-whatsapp text-lg"></i> COMPARTIR
+                    </button>
+                    <button 
+                      onClick={handleTriggerPrint} 
+                      className="bg-red-600 text-white px-12 py-5 rounded-full text-[11px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-red-700 transition-all shadow-xl active:scale-95"
+                    >
+                      <i className="fa-solid fa-file-pdf"></i> GENERAR PDF / IMPRIMIR
+                    </button>
+                  </div>
                 </div>
              </div>
 

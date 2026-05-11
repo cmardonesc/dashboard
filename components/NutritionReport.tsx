@@ -170,13 +170,24 @@ export default function NutritionReport({ data, history, player, onClose, clubs 
   return (
     <div className="w-full bg-white shadow-xl rounded-[32px] md:rounded-[48px] overflow-hidden flex flex-col relative border border-slate-100 animate-in fade-in slide-in-from-bottom-8 duration-700">
       
-      {/* Print Button */}
-      <button 
-        onClick={() => window.print()}
-        className="absolute top-4 right-4 md:top-8 md:right-8 z-50 bg-[#0b1220] text-white w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center hover:bg-red-600 transition-all shadow-xl print:hidden group"
-      >
-        <i className="fa-solid fa-print group-hover:scale-110 transition-transform"></i>
-      </button>
+      {/* Action Buttons */}
+      <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50 flex gap-3 print:hidden">
+        <button 
+          onClick={() => {
+              const text = encodeURIComponent(`*REPORTE NUTRICIONAL Y ANTROPOMÉTRICO*\n\n👤 *Atleta:* ${player.name}\n⚽ *Categoría:* ${player.category?.replace('_', ' ') || 'S/C'}\n📅 *Última Evaluación:* ${new Date(data.fecha_medicion).toLocaleDateString('es-CL')}\n\nSe ha emitido el reporte nutricional actualizado. Saludos!`);
+              window.open(`https://wa.me/?text=${text}`, '_blank');
+          }}
+          className="bg-[#25D366] text-white w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center hover:bg-[#128C7E] transition-all shadow-xl group"
+        >
+          <i className="fa-brands fa-whatsapp text-xl md:text-2xl group-hover:scale-110 transition-transform"></i>
+        </button>
+        <button 
+          onClick={() => window.print()}
+          className="bg-[#0b1220] text-white w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center hover:bg-red-600 transition-all shadow-xl group"
+        >
+          <i className="fa-solid fa-print group-hover:scale-110 transition-transform"></i>
+        </button>
+      </div>
 
       <div className="flex flex-col h-full">
         

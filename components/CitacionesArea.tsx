@@ -621,176 +621,183 @@ export default function CitacionesArea({
     return doc.output('blob');
   };
 
-  const generateFormalLetterPDF = (clubName: string, players: User[]) => {
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
+  const getFormalLetterBlob = async (clubName: string, players: User[]): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const contact = clubContacts.find(c => 
+        (c.club?.toLowerCase() || "").includes(clubName.toLowerCase()) || 
+        clubName.toLowerCase().includes(c.club?.toLowerCase() || "")
+      );
+
+      const presidentName = contact?.presidente || 'Presidente';
+      const recipientCargo = contact?.cargo || 'Presidente';
+      const recipientClub = clubName.toUpperCase();
+      
+      const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+      const signatureUrl = getDriveDirectLink("https://drive.google.com/file/d/1ymLFGskIutsx2PpVJJQtjfGshSW5ul3R/view?usp=drive_link");
+      
+      let logoLoaded = false;
+      let signatureLoaded = false;
+      const logoImg = new Image();
+      const signatureImg = new Image();
+      
+      const checkAllLoaded = () => {
+        if (logoLoaded && signatureLoaded) {
+          finishPDF();
+        }
+      };
+
+      logoImg.crossOrigin = "anonymous";
+      logoImg.src = logoUrl;
+      logoImg.onload = () => {
+        logoLoaded = true;
+        checkAllLoaded();
+      };
+      logoImg.onerror = () => {
+        logoLoaded = true;
+        checkAllLoaded();
+      };
+
+      signatureImg.crossOrigin = "anonymous";
+      signatureImg.src = signatureUrl;
+      signatureImg.onload = () => {
+        signatureLoaded = true;
+        checkAllLoaded();
+      };
+      signatureImg.onerror = () => {
+        signatureLoaded = true;
+        checkAllLoaded();
+      };
+
+      const finishPDF = () => {
+        if (logoImg.complete && logoImg.naturalWidth !== 0) {
+          doc.addImage(logoImg, 'PNG', 91, 12, 28, 28); 
+        } else {
+          doc.setDrawColor(30, 58, 138);
+          doc.setLineWidth(0.5);
+          doc.circle(105, 26, 14);
+        }
+
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.2);
+        doc.rect(10, 10, 190, 277); 
+
+        const today = new Date();
+        const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        const formattedToday = `Santiago de Chile, ${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
+        
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "normal");
+        doc.text(formattedToday, 180, 55, { align: 'right' });
+
+        doc.setFont("helvetica", "bold");
+        doc.text("Señor", 25, 65);
+        doc.text(presidentName, 25, 71);
+        doc.text(recipientCargo, 25, 77);
+        doc.text(`Club ${recipientClub}`, 25, 83);
+        doc.setLineWidth(0.3);
+        doc.line(25, 84, 45, 84);
+        doc.text("Presente", 25, 89);
+        
+        doc.setFont("helvetica", "bold");
+        const categoryName = formatCategoryLabel(selectedMicro?.category_id);
+        const refText = `${letterConfig.headerRef} ${categoryName}.`;
+        doc.text(refText, 25, 105);
+        const refWidth = doc.getTextWidth(refText);
+        doc.setLineWidth(0.2);
+        doc.line(25, 106, 25 + refWidth, 106);
+
+        doc.setFont("helvetica", "normal");
+        const salutation = recipientCargo.toLowerCase().includes('presidente') ? "Estimado presidente," : "Estimado señor,";
+        doc.text(salutation, 25, 118);
+
+        const startDate = new Date(selectedMicro?.start_date + 'T12:00:00');
+        const startDay = startDate.getDate();
+        const endDay = new Date(selectedMicro?.end_date + 'T12:00:00').getDate();
+        const monthName = months[startDate.getMonth()];
+        const year = startDate.getFullYear();
+
+        const text1 = letterConfig.bodyPart1;
+        const playerNamesStr = players.map(p => p.name).join(', ');
+        const text2 = `${letterConfig.bodyPart2} ${startDay} al ${endDay} de ${monthName} del ${year}.`;
+        
+        const marginX = 25;
+        const textMaxWidth = 160;
+        let currentY = 130;
+        const lineHeight = 6;
+
+        const fullParagraph = text1 + playerNamesStr + text2;
+        const lines1 = doc.splitTextToSize(fullParagraph, textMaxWidth);
+        doc.text(lines1, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
+        currentY += lines1.length * lineHeight + 8;
+
+        const text3 = `${letterConfig.presentation} ${startDay} de ${monthName} ${letterConfig.presentationSuffix}`;
+        const lines3 = doc.splitTextToSize(text3, textMaxWidth);
+        doc.text(lines3, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
+        currentY += lines3.length * lineHeight + 10;
+
+        const text4 = letterConfig.guidelines;
+        const lines4 = doc.splitTextToSize(text4, textMaxWidth);
+        doc.text(lines4, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
+        currentY += lines4.length * lineHeight + 10;
+
+        const text5 = letterConfig.closing;
+        const lines5 = doc.splitTextToSize(text5, textMaxWidth);
+        doc.text(lines5, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
+        currentY += lines5.length * lineHeight + 15;
+
+        doc.text("Le saluda cordialmente,", marginX, currentY);
+
+        if (signatureImg.complete && signatureImg.naturalWidth !== 0) {
+          doc.addImage(signatureImg, 'PNG', 85, 240, 40, 20); 
+        }
+
+        doc.setFont("helvetica", "bold");
+        doc.text(letterConfig.signatureName, 105, 265, { align: 'center' });
+        doc.setFontSize(9);
+        doc.text(letterConfig.signatureRole, 105, 270, { align: 'center' });
+
+        doc.setFontSize(7);
+        doc.setTextColor(200, 200, 200);
+        doc.text("CMSPORTECH.COM", 190, 287, { align: 'right' });
+
+        resolve(doc.output('blob'));
+      };
     });
-
-    const contact = clubContacts.find(c => 
-      (c.club?.toLowerCase() || "").includes(clubName.toLowerCase()) || 
-      clubName.toLowerCase().includes(c.club?.toLowerCase() || "")
-    );
-
-    const presidentName = contact?.presidente || 'Presidente';
-    const recipientCargo = contact?.cargo || 'Presidente';
-    const recipientClub = clubName.toUpperCase();
-    
-    // Header Logo & Signature
-    const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
-    const signatureUrl = getDriveDirectLink("https://drive.google.com/file/d/1ymLFGskIutsx2PpVJJQtjfGshSW5ul3R/view?usp=drive_link");
-    
-    let logoLoaded = false;
-    let signatureLoaded = false;
-    const logoImg = new Image();
-    const signatureImg = new Image();
-    
-    const checkAllLoaded = () => {
-      if (logoLoaded && signatureLoaded) {
-        finishPDF();
-      }
-    };
-
-    logoImg.crossOrigin = "anonymous";
-    logoImg.src = logoUrl;
-    logoImg.onload = () => {
-      logoLoaded = true;
-      checkAllLoaded();
-    };
-    logoImg.onerror = () => {
-      logoLoaded = true;
-      checkAllLoaded();
-    };
-
-    signatureImg.crossOrigin = "anonymous";
-    signatureImg.src = signatureUrl;
-    signatureImg.onload = () => {
-      signatureLoaded = true;
-      checkAllLoaded();
-    };
-    signatureImg.onerror = () => {
-      signatureLoaded = true;
-      checkAllLoaded();
-    };
-
-    const finishPDF = () => {
-      // Add Logo if loaded correctly
-      if (logoImg.complete && logoImg.naturalWidth !== 0) {
-        doc.addImage(logoImg, 'PNG', 91, 12, 28, 28); 
-      } else {
-        // Fallback
-        doc.setDrawColor(30, 58, 138);
-        doc.setLineWidth(0.5);
-        doc.circle(105, 26, 14);
-      }
-
-      // Page Border - A4 is 210x297
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.2);
-      doc.rect(10, 10, 190, 277); 
-
-      // Date
-      const today = new Date();
-      const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-      const formattedToday = `Santiago de Chile, ${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
-      
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.text(formattedToday, 180, 55, { align: 'right' });
-
-      // Recipient
-      doc.setFont("helvetica", "bold");
-      doc.text("Señor", 25, 65);
-      doc.text(presidentName, 25, 71);
-      doc.text(recipientCargo, 25, 77);
-      doc.text(`Club ${recipientClub}`, 25, 83);
-      doc.setLineWidth(0.3);
-      doc.line(25, 84, 45, 84);
-      doc.text("Presente", 25, 89);
-      
-      // Ref
-      doc.setFont("helvetica", "bold");
-      const categoryName = formatCategoryLabel(selectedMicro?.category_id);
-      const refText = `${letterConfig.headerRef} ${categoryName}.`;
-      doc.text(refText, 25, 105);
-      const refWidth = doc.getTextWidth(refText);
-      doc.setLineWidth(0.2);
-      doc.line(25, 106, 25 + refWidth, 106);
-
-      // Salutation
-      doc.setFont("helvetica", "normal");
-      const salutation = recipientCargo.toLowerCase().includes('presidente') ? "Estimado presidente," : "Estimado señor,";
-      doc.text(salutation, 25, 118);
-
-      // Body (Continuous Text Paragraph)
-      const startDate = new Date(selectedMicro?.start_date + 'T12:00:00');
-      const startDay = startDate.getDate();
-      const endDay = new Date(selectedMicro?.end_date + 'T12:00:00').getDate();
-      const monthName = months[startDate.getMonth()];
-      const year = startDate.getFullYear();
-
-      const text1 = letterConfig.bodyPart1;
-      const playerNamesStr = players.map(p => p.name).join(', ');
-      const text2 = `${letterConfig.bodyPart2} ${startDay} al ${endDay} de ${monthName} del ${year}.`;
-      
-      const marginX = 25;
-      const textMaxWidth = 160;
-      let currentY = 130;
-      const lineHeight = 6;
-
-      const fullParagraph = text1 + playerNamesStr + text2;
-      const lines1 = doc.splitTextToSize(fullParagraph, textMaxWidth);
-      doc.text(lines1, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
-      currentY += lines1.length * lineHeight + 8;
-
-      const text3 = `${letterConfig.presentation} ${startDay} de ${monthName} ${letterConfig.presentationSuffix}`;
-      const lines3 = doc.splitTextToSize(text3, textMaxWidth);
-      doc.text(lines3, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
-      currentY += lines3.length * lineHeight + 10;
-
-      const text4 = letterConfig.guidelines;
-      const lines4 = doc.splitTextToSize(text4, textMaxWidth);
-      doc.text(lines4, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
-      currentY += lines4.length * lineHeight + 10;
-
-      const text5 = letterConfig.closing;
-      const lines5 = doc.splitTextToSize(text5, textMaxWidth);
-      doc.text(lines5, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
-      currentY += lines5.length * lineHeight + 15;
-
-      doc.text("Le saluda cordialmente,", marginX, currentY);
-
-      // Signature (Image + Text)
-      if (signatureImg.complete && signatureImg.naturalWidth !== 0) {
-        // Adjust values for size/position as needed. Centered above the text.
-        doc.addImage(signatureImg, 'PNG', 85, 240, 40, 20); 
-      }
-
-      doc.setFont("helvetica", "bold");
-      doc.text(letterConfig.signatureName, 105, 265, { align: 'center' });
-      doc.setFontSize(9);
-      doc.text(letterConfig.signatureRole, 105, 270, { align: 'center' });
-
-      // Watermark
-      doc.setFontSize(7);
-      doc.setTextColor(200, 200, 200);
-      doc.text("CMSPORTECH.COM", 190, 287, { align: 'right' });
-
-      // Save
-      doc.save(`Carta_Convocatoria_${clubName.replace(/\s+/g, '_')}.pdf`);
-    };
   };
 
-  const generatePDFByClub = (clubName: string, players: User[]) => {
+  const generateFormalLetterPDF = async (clubName: string, players: User[]) => {
     try {
-      const blob = generatePDFBlob(clubName, players);
+      const blob = await getFormalLetterBlob(clubName, players);
+      saveAs(blob, `Carta_Convocatoria_${clubName.replace(/\s+/g, '_')}.pdf`);
+    } catch (err) {
+      console.error("Error generating formal letter:", err);
+      alert("Error al generar la carta formal.");
+    }
+  };
+
+  const generatePDFByClub = async (clubName: string, players: User[]) => {
+    try {
+      const blob = await getFormalLetterBlob(clubName, players);
       const fileName = `Citacion_${clubName.replace(/\s+/g, '_')}_Microciclo_${selectedMicro?.id}.pdf`;
       saveAs(blob, fileName);
     } catch (err) {
       console.error("Error generating individual PDF:", err);
       alert("Hubo un error al generar el PDF del club.");
     }
+  };
+
+  const shareCitationWhatsApp = (clubName: string, players: User[]) => {
+    if (!selectedMicro) return;
+    const category = formatCategoryLabel(selectedMicro.category_id);
+    const playerCount = players.length;
+    const text = encodeURIComponent(`*NÓMINA DE CITACIÓN - ${clubName.toUpperCase()}*\n\n⚽ *Categoría:* ${category}\n🔄 *Microciclo:* #${selectedMicro.micro_number || selectedMicro.id}\n👥 *Jugadores:* ${playerCount}\n\nSe ha enviado la selección de jugadores para el próximo proceso. Saludos!`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
   const generateAllClubsPDF = async () => {
@@ -805,10 +812,13 @@ export default function CitacionesArea({
     }
 
     try {
-      entries.forEach(([clubName, players]) => {
-        const blob = generatePDFBlob(clubName, players);
+      // Usar Promise.all para generar todos los PDFs de forma asíncrona
+      const pdfPromises = entries.map(async ([clubName, players]) => {
+        const blob = await getFormalLetterBlob(clubName, players);
         folder?.file(`Citacion_${clubName.replace(/\s+/g, '_')}.pdf`, blob);
       });
+
+      await Promise.all(pdfPromises);
       
       const content = await zip.generateAsync({ type: "blob" });
       saveAs(content, `Nóminas_Completas_Microciclo_${selectedMicro?.id}.zip`);
@@ -863,7 +873,7 @@ export default function CitacionesArea({
 
       // Generar PDF y convertir a Base64 para enviar como adjunto
       console.log("[MAIL] Generando PDF...");
-      const pdfBlob = generatePDFBlob(emailClub, clubPlayers);
+      const pdfBlob = await getFormalLetterBlob(emailClub, clubPlayers);
       const reader = new FileReader();
       
       const pdfBase64Promise = new Promise<string>((resolve, reject) => {
@@ -1179,7 +1189,16 @@ export default function CitacionesArea({
                 onClick={generateAllClubsPDF}
                 className="bg-white text-slate-900 px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-slate-50 transition-all flex items-center gap-3 transform active:scale-95"
               >
-                <i className="fa-solid fa-file-zipper text-lg text-[#CF1B2B]"></i> DESCARGAR TODO (.ZIP)
+                <i className="fa-solid fa-file-zipper text-lg text-[#CF1B2B]"></i> DESCARGAR TODO
+              </button>
+              <button 
+                onClick={() => {
+                  const text = encodeURIComponent(`*NÓMINA GENERAL DE CITACIONES*\n\nSe han oficializado todas las nóminas para el próximo proceso de la Selección. Categoría: ${formatCategoryLabel(selectedMicro?.category_id)}.`);
+                  window.open(`https://wa.me/?text=${text}`, '_blank');
+                }}
+                className="bg-[#25D366] text-white px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-[#128C7E] transition-all flex items-center gap-3 transform active:scale-95"
+              >
+                <i className="fa-brands fa-whatsapp text-lg"></i> COMPARTIR
               </button>
             </div>
           </div>
@@ -1291,6 +1310,13 @@ export default function CitacionesArea({
                   </div>
                 </div>
                 <div className="flex gap-2">
+                  <button 
+                    onClick={() => shareCitationWhatsApp(clubName, players)}
+                    className="w-10 h-10 bg-[#25D366]/10 border border-[#25D366]/20 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-xl flex items-center justify-center transition-all shadow-sm"
+                    title="Compartir por WhatsApp"
+                  >
+                    <i className="fa-brands fa-whatsapp"></i>
+                  </button>
                   <button 
                     onClick={() => generateFormalLetterPDF(clubName, players)}
                     className="w-10 h-10 bg-[#CF1B2B]/5 border border-[#CF1B2B]/20 text-[#CF1B2B] hover:bg-[#CF1B2B] hover:text-white rounded-xl flex items-center justify-center transition-all shadow-sm"

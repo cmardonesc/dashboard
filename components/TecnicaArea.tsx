@@ -8,6 +8,7 @@ import { getDriveDirectLink } from '../lib/utils';
 import { FEDERATION_LOGO } from '../constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 
 type ViewMode = 'selection' | 'management';
 type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia';
@@ -771,6 +772,77 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     }
   };
 
+  const downloadDailyReportPDF = async () => {
+    if (selectedDayIndex === null || !selectedMicro) return;
+    
+    setGeneratingReport(true);
+    try {
+      const container = document.getElementById('daily-report-print');
+      
+      if (!container) throw new Error("Plantilla no encontrada");
+
+      // Capturamos el Canvas
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        onclone: (clonedDoc: Document) => {
+           // Asegurar que el contenedor sea visible en el clon para ser capturado
+           const target = clonedDoc.getElementById('daily-report-print');
+           if (target) {
+              target.style.display = 'flex';
+              target.style.opacity = '1';
+           }
+        }
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      
+      const microName = selectedMicro.micro_number || selectedMicro.id;
+      const category = formatCategoryLabel(selectedMicro.category_id).replace(/\s+/g, '-').toLowerCase();
+      const dayName = currentWeekDays[selectedDayIndex].toLocaleDateString('es-ES', { weekday: 'long' }).toLowerCase();
+      
+      const fileName = `microciclo-${microName}-${category}-${dayName}.pdf`;
+      pdf.save(fileName);
+      
+    } catch (err) {
+      console.error("Error al descargar PDF:", err);
+      alert("Hubo un error al generar el PDF del reporte diario.");
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
+  const shareDailyReportWhatsApp = () => {
+    if (selectedDayIndex === null || !selectedMicro) return;
+    
+    const microName = selectedMicro.micro_number || selectedMicro.id;
+    const category = formatCategoryLabel(selectedMicro.category_id);
+    const dayName = currentWeekDays[selectedDayIndex].toLocaleDateString('es-ES', { weekday: 'long' });
+    
+    const text = encodeURIComponent(`*REPORTE DIARIO - ${category}*\n\n📅 *Día:* ${dayName}\n🔄 *Microciclo:* #${microName}\n\nSe ha generado el reporte diario de actividades. Saludos!`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const shareWeeklyReportWhatsApp = () => {
+    if (!selectedMicro) return;
+    
+    const microName = selectedMicro.micro_number || selectedMicro.id;
+    const category = formatCategoryLabel(selectedMicro.category_id);
+    const startDate = selectedMicro.start_date;
+    
+    const text = encodeURIComponent(`*CRONOGRAMA SEMANAL - ${category}*\n\n🔄 *Microciclo:* #${microName}\n📅 *Inicio:* ${startDate}\n\nSe ha compartido el cronograma semanal de actividades de la Selección. Saludos!`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
   const generateWeeklySchedulePDF = async () => {
     if (!selectedMicro) return;
     setGeneratingReport(true);
@@ -875,17 +947,17 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         headStyles: {
           fillColor: [2, 66, 140],
           textColor: [255, 255, 255],
-          fontSize: 9,
+          fontSize: 8,
           fontStyle: 'bold',
           halign: 'center',
-          cellPadding: 3,
+          cellPadding: 2,
         },
         bodyStyles: {
-          fontSize: 7,
+          fontSize: 6.5,
           fontStyle: 'bold',
           textColor: [0, 0, 0],
-          cellPadding: 2,
-          minCellHeight: 8,
+          cellPadding: 1,
+          minCellHeight: 6,
           valign: 'middle',
           halign: 'center'
         },
@@ -945,7 +1017,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
             doc.roundedRect(data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, data.cell.height - 2, 1.5, 1.5, 'F');
             
             // Re-draw text because we cleared the cell earlier
-            doc.setFontSize(hasSpecialColor ? 7.5 : 7);
+            doc.setFontSize(hasSpecialColor ? 7 : 6.5);
             doc.setTextColor(textColor[0], textColor[1], textColor[2]);
             doc.setFont('helvetica', 'bold');
             
@@ -1155,6 +1227,12 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       {activeTab === 'cronograma' && (
         <div className="space-y-12 relative animate-in fade-in duration-300 transform-gpu">
           <div className="flex justify-end gap-3 px-4">
+            <button 
+              onClick={shareWeeklyReportWhatsApp}
+              className="bg-[#25D366] text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#128C7E] transition-all"
+            >
+              <i className="fa-brands fa-whatsapp text-sm"></i> Compartir
+            </button>
             <button 
               onClick={generateWeeklySchedulePDF} 
               disabled={generatingReport}
@@ -1388,10 +1466,21 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                     <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter">Vista Previa Reporte Diario</h3>
                     <div className="flex gap-3">
                       <button 
-                        onClick={() => window.print()} 
-                        className="bg-red-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:bg-red-700 transition-all"
+                        onClick={shareDailyReportWhatsApp}
+                        className="bg-[#25D366] text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:bg-[#128C7E] transition-all"
                       >
-                        <i className="fa-solid fa-print"></i> Imprimir
+                        <i className="fa-brands fa-whatsapp"></i> Compartir
+                      </button>
+                      <button 
+                        onClick={downloadDailyReportPDF} 
+                        disabled={generatingReport}
+                        className="bg-red-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:bg-red-700 transition-all disabled:opacity-50"
+                      >
+                        {generatingReport ? (
+                          <><i className="fa-solid fa-spinner fa-spin"></i> GENERANDO...</>
+                        ) : (
+                          <><i className="fa-solid fa-file-pdf"></i> DESCARGAR PDF</>
+                        )}
                       </button>
                       <button 
                         onClick={() => setShowDailyReportModal(false)} 
@@ -1419,10 +1508,10 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                   {/* 1. HEADER: Título y Datos del Microciclo (Rediseño con Diagonales y Colores Reales) */}
                  <div className="mb-6 font-sans">
                     {/* Top Graphic Bar */}
-                    <div className="flex items-center h-16 relative overflow-hidden">
+                    <div className="flex items-center h-20 relative overflow-hidden">
                        {/* Blue Segment */}
                        <div className="bg-[#02428c] h-full flex items-center px-8 relative z-20 min-w-[320px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
-                          <span className="text-3xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
+                          <span className="text-4xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
                              {(() => {
                                 const d = currentWeekDays[selectedDayIndex];
                                 const weekday = d.toLocaleDateString('es-ES', { weekday: 'long' });
@@ -1437,8 +1526,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                        <div className="bg-[#e2231a] h-full w-24 -ml-12 relative z-10 shadow-lg" style={{ clipPath: 'polygon(25% 0, 100% 0, 75% 100%, 0% 100%)' }}></div>
                        
                        {/* Logo Section */}
-                       <div className="flex items-center gap-6 ml-12">
-                          <div className="w-20 h-20 flex items-center justify-center p-1 bg-white rounded-full shadow-md">
+                       <div className="flex-1 flex items-center gap-4 ml-8 overflow-hidden">
+                          <div className="w-16 h-16 flex-shrink-0 flex items-center justify-center p-1 bg-white rounded-full shadow-md">
                              <img 
                                src={getDriveDirectLink(FEDERATION_LOGO)} 
                                alt="Logo" 
@@ -1446,12 +1535,12 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                                referrerPolicy="no-referrer"
                              />
                           </div>
-                          <div className="h-12 w-[2px] bg-slate-200"></div>
-                          <div className="flex flex-col">
-                             <h2 className="text-2xl font-black text-[#02428c] uppercase tracking-tighter leading-tight">
+                          <div className="h-10 w-[1.5px] bg-slate-200 flex-shrink-0"></div>
+                          <div className="flex flex-col min-w-0">
+                             <h2 className="text-xl font-black text-[#02428c] uppercase tracking-tighter leading-tight">
                                 SELECCIÓN NACIONAL
                              </h2>
-                             <span className="text-2xl font-black text-red-600 uppercase tracking-tighter leading-none">
+                             <span className="text-xl font-black text-red-600 uppercase tracking-tighter leading-tight">
                                 {formatCategoryLabel(selectedMicro?.category_id)}
                              </span>
                           </div>
