@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type PlayerMenuId = 'inicio' | 'reportes_wellness' | 'reportes_load' | 'reportes_match' | 'nutricion_antropometria' | 'nutricion_recomendaciones' | 'nutricion_formularios' | 'nutricion_chef' | 'gym_trainer' | 'rendimiento_vo2max' | 'perfil';
+export type PlayerMenuId = 'inicio' | 'reportes_wellness' | 'reportes_load' | 'reportes_match' | 'nutricion_antropometria' | 'nutricion_recomendaciones' | 'nutricion_formularios' | 'nutricion_chef' | 'gym_trainer' | 'rendimiento_vo2max' | 'perfil' | 'perfil_jugador';
 
 interface PlayerSidebarProps {
   activeMenu: PlayerMenuId;
@@ -51,13 +51,23 @@ const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange,
         </button>
 
         <button
+          onClick={() => handleMenuClick('perfil_jugador')}
+          className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-6'} py-4 rounded-2xl transition-all ${
+            activeMenu === 'perfil_jugador' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+          }`}
+        >
+          <i className="fa-solid fa-id-card text-lg"></i>
+          {!isCollapsed && <span className="font-bold text-sm">Ficha Técnica</span>}
+        </button>
+
+        <button
           onClick={() => handleMenuClick('perfil')}
           className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-6'} py-4 rounded-2xl transition-all ${
             activeMenu === 'perfil' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'
           }`}
         >
           <i className="fa-solid fa-user-gear text-lg"></i>
-          {!isCollapsed && <span className="font-bold text-sm">Mi Perfil</span>}
+          {!isCollapsed && <span className="font-bold text-sm">Configuración</span>}
         </button>
 
         {/* REPORTES */}

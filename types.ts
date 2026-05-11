@@ -105,6 +105,7 @@ export type MenuId =
   | 'usuarios'
   | 'logs'
   | 'importar_datos'
+  | 'perfil_jugador'
   | 'sports_science';
 
 export interface CitacionDB {
@@ -236,4 +237,20 @@ export interface ItineraryActivity {
   emoji: string;
   grupo?: string;
   isCustom?: boolean;
+}
+
+export interface MatchDB {
+  id?: string;
+  date: string;
+  time?: string;
+  opponent: string;
+  competition_type: string;
+  location?: string;
+  city?: string;
+  category_id: number;
+  microcycle_id?: number;
+  result?: string;
+  observations?: string;
+  created_at?: string;
+  updated_at?: string;
 }

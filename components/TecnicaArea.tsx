@@ -9,9 +9,10 @@ import { FEDERATION_LOGO } from '../constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import MatchesArea from './MatchesArea';
 
 type ViewMode = 'selection' | 'management';
-type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia';
+type SubTab = 'tareas' | 'evaluacion' | 'competencia' | 'partidos';
 
 interface Tarea {
   id: string;
@@ -79,7 +80,7 @@ const PREDEFINED_ACTIVITIES = [
 
 const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuChange, initialTab }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('selection');
-  const [activeTab, setActiveTab] = useState<SubTab>(initialTab || 'cronograma');
+  const [activeTab, setActiveTab] = useState<SubTab>(initialTab || 'partidos');
   const [selectedMicro, setSelectedMicro] = useState<MicrocicloUI | null>(null);
   const [selectedJornada, setSelectedJornada] = useState<'AM' | 'PM'>('AM');
   const [microciclos, setMicrociclos] = useState<MicrocicloUI[]>([]);
@@ -137,6 +138,15 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     fetchMicrocycles();
     fetchBiblioteca();
   }, []);
+
+  const COMP_TYPES = [
+    'Amistoso Nacional',
+    'Amistoso Internacional',
+    'Sudamericano',
+    'Mundial',
+    'Torneo Internacional',
+    'Otro'
+  ];
 
   const getEmojiForType = (type: string) => {
     const isCustom = !PREDEFINED_ACTIVITIES.some(a => type === a.label || type.startsWith(a.label + ' vs'));
@@ -266,7 +276,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     fetchWeeklyTasks(mc.id);
     fetchMatchReports(mc.category_id);
     setViewMode('management');
-    setActiveTab('cronograma');
+    setActiveTab('partidos');
   };
 
   const fetchMatchReports = async (categoryId: number) => {
@@ -1213,8 +1223,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       </div>
 
       <div className="bg-white/50 p-1.5 rounded-[24px] border border-slate-100 flex items-center gap-2 max-w-fit shadow-sm overflow-x-auto">
-        <button onClick={() => setActiveTab('cronograma')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'cronograma' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-          <i className="fa-regular fa-calendar-days text-sm"></i> Cronograma Semanal
+        <button onClick={() => setActiveTab('partidos')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'partidos' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+          <i className="fa-solid fa-trophy text-sm"></i> Partidos
         </button>
         <button onClick={() => setActiveTab('tareas')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'tareas' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
           <i className="fa-solid fa-futbol text-sm"></i> Tareas Semanales
@@ -1224,97 +1234,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         </button>
       </div>
 
-      {activeTab === 'cronograma' && (
-        <div className="space-y-12 relative animate-in fade-in duration-300 transform-gpu">
-          <div className="flex justify-end gap-3 px-4">
-            <button 
-              onClick={shareWeeklyReportWhatsApp}
-              className="bg-[#25D366] text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#128C7E] transition-all"
-            >
-              <i className="fa-brands fa-whatsapp text-sm"></i> Compartir
-            </button>
-            <button 
-              onClick={generateWeeklySchedulePDF} 
-              disabled={generatingReport}
-              className="bg-white border-2 border-slate-200 text-slate-500 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#0b1220] hover:text-white hover:border-[#0b1220] transition-all disabled:opacity-50"
-            >
-              {generatingReport ? (
-                <i className="fa-solid fa-spinner fa-spin"></i>
-              ) : (
-                <i className="fa-solid fa-file-pdf text-red-500"></i>
-              )}
-              {generatingReport ? 'Generando...' : 'Descargar Cronograma PDF'}
-            </button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-            {currentWeekDays.map((date, i) => {
-              const dateKey = formatDateKey(date);
-              const schedule = weeklySchedule[dateKey] || [];
-              const isWeekend = i >= 5;
-              
-              return (
-                <div key={dateKey} className={`flex flex-col h-[520px] rounded-[40px] transition-all relative group shadow-sm border ${isWeekend ? 'border-red-500/20 bg-red-50/5' : 'bg-white border-slate-100'} transform-gpu`}>
-                  <div className="pt-8 pb-4 text-center border-b border-dashed border-slate-100 relative group/header">
-                    <span className={`text-[10px] font-black uppercase tracking-[0.2em] block mb-1 ${isWeekend ? 'text-red-500' : 'text-slate-400'}`}>DÍA {i+1}</span>
-                    <span className={`text-3xl font-black tracking-tighter ${isWeekend ? 'text-red-600' : 'text-slate-800'}`}>{date.getDate()}</span>
-                    <button 
-                      onClick={() => handleCopyDay(dateKey)}
-                      className="absolute top-2 right-2 w-6 h-6 rounded-lg bg-slate-100 text-slate-400 hover:text-blue-600 transition-all flex items-center justify-center opacity-0 group-hover/header:opacity-100 shadow-sm"
-                      title="Copiar de otro día"
-                    >
-                      <i className="fa-solid fa-copy text-[10px]"></i>
-                    </button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                    {schedule.map(act => {
-                      const rowStyle = getActivityStyle(act.type, act.grupo);
-                      const groupStyles = rowStyle.includes('bg-white') ? (
-                        act.grupo === 'Concentrados' 
-                          ? 'bg-slate-200 border-slate-300 shadow-inner' 
-                          : act.grupo === 'Santiago' 
-                            ? 'bg-blue-50 border-blue-200' 
-                            : 'bg-slate-50/80 border-slate-100'
-                      ) : rowStyle + ' border-transparent';
-
-                      return (
-                        <div key={act.id} className={`${groupStyles} px-3 py-2 rounded-2xl border group/item relative`}>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm">{getEmojiForType(act.type)}</span>
-                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{act.time}</span>
-                            {act.grupo && act.grupo !== 'Todos' && (
-                              <span className={`text-[6px] font-black uppercase px-1 rounded ${act.grupo === 'Concentrados' ? 'bg-amber-200 text-amber-700' : 'bg-blue-200 text-blue-700'}`}>
-                                {act.grupo}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[10px] font-black text-slate-900 uppercase italic tracking-tight truncate leading-tight">{act.type}</p>
-                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter truncate">{act.location}</p>
-                          <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
-                            <button onClick={() => startEditing(act, i)} className="w-5 h-5 bg-white border border-slate-100 rounded-full text-blue-400 hover:text-blue-600 hover:border-blue-600 flex items-center justify-center shadow-sm">
-                              <i className="fa-solid fa-pen text-[8px]"></i>
-                            </button>
-                            <button onClick={() => removeActivity(dateKey, act)} className="w-5 h-5 bg-white border border-slate-100 rounded-full text-slate-300 hover:text-red-500 hover:border-red-500 flex items-center justify-center shadow-sm">
-                              <i className="fa-solid fa-xmark text-[10px]"></i>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="p-4 space-y-2">
-                    <button onClick={() => { setSelectedDayIndex(i); setShowDailyReportModal(true); }} className="w-full py-4 rounded-[20px] bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-red-600 transition-all shadow-md">
-                      <i className="fa-solid fa-file-lines"></i> Reporte Diario
-                    </button>
-                    <button onClick={() => { setSelectedDayIndex(i); setShowActivityModal(true); }} className="w-full py-4 rounded-[20px] bg-slate-50 border border-slate-100 text-slate-400 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-lg transition-all flex items-center justify-center gap-2 group">
-                      <i className="fa-solid fa-plus text-sm"></i>
-                      <span className="text-[10px] font-black uppercase tracking-widest">Agendar</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      {activeTab === 'partidos' && (
+        <MatchesArea selectedCategoryId={selectedMicro?.category_id || 0} />
       )}
 
       {activeTab === 'tareas' && (

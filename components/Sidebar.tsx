@@ -55,6 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
 
   const menuItems = [
     { id: 'inicio', label: 'Inicio', icon: 'fa-solid fa-house' },
+    { id: 'perfil_jugador', label: 'Perfil Jugador', icon: 'fa-solid fa-id-card' },
     { id: 'tecnica', label: 'Área Técnica', icon: 'fa-solid fa-bullseye' },
   ];
 
@@ -97,6 +98,16 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
       setter(value);
     }
   };
+
+  const filteredMenuItems = menuItems.filter(item => {
+    if (userRole === 'club') {
+      return item.id === 'inicio' || item.id === 'perfil_jugador';
+    }
+    if (userRole === 'player') {
+      return item.id === 'inicio' || item.id === 'perfil_jugador';
+    }
+    return true;
+  });
 
   return (
     <aside 
@@ -148,12 +159,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
       </div>
 
       <nav className="flex-1 px-3 space-y-2 mt-4">
-        {menuItems.filter(item => {
-          if (userRole === 'club') {
-            return item.id === 'inicio'; // Only allow 'inicio' for club role in this section
-          }
-          return true;
-        }).map((item) => {
+        {filteredMenuItems.map((item) => {
           const isActive = activeMenu === item.id;
           return (
             <button

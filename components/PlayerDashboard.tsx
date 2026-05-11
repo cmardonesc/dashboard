@@ -38,6 +38,7 @@ type AthleteView = 'menu' | 'wellness' | 'load' | 'match' | 'nutrition'
 import PlayerSidebar, { PlayerMenuId } from './PlayerSidebar'
 import ChefAssistant from './ChefAssistant'
 import AITrainer from './AITrainer'
+import PlayerProfileArea from './PlayerProfileArea'
 import { triggerPushNotification } from '../lib/notifications'
 
 const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
@@ -937,6 +938,16 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+        );
+      case 'perfil_jugador':
+        return (
+          <div className="w-full max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <PlayerProfileArea 
+              userRole="player"
+              initialPlayerId={player?.id_del_jugador}
+              clubs={dbClubs}
+            />
           </div>
         );
       case 'gym_trainer':
