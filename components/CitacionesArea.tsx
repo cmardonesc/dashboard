@@ -1341,7 +1341,7 @@ export default function CitacionesArea({
                       <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px] font-black italic">
                         {p.name.charAt(0)}
                       </div>
-                      <span className="text-[11px] font-bold text-slate-700 uppercase">{p.name}</span>
+                      <span className="text-[11px] font-bold text-slate-700 uppercase">{p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.id_del_jugador}</span></span>
                     </div>
                     <span className="text-[9px] font-black text-red-600 uppercase tracking-widest bg-red-50 px-2.5 py-1 rounded-full">{p.position}</span>
                   </div>
@@ -1390,7 +1390,9 @@ export default function CitacionesArea({
               <div key={p.id} className="bg-white/5 p-5 rounded-[28px] border border-white/5 group hover:bg-white/10 transition-all border-l-4 border-l-[#CF1B2B]">
                 <div className="flex items-center justify-between text-white">
                   <div>
-                    <div className="text-[11px] font-black uppercase italic leading-none mb-1">{p.name}</div>
+                    <div className="text-[11px] font-black uppercase italic leading-none mb-1">
+                      {p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.id_del_jugador}</span>
+                    </div>
                     <div className="text-[9px] text-slate-500 uppercase font-bold tracking-widest truncate w-48 flex items-center gap-2">
                       <span className="text-[#CF1B2B]">{p.position}</span> | <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-500 font-bold" />
                     </div>
@@ -1514,7 +1516,7 @@ export default function CitacionesArea({
                       </div>
                       <div className="overflow-hidden pr-4">
                         <div className={`text-[11px] font-black uppercase italic tracking-tighter leading-none mb-1 truncate ${isCited ? 'text-emerald-700' : 'text-slate-900'}`}>
-                          {p.name}
+                          {p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.id_del_jugador}</span>
                         </div>
                         <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate flex items-center gap-1.5 opacity-90">
                           <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-400 font-bold" /> <span className="text-slate-200">|</span> <span className={isCited ? 'text-emerald-500' : 'text-slate-500'}>{p.position}</span>

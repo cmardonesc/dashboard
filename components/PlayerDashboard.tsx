@@ -530,6 +530,48 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
               </div>
             </div>
 
+            {/* Quick Actions Shortcuts */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+              <button 
+                onClick={() => setActiveMenu('reportes_wellness' as PlayerMenuId)}
+                className="bg-[#CF1B2B] text-white p-6 rounded-[32px] shadow-lg shadow-red-500/10 hover:bg-black transition-all flex flex-col items-center gap-3 group border border-red-500/20"
+              >
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                  <i className="fa-solid fa-sun"></i>
+                </div>
+                <div className="text-center">
+                  <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Check-in Wellness</p>
+                  <p className="text-[8px] font-bold opacity-60 uppercase tracking-tighter">Reporte Matutino</p>
+                </div>
+              </button>
+              
+              <button 
+                onClick={() => setActiveMenu('reportes_load' as PlayerMenuId)}
+                className="bg-[#0b1220] text-white p-6 rounded-[32px] shadow-xl hover:bg-[#CF1B2B] transition-all flex flex-col items-center gap-3 group border border-white/5"
+              >
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                  <i className="fa-solid fa-chart-line"></i>
+                </div>
+                <div className="text-center">
+                  <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Check-out Carga</p>
+                  <p className="text-[8px] font-bold opacity-60 uppercase tracking-tighter">Post-Entrenamiento</p>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => setActiveMenu('reportes_match' as PlayerMenuId)}
+                className="bg-white border-2 border-slate-100 text-slate-900 p-6 rounded-[32px] shadow-sm hover:border-[#CF1B2B] hover:text-[#CF1B2B] transition-all flex flex-col items-center gap-3 group"
+              >
+                <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                  <i className="fa-solid fa-trophy"></i>
+                </div>
+                <div className="text-center">
+                  <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Competición</p>
+                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Reporte de Partido</p>
+                </div>
+              </button>
+            </div>
+
             {/* Status Boxes */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
               <div className={`p-5 md:p-6 rounded-[32px] border flex items-center justify-between transition-all duration-500 ${todayWellness ? 'bg-emerald-50/50 border-emerald-100 shadow-sm' : 'bg-slate-50/50 border-slate-100 shadow-sm'}`}>

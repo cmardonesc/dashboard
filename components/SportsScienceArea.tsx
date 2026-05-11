@@ -2148,6 +2148,68 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     return { avg, std, count: values.length, distribution, isInverted };
   };
 
+  const calculatePercentileStats = (metricKey: string) => {
+    const filteredPlayers = players.filter(p => {
+      const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
+      const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
+      return yearMatch && posMatch;
+    });
+
+    const values = filteredPlayers.map(p => {
+      let val: any = null;
+      if (metricKey === 'imtp_fuerza_n') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.imtp_fuerza_n;
+      else if (metricKey === 'vel_10m') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_10m;
+      else {
+        const option = METRICS_OPTIONS.find(o => o.key === metricKey);
+        if (option?.table === 'imtp') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
+        else if (option?.table === 'speed') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
+        else if (option?.table === 'vo2max') val = vo2max.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
+        else if (option?.table === 'antropometria') val = antropometria.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0]?.[metricKey as keyof AntropometriaData];
+      }
+      return Number(val);
+    }).filter(v => v !== null && !isNaN(v));
+
+    if (values.length === 0) return null;
+
+    const sorted = [...values].sort((a, b) => a - b);
+    const getP = (p: number) => {
+      const idx = Math.floor((p / 100) * (sorted.length - 1));
+      return sorted[idx];
+    };
+
+    const p90 = getP(90);
+    const p75 = getP(75);
+    const p50 = getP(50);
+    const p25 = getP(25);
+    const p10 = getP(10);
+
+    const isInverted = [
+      'masa_adiposa_kg', 
+      'masa_adiposa_pct', 
+      'tiempo_10m', 
+      'tiempo_10_20m', 
+      'tiempo_20_30m', 
+      'tiempo_total',
+      'sum_pliegues_6_mm',
+      'sum_pliegues_8_mm'
+    ].includes(metricKey);
+
+    const distribution = isInverted ? {
+      elite: values.filter(v => v <= p10).length,
+      competitive: values.filter(v => v > p10 && v <= p25).length,
+      development: values.filter(v => v > p25 && v <= p50).length,
+      attention: values.filter(v => v > p50).length
+    } : {
+      elite: values.filter(v => v >= p90).length,
+      competitive: values.filter(v => v >= p75 && v < p90).length,
+      development: values.filter(v => v >= p50 && v < p75).length,
+      attention: values.filter(v => v < p50).length
+    };
+
+    return { p90, p75, p50, p25, p10, count: values.length, distribution, isInverted };
+  };
+
   const renderCategoryBox = (metricKey: string, setMetric: (val: string) => void, title: string) => {
     const stats = calculateStats(metricKey);
     const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
@@ -2300,10 +2362,164 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     );
   };
 
+  const renderPercentileBox = (metricKey: string, title: string) => {
+    const stats = calculatePercentileStats(metricKey);
+    const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
+
+    return (
+      <div className="bg-white rounded-[40px] p-8 md:p-12 shadow-sm border border-slate-100 flex flex-col">
+        <div className="flex flex-wrap items-center justify-between gap-6 mb-12">
+          <div className="flex items-center gap-4">
+            <div className="w-3 h-10 bg-[#0b1220] rounded-full"></div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">{title}</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Análisis por Percentiles</p>
+            </div>
+          </div>
+          <div className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+            <i className="fa-solid fa-chart-bar"></i> {label}
+          </div>
+        </div>
+
+        {!stats ? (
+          <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-[32px] border border-dashed border-slate-200">
+            <i className="fa-solid fa-chart-simple text-slate-300 text-4xl mb-4"></i>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sin datos suficientes para calcular percentiles</p>
+          </div>
+        ) : (
+          <div className="space-y-10">
+            {/* RESUMEN PERCENTILES */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-900 rounded-3xl p-6 text-white">
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Mediana (P50)</p>
+                  <p className="text-3xl font-black italic tracking-tighter">
+                    {(stats.p50 != null && !isNaN(Number(stats.p50))) ? Number(stats.p50).toFixed(2) : '-'}
+                  </p>
+                </div>
+                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Elite (P90)</p>
+                  <p className="text-3xl font-black italic tracking-tighter text-slate-900">
+                    {(stats.p90 != null && !isNaN(Number(stats.p90))) ? Number(stats.p90).toFixed(2) : '-'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-center">
+                <div className="bg-slate-100/50 px-4 py-1.5 rounded-full flex items-center gap-2">
+                  <i className="fa-solid fa-users text-[10px] text-slate-400"></i>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Muestra Total: {stats.count} Jugadores</span>
+                </div>
+              </div>
+            </div>
+
+            {/* CATEGORÍAS PERCENTILES */}
+            <div className="space-y-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Distribución por Percentiles</p>
+              
+              <div className="grid grid-cols-1 gap-3">
+                {/* ELITE P90 */}
+                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-200">
+                      <i className="fa-solid fa-crown text-sm"></i>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Rango Élite (Top 10%)</p>
+                      <p className="text-xs font-bold text-slate-500">
+                        {stats.isInverted ? `Inferior a P10` : `Superior a P90`} ({stats.distribution.elite} jug.)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-emerald-700 italic tracking-tighter">
+                      {stats.isInverted ? '<=' : '>='} {(stats.isInverted ? stats.p10 : stats.p90).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* COMPETITIVO P75 */}
+                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                      <i className="fa-solid fa-bolt text-sm"></i>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Rango Competitivo</p>
+                      <p className="text-xs font-bold text-slate-500">
+                        {stats.isInverted ? `Entre P10 y P25` : `Entre P75 y P90`} ({stats.distribution.competitive} jug.)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-blue-700 italic tracking-tighter">
+                      {stats.isInverted 
+                        ? `${stats.p10.toFixed(2)} - ${stats.p25.toFixed(2)}`
+                        : `${stats.p75.toFixed(2)} - ${stats.p90.toFixed(2)}`
+                      }
+                    </p>
+                  </div>
+                </div>
+
+                {/* DESARROLLO P50 */}
+                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
+                      <i className="fa-solid fa-seedling text-sm"></i>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Rango en Desarrollo</p>
+                      <p className="text-xs font-bold text-slate-500">
+                        {stats.isInverted ? `Entre P25 y P50` : `Entre P50 y P75`} ({stats.distribution.development} jug.)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-amber-700 italic tracking-tighter">
+                      {stats.isInverted
+                        ? `${stats.p25.toFixed(2)} - ${stats.p50.toFixed(2)}`
+                        : `${stats.p50.toFixed(2)} - ${stats.p75.toFixed(2)}`
+                      }
+                    </p>
+                  </div>
+                </div>
+
+                {/* ATENCION < P50 */}
+                <div className="bg-red-50 border border-red-100 rounded-2xl p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-200">
+                      <i className="fa-solid fa-triangle-exclamation text-sm"></i>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Rango de Atención</p>
+                      <p className="text-xs font-bold text-slate-500">
+                        {stats.isInverted ? `Superior a P50` : `Inferior a P50`} ({stats.distribution.attention} jug.)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-red-700 italic tracking-tighter">
+                      {stats.isInverted ? '>' : '<'} {stats.p50.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-      {renderCategoryBox(metric1, setMetric1, "Caja de Análisis 1")}
-      {renderCategoryBox(metric2, setMetric2, "Caja de Análisis 2")}
+    <div className="space-y-12">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        {renderCategoryBox(metric1, setMetric1, "Caja de Análisis 1")}
+        {renderCategoryBox(metric2, setMetric2, "Caja de Análisis 2")}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        {renderPercentileBox(metric1, "Caja de Análisis 3 (Percentiles)")}
+        {renderPercentileBox(metric2, "Caja de Análisis 4 (Percentiles)")}
+      </div>
     </div>
   );
 };

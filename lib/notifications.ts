@@ -73,14 +73,35 @@ export async function subscribeToNotifications() {
 // Función para disparar la notificación vía Edge Function
 export const triggerPushNotification = async (payload: { title: string, body: string, url: string }) => {
   try {
+    // Verificamos si estamos en un entorno donde podemos invocar funciones
+    if (!supabase.functions) {
+      console.warn("Supabase Functions no está configurado.");
+      return null;
+    }
+
     // Invocamos la Edge Function de Supabase
+    // Usamos un timeout corto para no bloquear la UI si la función no responde
     const { data, error } = await supabase.functions.invoke('send-notification', {
       body: payload
     });
-    if (error) throw error;
+
+    if (error) {
+      // Si el error es 404, significa que la función no está desplegada
+      if (error.message?.includes('404') || error.status === 404) {
+        console.warn("⚠️ La Edge Function 'send-notification' no ha sido desplegada en este proyecto de Supabase. Sáltando notificación push.");
+        return null;
+      }
+      throw error;
+    }
+
     return data;
-  } catch (error) {
-    console.error("Error al invocar Edge Function:", error);
+  } catch (error: any) {
+    // Solo logueamos como error si no es un error esperado de configuración
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('Edge Function')) {
+      console.warn("ℹ️ No se pudo contactar con la Edge Function. Es probable que no esté configurada o desplegada aún:", error.message);
+    } else {
+      console.error("Error al invocar Edge Function:", error);
+    }
     // No lanzamos error para no bloquear el flujo principal de guardado
     return null;
   }
