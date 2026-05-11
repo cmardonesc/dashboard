@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import MatchesArea from './MatchesArea';
 
 type ViewMode = 'selection' | 'management';
-type SubTab = 'tareas' | 'evaluacion' | 'competencia' | 'partidos';
+type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia' | 'partidos';
 
 interface Tarea {
   id: string;
@@ -276,7 +276,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     fetchWeeklyTasks(mc.id);
     fetchMatchReports(mc.category_id);
     setViewMode('management');
-    setActiveTab('partidos');
+    setActiveTab('cronograma');
   };
 
   const fetchMatchReports = async (categoryId: number) => {
@@ -525,21 +525,37 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   };
 
   const removeActivity = async (dateKey: string, activity: any) => {
-    if (!activity.db_id) return;
+    const idToDelete = activity.db_id || activity.id;
+    if (!idToDelete) {
+      console.error("No se encontró el ID de la actividad para eliminar:", activity);
+      return;
+    }
+
     if (!window.confirm("¿Estás seguro de que quieres eliminar esta actividad?")) return;
+    
     try {
       const { error } = await supabase
         .from('cronograma_semanal')
         .delete()
-        .eq('id', activity.db_id);
+        .eq('id', idToDelete);
       
       if (error) throw error;
 
       setWeeklySchedule(prev => ({ 
         ...prev, 
-        [dateKey]: (prev[dateKey] || []).filter(a => a.id !== activity.id) 
+        [dateKey]: (prev[dateKey] || []).filter(a => {
+          const aid = a.db_id || a.id;
+          return String(aid) !== String(idToDelete);
+        }) 
       }));
+
+      logActivity('Eliminación Actividad', { 
+        microcycle: selectedMicro?.nombre_display, 
+        date: dateKey, 
+        activity: activity.type 
+      });
     } catch (err: any) {
+      console.error("Error al eliminar de Supabase:", err);
       alert("Error al eliminar: " + err.message);
     }
   };
@@ -1223,6 +1239,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       </div>
 
       <div className="bg-white/50 p-1.5 rounded-[24px] border border-slate-100 flex items-center gap-2 max-w-fit shadow-sm overflow-x-auto">
+        <button onClick={() => setActiveTab('cronograma')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'cronograma' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+          <i className="fa-solid fa-calendar-week text-sm"></i> Cronograma Semanal
+        </button>
         <button onClick={() => setActiveTab('partidos')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'partidos' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
           <i className="fa-solid fa-trophy text-sm"></i> Partidos
         </button>
@@ -1233,6 +1252,102 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
           <i className="fa-solid fa-trophy text-sm"></i> Reportes Competición
         </button>
       </div>
+
+      {activeTab === 'cronograma' && (
+        <div className="space-y-12 animate-in fade-in duration-300 transform-gpu">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
+              <span className="w-2 h-6 bg-red-600 rounded-full"></span>
+              Itinerario y Cronograma Semanal
+            </h3>
+            <div className="flex flex-wrap items-center gap-3">
+              <button 
+                onClick={generateWeeklySchedulePDF} 
+                disabled={generatingReport}
+                className="bg-white border-2 border-slate-200 text-slate-500 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#0b1220] hover:text-white hover:border-[#0b1220] transition-all disabled:opacity-50"
+              >
+                {generatingReport ? (
+                  <i className="fa-solid fa-spinner fa-spin"></i>
+                ) : (
+                  <i className="fa-solid fa-file-pdf text-red-500"></i>
+                )}
+                {generatingReport ? 'Generando...' : 'Exportar Cronograma PDF'}
+              </button>
+              <button 
+                onClick={shareWeeklyReportWhatsApp} 
+                className="bg-[#25D366] text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:bg-[#128C7E] transition-all"
+              >
+                <i className="fa-brands fa-whatsapp text-lg"></i> Compartir WhatsApp
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+            {currentWeekDays.map((date, i) => {
+              const dateKey = formatDateKey(date);
+              const dayActivities = weeklySchedule[dateKey] || [];
+              const isWeekend = i >= 5;
+              
+              return (
+                <div key={dateKey} className={`flex flex-col min-h-[520px] rounded-[40px] border transition-all relative group shadow-sm ${isWeekend ? 'bg-red-50/10 border-red-100' : 'bg-white border-slate-100'} transform-gpu`}>
+                  <div className="pt-8 pb-4 text-center border-b border-dashed border-slate-100 relative">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">DÍA {i+1}</p>
+                    <p className="text-2xl font-black text-slate-900 italic tracking-tighter">{date.getDate()} {date.toLocaleDateString('es-ES', { month: 'short' }).toUpperCase()}</p>
+                    <button 
+                      onClick={() => { setSelectedDayIndex(i); setSpecialNote(''); setShowDailyReportModal(true); }}
+                      className="absolute top-2 right-4 text-slate-300 hover:text-red-600 transition-all p-1"
+                      title="Generar Reporte Diario"
+                    >
+                      <i className="fa-solid fa-file-lines text-xs"></i>
+                    </button>
+                  </div>
+                  
+                  <div className="flex-1 p-3 space-y-2 overflow-y-auto max-h-[380px] custom-scrollbar">
+                    {dayActivities.map(act => (
+                      <div key={act.id} className={`p-3 rounded-2xl group/act relative transition-all shadow-sm ${getActivityStyle(act.type, act.grupo)}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-black tracking-tight">{act.time}</span>
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={(e) => { e.stopPropagation(); startEditing(act, i); }} className="opacity-0 group-hover/act:opacity-100 text-[10px] hover:scale-125 transition-all text-inherit"><i className="fa-solid fa-pen"></i></button>
+                            <button onClick={(e) => { e.stopPropagation(); removeActivity(dateKey, act); }} className="opacity-0 group-hover/act:opacity-100 text-[10px] hover:scale-125 transition-all text-red-400"><i className="fa-solid fa-trash-can"></i></button>
+                          </div>
+                        </div>
+                        <p className="text-[10px] font-black uppercase italic leading-tight truncate">{act.type}</p>
+                        <p className="text-[8px] opacity-60 uppercase font-black tracking-widest truncate mt-1 flex items-center gap-1">
+                          <i className="fa-solid fa-location-dot text-[7px]"></i> {act.location}
+                        </p>
+                      </div>
+                    ))}
+                    {dayActivities.length === 0 && (
+                      <div className="flex flex-col items-center justify-center h-full opacity-20 py-10">
+                        <i className="fa-solid fa-clock-rotate-left text-2xl mb-2"></i>
+                        <p className="text-[8px] font-black uppercase tracking-widest text-center italic px-4">Sin actividades</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 space-y-2 bg-slate-50/50 rounded-b-[40px]">
+                    <button 
+                      onClick={() => { setSelectedDayIndex(i); setEditingActivityId(null); setShowActivityModal(true); }} 
+                      className="w-full py-4 bg-[#0b1220] hover:bg-red-600 text-white rounded-[20px] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-md group"
+                    >
+                      <i className="fa-solid fa-calendar-plus group-hover:scale-110 transition-transform"></i>
+                      <span>Actividad</span>
+                    </button>
+                    <button 
+                      onClick={() => handleCopyDay(dateKey)} 
+                      className="w-full py-4 bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-600 rounded-[20px] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-sm group"
+                    >
+                      <i className="fa-solid fa-clone group-hover:rotate-12 transition-transform"></i>
+                      <span>Copiar Bloque</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {activeTab === 'partidos' && (
         <MatchesArea selectedCategoryId={selectedMicro?.category_id || 0} />
