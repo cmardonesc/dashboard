@@ -504,11 +504,11 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6">
-              <div className="md:col-span-12 bg-[#0b1220] rounded-[32px] md:rounded-[40px] p-6 md:p-10 flex items-center justify-between shadow-2xl relative overflow-hidden group">
+              <div className="md:col-span-12 bg-[#0b1220] rounded-[28px] md:rounded-[40px] p-5 md:p-10 flex items-center justify-between shadow-2xl relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full -mr-16 -mt-16 group-hover:bg-red-600/20 transition-all duration-700"></div>
                 <div className="relative z-10 flex flex-col gap-1">
-                  <h2 className="text-white text-xl md:text-4xl font-black italic uppercase tracking-tighter leading-none">{player?.name || 'ATLETA DEMO'}</h2>
-                  <div className="flex items-center gap-2 text-white/40 text-[8px] md:text-[10px] font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">
+                  <h2 className="text-white text-lg md:text-4xl font-black italic uppercase tracking-tighter leading-none">{player?.name || 'ATLETA DEMO'}</h2>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-white/40 text-[7px] md:text-[10px] font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">
                     <ClubBadge clubName={player?.club} clubs={dbClubs} logoSize="w-3 h-3" className="text-white/40 font-bold uppercase" />
                     <span className="text-white/20">|</span>
                     <span>{player?.position || 'SIN POSICIÓN'}</span>
@@ -547,7 +547,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
               
               <button 
                 onClick={() => setActiveMenu('reportes_load' as PlayerMenuId)}
-                className="bg-[#0b1220] text-white p-6 rounded-[32px] shadow-xl hover:bg-[#CF1B2B] transition-all flex flex-col items-center gap-3 group border border-white/5"
+                className="bg-blue-600 text-white p-6 rounded-[32px] shadow-xl hover:bg-blue-700 transition-all flex flex-col items-center gap-3 group border border-white/5"
               >
                 <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
                   <i className="fa-solid fa-chart-line"></i>
@@ -573,38 +573,38 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             </div>
 
             {/* Status Boxes */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-              <div className={`p-5 md:p-6 rounded-[32px] border flex items-center justify-between transition-all duration-500 ${todayWellness ? 'bg-emerald-50/50 border-emerald-100 shadow-sm' : 'bg-slate-50/50 border-slate-100 shadow-sm'}`}>
-                <div className="flex items-center gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className={`p-4 md:p-6 rounded-[24px] md:rounded-[32px] border flex items-center justify-between transition-all duration-500 ${todayWellness ? 'bg-emerald-50/50 border-emerald-100 shadow-sm' : 'bg-slate-50/50 border-slate-100 shadow-sm'}`}>
+                <div className="flex items-center gap-3 md:gap-4">
                   <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center text-lg md:text-xl ${todayWellness ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
                     <i className="fa-solid fa-sun"></i>
                   </div>
                   <div>
-                    <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5 md:mb-1">Check-in Wellness</p>
-                    <p className={`text-[10px] md:text-xs font-black uppercase tracking-tighter ${todayWellness ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      {todayWellness ? `CONTESTADO (${formatTime(todayWellness.created_at)})` : 'NO CONTESTADO'}
+                    <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5 md:mb-1">Wellness</p>
+                    <p className={`text-[9px] md:text-xs font-black uppercase tracking-tighter ${todayWellness ? 'text-emerald-700' : 'text-slate-400'}`}>
+                      {todayWellness ? `LISTO` : 'PENDIENTE'}
                     </p>
                   </div>
                 </div>
-                <div className="text-right hidden xs:block">
-                  <p className="text-[8px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }).toUpperCase()}</p>
+                <div className="text-right">
+                  <p className="text-[8px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{todayWellness ? formatTime(todayWellness.created_at) : '-'}</p>
                 </div>
               </div>
 
-              <div className={`p-5 md:p-6 rounded-[32px] border flex items-center justify-between transition-all duration-500 ${todayLoad ? 'bg-emerald-50/50 border-emerald-100 shadow-sm' : 'bg-slate-50/50 border-slate-100 shadow-sm'}`}>
-                <div className="flex items-center gap-4">
+              <div className={`p-4 md:p-6 rounded-[24px] md:rounded-[32px] border flex items-center justify-between transition-all duration-500 ${todayLoad ? 'bg-emerald-50/50 border-emerald-100 shadow-sm' : 'bg-slate-50/50 border-slate-100 shadow-sm'}`}>
+                <div className="flex items-center gap-3 md:gap-4">
                   <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center text-lg md:text-xl ${todayLoad ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
                     <i className="fa-solid fa-chart-line"></i>
                   </div>
                   <div>
-                    <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5 md:mb-1">Check-out Carga</p>
-                    <p className={`text-[10px] md:text-xs font-black uppercase tracking-tighter ${todayLoad ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      {todayLoad ? `CONTESTADO (${formatTime(todayLoad.created_at)})` : 'NO CONTESTADO'}
+                    <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5 md:mb-1">Carga</p>
+                    <p className={`text-[9px] md:text-xs font-black uppercase tracking-tighter ${todayLoad ? 'text-emerald-700' : 'text-slate-400'}`}>
+                      {todayLoad ? `LISTO` : 'PENDIENTE'}
                     </p>
                   </div>
                 </div>
-                <div className="text-right hidden xs:block">
-                  <p className="text-[8px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }).toUpperCase()}</p>
+                <div className="text-right">
+                  <p className="text-[8px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{todayLoad ? formatTime(todayLoad.created_at) : '-'}</p>
                 </div>
               </div>
             </div>
@@ -1133,15 +1133,16 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           setIsCollapsed={setIsSidebarCollapsed} 
           onRefresh={onRefresh}
           refreshing={refreshing}
+          onCloseMobile={() => setIsMobileMenuOpen(false)}
         />
       </div>
       
-      <main className="flex-1 h-screen overflow-y-auto w-full">
-        <div className="bg-white px-4 md:px-8 py-4 border-b border-slate-200 flex justify-between items-center sticky top-0 z-40 shadow-sm">
-          <div className="flex items-center gap-4">
+      <main className="flex-1 min-h-screen overflow-y-auto w-full bg-slate-50">
+        <div className="bg-white px-4 md:px-8 py-3 md:py-4 border-b border-slate-200 flex justify-between items-center sticky top-0 z-[60] shadow-sm">
+          <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden w-10 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-50 rounded-xl transition-all"
+              className="lg:hidden w-10 h-10 flex items-center justify-center text-white bg-[#0b1220] rounded-xl transition-all shadow-lg active:scale-95"
             >
               <i className="fa-solid fa-bars"></i>
             </button>

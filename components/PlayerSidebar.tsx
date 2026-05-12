@@ -10,9 +10,10 @@ interface PlayerSidebarProps {
   setIsCollapsed: (val: boolean) => void;
   onRefresh?: () => void;
   refreshing?: boolean;
+  onCloseMobile?: () => void;
 }
 
-const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange, isCollapsed, setIsCollapsed, onRefresh, refreshing }) => {
+const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange, isCollapsed, setIsCollapsed, onRefresh, refreshing, onCloseMobile }) => {
   
   const [reportesOpen, setReportesOpen] = React.useState(activeMenu.startsWith('reportes_'));
   const [nutricionOpen, setNutricionOpen] = React.useState(activeMenu.startsWith('nutricion_'));
@@ -26,17 +27,27 @@ const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange,
   return (
     <aside className={`${isCollapsed ? 'w-20' : 'w-72'} h-screen bg-[#0b1220] flex flex-col sticky top-0 shrink-0 border-r border-white/5 shadow-2xl transition-all duration-300 z-50`}>
       <div className="p-6 flex items-center justify-between">
-        {!isCollapsed && (
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center shadow-lg shadow-red-900/20">
-              <span className="text-white font-black text-sm tracking-tighter">LR</span>
-            </div>
-            <h1 className="text-white font-black text-sm uppercase tracking-tighter">Espacio Atleta</h1>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center shadow-lg shadow-red-900/20">
+            <span className="text-white font-black text-sm tracking-tighter">LR</span>
           </div>
-        )}
-        <button onClick={() => setIsCollapsed(!isCollapsed)} className="text-slate-500 hover:text-white transition-colors mx-auto hidden lg:block">
-          <i className={`fa-solid fa-${isCollapsed ? 'indent' : 'outdent'}`}></i>
-        </button>
+          {!isCollapsed && <h1 className="text-white font-black text-sm uppercase tracking-tighter">Espacio Atleta</h1>}
+        </div>
+        
+        {/* Toggle / Close Buttons */}
+        <div className="flex items-center gap-2">
+          {/* Desktop Toggle */}
+          <button onClick={() => setIsCollapsed(!isCollapsed)} className="text-slate-500 hover:text-white transition-colors hidden lg:block">
+            <i className={`fa-solid fa-${isCollapsed ? 'indent' : 'outdent'}`}></i>
+          </button>
+          
+          {/* Mobile Close */}
+          {onCloseMobile && (
+            <button onClick={onCloseMobile} className="lg:hidden w-8 h-8 flex items-center justify-center text-slate-500 hover:text-white transition-colors">
+              <i className="fa-solid fa-xmark text-xl"></i>
+            </button>
+          )}
+        </div>
       </div>
 
       <nav className="flex-1 px-3 space-y-2 mt-4 overflow-y-auto custom-scrollbar">
