@@ -10,9 +10,10 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 import MatchesArea from './MatchesArea';
+import { ConvocatoriaTactical } from './ConvocatoriaTactical';
 
 type ViewMode = 'selection' | 'management';
-type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia' | 'partidos';
+type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia' | 'partidos' | 'convocatoria';
 
 interface Tarea {
   id: string;
@@ -31,6 +32,8 @@ interface TecnicaAreaProps {
   performanceRecords?: AthletePerformanceRecord[];
   onMenuChange?: (id: any) => void;
   initialTab?: SubTab;
+  hideCronograma?: boolean;
+  clubs?: any[];
 }
 
 const DINAMICAS_OFICIALES = [
@@ -78,9 +81,9 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'OTRA', emoji: '📝' },
 ];
 
-const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuChange, initialTab }) => {
+const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuChange, initialTab, hideCronograma, clubs }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('selection');
-  const [activeTab, setActiveTab] = useState<SubTab>(initialTab || 'partidos');
+  const [activeTab, setActiveTab] = useState<SubTab>(initialTab || (hideCronograma ? 'partidos' : 'cronograma'));
   const [selectedMicro, setSelectedMicro] = useState<MicrocicloUI | null>(null);
   const [selectedJornada, setSelectedJornada] = useState<'AM' | 'PM'>('AM');
   const [microciclos, setMicrociclos] = useState<MicrocicloUI[]>([]);
@@ -276,7 +279,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     fetchWeeklyTasks(mc.id);
     fetchMatchReports(mc.category_id);
     setViewMode('management');
-    setActiveTab('cronograma');
+    setActiveTab(initialTab || (hideCronograma ? 'partidos' : 'cronograma'));
   };
 
   const fetchMatchReports = async (categoryId: number) => {
@@ -847,6 +850,50 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     }
   };
 
+  const downloadDailyReportJPG = async () => {
+    if (selectedDayIndex === null || !selectedMicro) return;
+    
+    setGeneratingReport(true);
+    try {
+      const container = document.getElementById('daily-report-print');
+      
+      if (!container) throw new Error("Plantilla no encontrada");
+
+      // Capturamos el Canvas con mayor escala para nitidez en JPG
+      const canvas = await html2canvas(container, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        onclone: (clonedDoc: Document) => {
+           const target = clonedDoc.getElementById('daily-report-print');
+           if (target) {
+              target.style.display = 'flex';
+              target.style.opacity = '1';
+           }
+        }
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.9);
+      
+      const microName = selectedMicro.micro_number || selectedMicro.id;
+      const category = formatCategoryLabel(selectedMicro.category_id).replace(/\s+/g, '-').toLowerCase();
+      const dayName = currentWeekDays[selectedDayIndex].toLocaleDateString('es-ES', { weekday: 'long' }).toLowerCase();
+      const fileName = `reporte-diario-${microName}-${category}-${dayName}.jpg`;
+      
+      const link = document.createElement('a');
+      link.href = imgData;
+      link.download = fileName;
+      link.click();
+      
+    } catch (err) {
+      console.error("Error al descargar JPG:", err);
+      alert("Hubo un error al generar la imagen JPEG del reporte diario.");
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
   const shareDailyReportWhatsApp = () => {
     if (selectedDayIndex === null || !selectedMicro) return;
     
@@ -1239,11 +1286,16 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       </div>
 
       <div className="bg-white/50 p-1.5 rounded-[24px] border border-slate-100 flex items-center gap-2 max-w-fit shadow-sm overflow-x-auto">
-        <button onClick={() => setActiveTab('cronograma')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'cronograma' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-          <i className="fa-solid fa-calendar-week text-sm"></i> Cronograma Semanal
-        </button>
+        {!hideCronograma && (
+          <button onClick={() => setActiveTab('cronograma')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'cronograma' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+            <i className="fa-solid fa-calendar-week text-sm"></i> Cronograma Semanal
+          </button>
+        )}
         <button onClick={() => setActiveTab('partidos')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'partidos' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
           <i className="fa-solid fa-trophy text-sm"></i> Partidos
+        </button>
+        <button onClick={() => setActiveTab('convocatoria')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'convocatoria' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+          <i className="fa-solid fa-users-rectangle text-sm"></i> Convocatoria
         </button>
         <button onClick={() => setActiveTab('tareas')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'tareas' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
           <i className="fa-solid fa-futbol text-sm"></i> Tareas Semanales
@@ -1351,6 +1403,10 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
 
       {activeTab === 'partidos' && (
         <MatchesArea selectedCategoryId={selectedMicro?.category_id || 0} />
+      )}
+
+      {activeTab === 'convocatoria' && (
+        <ConvocatoriaTactical microId={selectedMicro!.id.toString()} categoryId={selectedMicro!.category_id} clubs={clubs || []} />
       )}
 
       {activeTab === 'tareas' && (
@@ -1516,6 +1572,17 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                           <><i className="fa-solid fa-spinner fa-spin"></i> GENERANDO...</>
                         ) : (
                           <><i className="fa-solid fa-file-pdf"></i> DESCARGAR PDF</>
+                        )}
+                      </button>
+                      <button 
+                        onClick={downloadDailyReportJPG} 
+                        disabled={generatingReport}
+                        className="bg-[#0b1220] text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg hover:bg-slate-800 transition-all disabled:opacity-50"
+                      >
+                        {generatingReport ? (
+                          <><i className="fa-solid fa-spinner fa-spin"></i> GENERANDO...</>
+                        ) : (
+                          <><i className="fa-solid fa-image"></i> DESCARGAR JPEG</>
                         )}
                       </button>
                       <button 

@@ -1092,7 +1092,9 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
       case 'contactos_clubes':
         return <ContactosClubesArea />;
       case 'planificacion_semanal':
-        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} initialTab="partidos" />;
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} initialTab="cronograma" />;
+      case 'tecnica':
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} clubs={clubs} hideCronograma={true} />;
       case 'perfil_jugador':
         return <PlayerProfileArea userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'logs':
@@ -1104,7 +1106,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
       default:
         const ContentComponent = {
           planificacion_anual: PlanificacionAnual,
-          tecnica: TecnicaArea,
           medica: MedicaArea,
           competencia: MatchManagementArea,
           citaciones: CitacionesArea,
