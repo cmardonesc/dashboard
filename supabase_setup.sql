@@ -42,7 +42,10 @@ create table if not exists public.medical_daily_reports (
   microcycle_id uuid references public.microcycles(id),
   report_date date default current_date,
   observation text not null,
-  severity text default 'low'
+  severity text default 'low',
+  diagnostico_medico text,
+  treatments_applied text[],
+  anio int
 );
 
 -- Create medical_treatments table

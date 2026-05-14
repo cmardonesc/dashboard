@@ -62,7 +62,18 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [visibleWidgets, setVisibleWidgets] = useState<string[]>(() => {
     const saved = localStorage.getItem('visibleWidgets');
-    return saved ? JSON.parse(saved) : ['weather', 'tasks', 'checkin', 'discomfort', 'schedule', 'ai_summary'];
+    if (!saved) return ['weather', 'tasks', 'checkin', 'soreness', 'illness', 'schedule', 'ai_summary'];
+    try {
+      let widgets = JSON.parse(saved);
+      if (widgets.includes('discomfort')) {
+        widgets = widgets.filter((w: string) => w !== 'discomfort');
+        if (!widgets.includes('soreness')) widgets.push('soreness');
+        if (!widgets.includes('illness')) widgets.push('illness');
+      }
+      return widgets;
+    } catch (e) {
+      return ['weather', 'tasks', 'checkin', 'soreness', 'illness', 'schedule', 'ai_summary'];
+    }
   });
 
   useEffect(() => {
@@ -75,7 +86,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
     { id: 'tasks', label: 'Tareas del Día', icon: 'fa-list-check', description: 'Listado de tareas técnicas y físicas programadas.' },
     { id: 'checkin', label: 'Check-in', icon: 'fa-user-check', description: 'Seguimiento de reportes de bienestar matutinos.' },
     { id: 'checkout', label: 'Check-out', icon: 'fa-user-clock', description: 'Seguimiento de reportes de carga post-sesión.' },
-    { id: 'discomfort', label: 'Alertas Médicas', icon: 'fa-heart-pulse', description: 'Reportes de molestias y síntomas de jugadores.' },
+    { id: 'soreness', label: 'Zona de Molestias', icon: 'fa-face-frown', description: 'Reportes de molestias físicas.' },
+    { id: 'illness', label: 'Estado de Salud', icon: 'fa-shield-halved', description: 'Reportes de síntomas de salud.' },
     { id: 'schedule', label: 'Cronograma', icon: 'fa-calendar-day', description: 'Actividades y horarios de la semana.' },
     { id: 'medical', label: 'Atenciones Médicas', icon: 'fa-user-md', description: 'Registro de atenciones del cuerpo médico.' },
     { id: 'kinesic', label: 'Kinesiología', icon: 'fa-hand-holding-medical', description: 'Tratamientos y recuperaciones kinésicas.' },
@@ -298,11 +310,14 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
     return pendingCheckins;
   }, [pendingCheckins, selectedCategoryId]);
 
-  const filteredDiscomfort = useMemo(() => {
-    if (selectedCategoryId) {
-      return discomfortReports.filter(w => w.players?.category_id === selectedCategoryId);
-    }
-    return discomfortReports;
+  const filteredSoreness = useMemo(() => {
+    const list = discomfortReports.filter(w => (w.soreness !== undefined && w.soreness < 5) || (w.soreness_areas && w.soreness_areas.length > 0));
+    return selectedCategoryId ? list.filter(w => w.players?.category_id === selectedCategoryId) : list;
+  }, [discomfortReports, selectedCategoryId]);
+
+  const filteredIllness = useMemo(() => {
+    const list = discomfortReports.filter(w => (w.illness_symptoms && w.illness_symptoms.length > 0));
+    return selectedCategoryId ? list.filter(w => w.players?.category_id === selectedCategoryId) : list;
   }, [discomfortReports, selectedCategoryId]);
 
   const filteredCheckouts = useMemo(() => {
@@ -615,22 +630,22 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
           </div>
         </div>
       ),
-      discomfort: (
+      soreness: (
         <div className="bg-white rounded-[32px] md:rounded-[48px] p-6 md:p-10 border border-red-100 shadow-sm flex flex-col h-full animate-in fade-in zoom-in-95 duration-500">
           <div className="flex items-center justify-between mb-6 md:mb-8">
-            <h3 className="text-xs md:text-sm font-black text-red-600 uppercase tracking-[0.2em] italic">Molestias Reportadas</h3>
-            <span className={`px-2.5 md:px-3 py-1 rounded-full text-[8px] md:text-[9px] font-black ${filteredDiscomfort.length > 0 ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-100 text-slate-400'}`}>
-              {filteredDiscomfort.length} ALERTAS
+            <h3 className="text-xs md:text-sm font-black text-red-600 uppercase tracking-[0.2em] italic">Zona de Molestias</h3>
+            <span className={`px-2.5 md:px-3 py-1 rounded-full text-[8px] md:text-[9px] font-black ${filteredSoreness.length > 0 ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-100 text-slate-400'}`}>
+              {filteredSoreness.length} ALERTAS
             </span>
           </div>
           <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
-            {filteredDiscomfort.length === 0 ? (
+            {filteredSoreness.length === 0 ? (
               <div className="text-center py-10">
-                <i className="fa-solid fa-heart-pulse text-slate-200 text-3xl mb-3"></i>
-                <p className="text-slate-400 text-[10px] font-black uppercase">Sin alertas hoy</p>
+                <i className="fa-solid fa-face-smile text-slate-200 text-3xl mb-3"></i>
+                <p className="text-slate-400 text-[10px] font-black uppercase">Sin molestias hoy</p>
               </div>
             ) : (
-              filteredDiscomfort.map((w, i) => (
+              filteredSoreness.map((w, i) => (
                 <div key={i} className="flex items-center justify-between p-3 bg-red-50 rounded-2xl border border-red-100">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-red-600 font-black italic text-[10px] border border-red-100 overflow-hidden">
@@ -639,14 +654,52 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{w.players?.nombre} {w.players?.apellido1}</p>
                       <div className="flex items-center gap-2">
-                        <p className="text-[8px] font-bold text-red-500 uppercase tracking-widest">
-                          {w.illness_symptoms && w.illness_symptoms.length > 0 ? `Enfermedad: ${w.illness_symptoms.join(', ')}` : `Estado: ${w.soreness}/5 • ${w.soreness_areas?.join(', ') || 'Sin molestias'}`}
+                        <p className="text-[8px] font-bold text-red-600 uppercase tracking-widest">
+                          {`Estado: ${w.soreness}/5 • ${w.soreness_areas?.join(', ') || 'Sin áreas'}`}
                         </p>
-                        <ClubBadge clubName={w.players?.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-red-500 uppercase tracking-widest" />
+                        <ClubBadge clubName={w.players?.club} clubs={clubs} logoSize="w-3 i-3" className="text-[8px] font-bold text-red-600 uppercase tracking-widest" />
                       </div>
                     </div>
                   </div>
                   <button onClick={(e) => { e.stopPropagation(); onMenuChange('medica'); }} className="text-red-600 hover:scale-110 transition-transform"><i className="fa-solid fa-suitcase-medical"></i></button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ),
+      illness: (
+        <div className="bg-white rounded-[32px] md:rounded-[48px] p-6 md:p-10 border border-amber-100 shadow-sm flex flex-col h-full animate-in fade-in zoom-in-95 duration-500">
+          <div className="flex items-center justify-between mb-6 md:mb-8">
+            <h3 className="text-xs md:text-sm font-black text-amber-600 uppercase tracking-[0.2em] italic">Estado de Salud</h3>
+            <span className={`px-2.5 md:px-3 py-1 rounded-full text-[8px] md:text-[9px] font-black ${filteredIllness.length > 0 ? 'bg-amber-600 text-white animate-pulse' : 'bg-slate-100 text-slate-400'}`}>
+              {filteredIllness.length} ALERTAS
+            </span>
+          </div>
+          <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
+            {filteredIllness.length === 0 ? (
+              <div className="text-center py-10">
+                <i className="fa-solid fa-shield-halved text-slate-200 text-3xl mb-3"></i>
+                <p className="text-slate-400 text-[10px] font-black uppercase">Sin síntomas hoy</p>
+              </div>
+            ) : (
+              filteredIllness.map((w, i) => (
+                <div key={i} className="flex items-center justify-between p-3 bg-amber-50 rounded-2xl border border-amber-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-amber-600 font-black italic text-[10px] border border-amber-100 overflow-hidden">
+                      {w.players?.foto_url ? <img src={w.players.foto_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : w.players?.nombre?.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{w.players?.nombre} {w.players?.apellido1}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">
+                          {`Síntomas: ${w.illness_symptoms?.join(', ') || 'Ninguno'}`}
+                        </p>
+                        <ClubBadge clubName={w.players?.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-amber-600 uppercase tracking-widest" />
+                      </div>
+                    </div>
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); onMenuChange('medica'); }} className="text-amber-600 hover:scale-110 transition-transform"><i className="fa-solid fa-suitcase-medical"></i></button>
                 </div>
               ))
             )}
@@ -828,7 +881,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                     {isCustomizing && (
                       <button 
                         onClick={() => {
-                          const defaults = ['tasks', 'checkin', 'checkout', 'discomfort', 'schedule', 'medical', 'kinesic'];
+                          const defaults = ['tasks', 'checkin', 'checkout', 'soreness', 'illness', 'schedule', 'medical', 'kinesic'];
                           setVisibleWidgets(defaults);
                         }}
                         className="px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/10 text-white hover:bg-white/20 transition-all flex items-center gap-2"
@@ -946,7 +999,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                   <div className="mt-12 flex justify-center">
                     <button 
                       onClick={() => {
-                        const defaults = ['weather', 'tasks', 'checkin', 'discomfort', 'schedule', 'ai_summary'];
+                        const defaults = ['weather', 'tasks', 'checkin', 'soreness', 'illness', 'schedule', 'ai_summary'];
                         setVisibleWidgets(defaults);
                       }}
                       className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] hover:text-white transition-colors flex items-center gap-3"
@@ -1092,7 +1145,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
       case 'contactos_clubes':
         return <ContactosClubesArea />;
       case 'planificacion_semanal':
-        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} initialTab="cronograma" />;
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} initialTab="cronograma" clubs={clubs} />;
       case 'tecnica':
         return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} clubs={clubs} hideCronograma={true} />;
       case 'perfil_jugador':

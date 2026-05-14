@@ -221,6 +221,10 @@ export default function DataImportArea() {
   const [selectedActivityStats, setSelectedActivityStats] = useState<any>(null);
   const [inspectingStats, setInspectingStats] = useState(false);
 
+  const [catapultAthletes, setCatapultAthletes] = useState<any[]>([]);
+  const [selectedActivity, setSelectedActivity] = useState<any>(null);
+  const [syncingToSupabase, setSyncingToSupabase] = useState(false);
+
   useEffect(() => {
     fetchPlayers();
   }, []);
@@ -228,13 +232,6 @@ export default function DataImportArea() {
   const fetchPlayers = async () => {
     const { data } = await supabase.from('players').select('*');
     if (data) setPlayers(data);
-  };
-
-  const extractName = (fullName: string) => {
-    if (!fullName) return '';
-    // Formato: "S15 Sesion 3 - Aaron Cornejo"
-    const parts = fullName.split(' - ');
-    return parts[parts.length - 1].trim();
   };
 
   const normalizeString = (str: any) => {
@@ -246,9 +243,20 @@ export default function DataImportArea() {
       .trim();
   };
 
+  // Helper to extract session name/player name
+  const extractName = (fullName: string) => {
+    if (!fullName) return '';
+    // Formato Catapult suele ser similar: "Nombre Apellido"
+    if (fullName.includes(' - ')) {
+      const parts = fullName.split(' - ');
+      return parts[parts.length - 1].trim();
+    }
+    return fullName.trim();
+  };
+
   const getRowName = useCallback((row: any) => {
     if (!row) return '';
-    const rawName = row[nameHeader || ''] || row['Name'] || row['Jugador'] || row['nombre'] || row['JUGADOR'] || '';
+    const rawName = row[nameHeader || ''] || row['Name'] || row['Jugador'] || row['nombre'] || row['JUGADOR'] || row['athlete_name'] || '';
     return ['gps_totales', 'gps_tareas'].includes(selectedType!) ? extractName(rawName) : rawName;
   }, [nameHeader, selectedType]);
 
@@ -259,22 +267,39 @@ export default function DataImportArea() {
     return players.find(p => {
       const nombre = normalizeString(p.nombre || '');
       const apellido1 = normalizeString(p.apellido1 || '');
-      const apellido2 = normalizeString(p.apellido2 || '');
       
       const pFullName = `${nombre} ${apellido1}`.trim();
-      const pShortName = `${nombre} ${apellido1}`.trim();
       
-      // Check for exact match of normalized full name or short name
-      if (pFullName === searchName || pShortName === searchName) return true;
+      // Exact match
+      if (pFullName === searchName) return true;
       
-      // Check if search name contains both first name and first apellido
+      // Contains
       if (searchName.includes(nombre) && searchName.includes(apellido1)) return true;
       
-      // Check if the system name is contained within the search name (handles extra middle names in CSV)
-      if (searchName.includes(pShortName)) return true;
-
       return false;
     });
+  };
+
+  // Metric Mapper for Catapult -> gps_import
+  const mapCatapultMetrics = (catStats: any) => {
+    const findMetric = (keys: string[]) => {
+      for (const k of keys) {
+        if (catStats[k] !== undefined) return Number(catStats[k]);
+      }
+      return 0;
+    };
+
+    return {
+      minutos: findMetric(['duration', 'total_duration', 'minutes']) / 60 || 0, // Convert to minutes if seconds
+      dist_total_m: findMetric(['total_distance', 'distance', 'total_dist']),
+      m_por_min: findMetric(['meters_per_minute', 'metres_per_minute', 'relative_distance']),
+      dist_ai_m_15_kmh: findMetric(['high_intensity_distance', 'hi_intensity_dist', 'band4_distance']),
+      dist_mai_m_20_kmh: findMetric(['very_high_intensity_distance', 'vhi_intensity_dist', 'band5_distance']),
+      dist_sprint_m_25_kmh: findMetric(['sprint_distance', 'band6_distance']),
+      sprints_n: findMetric(['sprint_count', 'sprints']),
+      vel_max_kmh: findMetric(['max_velocity', 'top_speed', 'velocity_max']),
+      acc_decc_ai_n: findMetric(['accelerations_count', 'accel_count']) + findMetric(['decelerations_count', 'decel_count'])
+    };
   };
 
   const excelDateToJSDate = (serial: number) => {
@@ -324,13 +349,13 @@ export default function DataImportArea() {
                 if (match) newMapping[field.key] = match;
               });
 
-              // Special logic for name matching across different test types
+              // Special logic for name matching
               const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
               
               if (needsNameMatching && detectedNameHeader) {
                 const seenNames = new Set<string>();
                 data.forEach((row: any, index: number) => {
-                  const cleanName = ['gps_totales', 'gps_tareas'].includes(selectedType) ? extractName(row[detectedNameHeader]) : row[detectedNameHeader];
+                  const cleanName = getRowName(row);
                   const player = findPlayerByName(cleanName);
                   if (player) {
                     initialResolved[index] = player.id_del_jugador;
@@ -344,12 +369,6 @@ export default function DataImportArea() {
             setMapping(newMapping);
             setUnmatchedRows(unmatched);
             setResolvedIds(initialResolved);
-            
-            if (unmatched.length > 0) {
-              setTimeout(() => {
-                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-              }, 100);
-            }
           }
         }
       });
@@ -377,21 +396,16 @@ export default function DataImportArea() {
         const item: any = {};
         const cleanName = getRowName(row);
 
-        // Handle GPS Tareas specific logic: Split Name into tarea and jugador_nombre
-        const nameVal = row[nameHeader || 'Name'] || row['Name'] || '';
-        if (selectedType === 'gps_tareas' && nameVal) {
-          const parts = String(nameVal).split(' - ');
-          if (parts.length >= 2) {
+        // Special logic for GPS Tareas
+        if (selectedType === 'gps_tareas') {
+          const nameVal = row[nameHeader || 'Name'] || row['Name'] || '';
+          if (nameVal && String(nameVal).includes(' - ')) {
+            const parts = String(nameVal).split(' - ');
             const playerName = parts.pop()?.trim();
             const taskName = parts.join(' - ').trim();
             item.tarea = taskName;
             if (config.fields.some(f => f.key === 'jugador_nombre')) {
               item.jugador_nombre = playerName;
-            }
-          } else {
-            item.tarea = nameVal;
-            if (config.fields.some(f => f.key === 'jugador_nombre')) {
-              item.jugador_nombre = nameVal;
             }
           }
         }
@@ -400,11 +414,10 @@ export default function DataImportArea() {
           const csvHeader = mapping[field.key];
           if (csvHeader && row[csvHeader] !== undefined && row[csvHeader] !== '') {
             let val = row[csvHeader];
-            // Clean 'tarea' field for GPS Tasks (remove " - Player Name")
-            if (selectedType === 'gps_tareas' && field.key === 'tarea' && typeof val === 'string') {
-              if (val.includes(' - ')) {
-                val = val.split(' - ')[0].trim();
-              }
+            
+            // Cleanup for Tarea
+            if (selectedType === 'gps_tareas' && field.key === 'tarea' && typeof val === 'string' && val.includes(' - ')) {
+              val = val.split(' - ')[0].trim();
             }
 
             if (field.type === 'number') {
@@ -421,7 +434,6 @@ export default function DataImportArea() {
                   val = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
                 }
               } else if (!isNaN(Number(val)) && Number(val) > 30000) {
-                // Handle Excel serial date
                 val = excelDateToJSDate(Number(val));
               }
             }
@@ -429,30 +441,24 @@ export default function DataImportArea() {
           }
         });
 
-        // Override ID if resolved manually or automatically
+        // Use resolved IDs
         const manualId = resolvedIds[index];
         const normalizedCleanName = normalizeString(cleanName);
         const sharedId = Object.entries(resolvedIds).find(([idx, id]) => {
-          const otherRow = csvData[Number(idx)];
-          const otherCleanName = getRowName(otherRow);
-          return normalizeString(otherCleanName) === normalizedCleanName;
+          const rName = getRowName(csvData[Number(idx)]);
+          return normalizeString(rName) === normalizedCleanName;
         })?.[1];
 
         if (manualId || sharedId) {
           const pId = manualId || sharedId;
           item.id_del_jugador = pId;
-          
-          // Auto-populate 'jugador' name if missing but we have the player
-          const player = players.find(p => (p as any).id_del_jugador === pId);
-          if (player && !item.jugador && config.fields.some(f => f.key === 'jugador')) {
-            item.jugador = `${(player as any).nombre} ${(player as any).apellido1}`;
-          }
-          if (player && !item.jugador_nombre && config.fields.some(f => f.key === 'jugador_nombre')) {
-            item.jugador_nombre = `${(player as any).nombre} ${(player as any).apellido1}`;
+          const player = players.find(p => p.id_del_jugador === pId);
+          if (player) {
+            if (!item.jugador && config.fields.some(f => f.key === 'jugador')) item.jugador = `${player.nombre} ${player.apellido1}`;
+            if (!item.jugador_nombre && config.fields.some(f => f.key === 'jugador_nombre')) item.jugador_nombre = `${player.nombre} ${player.apellido1}`;
           }
         }
 
-        // Add test_type for physical_tests table
         if (config.table === 'physical_tests') {
           item.test_type = selectedType.toUpperCase();
         }
@@ -460,42 +466,76 @@ export default function DataImportArea() {
         return item;
       });
 
-      // 2. Filter out invalid rows (missing required fields like date)
-      const dataToInsert = mappedData.filter(item => {
+      let dataToInsert = mappedData.filter(item => {
         return config.fields.every(f => !f.required || (item[f.key] !== undefined && item[f.key] !== null));
       });
 
       if (dataToInsert.length === 0) {
-        setMessage({ type: 'error', text: 'No se encontraron datos válidos para importar. Verifica el mapeo de columnas.' });
+        setMessage({ type: 'error', text: 'No se encontraron datos válidos.' });
         setImporting(false);
         return;
       }
 
-      // 3. Check if any row to be inserted is missing id_del_jugador
-      const missingIds = dataToInsert.some(item => !item.id_del_jugador);
-      if (missingIds) {
-        setMessage({ type: 'error', text: 'Hay jugadores que no han sido asociados a un ID. Por favor, asócialos manualmente.' });
-        setImporting(false);
-        return;
-      }
-
-      // 4. Deduplicate dataToInsert based on conflictColumns to avoid "ON CONFLICT DO UPDATE" error
-      // This happens if the CSV has multiple rows for the same player/date/task
-      const deduplicatedData = dataToInsert.reduce((acc: any[], current) => {
-        const conflictKey = config.conflictColumns.map(col => String(current[col])).join('|');
-        const existingIndex = acc.findIndex(item => 
-          config.conflictColumns.map(col => String(item[col])).join('|') === conflictKey
-        );
+      // NUEVO: Agregación de Sesiones para GPS Totales (Opción A)
+      // Si el archivo contiene múltiples filas por jugador/fecha, las sumamos antes de upsert
+      if (selectedType === 'gps_totales') {
+        const aggregatedMap = new Map<string, any>();
+        dataToInsert.forEach(item => {
+          const key = `${item.id_del_jugador}-${item.fecha}`;
+          if (aggregatedMap.has(key)) {
+            const existing = aggregatedMap.get(key);
+            existing.minutos = (existing.minutos || 0) + (item.minutos || 0);
+            existing.dist_total_m = (existing.dist_total_m || 0) + (item.dist_total_m || 0);
+            existing.dist_ai_m_15_kmh = (existing.dist_ai_m_15_kmh || 0) + (item.dist_ai_m_15_kmh || 0);
+            existing.dist_mai_m_20_kmh = (existing.dist_mai_m_20_kmh || 0) + (item.dist_mai_m_20_kmh || 0);
+            existing.dist_sprint_m_25_kmh = (existing.dist_sprint_m_25_kmh || 0) + (item.dist_sprint_m_25_kmh || 0);
+            existing.sprints_n = (existing.sprints_n || 0) + (item.sprints_n || 0);
+            existing.acc_decc_ai_n = (existing.acc_decc_ai_n || 0) + (item.acc_decc_ai_n || 0);
+            existing.vel_max_kmh = Math.max(existing.vel_max_kmh || 0, item.vel_max_kmh || 0);
+            if (existing.minutos > 0) {
+              existing.m_por_min = existing.dist_total_m / existing.minutos;
+            }
+          } else {
+            aggregatedMap.set(key, { ...item });
+          }
+        });
         
-        if (existingIndex > -1) {
-          acc[existingIndex] = current; // Keep the last occurrence in the file
-        } else {
-          acc.push(current);
-        }
-        return acc;
-      }, []);
+        // NUEVO: Contrastamos con lo que YA existe en la base de datos para SUMAR (no sobrescribir)
+        // Esto permite que si cargan la sesión AM ahora y la PM después en archivos distintos, se acumulen correctamente.
+        const playerIds = Array.from(new Set(dataToInsert.map(d => d.id_del_jugador)));
+        const dates = Array.from(new Set(dataToInsert.map(d => d.fecha)));
 
-      const { error } = await supabase.from(config.table).upsert(deduplicatedData, {
+        const { data: dbRecords } = await supabase
+          .from('gps_import')
+          .select('*')
+          .in('id_del_jugador', playerIds)
+          .in('fecha', dates);
+
+        if (dbRecords && dbRecords.length > 0) {
+          dbRecords.forEach(dbRow => {
+            const key = `${dbRow.id_del_jugador}-${dbRow.fecha}`;
+            if (aggregatedMap.has(key)) {
+              const current = aggregatedMap.get(key);
+              // Sumamos lo de la DB a lo que estamos cargando (Opción A)
+              current.minutos = (current.minutos || 0) + (dbRow.minutos || 0);
+              current.dist_total_m = (current.dist_total_m || 0) + (dbRow.dist_total_m || 0);
+              current.dist_ai_m_15_kmh = (current.dist_ai_m_15_kmh || 0) + (dbRow.dist_ai_m_15_kmh || 0);
+              current.dist_mai_m_20_kmh = (current.dist_mai_m_20_kmh || 0) + (dbRow.dist_mai_m_20_kmh || 0);
+              current.dist_sprint_m_25_kmh = (current.dist_sprint_m_25_kmh || 0) + (dbRow.dist_sprint_m_25_kmh || 0);
+              current.sprints_n = (current.sprints_n || 0) + (dbRow.sprints_n || 0);
+              current.acc_decc_ai_n = (current.acc_decc_ai_n || 0) + (dbRow.acc_decc_ai_n || 0);
+              current.vel_max_kmh = Math.max(current.vel_max_kmh || 0, dbRow.vel_max_kmh || 0);
+              if (current.minutos > 0) {
+                current.m_por_min = current.dist_total_m / current.minutos;
+              }
+            }
+          });
+        }
+        
+        dataToInsert = Array.from(aggregatedMap.values());
+      }
+
+      const { error } = await supabase.from(config.table).upsert(dataToInsert, {
         onConflict: config.conflictColumns.join(',')
       });
 
@@ -508,59 +548,111 @@ export default function DataImportArea() {
       setUnmatchedRows([]);
       setResolvedIds({});
     } catch (err: any) {
-      console.error("Error importing data:", err);
+      console.error("Error importing:", err);
       setMessage({ type: 'error', text: `Error al importar: ${err.message}` });
     } finally {
       setImporting(false);
     }
   };
 
+  const updateResolvedId = (rowIndex: number, playerId: number) => {
+    const row = csvData[rowIndex];
+    const cleanName = getRowName(row);
+    const newResolved = { ...resolvedIds };
+    const normalizedCleanName = normalizeString(cleanName);
+    
+    csvData.forEach((r, idx) => {
+      if (normalizeString(getRowName(r)) === normalizedCleanName) {
+        newResolved[idx] = playerId;
+      }
+    });
+
+    setResolvedIds(newResolved);
+  };
+
   const handleCatapultSync = async () => {
     setSyncingCatapult(true);
     setMessage(null);
     try {
-      const data = await fetchCatapultActivities();
-      console.log("Catapult Data Received:", data);
-      
-      // Catapult API sometimes returns nested arrays or objects
+      const response = await fetchCatapultActivities(90); // Search last 90 days
       let activities = [];
-      if (Array.isArray(data)) {
-        activities = data;
-      } else if (data && typeof data === 'object') {
-        // Look for common array keys in API responses
-        activities = data.activities || data.data || data.results || [];
+      let regionInfo = '';
+
+      if (response && response.activities) {
+        activities = response.activities;
+        regionInfo = response.metadata?.region ? ` (${response.metadata.region})` : '';
+      } else if (Array.isArray(response)) {
+        activities = response;
+      } else if (response && typeof response === 'object') {
+        activities = response.data || response.results || [];
       }
 
       setCatapultActivities(activities);
       
       if (activities.length === 0) {
-        if (data && data.error) {
-          setMessage({ type: 'error', text: `API: ${data.error}` });
-        } else {
-          setMessage({ type: 'error', text: 'No se encontraron sesiones. Verifica la fecha en Catapult OpenField.' });
-        }
+        setMessage({ 
+          type: 'success', 
+          text: `Conexión establecida con éxito${regionInfo}. No se encontraron sesiones recientes.` 
+        });
       } else {
-        setMessage({ type: 'success', text: `Se encontraron ${activities.length} sesiones. Selecciona una para analizar.` });
+        setMessage({ type: 'success', text: `¡Conexión Exitosa${regionInfo}! Se encontraron ${activities.length} sesiones recientes.` });
       }
     } catch (err: any) {
       console.error("Sync Error:", err);
+      // Try to parse details if it's a JSON string we threw
       let errorMsg = err.message;
-      if (errorMsg.includes('Invalid path') || errorMsg.includes('404')) {
-        errorMsg = 'Error Catapult: La ruta API es inválida. Verifica la región en Cloud OpenField.';
-      }
-      setMessage({ type: 'error', text: `Error de conexión: ${errorMsg}` });
+      let attemptsStr = '';
+      try {
+        if (errorMsg.startsWith('{')) {
+          const detailObj = JSON.parse(errorMsg);
+          errorMsg = detailObj.error || errorMsg;
+          if (detailObj.attempts) {
+            attemptsStr = detailObj.attempts.join(', ');
+          }
+        }
+      } catch (e) {}
+      
+      setMessage({ 
+        type: 'error', 
+        text: `Error de conexión: ${errorMsg}${attemptsStr ? ` (Intentos: ${attemptsStr})` : ''}` 
+      });
     } finally {
       setSyncingCatapult(false);
     }
   };
 
-  const handleInspectActivity = async (activityId: string) => {
+  const handleInspectActivity = async (activity: any) => {
     setSyncingCatapult(true);
     setMessage(null);
+    setSelectedActivity(activity);
     try {
-      const stats = await fetchCatapultActivityStats(activityId);
-      console.log("Catapult Stats Received:", stats);
-      setSelectedActivityStats(stats);
+      const statsResponse = await fetchCatapultActivityStats(activity.id);
+      console.log("Catapult Stats Received:", statsResponse);
+      
+      // Normalize stats to an array of athletes
+      let athletesData = [];
+      if (Array.isArray(statsResponse)) {
+        athletesData = statsResponse;
+      } else if (statsResponse && statsResponse.data) {
+        athletesData = statsResponse.data;
+      } else if (statsResponse && statsResponse.results) {
+        athletesData = statsResponse.results;
+      }
+
+      // Initial auto-mapping
+      const initialAthletes = athletesData.map((ath: any, index: number) => {
+        const athName = ath.athlete_name || ath.name || ath.athlete?.name || '';
+        const matchedPlayer = findPlayerByName(athName);
+        return {
+          id: index,
+          catapult_name: athName,
+          stats: ath,
+          supabase_player_id: matchedPlayer ? matchedPlayer.id_del_jugador : null,
+          matched_player: matchedPlayer
+        };
+      });
+
+      setCatapultAthletes(initialAthletes);
       setInspectingStats(true);
     } catch (err: any) {
       setMessage({ type: 'error', text: `Error obteniendo métricas: ${err.message}` });
@@ -569,29 +661,115 @@ export default function DataImportArea() {
     }
   };
 
-  const updateResolvedId = (rowIndex: number, playerId: number) => {
-    const row = csvData[rowIndex];
-    const cleanName = getRowName(row);
-
-    const newResolved = { ...resolvedIds };
-    const normalizedCleanName = normalizeString(cleanName);
+  const handleSyncToSupabase = async () => {
+    if (!selectedActivity || catapultAthletes.length === 0) return;
     
-    // Update all rows that share this clean name
-    csvData.forEach((r, idx) => {
-      const rCleanName = getRowName(r);
-      if (normalizeString(rCleanName) === normalizedCleanName) {
-        newResolved[idx] = playerId;
-      }
-    });
+    // Validate that at least some are mapped
+    const validMappings = catapultAthletes.filter(a => a.supabase_player_id);
+    if (validMappings.length === 0) {
+      alert("Debes asociar al menos un atleta a un jugador del sistema.");
+      return;
+    }
 
-    setResolvedIds(newResolved);
+    setSyncingToSupabase(true);
+    try {
+      const sessionDate = selectedActivity.startTime ? selectedActivity.startTime.split('T')[0] : new Date().toISOString().split('T')[0];
+      
+      let recordsToInsert = validMappings.map(ath => {
+        const metrics = mapCatapultMetrics(ath.stats);
+        const player = players.find(p => p.id_del_jugador === ath.supabase_player_id);
+        
+        return {
+          id_del_jugador: ath.supabase_player_id,
+          fecha: sessionDate,
+          jugador: player ? `${player.nombre} ${player.apellido1}` : ath.catapult_name,
+          ...metrics
+        };
+      });
+
+      // NUEVO: Agregación para Catapult Sync (Opción A)
+      const playerIds = Array.from(new Set(recordsToInsert.map(d => d.id_del_jugador)));
+      const { data: existingDBRecords } = await supabase
+        .from('gps_import')
+        .select('*')
+        .in('id_del_jugador', playerIds)
+        .eq('fecha', sessionDate);
+
+      const aggregatedMap = new Map<number, any>();
+      recordsToInsert.forEach(item => {
+        if (aggregatedMap.has(item.id_del_jugador)) {
+          const existing = aggregatedMap.get(item.id_del_jugador);
+          existing.minutos = (existing.minutos || 0) + (item.minutos || 0);
+          existing.dist_total_m = (existing.dist_total_m || 0) + (item.dist_total_m || 0);
+          existing.dist_ai_m_15_kmh = (existing.dist_ai_m_15_kmh || 0) + (item.dist_ai_m_15_kmh || 0);
+          existing.dist_mai_m_20_kmh = (existing.dist_mai_m_20_kmh || 0) + (item.dist_mai_m_20_kmh || 0);
+          existing.dist_sprint_m_25_kmh = (existing.dist_sprint_m_25_kmh || 0) + (item.dist_sprint_m_25_kmh || 0);
+          existing.sprints_n = (existing.sprints_n || 0) + (item.sprints_n || 0);
+          existing.acc_decc_ai_n = (existing.acc_decc_ai_n || 0) + (item.acc_decc_ai_n || 0);
+          existing.vel_max_kmh = Math.max(existing.vel_max_kmh || 0, item.vel_max_kmh || 0);
+          if (existing.minutos > 0) {
+            existing.m_por_min = existing.dist_total_m / existing.minutos;
+          }
+        } else {
+          aggregatedMap.set(item.id_del_jugador, { ...item });
+        }
+      });
+
+      // Sumar con lo que ya existe en la DB
+      if (existingDBRecords) {
+        existingDBRecords.forEach(dbRow => {
+          if (aggregatedMap.has(dbRow.id_del_jugador)) {
+            const current = aggregatedMap.get(dbRow.id_del_jugador);
+            current.minutos = (current.minutos || 0) + (dbRow.minutos || 0);
+            current.dist_total_m = (current.dist_total_m || 0) + (dbRow.dist_total_m || 0);
+            current.dist_ai_m_15_kmh = (current.dist_ai_m_15_kmh || 0) + (dbRow.dist_ai_m_15_kmh || 0);
+            current.dist_mai_m_20_kmh = (current.dist_mai_m_20_kmh || 0) + (dbRow.dist_mai_m_20_kmh || 0);
+            current.dist_sprint_m_25_kmh = (current.dist_sprint_m_25_kmh || 0) + (dbRow.dist_sprint_m_25_kmh || 0);
+            current.sprints_n = (current.sprints_n || 0) + (dbRow.sprints_n || 0);
+            current.acc_decc_ai_n = (current.acc_decc_ai_n || 0) + (dbRow.acc_decc_ai_n || 0);
+            current.vel_max_kmh = Math.max(current.vel_max_kmh || 0, dbRow.vel_max_kmh || 0);
+            if (current.minutos > 0) {
+              current.m_por_min = current.dist_total_m / current.minutos;
+            }
+          }
+        });
+      }
+
+      recordsToInsert = Array.from(aggregatedMap.values());
+
+      const { error } = await supabase.from('gps_import').upsert(recordsToInsert, {
+        onConflict: 'id_del_jugador,fecha'
+      });
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: `¡Sincronización Exitosa! Se han guardado ${recordsToInsert.length} registros en gps_import.` });
+      setInspectingStats(false);
+      setCatapultAthletes([]);
+      setSelectedActivity(null);
+    } catch (err: any) {
+      console.error("Error syncing to Supabase:", err);
+      alert("Error al sincronizar: " + err.message);
+    } finally {
+      setSyncingToSupabase(false);
+    }
+  };
+
+  const updateAthleteMapping = (athId: number, playerId: number) => {
+    setCatapultAthletes(prev => prev.map(ath => {
+      if (ath.id === athId) {
+        const player = players.find(p => p.id_del_jugador === playerId);
+        return { ...ath, supabase_player_id: playerId, matched_player: player };
+      }
+      return ath;
+    }));
   };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col gap-2">
         <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">Centro de Importación de Datos</h2>
-        <p className="text-slate-500 text-sm font-medium">Carga masiva de registros mediante archivos CSV.</p>
+        <p className="text-slate-500 text-sm font-medium">Carga masiva de registros mediante archivos CSV o Catapult API.</p>
       </div>
 
       {!selectedType ? (
@@ -630,7 +808,7 @@ export default function DataImportArea() {
               </button>
               <div>
                 <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Catapult Cloud Sync</h3>
-                <p className="text-sky-600 text-[10px] font-bold uppercase tracking-widest italic">Conectado vía Catapult API</p>
+                <p className="text-sky-600 text-[10px] font-bold uppercase tracking-widest italic">Conexión directa vía Catapult API</p>
               </div>
             </div>
             
@@ -703,47 +881,141 @@ export default function DataImportArea() {
                     <h5 className="text-slate-900 font-black uppercase tracking-tight text-sm mb-1">{session.name || 'Sesión sin nombre'}</h5>
                     <p className="text-slate-400 text-[10px] font-bold mb-4 uppercase">{session.athleteCount || 0} Atletas • {session.duration || 0} min</p>
                     <button 
-                      className="w-full bg-slate-50 text-slate-900 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 hover:text-white transition-all"
-                      onClick={() => handleInspectActivity(session.id)}
+                      className="w-full bg-slate-50 text-slate-900 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 hover:text-white transition-all disabled:opacity-50"
+                      disabled={syncingCatapult}
+                      onClick={() => handleInspectActivity(session)}
                     >
-                      {syncingCatapult ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : null}
-                      Analizar Parámetros
+                      {syncingCatapult && selectedActivity?.id === session.id ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : null}
+                      Analizar Parametros y Mapear
                     </button>
                   </div>
                 ))}
               </div>
             ) : null}
 
-            {/* DEBUG MODAL / RAW DATA INSPECTOR */}
-            {inspectingStats && selectedActivityStats && (
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                <div className="bg-white w-full max-w-4xl max-h-[85vh] rounded-[40px] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in duration-300">
-                  <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
-                    <div>
-                      <h4 className="text-lg font-black text-slate-900 uppercase tracking-tight">Inspección de Parámetros Catapult</h4>
-                      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Analizando estructura de datos para mapeo automatizado</p>
+            {/* SYNC WIZARD MODAL */}
+            {inspectingStats && catapultAthletes.length > 0 && (
+              <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-[48px] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in duration-300 border border-white/20">
+                  <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/80">
+                    <div className="flex items-center gap-5">
+                      <div className="w-14 h-14 bg-sky-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-sky-600/20">
+                        <i className="fa-solid fa-link text-xl"></i>
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-black text-slate-900 uppercase tracking-tight">Sincronización Inteligente Catapult</h4>
+                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest leading-none mt-1">Sesión: <span className="text-sky-600">{selectedActivity?.name}</span> • {new Date(selectedActivity?.startTime).toLocaleDateString()}</p>
+                      </div>
                     </div>
-                    <button 
-                      onClick={() => setInspectingStats(false)}
-                      className="w-12 h-12 rounded-full bg-slate-900 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
-                    >
-                      <i className="fa-solid fa-xmark"></i>
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleSyncToSupabase}
+                        disabled={syncingToSupabase}
+                        className="bg-emerald-600 text-white px-8 py-4 rounded-full text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-emerald-900/20"
+                      >
+                        {syncingToSupabase ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
+                        Sincronizar {catapultAthletes.filter(a => a.supabase_player_id).length} jugadores
+                      </button>
+                      <button 
+                        onClick={() => setInspectingStats(false)}
+                        className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-8 font-mono text-[11px] bg-slate-900 text-sky-400">
-                    <pre>{JSON.stringify(selectedActivityStats, null, 2)}</pre>
+
+                  <div className="flex-1 overflow-y-auto p-10 bg-slate-50/30">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                      {catapultAthletes.map((ath) => {
+                        const metrics = mapCatapultMetrics(ath.stats);
+                        const isMapped = !!ath.supabase_player_id;
+                        
+                        return (
+                          <div key={ath.id} className={`bg-white p-6 rounded-[32px] border ${isMapped ? 'border-emerald-100 shadow-sm' : 'border-amber-200 border-dashed bg-amber-50/5'} transition-all`}>
+                            <div className="flex justify-between items-start mb-6">
+                              <div className="flex flex-col">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Nombre en Catapult</span>
+                                <span className="text-sm font-black text-slate-900 uppercase tracking-tight">{ath.catapult_name}</span>
+                              </div>
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isMapped ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-500'}`}>
+                                <i className={`fa-solid ${isMapped ? 'fa-check-double' : 'fa-user-plus'}`}></i>
+                              </div>
+                            </div>
+
+                            <div className="space-y-4">
+                              <div className="flex flex-col gap-1.5">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Enlace en Plataforma</span>
+                                <select
+                                  value={ath.supabase_player_id || ''}
+                                  onChange={(e) => updateAthleteMapping(ath.id, Number(e.target.value))}
+                                  className={`w-full ${isMapped ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-200'} border rounded-2xl px-4 py-3 text-[10px] font-bold text-slate-900 outline-none focus:border-sky-500 transition-all`}
+                                >
+                                  <option value="">-- Vincular Jugador --</option>
+                                  {players.map(p => (
+                                    <option key={p.id_del_jugador} value={p.id_del_jugador}>
+                                      {p.nombre} {p.apellido1} ({p.id_del_jugador})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="pt-4 border-t border-slate-50 grid grid-cols-2 gap-y-3 gap-x-6">
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Dist. Total</span>
+                                  <span className="text-xs font-black text-sky-600 tracking-tight">{metrics.dist_total_m.toFixed(0)}m</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Vel. Max</span>
+                                  <span className="text-xs font-black text-red-600 tracking-tight">{metrics.vel_max_kmh.toFixed(1)} km/h</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">AInt (+15)</span>
+                                  <span className="text-xs font-black text-slate-700 tracking-tight">{metrics.dist_ai_m_15_kmh.toFixed(0)}m</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Sprint (+25)</span>
+                                  <span className="text-xs font-black text-amber-600 tracking-tight">{metrics.dist_sprint_m_25_kmh.toFixed(0)}m</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Acc+Decc AI</span>
+                                  <span className="text-xs font-black text-indigo-600 tracking-tight">{metrics.acc_decc_ai_n}</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Minutos</span>
+                                  <span className="text-xs font-black text-slate-400 tracking-tight">{(metrics.minutos).toFixed(0)} min</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="p-8 border-t border-slate-50 flex items-center justify-between">
-                    <p className="text-slate-400 text-[10px] font-medium max-w-md">
-                      Esta es la respuesta cruda de la API. Debemos identificar las llaves que corresponden a 
-                      <b>distancia</b>, <b>velocidad máxima</b>, <b>aceleraciones</b>, etc.
-                    </p>
-                    <button 
-                      onClick={() => setInspectingStats(false)}
-                      className="bg-sky-600 text-white px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-sky-700 transition-all"
-                    >
-                      Continuar al Mapeo
-                    </button>
+
+                  <div className="p-8 border-t border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                        <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{catapultAthletes.filter(a => a.supabase_player_id).length} Enlazados</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                        <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{catapultAthletes.filter(a => !a.supabase_player_id).length} Pendientes</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <p className="text-slate-400 text-[10px] font-medium max-w-[300px] text-right">
+                        Los datos se guardarán automáticamente en la tabla <b>gps_import</b> vinculando la actividad física con la ficha del jugador.
+                      </p>
+                      <button 
+                        onClick={handleSyncToSupabase}
+                        disabled={syncingToSupabase || catapultAthletes.filter(a => a.supabase_player_id).length === 0}
+                        className="bg-sky-600 text-white px-10 py-4 rounded-full text-xs font-black uppercase tracking-widest hover:bg-sky-700 transition-all shadow-xl shadow-sky-600/20 disabled:opacity-30"
+                      >
+                        Iniciar Carga de Datos
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -894,13 +1166,18 @@ export default function DataImportArea() {
                           <span className="text-[11px] font-black text-slate-900 truncate">{row._cleanName}</span>
                         </div>
                         <div className="space-y-2">
-                          <input
-                            type="number"
-                            placeholder="ID Jugador..."
+                          <select
                             value={resolvedId || ''}
                             onChange={(e) => updateResolvedId(row._rowIndex, Number(e.target.value))}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold text-slate-900 outline-none focus:border-amber-500 transition-all"
-                          />
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-black text-slate-900 outline-none focus:border-amber-500 transition-all appearance-none cursor-pointer"
+                          >
+                            <option value="">Seleccionar Jugador...</option>
+                            {players.map(p => (
+                              <option key={p.id_del_jugador} value={p.id_del_jugador}>
+                                {p.nombre} {p.apellido1} (ID: {p.id_del_jugador})
+                              </option>
+                            ))}
+                          </select>
                           {matchedPlayer && (
                             <div className="flex items-center gap-2 px-2 py-1 bg-emerald-50 rounded-lg border border-emerald-100 animate-in fade-in duration-300">
                               <i className="fa-solid fa-check text-emerald-500 text-[8px]"></i>

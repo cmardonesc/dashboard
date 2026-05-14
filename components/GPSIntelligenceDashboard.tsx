@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { AthletePerformanceRecord, User } from '../types';
+import { AthletePerformanceRecord, User, REVERSE_CATEGORY_ID_MAP } from '../types';
 import { supabase } from '../lib/supabase';
 import { normalizeClub } from '../lib/utils';
 import { 
@@ -119,19 +119,41 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
         if (gpsError) throw gpsError;
 
         if (gpsRecords) {
+          // Aggregate data by player_id to handle multiple sessions (AM/PM)
+          const aggregatedMap = new Map<number, any>();
+          gpsRecords.forEach((gps: any) => {
+            const pid = gps.id_del_jugador;
+            if (!aggregatedMap.has(pid)) {
+              aggregatedMap.set(pid, { ...gps });
+            } else {
+              const existing = aggregatedMap.get(pid);
+              existing.minutos = (existing.minutos || 0) + (gps.minutos || 0);
+              existing.dist_total_m = (existing.dist_total_m || 0) + (gps.dist_total_m || 0);
+              existing.dist_ai_m_15_kmh = (existing.dist_ai_m_15_kmh || 0) + (gps.dist_ai_m_15_kmh || 0);
+              existing.dist_mai_m_20_kmh = (existing.dist_mai_m_20_kmh || 0) + (gps.dist_mai_m_20_kmh || 0);
+              existing.dist_sprint_m_25_kmh = (existing.dist_sprint_m_25_kmh || 0) + (gps.dist_sprint_m_25_kmh || 0);
+              existing.sprints_n = (existing.sprints_n || 0) + (gps.sprints_n || 0);
+              existing.acc_decc_ai_n = (existing.acc_decc_ai_n || 0) + (gps.acc_decc_ai_n || 0);
+              existing.vel_max_kmh = Math.max(existing.vel_max_kmh || 0, gps.vel_max_kmh || 0);
+            }
+          });
+
+          const finalGpsRecords = Array.from(aggregatedMap.values()).map(gps => {
+            if (gps.minutos > 0) {
+              gps.m_por_min = gps.dist_total_m / gps.minutos;
+            }
+            return gps;
+          });
+
           // Fetch citations for these players on this date to get microcycle and category
-          // We need to match player_id and date
-          const playerIds = gpsRecords.map(r => r.id_del_jugador);
+          const playerIds = finalGpsRecords.map(r => r.id_del_jugador);
           
           const { data: citations, error: citError } = await supabase
             .from('citaciones')
             .select(`
               player_id,
               microcycles (
-                category_id,
-                categories (
-                  name
-                )
+                category_id
               )
             `)
             .in('player_id', playerIds)
@@ -139,19 +161,28 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
 
           if (citError) console.error("Error fetching citations for categories:", citError);
 
-          // Create a map for quick lookup: playerId -> categoryName
-          const playerCategoryMap = new Map();
+          // Create a map for quick lookup: playerId -> categoryId
+          const playerCategoryIdMap = new Map();
           citations?.forEach((cit: any) => {
-            const catName = cit.microcycles?.categories?.name;
-            if (catName) {
-              playerCategoryMap.set(cit.player_id, catName.toUpperCase());
+            const catId = cit.microcycles?.category_id;
+            if (catId) {
+              playerCategoryIdMap.set(cit.player_id, catId);
             }
           });
 
-          const mapped = gpsRecords.map(d => {
+          const mapped = finalGpsRecords.map(d => {
             const p = d.players as any;
             const rawPos = p?.posicion?.toUpperCase() || 'S/D';
-            const catName = playerCategoryMap.get(d.id_del_jugador) || 'SIN CATEGORÍA';
+            
+            // Priority: Citation Category (ID) > Player Record Category (Text)
+            const citationCatId = playerCategoryIdMap.get(d.id_del_jugador);
+            let catName = 'SIN CATEGORÍA';
+            
+            if (citationCatId && REVERSE_CATEGORY_ID_MAP[citationCatId]) {
+              catName = REVERSE_CATEGORY_ID_MAP[citationCatId].toUpperCase().replace('_', ' ');
+            } else if (p?.categoria) {
+              catName = p.categoria.toUpperCase().replace('_', ' ');
+            }
             
             let finalPlayer = {
               ...p,

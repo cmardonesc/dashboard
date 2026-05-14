@@ -2,8 +2,16 @@
  * Servicio para interactuar con la API de Catapult a través de nuestro proxy local.
  */
 
-export async function fetchCatapultActivities() {
-  const response = await fetch('/api/catapult/activities');
+export async function fetchCatapultActivities(sinceDays: number = 30) {
+  const since = Math.floor((Date.now() - (sinceDays * 24 * 60 * 60 * 1000)) / 1000);
+  // We send multiple variations to ensure compatibility
+  const params = new URLSearchParams({
+    start_time_after: since.toString(),
+    since: since.toString(),
+    modified_since: since.toString(),
+    limit: '100'
+  });
+  const response = await fetch(`/api/catapult/activities?${params.toString()}`);
   const contentType = response.headers.get("content-type");
   
   if (!response.ok) {

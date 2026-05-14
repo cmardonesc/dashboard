@@ -805,6 +805,7 @@ export default function App() {
                 userClub={userClub || undefined}
                 userRole={role}
                 userId_del_jugador={linkedPlayerId}
+                clubs={dbClubs}
               />
             )}
           </div>

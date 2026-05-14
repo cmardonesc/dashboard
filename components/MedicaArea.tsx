@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AthletePerformanceRecord, Category, User, MicrocicloDB, CATEGORY_ID_MAP, UserRole } from '../types';
+import { AthletePerformanceRecord, Category, User, MicrocicloDB, CATEGORY_ID_MAP, UserRole, REVERSE_CATEGORY_ID_MAP } from '../types';
 import { supabase } from '../lib/supabase';
 import { triggerPushNotification } from '../lib/notifications';
+import { logActivity } from '../lib/activityLogger';
 import ClubBadge from './ClubBadge';
 
 interface MedicaAreaProps {
@@ -15,16 +16,20 @@ type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar' |
 
 interface DailyReport {
   id: string;
-  id_del_jugador: number;
+  player_id: number;
   anio: number;
   report_date: string;
   observation: string;
   diagnostico_medico?: string;
   treatments_applied?: string[];
-  severity: 'low' | 'medium' | 'high';
+  severity: 'low' | 'medium' | 'high' | 'sick';
+  displayCategory?: string;
   players?: {
     nombre: string;
     apellido1: string;
+    anio?: number;
+    posicion?: string;
+    club?: string;
   };
 }
 
@@ -67,6 +72,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
   const [view, setView] = useState<MedicaView>('daily_report');
   const [reportingPlayer, setReportingPlayer] = useState<User | null>(null);
   const [editingInjuryId, setEditingInjuryId] = useState<string | null>(null);
+  const [editingDailyReportId, setEditingDailyReportId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [foundPlayers, setFoundPlayers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -78,13 +84,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
   const [dailyReportForm, setDailyReportForm] = useState({
     observation: '',
     diagnostico_medico: '',
-    severity: 'low' as 'low' | 'medium' | 'high'
+    severity: 'low' as 'low' | 'medium' | 'high' | 'sick'
   });
 
   const [availableTreatmentOptions, setAvailableTreatmentOptions] = useState<string[]>([
     'Vendaje', 'Masoterapia', 'Electroterapia', 'Tecarterapia', 'Hielo local', 
     'Crioconpresión', 'Compresa húmedo caliente', 'Terapia manual', 
-    'Terapia invasiva', 'Ventosas', 'Otros'
+    'Terapia invasiva', 'Ventosas', 'Curaciones', 'Ejercicios Terapéuticos', 'Otros'
   ]);
   const [selectedTreatments, setSelectedTreatments] = useState<string[]>([]);
   const [newTreatmentOption, setNewTreatmentOption] = useState('');
@@ -117,6 +123,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [showConfirmDelete, setShowConfirmDelete] = useState<{ id: string, name: string } | null>(null);
+  const [showConfirmDeleteReport, setShowConfirmDeleteReport] = useState<{ id: string, name: string } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -178,14 +185,59 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
   const fetchDailyReports = async () => {
     try {
-      const { data, error } = await supabase
+      setLoading(true);
+      // Fetch reports
+      const { data: reports, error: reportsError } = await supabase
         .from('medical_daily_reports')
-        .select('*, players(nombre, apellido1)')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      if (data) setDailyReports(data);
-    } catch (err) {
-      console.error("Error cargando reportes diarios:", err);
+        .select('*, players(id_del_jugador, nombre, apellido1, anio, club, posicion)')
+        .order('report_date', { ascending: false });
+
+      if (reportsError) throw reportsError;
+
+      // Fetch citations to determine category at the time of report
+      const { data: citations, error: citationsError } = await supabase
+        .from('citaciones')
+        .select('player_id, fecha_citacion, microcycles(category_id)')
+        .filter('player_id', 'in', `(${reports.map(r => r.player_id).join(',')})`);
+
+      if (citationsError) {
+        console.warn("Could not fetch citations for categories, falling back to player default category.", citationsError);
+      }
+
+      const processedReports = reports.map(report => {
+        // Find matching citation by date and player
+        const matchingCitation = citations?.find(c => 
+          c.player_id === report.player_id && 
+          c.fecha_citacion === report.report_date
+        );
+
+        let categoryStr = report.players?.categoria || '-';
+        if (matchingCitation && (matchingCitation as any).microcycles) {
+          const micro = (matchingCitation as any).microcycles;
+          const catId = Array.isArray(micro) ? micro[0]?.category_id : micro?.category_id;
+          
+          if (catId) {
+            const category = REVERSE_CATEGORY_ID_MAP[catId];
+            if (category) {
+              categoryStr = category.replace('sub_', 'SUB ').toUpperCase();
+            }
+          }
+        } else if (categoryStr) {
+          categoryStr = categoryStr.replace('sub_', 'SUB ').toUpperCase();
+        }
+
+        return {
+          ...report,
+          displayCategory: categoryStr
+        };
+      });
+
+      setDailyReports(processedReports);
+    } catch (err: any) {
+      console.error("Error loading daily reports:", err);
+      setErrorMessage("Error al cargar historial: " + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -223,33 +275,47 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     if (!reportingPlayer || !dailyReportForm.observation) return;
     setLoading(true);
     try {
-      // Extraemos el año del club (ej: "2008" -> 2008)
-      const playerYear = parseInt(reportingPlayer.club || '0');
+      // Preferimos el campo anio directamente si existe en el objeto User
+      const playerYear = reportingPlayer.anio || 0;
 
-      const { error } = await supabase.from('medical_daily_reports').insert([{
-        id_del_jugador: reportingPlayer.id_del_jugador,
+      const payload = {
+        player_id: reportingPlayer.id_del_jugador,
         anio: playerYear,
         observation: dailyReportForm.observation,
         diagnostico_medico: dailyReportForm.diagnostico_medico,
         severity: dailyReportForm.severity,
-        treatments_applied: selectedTreatments // Guardamos el arreglo de tratamientos
-      }]);
-      if (error) throw error;
+        treatments_applied: selectedTreatments
+      };
+
+      if (editingDailyReportId) {
+        const { error } = await supabase
+          .from('medical_daily_reports')
+          .update(payload)
+          .eq('id', editingDailyReportId);
+        if (error) throw error;
+        setSuccessMessage("REPORTE MÉDICO ACTUALIZADO.");
+      } else {
+        const { error } = await supabase.from('medical_daily_reports').insert([payload]);
+        if (error) throw error;
+        setSuccessMessage("REPORTE MÉDICO GUARDADO.");
+      }
 
       // Disparar notificación push (vía Edge Function)
-      triggerPushNotification({
-        title: `Nuevo Reporte Médico: ${reportingPlayer.name}`,
-        body: `${dailyReportForm.diagnostico_medico || 'Sin diagnóstico'}. Gravedad: ${dailyReportForm.severity}`,
-        url: '/medica'
-      }).catch(err => console.error("Error disparando notificación:", err));
+      if (!editingDailyReportId) {
+        triggerPushNotification({
+          title: `Nuevo Reporte Médico: ${reportingPlayer.name}`,
+          body: `${dailyReportForm.diagnostico_medico || 'Sin diagnóstico'}. Gravedad: ${dailyReportForm.severity}`,
+          url: '/medica'
+        }).catch(err => console.error("Error disparando notificación:", err));
+      }
 
-      setSuccessMessage("REPORTE MÉDICO GUARDADO.");
       setDailyReportForm({ observation: '', diagnostico_medico: '', severity: 'low' });
-      setSelectedTreatments([]); // Limpiamos tratamientos seleccionados
+      setSelectedTreatments([]);
       setReportingPlayer(null);
-      setSearchTerm(''); // Limpiar término de búsqueda
-      setFoundPlayers([]); // Limpiar jugadores encontrados
-      setHasSearched(false); // Resetear estado de búsqueda
+      setEditingDailyReportId(null);
+      setSearchTerm('');
+      setFoundPlayers([]);
+      setHasSearched(false);
       fetchDailyReports();
 
       // Auto-ocultar mensaje de éxito a los 2 segundos
@@ -260,6 +326,45 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       setErrorMessage("Error: " + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEditDailyReport = (report: DailyReport | any) => {
+    setReportingPlayer({
+      id: `p-${report.player_id}`,
+      id_del_jugador: report.player_id,
+      name: `${report.players?.nombre} ${report.players?.apellido1}`,
+      role: UserRole.PLAYER,
+      club: report.players?.club || '', 
+      position: report.players?.posicion || ''
+    });
+    setEditingDailyReportId(report.id);
+    setDailyReportForm({
+      observation: report.observation,
+      diagnostico_medico: report.diagnostico_medico || '',
+      severity: report.severity
+    });
+    setSelectedTreatments(report.treatments_applied || []);
+    // Scroll automatically to form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteDailyReport = async (id: string) => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('medical_daily_reports').delete().eq('id', id);
+      if (error) throw error;
+      setSuccessMessage("REPORTE ELIMINADO.");
+      fetchDailyReports();
+      
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 2000);
+    } catch (err: any) {
+      setErrorMessage("Error al eliminar: " + err.message);
+    } finally {
+      setLoading(false);
+      setShowConfirmDeleteReport(null);
     }
   };
 
@@ -373,7 +478,10 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
   const handleSaveInjury = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reportingPlayer) return;
+    if (!reportingPlayer || !reportingPlayer.id_del_jugador) {
+      setErrorMessage("Error: No se ha identificado correctamente al jugador.");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -395,7 +503,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         fecha_estimada_retorno: injuryForm.fecha_estimada_retorno || null,
         fecha_alta: injuryForm.fecha_alta || null,
         ultimo_control: injuryForm.ultimo_control || null,
-        observaciones: finalObs
+        observaciones: finalObs,
+        updated_at: new Date().toISOString()
       };
 
       if (editingInjuryId) {
@@ -407,6 +516,14 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         if (error) throw error;
         setSuccessMessage("FICHA MÉDICA GUARDADA Y SINCRONIZADA.");
       }
+
+      // Sincronizar también con la tabla players si es necesario (disponibilidad y estado)
+      // Lo registramos en logs para trazabilidad completa
+      logActivity(editingInjuryId ? 'UPDATE_MEDICAL_RECORD' : 'CREATE_MEDICAL_RECORD', {
+        jugador: reportingPlayer.name,
+        estado: injuryForm.estado,
+        localización: injuryForm.localizacion
+      });
 
       // Auto-ocultar mensaje de éxito a los 2 segundos
       setTimeout(() => {
@@ -769,7 +886,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   <input type="date" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.ultimo_control} onChange={e => setInjuryForm({...injuryForm, ultimo_control: e.target.value})} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha de Alta</label>
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Pronóstico de Alta</label>
                   <input type="date" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.fecha_alta} onChange={e => setInjuryForm({...injuryForm, fecha_alta: e.target.value})} />
                 </div>
               </div>
@@ -903,7 +1020,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                         <div className="flex flex-col items-center gap-2 md:gap-3 relative z-10 w-1/3">
                           <div className={`w-3 h-3 md:w-4 md:h-4 rounded-full border-2 md:border-4 border-white shadow-sm ${injury.fecha_alta ? 'bg-emerald-500' : 'bg-slate-200'}`}></div>
                           <div className="text-center">
-                            <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Alta Médica</p>
+                            <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Pronóstico Alta</p>
                             <p className={`text-[10px] md:text-xs font-black ${injury.fecha_alta ? 'text-slate-900' : 'text-slate-300 italic'}`}>
                               {formatDate(injury.fecha_alta)}
                             </p>
@@ -1101,25 +1218,30 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => setReportingPlayer(null)} className="text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest">Cambiar Jugador</button>
+                  <button onClick={() => { setReportingPlayer(null); setEditingDailyReportId(null); }} className="text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest">
+                    {editingDailyReportId ? 'Cancelar Edición' : 'Cambiar Jugador'}
+                  </button>
                 </div>
 
                 <form onSubmit={handleSaveDailyReport} className="space-y-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Gravedad del Caso</label>
                     <div className="flex gap-3">
-                      {(['low', 'medium', 'high'] as const).map(s => (
+                      {(['low', 'medium', 'high', 'sick'] as const).map(s => (
                         <button
                           key={s}
                           type="button"
                           onClick={() => setDailyReportForm({...dailyReportForm, severity: s})}
                           className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
                             dailyReportForm.severity === s 
-                              ? s === 'low' ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : s === 'medium' ? 'bg-amber-50 border-amber-500 text-amber-600' : 'bg-red-50 border-red-500 text-red-600'
+                              ? s === 'low' ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : 
+                                s === 'medium' ? 'bg-amber-50 border-amber-500 text-amber-600' : 
+                                s === 'high' ? 'bg-red-50 border-red-500 text-red-600' :
+                                'bg-purple-50 border-purple-500 text-purple-600'
                               : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
                           }`}
                         >
-                          {s === 'low' ? 'Leve (Verde)' : s === 'medium' ? 'Medio (Amarillo)' : 'Grave (Rojo)'}
+                          {s === 'low' ? 'Leve (Verde)' : s === 'medium' ? 'Medio (Amarillo)' : s === 'high' ? 'Grave (Rojo)' : 'Enfermo (Morado)'}
                         </button>
                       ))}
                     </div>
@@ -1203,7 +1325,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   </div>
                   <button type="submit" disabled={loading} className="w-full bg-[#0b1220] text-white py-6 rounded-3xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-600 transition-all active:scale-95 flex items-center justify-center gap-3">
                     {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
-                    Guardar Reporte Diario
+                    {editingDailyReportId ? 'Actualizar Reporte' : 'Guardar Reporte Diario'}
                   </button>
                 </form>
               </div>
@@ -1223,17 +1345,20 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                 <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest">
                   <tr>
                     <th className="px-6 py-4 text-left">Atleta</th>
+                    <th className="px-4 py-4">Año</th>
+                    <th className="px-4 py-4">Categoría</th>
                     <th className="px-4 py-4">Fecha</th>
                     <th className="px-4 py-4">Gravedad</th>
                     <th className="px-6 py-4 text-left">Diagnóstico</th>
                     <th className="px-6 py-4 text-left">Observación</th>
                     <th className="px-6 py-4">Tratamiento</th>
+                    <th className="px-6 py-4 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
                   {dailyReports.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay reportes registrados</td>
+                      <td colSpan={9} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay reportes registrados</td>
                     </tr>
                   ) : (
                     dailyReports.map(report => (
@@ -1248,10 +1373,16 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                             </div>
                           </div>
                         </td>
+                        <td className="px-4 py-4 text-slate-600 font-bold">{report.anio || report.players?.anio || '-'}</td>
+                        <td className="px-4 py-4">
+                          <span className="px-2 py-1 bg-slate-100 rounded-lg text-[8px] font-black uppercase text-slate-500 tracking-wider">
+                            {report.displayCategory || '-'}
+                          </span>
+                        </td>
                         <td className="px-4 py-4 text-slate-400">{formatDate(report.report_date)}</td>
                         <td className="px-4 py-4">
                           <div className="flex justify-center">
-                            <div className={`w-3 h-3 rounded-full shadow-sm ${report.severity === 'low' ? 'bg-emerald-500' : report.severity === 'medium' ? 'bg-amber-500' : 'bg-red-500'}`}></div>
+                            <div className={`w-3 h-3 rounded-full shadow-sm ${report.severity === 'low' ? 'bg-emerald-500' : report.severity === 'medium' ? 'bg-amber-500' : report.severity === 'high' ? 'bg-red-500' : 'bg-purple-500'}`}></div>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-left font-black text-slate-900 uppercase italic truncate max-w-[150px]">{report.diagnostico_medico || '-'}</td>
@@ -1267,8 +1398,26 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-slate-300 italic">Sin tratamiento</span>
+                              <span className="text-slate-300 italic text-[8px]">Sin tratamiento</span>
                             )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => handleEditDailyReport(report)}
+                              className="w-7 h-7 bg-slate-50 text-slate-400 rounded-lg flex items-center justify-center hover:bg-[#0b1220] hover:text-white transition-all shadow-sm"
+                              title="Editar Reporte"
+                            >
+                              <i className="fa-solid fa-pen text-[9px]"></i>
+                            </button>
+                            <button
+                              onClick={() => setShowConfirmDeleteReport({ id: report.id, name: `${report.players?.nombre} ${report.players?.apellido1}` })}
+                              className="w-7 h-7 bg-slate-50 text-slate-400 rounded-lg flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                              title="Eliminar Reporte"
+                            >
+                              <i className="fa-solid fa-trash-can text-[9px]"></i>
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1280,6 +1429,36 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
           </section>
         </div>
       )}
+
+      {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN DE REPORTE DIARIO */}
+      {showConfirmDeleteReport && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-[32px] p-8 max-w-md w-full shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-300 text-center">
+            <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center text-red-600 mb-6 mx-auto">
+              <i className="fa-solid fa-trash-can text-2xl"></i>
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-2 uppercase italic">Eliminar Reporte</h3>
+            <p className="text-slate-500 mb-8 text-sm">
+              ¿Eliminar reporte de <span className="font-bold text-slate-900">{showConfirmDeleteReport.name}</span>?
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowConfirmDeleteReport(null)}
+                className="flex-1 px-6 py-3 rounded-xl bg-slate-100 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all"
+              >
+                Cerrar
+              </button>
+              <button 
+                onClick={() => handleDeleteDailyReport(showConfirmDeleteReport.id)}
+                className="flex-1 px-6 py-3 rounded-xl bg-red-600 text-white font-black uppercase text-[10px] tracking-widest hover:bg-red-700 transition-all"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN */}
       {showConfirmDelete && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">

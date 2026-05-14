@@ -35,14 +35,15 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
     setLoading(true);
     try {
       // Obtenemos los IDs de los jugadores citados en este microciclo
+      const mId = parseInt(microId);
       const { data: citations, error: citeErr } = await supabase
         .from('citaciones')
-        .select('id_del_jugador, player_id')
-        .eq('microcycle_id', microId);
+        .select('player_id')
+        .eq('microcycle_id', mId);
 
       if (citeErr) throw citeErr;
 
-      const playerIds = citations?.map(c => c.player_id || c.id_del_jugador).filter(Boolean);
+      const playerIds = citations?.map(c => c.player_id).filter(id => id !== null && id !== undefined);
 
       if (playerIds && playerIds.length > 0) {
         const { data: playersData, error: playersErr } = await supabase
@@ -52,6 +53,8 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
 
         if (playersErr) throw playersErr;
         setPlayers(playersData || []);
+      } else {
+        setPlayers([]);
       }
     } catch (err) {
       console.error("Error fetching cited players:", err);
@@ -62,10 +65,11 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
 
   const loadSavedConvocatoria = async () => {
     try {
+      const mId = parseInt(microId);
       const { data, error } = await supabase
         .from('tactical_layout')
         .select('layout_json')
-        .eq('microcycle_id', microId)
+        .eq('microcycle_id', mId)
         .single();
 
       if (data) {
@@ -79,10 +83,11 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
 
   const saveLayout = async () => {
     try {
+      const mId = parseInt(microId);
       const { error } = await supabase
         .from('tactical_layout')
         .upsert({
-          microcycle_id: microId,
+          microcycle_id: mId,
           layout_json: fieldPlayers,
           updated_at: new Date().toISOString()
         }, { onConflict: 'microcycle_id' });
@@ -131,10 +136,13 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
     if (!fieldRef.current) return;
     
     const rect = fieldRef.current.getBoundingClientRect();
+    
+    // Calculamos la posición del centro de la ficha relativa al contenedor
+    // info.point.x es la posición absoluta del cursor en pantalla
     const xPercent = ((info.point.x - rect.left) / rect.width) * 100;
     const yPercent = ((info.point.y - rect.top) / rect.height) * 100;
 
-    // Límites para que no se salgan del campo
+    // Límites de seguridad (5% de margen del borde)
     const safeX = Math.max(5, Math.min(95, xPercent));
     const safeY = Math.max(5, Math.min(95, yPercent));
 
@@ -161,26 +169,33 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
               const isOnField = fieldPlayers.some(p => p.id_del_jugador === player.id_del_jugador);
               return (
                 <button
-                  key={player.id}
+                  key={player.id_del_jugador}
                   onClick={() => isOnField ? removePlayerFromField(player.id_del_jugador) : addPlayerToField(player)}
-                  className={`w-full p-3 rounded-2xl border transition-all flex items-center justify-between group ${
+                  className={`w-full p-4 rounded-3xl border-2 transition-all flex items-center justify-between group h-20 outline-none ${
                     isOnField 
-                    ? 'bg-red-50 border-red-100 text-red-600' 
-                    : 'bg-white border-slate-50 hover:border-slate-200 text-slate-600'
+                    ? 'bg-[#CF1B2B] border-[#CF1B2B] text-white shadow-lg shadow-red-200' 
+                    : 'bg-white border-slate-50 hover:border-red-100 hover:bg-red-50/10 text-slate-900 shadow-sm'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <ClubBadge clubName={player.club} clubs={clubs} logoSize="w-5 h-5" />
-                    <div className="text-left">
-                      <p className="text-[10px] font-black uppercase italic leading-none mb-1">
+                  <div className="flex items-center gap-4 overflow-hidden">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${isOnField ? 'bg-white/20' : 'bg-slate-100'}`}>
+                      <ClubBadge clubName={player.club} clubs={clubs} logoSize="w-8 h-8" showName={false} />
+                    </div>
+                    <div className="text-left overflow-hidden">
+                      <p className={`text-[11px] font-black uppercase italic leading-tight truncate ${isOnField ? 'text-white' : 'text-slate-900'}`}>
                         {player.nombre} {player.apellido1}
                       </p>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">
-                        {player.posicion || 'N/A'}
+                      <p className={`text-[8px] font-bold uppercase tracking-widest mt-0.5 ${isOnField ? 'text-white/60' : 'text-[#CF1B2B]'}`}>
+                        {player.posicion || 'CAMPO'}
+                      </p>
+                      <p className={`text-[7px] font-bold uppercase tracking-tighter truncate ${isOnField ? 'text-white/40' : 'text-slate-400'}`}>
+                        {player.club}
                       </p>
                     </div>
                   </div>
-                  <i className={`fa-solid ${isOnField ? 'fa-minus-circle' : 'fa-plus-circle'} text-xs opacity-40 group-hover:opacity-100`}></i>
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${isOnField ? 'bg-white text-red-600' : 'bg-slate-50 text-slate-300'}`}>
+                    <i className={`fa-solid ${isOnField ? 'fa-check text-[10px]' : 'fa-plus text-[8px]'}`}></i>
+                  </div>
                 </button>
               );
             })
@@ -248,31 +263,33 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
               <motion.div
                 key={p.id_del_jugador}
                 drag
+                dragConstraints={fieldRef}
+                dragElastic={0}
                 dragMomentum={false}
                 onDragEnd={(_, info) => handleDragEnd(p.id_del_jugador, info)}
-                className="absolute z-20 cursor-move"
+                className="absolute z-20 cursor-move touch-none"
                 style={{
                   left: `${p.x}%`,
                   top: `${p.y}%`,
-                  x: '-50%',
-                  y: '-50%'
+                  x: "-50%",
+                  y: "-50%"
                 }}
                 initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
+                animate={{ scale: 1, opacity: 1, x: "-50%", y: "-50%" }}
                 exit={{ scale: 0, opacity: 0 }}
-                whileHover={{ scale: 1.1 }}
-                whileDrag={{ scale: 1.2, zIndex: 100 }}
+                whileHover={{ scale: 1.05, zIndex: 50 }}
+                whileDrag={{ scale: 1.1, zIndex: 100, opacity: 0.9 }}
               >
                 <div className="flex flex-col items-center">
-                  <div className="bg-[#CF1B2B] text-white flex items-center gap-2 p-1.5 rounded-full shadow-2xl border border-white/30 backdrop-blur-sm min-w-[120px]">
-                    <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center p-0.5 shrink-0 overflow-hidden">
-                      <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-5 h-5" />
+                  <div className="bg-[#CF1B2B] text-white flex items-center gap-2.5 p-1.5 pr-4 rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.4)] border border-white/50 backdrop-blur-md min-w-[140px]">
+                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center p-1.5 shrink-0 overflow-hidden shadow-inner border border-white/20">
+                      <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-7 h-7" showName={false} />
                     </div>
-                    <div className="flex flex-col pr-3">
-                      <p className="text-[9px] font-black uppercase italic leading-none whitespace-nowrap">
+                    <div className="flex flex-col">
+                      <p className="text-[10px] font-black uppercase italic leading-none whitespace-nowrap tracking-tight">
                         {p.nombre.split(' ')[0]} {p.apellido1}
                       </p>
-                      <p className="text-[7px] font-bold text-white/60 uppercase tracking-tighter">
+                      <p className="text-[7px] font-bold text-white/70 uppercase tracking-widest mt-0.5">
                         {p.posicion_especifica}
                       </p>
                     </div>

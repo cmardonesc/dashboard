@@ -49,6 +49,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
   // Filtros específicos del Reporte Diario
   const [selectedPlayersReport, setSelectedPlayersReport] = useState<Set<number>>(new Set());
+  
+  // NUEVO: Estado de Ordenamiento
+  const [sortField, setSortField] = useState<string>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   const [dailyTaskGps, setDailyTaskGps] = useState<any[]>([]);
   const [specialNote, setSpecialNote] = useState('');
 
@@ -263,10 +268,34 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             }
           });
 
-          // Join in memory
-          const joinedData = gpsData.map(gps => {
+          // Aggregate data by player_id
+          const aggregatedMap = new Map<number, any>();
+          gpsData.forEach(gps => {
+            const pid = gps.id_del_jugador;
+            if (!aggregatedMap.has(pid)) {
+              aggregatedMap.set(pid, { ...gps });
+            } else {
+              const existing = aggregatedMap.get(pid);
+              existing.minutos = (existing.minutos || 0) + (gps.minutos || 0);
+              existing.dist_total_m = (existing.dist_total_m || 0) + (gps.dist_total_m || 0);
+              existing.dist_ai_m_15_kmh = (existing.dist_ai_m_15_kmh || 0) + (gps.dist_ai_m_15_kmh || 0);
+              existing.dist_mai_m_20_kmh = (existing.dist_mai_m_20_kmh || 0) + (gps.dist_mai_m_20_kmh || 0);
+              existing.dist_sprint_m_25_kmh = (existing.dist_sprint_m_25_kmh || 0) + (gps.dist_sprint_m_25_kmh || 0);
+              existing.sprints_n = (existing.sprints_n || 0) + (gps.sprints_n || 0);
+              existing.acc_decc_ai_n = (existing.acc_decc_ai_n || 0) + (gps.acc_decc_ai_n || 0);
+              existing.vel_max_kmh = Math.max(existing.vel_max_kmh || 0, gps.vel_max_kmh || 0);
+            }
+          });
+
+          // Join and finalize
+          const joinedData = Array.from(aggregatedMap.values()).map(gps => {
             const player = playersData?.find(p => p.id_del_jugador === gps.id_del_jugador) as any;
             if (player) {
+              // Recalculate metros por minuto reliably
+              if (gps.minutos > 0) {
+                gps.m_por_min = gps.dist_total_m / gps.minutos;
+              }
+
               // Prioritize category from active citation
               if (playerCategoryMap[gps.id_del_jugador]) {
                 player.categoria = playerCategoryMap[gps.id_del_jugador];
@@ -583,7 +612,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   const stats = useMemo(() => {
     let checkInDone = 0;
     let checkOutDone = 0;
-    let molestias = 0;
+    let sorenessAlerts = 0;
+    let healthAlerts = 0;
     
     currentCitadosPlayers.forEach(record => {
       const dayWellness = record.wellness.find(w => w.date === selectedDate);
@@ -592,9 +622,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       if (dayWellness) {
         checkInDone++;
         if ((dayWellness.soreness !== undefined && dayWellness.soreness < 5) || 
-            (dayWellness.soreness_areas && dayWellness.soreness_areas.length > 0) ||
-            (dayWellness.illness_symptoms && dayWellness.illness_symptoms.length > 0)) {
-          molestias++;
+            (dayWellness.soreness_areas && dayWellness.soreness_areas.length > 0)) {
+          sorenessAlerts++;
+        }
+        if (dayWellness.illness_symptoms && dayWellness.illness_symptoms.length > 0) {
+          healthAlerts++;
         }
       }
       if (dayLoads.length > 0) {
@@ -607,7 +639,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       checkInPending: currentCitadosPlayers.length - checkInDone,
       checkOutDone,
       checkOutPending: currentCitadosPlayers.length - checkOutDone,
-      molestias
+      sorenessAlerts,
+      healthAlerts
     };
   }, [currentCitadosPlayers, selectedDate]);
 
@@ -640,14 +673,73 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     });
 
     // Sort fullList: reported first, then pending
-    const sortedFullList = [...fullList].sort((a, b) => {
+    let sortedFullList = [...fullList].sort((a, b) => {
       if (a.hasReported && !b.hasReported) return -1;
       if (!a.hasReported && b.hasReported) return 1;
       return 0;
     });
 
+    // NUEVO: Ordenamiento dinámico
+    sortedFullList = [...sortedFullList].sort((a, b) => {
+      let valA: any;
+      let valB: any;
+
+      switch (sortField) {
+        case 'name':
+          valA = a.player.name?.toLowerCase() || '';
+          valB = b.player.name?.toLowerCase() || '';
+          break;
+        case 'fatigue':
+          valA = a.wellness?.fatigue ?? -1;
+          valB = b.wellness?.fatigue ?? -1;
+          break;
+        case 'sleep':
+          valA = a.wellness?.sleep ?? -1;
+          valB = b.wellness?.sleep ?? -1;
+          break;
+        case 'soreness':
+          valA = a.wellness?.soreness ?? -1;
+          valB = b.wellness?.soreness ?? -1;
+          break;
+        case 'stress':
+          valA = a.wellness?.stress ?? -1;
+          valB = b.wellness?.stress ?? -1;
+          break;
+        case 'mood':
+          valA = a.wellness?.mood ?? -1;
+          valB = b.wellness?.mood ?? -1;
+          break;
+        case 'avg':
+          valA = a.wellness ? (a.wellness.fatigue + a.wellness.sleep + a.wellness.mood) / 3 : -1;
+          valB = b.wellness ? (b.wellness.fatigue + b.wellness.sleep + b.wellness.mood) / 3 : -1;
+          break;
+        case 'soreness_areas':
+          valA = a.wellness?.soreness_areas?.join(', ').toLowerCase() || '';
+          valB = b.wellness?.soreness_areas?.join(', ').toLowerCase() || '';
+          break;
+        case 'health_status':
+          valA = a.wellness?.illness_symptoms?.join(', ').toLowerCase() || (a.hasReported ? 'sano' : '');
+          valB = b.wellness?.illness_symptoms?.join(', ').toLowerCase() || (b.hasReported ? 'sano' : '');
+          break;
+        case 'rpe':
+          valA = a.load?.rpe ?? -1;
+          valB = b.load?.rpe ?? -1;
+          break;
+        case 'load':
+          valA = a.load?.load ?? -1;
+          valB = b.load?.load ?? -1;
+          break;
+        default:
+          return 0;
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
     return { reported: reportedList, pending: pendingList, unifiedList: sortedFullList };
-  }, [currentCitadosPlayers, selectedDate, athleteSearch]);
+  }, [currentCitadosPlayers, selectedDate, athleteSearch, sortField, sortDirection]);
 
   const gpsRows = useMemo(() => {
     const rows: any[] = [];
@@ -815,22 +907,22 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         <div className="space-y-6 animate-in fade-in duration-300 print:hidden">
           
           {/* SUMMARY CARDS */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {/* CHECK-IN CARD */}
             <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-xl shadow-inner">
-                  <i className="fa-solid fa-sun"></i>
+                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-xl shadow-inner">
+                  <i className="fa-solid fa-user-check"></i>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Check-in (Wellness)</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Check-in</p>
                   <p className="text-xl font-black text-slate-900 italic uppercase tracking-tighter">
                     {stats.checkInDone} / {currentCitadosPlayers.length}
                   </p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-[8px] font-black text-amber-600 uppercase tracking-widest mb-1">Pendientes</p>
+                <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest mb-1">Pendientes</p>
                 <p className="text-lg font-black text-slate-300 italic leading-none">{stats.checkInPending}</p>
               </div>
             </div>
@@ -839,10 +931,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-xl shadow-inner">
-                  <i className="fa-solid fa-moon"></i>
+                  <i className="fa-solid fa-user-clock"></i>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Check-out (RPE)</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Check-out</p>
                   <p className="text-xl font-black text-slate-900 italic uppercase tracking-tighter">
                     {stats.checkOutDone} / {currentCitadosPlayers.length}
                   </p>
@@ -854,21 +946,39 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               </div>
             </div>
 
-            {/* MOLESTIAS CARD */}
-            <div className={`p-6 rounded-[32px] border shadow-sm flex items-center justify-between group hover:shadow-md transition-all ${stats.molestias > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-slate-100'}`}>
+            {/* SORENESS CARD */}
+            <div className={`p-6 rounded-[32px] border shadow-sm flex items-center justify-between group hover:shadow-md transition-all ${stats.sorenessAlerts > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-slate-100'}`}>
               <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner ${stats.molestias > 0 ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-50 text-slate-300'}`}>
-                  <i className="fa-solid fa-heart-pulse"></i>
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner ${stats.sorenessAlerts > 0 ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-50 text-slate-300'}`}>
+                  <i className="fa-solid fa-face-frown"></i>
                 </div>
                 <div>
-                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${stats.molestias > 0 ? 'text-red-600' : 'text-slate-400'}`}>Molestias Reportadas</p>
+                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${stats.sorenessAlerts > 0 ? 'text-red-600' : 'text-slate-400'}`}>Zona Molestia</p>
                   <p className="text-xl font-black text-slate-900 italic uppercase tracking-tighter">
-                    {stats.molestias} ALERTAS
+                    {stats.sorenessAlerts} ALERTAS
                   </p>
                 </div>
               </div>
-              {stats.molestias > 0 && (
+              {stats.sorenessAlerts > 0 && (
                 <div className="w-2 h-2 bg-red-600 rounded-full animate-ping"></div>
+              )}
+            </div>
+
+            {/* HEALTH CARD */}
+            <div className={`p-6 rounded-[32px] border shadow-sm flex items-center justify-between group hover:shadow-md transition-all ${stats.healthAlerts > 0 ? 'bg-amber-50 border-amber-100' : 'bg-white border-slate-100'}`}>
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner ${stats.healthAlerts > 0 ? 'bg-amber-500 text-white animate-pulse' : 'bg-slate-50 text-slate-300'}`}>
+                  <i className="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${stats.healthAlerts > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Estado Salud</p>
+                  <p className="text-xl font-black text-slate-900 italic uppercase tracking-tighter">
+                    {stats.healthAlerts} ALERTAS
+                  </p>
+                </div>
+              </div>
+              {stats.healthAlerts > 0 && (
+                <div className="w-2 h-2 bg-amber-500 rounded-full animate-ping"></div>
               )}
             </div>
           </div>
@@ -883,24 +993,112 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             <table className="w-full text-center min-w-full md:min-w-[1000px] border-separate border-spacing-y-2 px-1 md:px-4">
               <thead className="bg-[#0b1220] text-white font-black uppercase text-[8px] md:text-[10px]">
                 <tr>
-                  <th className="px-2 md:px-8 py-3 md:py-5 text-left first:rounded-l-2xl">Atleta</th>
+                  <th className="px-2 md:px-8 py-3 md:py-5 text-left first:rounded-l-2xl group cursor-pointer" onClick={() => { setSortField('name'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                    <div className="flex items-center gap-1">
+                      Atleta
+                      <div className="flex flex-col opacity-30 group-hover:opacity-100 transition-opacity">
+                        <i className={`fa-solid fa-caret-up leading-none text-[8px] ${sortField === 'name' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                        <i className={`fa-solid fa-caret-down leading-none text-[8px] ${sortField === 'name' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                      </div>
+                    </div>
+                  </th>
                   {(view === 'wellness' || view === 'report') && (
                     <>
-                      <th className="px-1 py-3 md:py-5">Fat</th>
-                      <th className="px-1 py-3 md:py-5">Sue</th>
-                      <th className="px-1 py-3 md:py-5">Dol</th>
-                      <th className="px-1 py-3 md:py-5 hidden sm:table-cell">Est</th>
-                      <th className="px-1 py-3 md:py-5 hidden sm:table-cell">Áni</th>
-                      <th className="px-1 py-3 md:py-5">Prom</th>
-                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Zona Molestia</th>
-                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Estado Salud</th>
+                      <th className="px-1 py-3 md:py-5 group cursor-pointer" onClick={() => { setSortField('fatigue'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Fat
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-caret-up ${sortField === 'fatigue' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-caret-down ${sortField === 'fatigue' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-1 py-3 md:py-5 group cursor-pointer" onClick={() => { setSortField('sleep'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Sue
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-caret-up ${sortField === 'sleep' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-caret-down ${sortField === 'sleep' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-1 py-3 md:py-5 group cursor-pointer" onClick={() => { setSortField('soreness'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Dol
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-caret-up ${sortField === 'soreness' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-caret-down ${sortField === 'soreness' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-1 py-3 md:py-5 hidden sm:table-cell group cursor-pointer" onClick={() => { setSortField('stress'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Est
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-caret-up ${sortField === 'stress' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-caret-down ${sortField === 'stress' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-1 py-3 md:py-5 hidden sm:table-cell group cursor-pointer" onClick={() => { setSortField('mood'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Áni
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-caret-up ${sortField === 'mood' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-caret-down ${sortField === 'mood' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-1 py-3 md:py-5 group cursor-pointer" onClick={() => { setSortField('avg'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Prom
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-caret-up ${sortField === 'avg' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-caret-down ${sortField === 'avg' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell group cursor-pointer" onClick={() => { setSortField('soreness_areas'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Zona Molestia
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-arrow-down-a-z ${sortField === 'soreness_areas' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-arrow-up-z-a ${sortField === 'soreness_areas' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell group cursor-pointer" onClick={() => { setSortField('health_status'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Estado Salud
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-arrow-down-a-z ${sortField === 'health_status' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-arrow-up-z-a ${sortField === 'health_status' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
                     </>
                   )}
                   {(view === 'pse' || view === 'report') && (
                     <>
                       <th className="px-1 py-3 md:py-5 hidden sm:table-cell">Dur</th>
-                      <th className="px-1 py-3 md:py-5">RPE</th>
-                      <th className="px-1 py-3 md:py-5">Carga</th>
+                      <th className="px-1 py-3 md:py-5 group cursor-pointer" onClick={() => { setSortField('rpe'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          RPE
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-caret-up ${sortField === 'rpe' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-caret-down ${sortField === 'rpe' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-1 py-3 md:py-5 group cursor-pointer" onClick={() => { setSortField('load'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Carga
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-caret-up ${sortField === 'load' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-caret-down ${sortField === 'load' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
                       <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Molestias</th>
                       <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Enfermedad</th>
                     </>

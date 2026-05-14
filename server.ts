@@ -63,50 +63,127 @@ async function startServer() {
 
   // Proxy for activities
   app.get("/api/catapult/activities", async (req, res) => {
-    const token = process.env.CATAPULT_API_TOKEN;
+    const token = process.env.CATAPULT_API_TOKEN?.trim();
     if (!token) {
       return res.status(500).json({ error: "CATAPULT_API_TOKEN not configured in secrets" });
     }
 
-    // List of reliable Cloud regions for OpenField
     const regions = [
-      { name: 'US', url: 'https://us.openfield.catapultsports.com/api/v1' },
+      { name: 'OpenField US', url: 'https://us.openfield.catapultsports.com/api/v1' },
       { name: 'Global v1', url: 'https://api.catapultsports.com/api/v1' },
-      { name: 'Global v1 (Alt)', url: 'https://api.catapultsports.com/v1' },
-      { name: 'EU', url: 'https://eu.openfield.catapultsports.com/api/v1' },
-      { name: 'AU', url: 'https://au.openfield.catapultsports.com/api/v1' }
+      { name: 'Global v2', url: 'https://api.catapultsports.com/api/v2' },
+      { name: 'OpenField EU', url: 'https://eu.openfield.catapultsports.com/api/v1' },
+      { name: 'OpenField AU', url: 'https://au.openfield.catapultsports.com/api/v1' },
+      { name: 'Catapult One', url: 'https://api.catapultsports.com/v1' }
     ];
 
     const authMethods = [
       { name: 'Bearer', header: (t: string) => ({ 'Authorization': `Bearer ${t}` }) },
-      { name: 'token', header: (t: string) => ({ 'Authorization': `token ${t}` }) }
+      { name: 'Token', header: (t: string) => ({ 'Authorization': `Token ${t}` }) },
+      { name: 'token', header: (t: string) => ({ 'Authorization': `token ${t}` }) },
+      { name: 'X-Auth-Token', header: (t: string) => ({ 'X-Auth-Token': t }) },
+      { name: 'X-API-Key', header: (t: string) => ({ 'X-API-Key': t }) },
+      { name: 'X-Api-Token', header: (t: string) => ({ 'X-Api-Token': t }) }
     ];
 
     let lastErrorDetails: any = null;
     let lastStatus: number = 0;
     let attempts: string[] = [];
 
-    console.log("== Catapult Auth Check Start ==");
+    console.log(`== Catapult Auth Check Start (Token Length: ${token.length}) ==`);
 
     for (const region of regions) {
-      const url = `${region.url}/activities`;
       for (const method of authMethods) {
         try {
+          const url = `${region.url}/activities`;
+          const queryParams = Object.keys(req.query).length === 0 
+            ? { order_by: 'start_time', direction: 'desc' } 
+            : req.query;
+            
           console.log(`Region: ${region.name} | Method: ${method.name} | URL: ${url}`);
+          
           const axiosRes = await axios.get(url, {
             headers: {
               ...method.header(token),
               'Accept': 'application/json',
-              'User-Agent': 'LaRojaSync/1.4'
+              'User-Agent': 'LaRojaSync/1.5'
             },
-            params: { limit: 1 },
-            timeout: 8000,
-            maxRedirects: 0
+            params: { 
+              limit: 100,
+              ...queryParams
+            },
+            timeout: 10000
           });
 
           if (axiosRes.status === 200) {
-            console.log(`== SUCCESS! Connected to ${region.name} via ${method.name} ==`);
-            return res.json(axiosRes.data);
+            let rawData = axiosRes.data;
+            console.log(`-- DEBUG: Raw data received from ${region.name}:`, JSON.stringify(rawData).substring(0, 500));
+            let activities = Array.isArray(rawData) ? rawData : (rawData.activities || rawData.data || []);
+            
+            // DEEP DISCOVERY: If 0 activities found, try fetching teams first
+            if (activities.length === 0) {
+              console.log(`-- 0 activities in ${region.name}. Trying Deep Discovery (Teams)... --`);
+              try {
+                const teamsUrl = url.replace('/activities', '/teams');
+                const teamsRes = await axios.get(teamsUrl, {
+                  headers: { ...method.header(token), 'Accept': 'application/json' },
+                  timeout: 5000
+                });
+                
+                const teamsBody = teamsRes.data;
+                const teams = Array.isArray(teamsBody) ? teamsBody : (teamsBody.teams || teamsBody.data || []);
+                
+                if (teams.length > 0) {
+                  console.log(`   Found ${teams.length} teams. Attempting team-specific fetch...`);
+                  for (const team of teams.slice(0, 3)) {
+                    const teamId = team.id || team.uuid;
+                    if (!teamId) continue;
+                    
+                    const teamActivitiesUrl = `${region.url}/teams/${teamId}/activities`;
+                    const taRes = await axios.get(teamActivitiesUrl, {
+                      headers: { ...method.header(token), 'Accept': 'application/json' },
+                      params: { limit: 50 },
+                      timeout: 5000
+                    });
+                    const tData = taRes.data;
+                    const teamActs = Array.isArray(tData) ? tData : (tData.activities || tData.data || []);
+                    if (teamActs.length > 0) {
+                      activities = teamActs;
+                      console.log(`   SUCCESS! Found ${activities.length} activities via Team ID: ${teamId}`);
+                      break;
+                    }
+                  }
+                }
+              } catch (e: any) {
+                console.log(`   Deep Discovery failed: ${e.message}`);
+              }
+            }
+
+            // RECOVERY: Try /sessions if still 0
+            if (activities.length === 0) {
+               const sessionsUrl = url.replace('/activities', '/sessions');
+               try {
+                 const sessionRes = await axios.get(sessionsUrl, {
+                   headers: { ...method.header(token), 'Accept': 'application/json' },
+                   params: { limit: 50 },
+                   timeout: 5000
+                 });
+                 const sessionData = sessionRes.data;
+                 const sessionActivities = Array.isArray(sessionData) ? sessionData : (sessionData.activities || sessionData.sessions || sessionData.data || []);
+                 if (sessionActivities.length > 0) {
+                   activities = sessionActivities;
+                 }
+               } catch (e) {}
+            }
+
+            console.log(`== FINAL RESULT: Connected to ${region.name} via ${method.name}. Returning ${activities.length} activities. ==`);
+            return res.json({
+              activities,
+              metadata: {
+                region: region.name,
+                method: method.name
+              }
+            });
           }
         } catch (error: any) {
           lastStatus = error.response?.status || 0;
