@@ -30,7 +30,7 @@ serve(async (req) => {
         const { data: player } = await supabase
           .from("players")
           .select("nombre, apellido1")
-          .eq("id_del_jugador", record.id_del_jugador)
+          .eq("player_id", record.player_id)
           .single();
         const playerName = player ? `${player.nombre} ${player.apellido1}` : "Jugador";
         title = `Nuevo Reporte Médico: ${playerName}`;
@@ -41,7 +41,7 @@ serve(async (req) => {
         const { data: player } = await supabase
           .from("players")
           .select("nombre, apellido1")
-          .eq("id_del_jugador", record.id_del_jugador)
+          .eq("player_id", record.player_id)
           .single();
         const playerName = player ? `${player.nombre} ${player.apellido1}` : "Jugador";
         title = `Check-in Completado: ${playerName}`;
@@ -52,7 +52,7 @@ serve(async (req) => {
         const { data: player } = await supabase
           .from("players")
           .select("nombre, apellido1")
-          .eq("id_del_jugador", record.id_del_jugador)
+          .eq("player_id", record.player_id)
           .single();
         const playerName = player ? `${player.nombre} ${player.apellido1}` : "Jugador";
         title = `Check-out (RPE): ${playerName}`;

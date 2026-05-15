@@ -154,7 +154,7 @@ export default function DesconvocatoriaArea() {
         .select(`
           player_id,
           players (
-            id_del_jugador,
+            player_id,
             nombre,
             apellido1,
             club,
@@ -186,8 +186,8 @@ export default function DesconvocatoriaArea() {
           }
 
           return {
-            id: `p-${d.players.id_del_jugador}`,
-            id_del_jugador: d.players.id_del_jugador,
+            id: `p-${d.players.player_id}`,
+            player_id: d.players.player_id,
             name: `${d.players.nombre} ${d.players.apellido1}`,
             role: UserRole.PLAYER,
             club: d.players.club || 'SIN CLUB',
@@ -210,7 +210,7 @@ export default function DesconvocatoriaArea() {
       const { data: wellnessRaw } = await supabase
         .from('wellness_checkin')
         .select('*')
-        .eq('id_del_jugador', playerId)
+        .eq('player_id', playerId)
         .gte('checkin_date', start)
         .lte('checkin_date', end)
         .order('checkin_date', { ascending: true });
@@ -218,7 +218,7 @@ export default function DesconvocatoriaArea() {
       const { data: loadsRaw } = await supabase
         .from('internal_load')
         .select('*')
-        .eq('id_del_jugador', playerId)
+        .eq('player_id', playerId)
         .gte('session_date', start)
         .lte('session_date', end)
         .order('session_date', { ascending: true });
@@ -226,7 +226,7 @@ export default function DesconvocatoriaArea() {
       const { data: gpsRaw } = await supabase
         .from('gps_import')
         .select('*')
-        .eq('id_del_jugador', playerId)
+        .eq('player_id', playerId)
         .gte('fecha', start)
         .lte('fecha', end)
         .order('fecha', { ascending: true });
@@ -234,7 +234,7 @@ export default function DesconvocatoriaArea() {
       const { data: medicalRaw } = await supabase
         .from('medical_daily_reports')
         .select('*')
-        .eq('id_del_jugador', playerId)
+        .eq('player_id', playerId)
         .gte('report_date', start)
         .lte('report_date', end)
         .order('report_date', { ascending: true });
@@ -294,7 +294,7 @@ export default function DesconvocatoriaArea() {
   const handleViewReport = async () => {
     if (processingBajaAtleta && selectedMicro) {
       setLoading(true);
-      const history = await fetchAthleteHistory(processingBajaAtleta.id_del_jugador!, selectedMicro.start_date, selectedMicro.end_date);
+      const history = await fetchAthleteHistory(processingBajaAtleta.player_id!, selectedMicro.start_date, selectedMicro.end_date);
       setHistoricalData(history);
       setViewMode('report')
       setLoading(false);
@@ -308,8 +308,8 @@ export default function DesconvocatoriaArea() {
     const historyMap: Record<number, HistoricalData> = {};
     
     for (const p of club.players) {
-      if (p.id_del_jugador) {
-        historyMap[p.id_del_jugador] = await fetchAthleteHistory(p.id_del_jugador, selectedMicro.start_date, selectedMicro.end_date);
+      if (p.player_id) {
+        historyMap[p.player_id] = await fetchAthleteHistory(p.player_id, selectedMicro.start_date, selectedMicro.end_date);
       }
     }
     
@@ -333,7 +333,7 @@ export default function DesconvocatoriaArea() {
       const { error: insertError } = await supabase
         .from('desconvocatorias')
         .insert([{
-          athlete_id: processingBajaAtleta.id_del_jugador,
+          athlete_id: processingBajaAtleta.player_id,
           athlete_name: processingBajaAtleta.name,
           club_name: processingBajaAtleta.club,
           category_id: selectedMicro.category_id,
@@ -347,14 +347,14 @@ export default function DesconvocatoriaArea() {
       // Actualizar mapa local de motivos
       setBajaReasonsMap(prev => ({
         ...prev,
-        [processingBajaAtleta.id_del_jugador!]: bajaReasonInput
+        [processingBajaAtleta.player_id!]: bajaReasonInput
       }));
 
       // 2. Eliminar de 'citaciones'
       const { error: deleteError } = await supabase
         .from('citaciones')
         .delete()
-        .match({ microcycle_id: selectedMicro.id, player_id: processingBajaAtleta.id_del_jugador });
+        .match({ microcycle_id: selectedMicro.id, player_id: processingBajaAtleta.player_id });
       
       if (deleteError) throw deleteError;
 
@@ -377,7 +377,7 @@ export default function DesconvocatoriaArea() {
 
     setLoading(true);
     try {
-      const playerIds = club.players.map(p => p.id_del_jugador).filter(id => id !== undefined);
+      const playerIds = club.players.map(p => p.player_id).filter(id => id !== undefined);
       
       const { error } = await supabase
         .from('citaciones')
@@ -515,8 +515,8 @@ export default function DesconvocatoriaArea() {
         setSelectedClubForPrint(group);
         const historyMap: Record<number, HistoricalData> = {};
         for (const p of group.players) {
-          if (p.id_del_jugador) {
-            historyMap[p.id_del_jugador] = await fetchAthleteHistory(p.id_del_jugador, selectedMicro.start_date, selectedMicro.end_date);
+          if (p.player_id) {
+            historyMap[p.player_id] = await fetchAthleteHistory(p.player_id, selectedMicro.start_date, selectedMicro.end_date);
           }
         }
         setClubHistoryData(historyMap);
@@ -1050,7 +1050,7 @@ export default function DesconvocatoriaArea() {
               <PlayerReportSheet 
                 key={p.id} 
                 player={p} 
-                history={clubHistoryData[p.id_del_jugador!] || { wellness: [], loads: [], gps: [], medical: [] }} 
+                history={clubHistoryData[p.player_id!] || { wellness: [], loads: [], gps: [], medical: [] }} 
               />
             ))}
           </div>

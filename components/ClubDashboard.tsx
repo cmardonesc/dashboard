@@ -107,7 +107,7 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
     const getDisplayName = (player: any) => {
       const isSameClub = player.club?.toLowerCase() === selectedClub.toLowerCase();
       if (isSameClub) return player.name;
-      return `Atleta Externo #${player.id_del_jugador || player.id?.split('-').pop()}`;
+      return `Atleta Externo #${player.player_id || player.id?.split('-').pop()}`;
     };
 
     return (

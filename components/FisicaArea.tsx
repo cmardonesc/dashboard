@@ -11,13 +11,14 @@ interface FisicaAreaProps {
   view?: 'wellness' | 'pse' | 'external_total' | 'report';
   userRole?: string;
   userClub?: string;
+  userClubId?: number | null;
   highlightPlayerId?: number | null;
   clubs?: any[];
 }
 
 type MainTab = 'carga_interna' | 'carga_externa' | 'reporte_diario';
 
-export default function FisicaArea({ performanceRecords, view = 'wellness', userRole, userClub, highlightPlayerId, clubs = [] }: FisicaAreaProps) {
+export default function FisicaArea({ performanceRecords, view = 'wellness', userRole, userClub, userClubId, highlightPlayerId, clubs = [] }: FisicaAreaProps) {
   const activeMainTab: MainTab = useMemo(() => {
     if (view === 'external_total') return 'carga_externa';
     if (view === 'report') return 'reporte_diario';
@@ -236,11 +237,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           }
 
           // Fetch Players data
-          const playerIds = Array.from(new Set(gpsData.map(d => d.id_del_jugador)));
+          const playerIds = Array.from(new Set(gpsData.map(d => d.player_id)));
           const { data: playersData, error: playersError } = await supabase
             .from('players')
-            .select('id_del_jugador, nombre, apellido1, apellido2, club, posicion, anio')
-            .in('id_del_jugador', playerIds);
+            .select('player_id, nombre, apellido1, apellido2, club, posicion, anio')
+            .in('player_id', playerIds);
           
           if (playersError) throw playersError;
 
@@ -271,7 +272,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           // Aggregate data by player_id
           const aggregatedMap = new Map<number, any>();
           gpsData.forEach(gps => {
-            const pid = gps.id_del_jugador;
+            const pid = gps.player_id;
             if (!aggregatedMap.has(pid)) {
               aggregatedMap.set(pid, { ...gps });
             } else {
@@ -289,7 +290,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
           // Join and finalize
           const joinedData = Array.from(aggregatedMap.values()).map(gps => {
-            const player = playersData?.find(p => p.id_del_jugador === gps.id_del_jugador) as any;
+            const player = playersData?.find(p => p.player_id === gps.player_id) as any;
             if (player) {
               // Recalculate metros por minuto reliably
               if (gps.minutos > 0) {
@@ -297,8 +298,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               }
 
               // Prioritize category from active citation
-              if (playerCategoryMap[gps.id_del_jugador]) {
-                player.categoria = playerCategoryMap[gps.id_del_jugador];
+              if (playerCategoryMap[gps.player_id]) {
+                player.categoria = playerCategoryMap[gps.player_id];
               } else if (!player.categoria && player.anio) {
                 const age = 2026 - player.anio;
                 if (age <= 13) player.categoria = 'sub_13';
@@ -331,22 +332,26 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   }, [view, activeMainTab, selectedDate]);
 
   const anonymizedGpsImport = useMemo(() => {
-    if (userRole !== 'club' || !userClub) return gpsImportData;
-    
-    const uClubNorm = normalizeClub(userClub);
+    if (userRole !== 'club') return gpsImportData;
     
     return gpsImportData.map(row => {
       const player = row.players;
-      const pClub = player?.club_name || player?.club || '';
-      const pClubNorm = normalizeClub(pClub);
+      let isOwnClub = false;
+      if (userClubId) {
+        isOwnClub = player?.id_club === userClubId;
+      } else if (userClub) {
+        const uClubNorm = normalizeClub(userClub);
+        const pClub = player?.club_name || player?.club || '';
+        isOwnClub = normalizeClub(pClub) === uClubNorm;
+      }
       
-      if (pClubNorm !== uClubNorm) {
+      if (!isOwnClub) {
         return {
           ...row,
           players: {
             ...player,
             nombre: 'Jugador',
-            apellido1: `[${row.id_del_jugador}]`,
+            apellido1: `[${row.player_id}]`,
             apellido2: '',
             club_name: 'OTRO CLUB',
             club: 'OTRO CLUB'
@@ -355,7 +360,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       }
       return row;
     });
-  }, [gpsImportData, userRole, userClub]);
+  }, [gpsImportData, userRole, userClub, userClubId]);
 
   const togglePlayerInReport = (id: number) => {
     const next = new Set(selectedPlayersReport);
@@ -392,15 +397,19 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // DERIVED DATA
   const currentCitadosPlayers = useMemo(() => {
     // 1. Jugadores citados (siempre visibles, para club de forma anonimizada)
-    const cited = performanceRecords.filter(r => r.player.id_del_jugador && citedPlayerIds.includes(r.player.id_del_jugador));
+    const cited = performanceRecords.filter(r => r.player.player_id && citedPlayerIds.includes(r.player.player_id));
     
     // 2. Si es CLUB, asegurar que sus propios jugadores estén incluidos, incluso si no hay microciclo
-    if (userRole === 'club' && userClub) {
-      const uClubNorm = normalizeClub(userClub);
+    if (userRole === 'club') {
       const myPlayers = performanceRecords.filter(r => {
-        const pClub = r.player.club_name || r.player.club || '';
-        const pClubNorm = normalizeClub(pClub);
-        const isMyPlayer = pClubNorm === uClubNorm;
+        let isMyPlayer = false;
+        if (userClubId) {
+          isMyPlayer = r.player.id_club === userClubId;
+        } else if (userClub) {
+          const uClubNorm = normalizeClub(userClub);
+          const pClub = r.player.club_name || r.player.club || '';
+          isMyPlayer = normalizeClub(pClub) === uClubNorm;
+        }
         
         if (!isMyPlayer) return false;
         
@@ -424,7 +433,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       // Combinar citados con jugadores propios sin duplicados
       const combined = [...cited];
       myPlayers.forEach(p => {
-        if (!combined.some(c => c.player.id_del_jugador === p.player.id_del_jugador)) {
+        if (!combined.some(c => c.player.player_id === p.player.player_id)) {
           combined.push(p);
         }
       });
@@ -435,7 +444,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   }, [performanceRecords, citedPlayerIds, userRole, userClub, selectedCategories]);
 
   const reportData = useMemo(() => {
-    const filteredRecords = currentCitadosPlayers.filter(r => selectedPlayersReport.has(r.player.id_del_jugador!));
+    const filteredRecords = currentCitadosPlayers.filter(r => selectedPlayersReport.has(r.player.player_id!));
     
     const wellnessList = filteredRecords.map(r => ({
       player: r.player,
@@ -461,7 +470,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     };
 
     const tasksMap: Record<string, any> = {};
-    const filteredDailyTasks = dailyTaskGps.filter(t => selectedPlayersReport.has(t.id_del_jugador));
+    const filteredDailyTasks = dailyTaskGps.filter(t => selectedPlayersReport.has(t.player_id));
 
     filteredDailyTasks.forEach(t => {
       if (!tasksMap[t.tarea]) {
@@ -488,7 +497,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
     const athleteTotalsMap: Record<number, any> = {};
     filteredDailyTasks.forEach(t => {
-      const pid = t.id_del_jugador;
+      const pid = t.player_id;
       if (!athleteTotalsMap[pid]) {
         athleteTotalsMap[pid] = { min: 0, dist: 0, mpm: 0, hsr: 0, ai: 0, sprint: 0, nsp: 0, vmax: 0, acc: 0, count: 0 };
       }
@@ -506,7 +515,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     });
 
     const athleteGpsTotals = filteredRecords.map(r => {
-      const stats = athleteTotalsMap[r.player.id_del_jugador!];
+      const stats = athleteTotalsMap[r.player.player_id!];
       return {
         player: r.player,
         stats: stats ? { ...stats, mpm: stats.mpm / stats.count } : null
@@ -514,7 +523,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     });
 
     // NUEVO: Datos de gps_import para el reporte (Totales Reales)
-    const gpsImportReport = anonymizedGpsImport.filter(row => selectedPlayersReport.has(row.id_del_jugador));
+    const gpsImportReport = anonymizedGpsImport.filter(row => selectedPlayersReport.has(row.player_id));
 
     // NUEVO: Cálculo de Promedios para Wellness
     const wellValid = wellnessList.filter(w => w.data);
@@ -1111,7 +1120,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   const isPending = !row.hasReported;
                   const avg = row.wellness ? (row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3 : 0;
                   
-                  const isHighlighted = highlightPlayerId && Number(row.player.id_del_jugador) === Number(highlightPlayerId);
+                  const isHighlighted = highlightPlayerId && Number(row.player.player_id) === Number(highlightPlayerId);
                   
                   return (
                     <tr key={idx} className={`transition-all font-black uppercase italic text-[8px] md:text-xs shadow-sm hover:scale-[1.01] hover:shadow-md ${isHighlighted ? 'bg-blue-50 ring-2 ring-blue-500' : isPending ? 'bg-slate-50/50 text-slate-300' : (row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '') ? 'bg-slate-100/80 hover:bg-slate-100' : 'bg-white hover:bg-slate-50 text-slate-900')} rounded-2xl overflow-hidden`}>
@@ -1248,10 +1257,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                <tbody className="divide-y divide-slate-100 font-black italic uppercase text-[10px] md:text-xs">
                  {filteredGpsImport.map((row, idx) => {
                    const player = row.players;
-                   const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.id_del_jugador}`;
+                   const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.player_id}`;
                    const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
                    
-                   const isHighlighted = highlightPlayerId && Number(row.id_del_jugador) === Number(highlightPlayerId);
+                   const isHighlighted = highlightPlayerId && Number(row.player_id) === Number(highlightPlayerId);
                    const ifrValue = calcularIFR(row, player);
                    const ifrColor = ifrValue !== null ? getIFRColor(ifrValue) : null;
                    
@@ -1351,11 +1360,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     {currentCitadosPlayers
                       .filter(p => p.player.name.toLowerCase().includes(reportPlayerSearch.toLowerCase()))
                       .map(p => {
-                        const active = selectedPlayersReport.has(p.player.id_del_jugador!);
+                        const active = selectedPlayersReport.has(p.player.player_id!);
                         return (
                           <button 
                            key={p.player.id}
-                           onClick={() => togglePlayerInReport(p.player.id_del_jugador!)}
+                           onClick={() => togglePlayerInReport(p.player.player_id!)}
                            className={`px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all shadow-sm border-2 ${active ? 'bg-[#0b1220] border-[#0b1220] text-white' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-300'}`}
                           >
                             {active && <i className="fa-solid fa-check text-red-500 mr-2"></i>}
@@ -1633,7 +1642,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         <tbody className="text-[8px] font-mono font-black text-slate-900">
                           {chunk.map((row) => {
                             const player = row.players;
-                            const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.id_del_jugador}`;
+                            const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.player_id}`;
                             const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
                             
                             // Use stored IFR if available, otherwise calculate it

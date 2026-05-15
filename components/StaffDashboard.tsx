@@ -34,12 +34,22 @@ interface StaffDashboardProps {
   activeMenu: MenuId;
   onMenuChange: (id: MenuId) => void;
   userClub?: string;
+  userClubId?: number | null;
   userRole?: string;
-  userId_del_jugador?: number | null;
+  player_id?: number | null;
   clubs?: any[];
 }
 
-const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, activeMenu, onMenuChange, userClub, userRole, userId_del_jugador, clubs = [] }) => {
+const StaffDashboard: React.FC<StaffDashboardProps> = ({ 
+  performanceRecords, 
+  activeMenu, 
+  onMenuChange, 
+  userClub, 
+  userClubId,
+  userRole, 
+  player_id, 
+  clubs = [] 
+}) => {
   const [realMicrocycles, setRealMicrocycles] = useState<any[]>([]);
   const [citData, setCitData] = useState<any[]>([]);
   const [dailyActivities, setDailyActivities] = useState<any[]>([]);
@@ -114,12 +124,21 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
 
   const playerToCategory = useMemo(() => {
     const map = new Map();
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Solo citaciones de microciclos que están ACTIVOS hoy
     citData.forEach((c: any) => {
       const mc = realMicrocycles.find(m => m.id === c.microcycle_id);
       if (mc) {
-        map.set(c.player_id, mc.category_id);
+        const start = mc.start_date.substring(0, 10);
+        const end = mc.end_date.substring(0, 10);
+        
+        if (today >= start && today <= end) {
+          map.set(String(c.player_id), mc.category_id);
+        }
       }
     });
+
     return map;
   }, [citData, realMicrocycles]);
 
@@ -130,8 +149,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         if (!todayW) return null;
         return {
           ...todayW,
-          id_del_jugador: r.player.id_del_jugador,
-          players: r.player
+          player_id: r.player.player_id,
+          players: r.player // Incluimos el objeto completo para los widgets
         };
       })
       .filter((w): w is any => w !== null);
@@ -145,19 +164,19 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
     );
     
     return discomfort.map(w => {
-      const citedCat = playerToCategory.get(w.id_del_jugador);
+      const citedCat = playerToCategory.get(String(w.player_id));
       return { ...w, players: { ...w.players, category_id: citedCat } };
     });
   }, [wellnessDataToday, playerToCategory]);
 
   const pendingCheckins = useMemo(() => {
-    const answeredIds = new Set(wellnessDataToday.map(w => w.id_del_jugador?.toString()));
+    const answeredIds = new Set(wellnessDataToday.map(w => String(w.player_id)));
     return performanceRecords
-      .filter(r => r.player.id_del_jugador && playerToCategory.has(r.player.id_del_jugador))
-      .filter(r => !answeredIds.has(r.player.id_del_jugador?.toString()))
+      .filter(r => r.player.player_id && playerToCategory.has(String(r.player.player_id)))
+      .filter(r => !answeredIds.has(String(r.player.player_id)))
       .map(r => ({
         ...r.player,
-        category_id: playerToCategory.get(r.player.id_del_jugador)
+        category_id: playerToCategory.get(String(r.player.player_id))
       }));
   }, [performanceRecords, wellnessDataToday, playerToCategory]);
 
@@ -165,15 +184,15 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
     const answeredIds = new Set();
     performanceRecords.forEach(r => {
       const todayL = r.loads.find(l => l.date === todayStr);
-      if (todayL) answeredIds.add(r.player.id_del_jugador?.toString());
+      if (todayL) answeredIds.add(String(r.player.player_id));
     });
 
     return performanceRecords
-      .filter(r => r.player.id_del_jugador && playerToCategory.has(r.player.id_del_jugador))
-      .filter(r => !answeredIds.has(r.player.id_del_jugador?.toString()))
+      .filter(r => r.player.player_id && playerToCategory.has(String(r.player.player_id)))
+      .filter(r => !answeredIds.has(String(r.player.player_id)))
       .map(r => ({
         ...r.player,
-        category_id: playerToCategory.get(r.player.id_del_jugador)
+        category_id: playerToCategory.get(String(r.player.player_id))
       }));
   }, [performanceRecords, todayStr, playerToCategory]);
 
@@ -236,15 +255,29 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
       // 4. Fetch Medical and Kinesic data
       const { data: medData } = await supabase
         .from('medical_daily_reports')
-        .select('*, players(nombre, apellido1)')
+        .select('*')
         .eq('report_date', todayStr);
-      if (medData) setMedicalReportsToday(medData);
-
+      
       const { data: kinData } = await supabase
         .from('medical_treatments')
-        .select('*, players(nombre, apellido1)')
+        .select('*')
         .eq('treatment_date', todayStr);
-      if (kinData) setKinesicTreatmentsToday(kinData);
+
+      if (medData) {
+        const enriched = medData.map(m => ({
+          ...m,
+          players: performanceRecords.find(r => r.player.player_id === m.player_id)?.player
+        }));
+        setMedicalReportsToday(enriched);
+      }
+      
+      if (kinData) {
+        const enriched = kinData.map(k => ({
+          ...k,
+          players: performanceRecords.find(r => r.player.player_id === k.player_id)?.player
+        }));
+        setKinesicTreatmentsToday(enriched);
+      }
 
       // 5. Fetch Weather
       try {
@@ -340,7 +373,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
   const filteredMedical = useMemo(() => {
     if (selectedCategoryId) {
       return medicalReportsToday.filter(m => {
-        const citedCat = playerToCategory.get(m.player_id);
+        const citedCat = playerToCategory.get(String(m.player_id));
         return citedCat === selectedCategoryId;
       });
     }
@@ -350,7 +383,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
   const filteredKinesic = useMemo(() => {
     if (selectedCategoryId) {
       return kinesicTreatmentsToday.filter(k => {
-        const citedCat = playerToCategory.get(k.player_id);
+        const citedCat = playerToCategory.get(String(k.player_id));
         return citedCat === selectedCategoryId;
       });
     }
@@ -359,16 +392,40 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
 
   const filteredPerformanceRecords = useMemo(() => {
     if (selectedCategoryId) {
-      return performanceRecords.filter(r => playerToCategory.get(r.player.id_del_jugador) === selectedCategoryId);
+      return performanceRecords.filter(r => playerToCategory.get(String(r.player.player_id)) === selectedCategoryId);
     }
     return performanceRecords;
   }, [performanceRecords, selectedCategoryId, playerToCategory]);
 
   const renderContent = () => {
+    console.log("StaffDashboard: rendering content", {
+      activeMenu,
+      performanceRecords: performanceRecords.length
+    });
     const todayStr = new Date().toISOString().split('T')[0];
     const activeMicrocycles = realMicrocycles.filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
 
-    const widgetMap: Record<string, React.ReactNode> = {
+  const renderPlayerName = (p: any, id?: number) => {
+    if (!p) return `Atleta #${id || '???'}`;
+    
+    // 1. Preferimos nombre y apellido reales de la DB si no son genéricos
+    const nombre = p.nombre || '';
+    const hasRealNombre = nombre && !nombre.toLowerCase().includes('atleta') && !nombre.toLowerCase().includes('jugador');
+    if (hasRealNombre) {
+      return `${nombre} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim();
+    }
+    
+    // 2. Si no, usamos el campo 'nombre_completo' o 'name' que suele tener el nombre completo de los logs
+    const fullName = p.nombre_completo || p.name || '';
+    if (fullName && !fullName.toLowerCase().includes('atleta') && !fullName.toLowerCase().includes('jugador')) {
+      return fullName.trim();
+    }
+
+    // 3. Fallback final
+    return `Atleta #${p.player_id || id || '???'}`;
+  };
+
+  const widgetMap: Record<string, React.ReactNode> = {
       weather: (
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-[32px] md:rounded-[48px] p-6 md:p-8 text-white shadow-lg shadow-blue-500/20 flex flex-col h-full relative overflow-hidden animate-in fade-in zoom-in-95 duration-500">
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
@@ -582,10 +639,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                       {p.foto_url ? <img src={p.foto_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : p.nombre?.charAt(0)}
                     </div>
                     <div>
-                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{p.nombre} {p.apellido1}</p>
+                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
+                        {renderPlayerName(p, p.player_id)}
+                      </p>
                       <div className="flex items-center gap-2">
                         <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.position}</p>
-                        <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-slate-400 uppercase tracking-widest" />
+                        <ClubBadge clubName={p.club} idClub={p.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-slate-400 uppercase tracking-widest" />
                       </div>
                     </div>
                   </div>
@@ -616,10 +675,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                       {p.foto_url ? <img src={p.foto_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : p.nombre?.charAt(0)}
                     </div>
                     <div>
-                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{p.nombre} {p.apellido1}</p>
+                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
+                        {renderPlayerName(p, p.player_id)}
+                      </p>
                       <div className="flex items-center gap-2">
                         <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{p.position}</p>
-                        <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-slate-400 uppercase tracking-widest" />
+                        <ClubBadge clubName={p.club} idClub={p.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-slate-400 uppercase tracking-widest" />
                       </div>
                     </div>
                   </div>
@@ -652,12 +713,14 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                       {w.players?.foto_url ? <img src={w.players.foto_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : w.players?.nombre?.charAt(0)}
                     </div>
                     <div>
-                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{w.players?.nombre} {w.players?.apellido1}</p>
+                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
+                        {renderPlayerName(w.players, w.player_id)}
+                      </p>
                       <div className="flex items-center gap-2">
                         <p className="text-[8px] font-bold text-red-600 uppercase tracking-widest">
                           {`Estado: ${w.soreness}/5 • ${w.soreness_areas?.join(', ') || 'Sin áreas'}`}
                         </p>
-                        <ClubBadge clubName={w.players?.club} clubs={clubs} logoSize="w-3 i-3" className="text-[8px] font-bold text-red-600 uppercase tracking-widest" />
+                        <ClubBadge clubName={w.players?.club} idClub={w.players?.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-red-600 uppercase tracking-widest" />
                       </div>
                     </div>
                   </div>
@@ -690,12 +753,14 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                       {w.players?.foto_url ? <img src={w.players.foto_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : w.players?.nombre?.charAt(0)}
                     </div>
                     <div>
-                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{w.players?.nombre} {w.players?.apellido1}</p>
+                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
+                        {renderPlayerName(w.players, w.player_id)}
+                      </p>
                       <div className="flex items-center gap-2">
                         <p className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">
                           {`Síntomas: ${w.illness_symptoms?.join(', ') || 'Ninguno'}`}
                         </p>
-                        <ClubBadge clubName={w.players?.club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-amber-600 uppercase tracking-widest" />
+                        <ClubBadge clubName={w.players?.club} idClub={w.players?.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-amber-600 uppercase tracking-widest" />
                       </div>
                     </div>
                   </div>
@@ -789,7 +854,9 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                       {report.players?.nombre?.charAt(0)}
                     </div>
                     <div>
-                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{report.players?.nombre} {report.players?.apellido1}</p>
+                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
+                        {renderPlayerName(report.players, report.player_id)}
+                      </p>
                       <span className={`text-[7px] font-black px-1.5 py-0.5 rounded uppercase ${report.severity === 'high' ? 'bg-red-100 text-red-600' : report.severity === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
                         {report.severity}
                       </span>
@@ -831,7 +898,9 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
                       {treatment.players?.nombre?.charAt(0)}
                     </div>
                     <div>
-                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">{treatment.players?.nombre} {treatment.players?.apellido1}</p>
+                      <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
+                        {renderPlayerName(treatment.players, treatment.player_id)}
+                      </p>
                     </div>
                   </div>
                   <p className="text-slate-600 text-[9px] font-medium line-clamp-2 italic">"{treatment.description}"</p>
@@ -1108,13 +1177,13 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
           </div>
         );
       case 'fisica_wellness':
-        return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} />;
       case 'fisica_pse':
-        return <FisicaArea performanceRecords={performanceRecords} view="pse" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="pse" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} />;
       case 'fisica_carga_externa_total':
-        return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} />;
       case 'fisica_carga_externa_tareas':
-        return <CargaTareasArea performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
+        return <CargaTareasArea performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'fisica_gps_intelligence':
         const selectedCategoryName = selectedCategoryId 
           ? Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === selectedCategoryId)?.[0].replace('_', ' ').toUpperCase()
@@ -1125,21 +1194,22 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
           categoryName={selectedCategoryName} 
           userRole={userRole}
           userClub={userClub}
+          userClubId={userClubId}
         />;
       case 'fisica_reporte':
-        return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} highlightPlayerId={userId_del_jugador} clubs={clubs} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} />;
       case 'fisica_pronostico':
         return <PronosticoCargas clubs={clubs} />;
       case 'nutricion_resumen_grupal':
         return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'nutricion_comparativo':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="general" userRole={userRole} userClub={userClub} clubs={clubs} />;
+        return <NutricionArea performanceRecords={performanceRecords} players={performanceRecords.map(r => r.player)} initialTab="general" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'nutricion_individual':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="individual" userRole={userRole} userClub={userClub} clubs={clubs} />;
+        return <NutricionArea performanceRecords={performanceRecords} players={performanceRecords.map(r => r.player)} initialTab="individual" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'nutricion_top10':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="top10" userRole={userRole} userClub={userClub} clubs={clubs} />;
+        return <NutricionArea performanceRecords={performanceRecords} players={performanceRecords.map(r => r.player)} initialTab="top10" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'nutricion_maduracion':
-        return <NutricionArea performanceRecords={performanceRecords} initialTab="crecimiento" userRole={userRole} userClub={userClub} clubs={clubs} />;
+        return <NutricionArea performanceRecords={performanceRecords} players={performanceRecords.map(r => r.player)} initialTab="crecimiento" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'logistica_jugadores':
         return <LogisticaJugadores />;
       case 'contactos_clubes':
@@ -1148,14 +1218,39 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ performanceRecords, act
         return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} initialTab="cronograma" clubs={clubs} />;
       case 'tecnica':
         return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} clubs={clubs} hideCronograma={true} />;
+      case 'citaciones':
+        return <CitacionesArea 
+          performanceRecords={performanceRecords} 
+          onMenuChange={onMenuChange} 
+          clubs={clubs} 
+          players={performanceRecords
+            .filter(r => r.player.player_id)
+            .map(r => ({
+              ...r.player,
+              nombre: r.player.nombre || r.player.name?.split(' ')[0],
+              apellido1: r.player.apellido1 || r.player.name?.split(' ')[1] || '',
+            }))}
+        />;
       case 'perfil_jugador':
-        return <PlayerProfileArea userRole={userRole} userClub={userClub} clubs={clubs} />;
+        return <PlayerProfileArea 
+          userRole={userRole} 
+          userClub={userClub} 
+          userClubId={userClubId}
+          clubs={clubs} 
+          players={performanceRecords
+            .filter(r => r.player.player_id)
+            .map(r => ({
+              ...r.player,
+              nombre: r.player.nombre || r.player.name?.split(' ')[0],
+              apellido1: r.player.apellido1 || r.player.name?.split(' ')[1] || '',
+            }))}
+        />;
       case 'logs':
         return <ActivityLogArea />;
       case 'importar_datos':
         return <DataImportArea />;
       case 'sports_science':
-        return <SportsScienceArea userRole={userRole} userClub={userClub} clubs={clubs} />;
+        return <SportsScienceArea userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       default:
         const ContentComponent = {
           planificacion_anual: PlanificacionAnual,

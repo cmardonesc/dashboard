@@ -327,7 +327,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
               ) : (
                 filteredData.map((item, i) => {
                   const isMyClub = userRole !== 'club' || (userClub && normalizeClub(item.player.club || '') === normalizeClub(userClub));
-                  const displayName = isMyClub ? item.player.name : `Jugador [${item.player.id_del_jugador || i}]`;
+                  const displayName = isMyClub ? item.player.name : `Jugador [${item.player.player_id || i}]`;
                   const displayClub = isMyClub ? (item.player.club || 'S/C') : 'OTRO CLUB';
 
                   return (

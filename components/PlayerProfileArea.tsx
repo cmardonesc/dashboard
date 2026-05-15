@@ -13,13 +13,15 @@ import { UserRole } from '../types';
 interface PlayerProfileAreaProps {
   userRole?: string;
   userClub?: string;
+  userClubId?: number | null;
   clubs?: any[];
   initialPlayerId?: number | null;
+  players?: any[];
 }
 
-const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClub, clubs = [], initialPlayerId }) => {
+const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClub, userClubId, clubs = [], initialPlayerId, players: initialPlayers }) => {
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(initialPlayerId || null);
-  const [players, setPlayers] = useState<any[]>([]);
+  const [players, setPlayers] = useState<any[]>(initialPlayers || []);
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState<any>(null);
   
@@ -36,8 +38,20 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   }>({ anthro: [], vo2: [], imtp: [], speed: [] });
 
   useEffect(() => {
-    fetchPlayers();
-  }, []);
+    console.log("PlayerProfileArea: initialPlayers received:", initialPlayers?.length);
+    if (!initialPlayers) {
+      fetchPlayers();
+    } else {
+      setPlayers(initialPlayers);
+    }
+  }, [initialPlayers]);
+
+  useEffect(() => {
+    console.log("PlayerProfileArea: Current players in state:", players.length);
+    if (players.length > 0) {
+      console.log("PlayerProfileArea: Sample player:", JSON.stringify(players[0]));
+    }
+  }, [players]);
 
   useEffect(() => {
     if (selectedPlayerId) {
@@ -47,9 +61,14 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
   const fetchPlayers = async () => {
     try {
-      let query = supabase.from('players').select('id_del_jugador, nombre, apellido1, apellido2, club, posicion, anio');
-      if (userRole === 'club' && userClub) {
-        query = query.eq('club', userClub);
+      console.log("Fetching players in PlayerProfileArea (fallback)...");
+      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, club, id_club, posicion, anio');
+      if (userRole === 'club') {
+        if (userClubId) {
+          query = query.eq('id_club', userClubId);
+        } else if (userClub) {
+          query = query.eq('club', userClub);
+        }
       }
       const { data } = await query.order('apellido1', { ascending: true });
       if (data) setPlayers(data);
@@ -62,7 +81,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     setLoading(true);
     try {
       // 1. Basic Player Info
-      const { data: pData } = await supabase.from('players').select('*').eq('id_del_jugador', playerId).single();
+      const { data: pData } = await supabase.from('players').select('*').eq('player_id', playerId).single();
       setProfileData(pData);
 
       // 2. Citations & Microcycles
@@ -88,7 +107,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       const { data: loadData } = await supabase
         .from('internal_load')
         .select('*')
-        .eq('id_del_jugador', playerId)
+        .eq('player_id', playerId)
         .order('session_date', { ascending: false });
       
       if (loadData) {
@@ -100,16 +119,16 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       const { data: gps } = await supabase
         .from('gps_import')
         .select('*')
-        .eq('id_del_jugador', playerId)
+        .eq('player_id', playerId)
         .order('fecha', { ascending: false });
       setGpsStats(gps || []);
 
       // 5. Physical Evaluations
       const [anthro, vo2, imtp, speed] = await Promise.all([
-        supabase.from('antropometria').select('*').eq('id_del_jugador', playerId).order('fecha_medicion', { ascending: true }),
-        supabase.from('vo2max_tests').select('*').eq('id_del_jugador', playerId).order('fecha', { ascending: true }),
-        supabase.from('evaluaciones_imtp_salto').select('*').eq('id_del_jugador', playerId).order('fecha_test', { ascending: true }),
-        supabase.from('velocidad_tests').select('*').eq('id_del_jugador', playerId).order('fecha', { ascending: true })
+        supabase.from('antropometria').select('*').eq('player_id', playerId).order('fecha_medicion', { ascending: true }),
+        supabase.from('vo2max_tests').select('*').eq('player_id', playerId).order('fecha', { ascending: true }),
+        supabase.from('evaluaciones_imtp_salto').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true }),
+        supabase.from('velocidad_tests').select('*').eq('player_id', playerId).order('fecha', { ascending: true })
       ]);
 
       setPhysicalData({
@@ -183,8 +202,8 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
              >
                <option value="">Seleccionar Atleta</option>
                {players.map(p => (
-                 <option key={p.id_del_jugador} value={p.id_del_jugador}>
-                   {p.apellido1} {p.apellido2}, {p.nombre} ({p.id_del_jugador})
+                 <option key={p.player_id} value={p.player_id}>
+                   {p.apellido1} {p.apellido2}, {p.nombre} ({p.player_id})
                  </option>
                ))}
              </select>
@@ -230,7 +249,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                    <BioItem label="Clase" value={profileData.anio || 'N/A'} />
                    <BioItem label="Categoría" value={profileData.categoria?.toUpperCase().replace('_', ' ') || 'S/D'} />
                    <BioItem label="Pierna" value={profileData.perfil_pierna || 'S/D'} />
-                   <BioItem label="ID Unico" value={profileData.id_del_jugador} />
+                   <BioItem label="ID Unico" value={profileData.player_id} />
                 </div>
               </div>
 

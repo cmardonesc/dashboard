@@ -8,7 +8,7 @@ import ClubBadge from './ClubBadge';
 interface GpsTarea {
   id: number;
   fecha: string;
-  id_del_jugador: number;
+  player_id: number;
   tarea: string;
   bloque: number;
   minutos: number;
@@ -47,10 +47,11 @@ interface CargaTareasAreaProps {
   performanceRecords?: AthletePerformanceRecord[];
   userRole?: string;
   userClub?: string;
+  userClubId?: number | null;
   clubs?: any[];
 }
 
-export default function CargaTareasArea({ performanceRecords, userRole, userClub, clubs = [] }: CargaTareasAreaProps) {
+export default function CargaTareasArea({ performanceRecords, userRole, userClub, userClubId, clubs = [] }: CargaTareasAreaProps) {
   const [data, setData] = useState<GpsTarea[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -103,17 +104,17 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
       }
 
       // Fetch Players data
-      const playerIds = Array.from(new Set(gpsData.map(d => d.id_del_jugador)));
+      const playerIds = Array.from(new Set(gpsData.map(d => d.player_id)));
       const { data: playersData, error: playersError } = await supabase
         .from('players')
-        .select('id_del_jugador, nombre, apellido1, posicion, club, anio')
-        .in('id_del_jugador', playerIds);
+        .select('player_id, nombre, apellido1, posicion, club, anio')
+        .in('player_id', playerIds);
       
       if (playersError) throw playersError;
 
       // Join in memory
       const joinedData = gpsData.map(gps => {
-        const player = playersData?.find(p => p.id_del_jugador === gps.id_del_jugador) as any;
+        const player = playersData?.find(p => p.player_id === gps.player_id) as any;
         if (player) {
           player.category = '';
           if (player.anio) {
@@ -149,23 +150,27 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
   };
 
   const anonymizedData = useMemo(() => {
-    if (userRole !== 'club' || !userClub) return data;
-    
-    const uClubNorm = normalizeClub(userClub);
+    if (userRole !== 'club') return data;
     
     return data.map(row => {
       const player = row.players;
-      const pClub = player?.club_name || player?.club || '';
-      const pClubNorm = normalizeClub(pClub);
+      let isOwnClub = false;
+      if (userClubId) {
+        isOwnClub = (player as any)?.id_club === userClubId;
+      } else if (userClub) {
+        const uClubNorm = normalizeClub(userClub);
+        const pClub = player?.club_name || player?.club || '';
+        isOwnClub = normalizeClub(pClub) === uClubNorm;
+      }
       
-      if (pClubNorm !== uClubNorm) {
+      if (!isOwnClub) {
         return {
           ...row,
           jugador_nombre: 'Jugador',
           players: player ? {
             ...player,
             nombre: 'Jugador',
-            apellido1: `[${row.id_del_jugador}]`,
+            apellido1: `[${row.player_id}]`,
             club: 'OTRO CLUB',
             club_name: 'OTRO CLUB'
           } : undefined
@@ -173,7 +178,7 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
       }
       return row;
     });
-  }, [data, userRole, userClub]);
+  }, [data, userRole, userClub, userClubId]);
 
   const taskStats = useMemo(() => {
     if (!anonymizedData.length) return [];
@@ -219,7 +224,6 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
       stats.totalDist25 += Number(row.dist_sprint_m_25_kmh) || 0;
       stats.totalAccDec += Number(row.acc_decc_ai_n) || 0;
     });
-
     return Object.entries(tasksMap).map(([name, stats]) => ({
       name,
       avgInt: stats.totalInt / stats.count,
@@ -232,7 +236,7 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
       avgAccDec: stats.totalAccDec / stats.count,
       count: stats.count
     })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [data]);
+  }, [data, anonymizedData]);
 
   const uniqueTasks = useMemo(() => {
     return taskStats.map(t => t.name);
@@ -258,7 +262,7 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
     const playerMap: Record<number, any> = {};
     
     items.forEach(item => {
-      const pid = item.id_del_jugador;
+      const pid = item.player_id;
       if (!playerMap[pid]) {
         playerMap[pid] = {
           id: pid, // Usamos ID del jugador como key única para la fila

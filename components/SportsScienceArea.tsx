@@ -16,7 +16,7 @@ import {
 type TabId = 'huella' | 'individual' | 'grupal' | 'laboratorio' | 'salud' | 'tabla' | 'categorias' | 'insights';
 
 interface PlayerData {
-  id_del_jugador: number;
+  player_id: number;
   nombre: string;
   apellido1: string;
   apellido2: string;
@@ -25,13 +25,14 @@ interface PlayerData {
   fecha_nacimiento: string;
   club?: string;
   club_name?: string;
+  id_club?: number;
   phv_status?: 'Pre-Peak' | 'Peak' | 'Post-Peak';
   injury_status?: 'Disponible' | 'RTP' | 'Lesionado';
 }
 
 interface IMTPData {
   jugador: string;
-  id_del_jugador: number;
+  player_id: number;
   fecha_test: string;
   peso?: number;
   imtp_fuerza_n: number;
@@ -65,7 +66,7 @@ interface IMTPData {
 }
 
 interface SpeedTestData {
-  id_del_jugador: number;
+  player_id: number;
   fecha: string;
   tiempo_10m?: number;
   vel_10m?: number;
@@ -78,7 +79,7 @@ interface SpeedTestData {
 }
 
 interface AntropometriaData {
-  id_del_jugador: number;
+  player_id: number;
   fecha_medicion: string;
   masa_corporal_kg: number;
   talla_cm: number;
@@ -108,7 +109,7 @@ interface InjuryData {
 }
 
 interface GPSData {
-  id_del_jugador: number;
+  player_id: number;
   fecha: string;
   dist_total_m: number;
   sprints_n: number;
@@ -116,7 +117,7 @@ interface GPSData {
 }
 
 interface VO2MaxData {
-  id_del_jugador: number;
+  player_id: number;
   fecha: string;
   vo2_max: number;
   vam?: number;
@@ -138,7 +139,7 @@ interface VO2MaxData {
 
 interface MedicalReport {
   id: string;
-  id_del_jugador: number;
+  player_id: number;
   report_date: string;
   observation: string;
   diagnostico_medico?: string;
@@ -147,7 +148,7 @@ interface MedicalReport {
 }
 
 interface InternalLoadData {
-  id_del_jugador: number;
+  player_id: number;
   session_date: string;
   load: number;
   rpe: number;
@@ -156,10 +157,11 @@ interface InternalLoadData {
 interface SportsScienceAreaProps {
   userRole?: string;
   userClub?: string;
+  userClubId?: number | null;
   clubs?: any[];
 }
 
-const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClub, clubs = [] }) => {
+const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClub, userClubId, clubs = [] }) => {
   const [activeTab, setActiveTab] = useState<TabId>('huella');
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedAnios, setSelectedAnios] = useState<number[]>([]);
@@ -242,12 +244,16 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
 
   const availableAnios = useMemo(() => {
     let filteredPlayers = players;
-    if (userRole === 'club' && userClub) {
-      const uClubNorm = normalizeClub(userClub);
-      filteredPlayers = players.filter(p => {
-        const pClub = p.club || p.club_name || '';
-        return pClub && normalizeClub(pClub) === uClubNorm;
-      });
+    if (userRole === 'club') {
+      if (userClubId) {
+        filteredPlayers = players.filter(p => p.id_club === userClubId);
+      } else if (userClub) {
+        const uClubNorm = normalizeClub(userClub);
+        filteredPlayers = players.filter(p => {
+          const pClub = p.club || p.club_name || '';
+          return pClub && normalizeClub(pClub) === uClubNorm;
+        });
+      }
     }
 
     const years = filteredPlayers
@@ -260,15 +266,22 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   }, [players, userRole, userClub]);
 
   const anonymizedPlayers = useMemo(() => {
-    if (userRole === 'club' && userClub) {
-      const uClubNorm = normalizeClub(userClub);
+    if (userRole === 'club') {
       return players.map(p => {
-        const pClub = (p as any).club || (p as any).club_name || '';
-        if (pClub && normalizeClub(pClub) !== uClubNorm) {
+        let isOwnClub = false;
+        if (userClubId) {
+          isOwnClub = p.id_club === userClubId;
+        } else if (userClub) {
+          const uClubNorm = normalizeClub(userClub);
+          const pClub = (p as any).club || (p as any).club_name || '';
+          isOwnClub = pClub && normalizeClub(pClub) === uClubNorm;
+        }
+
+        if (!isOwnClub) {
           return {
             ...p,
             nombre: 'Jugador',
-            apellido1: `[${p.id_del_jugador}]`,
+            apellido1: `[${p.player_id}]`,
             apellido2: ''
           };
         }
@@ -276,10 +289,10 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
       });
     }
     return players;
-  }, [players, userRole, userClub]);
+  }, [players, userRole, userClub, userClubId]);
 
   const selectedPlayer = useMemo(() => 
-    anonymizedPlayers.find(p => p.id_del_jugador === selectedPlayerId), 
+    anonymizedPlayers.find(p => p.player_id === selectedPlayerId), 
   [anonymizedPlayers, selectedPlayerId]);
 
   return (
@@ -428,15 +441,19 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
                   const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
                   const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
                   
-                  if (userRole === 'club' && userClub) {
-                    const uClubNorm = normalizeClub(userClub);
-                    const pClub = p.club || p.club_name || '';
-                    return yearMatch && posMatch && pClub && normalizeClub(pClub) === uClubNorm;
+                  if (userRole === 'club') {
+                    if (userClubId) {
+                      return yearMatch && posMatch && p.id_club === userClubId;
+                    } else if (userClub) {
+                      const uClubNorm = normalizeClub(userClub);
+                      const pClub = p.club || p.club_name || '';
+                      return yearMatch && posMatch && pClub && normalizeClub(pClub) === uClubNorm;
+                    }
                   }
                   return yearMatch && posMatch;
                 })
                 .map(p => (
-                  <option key={p.id_del_jugador} value={p.id_del_jugador}>{p.nombre} {p.apellido1}</option>
+                  <option key={p.player_id} value={p.player_id}>{p.nombre} {p.apellido1}</option>
                 ))}
             </select>
           </div>
@@ -448,13 +465,13 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         {activeTab === 'huella' && (
           <AthleteHuella 
             player={selectedPlayer} 
-            imtp={imtpData.filter(d => d.id_del_jugador === selectedPlayerId)}
-            speed={speedData.filter(d => d.id_del_jugador === selectedPlayerId)}
-            antropometria={antropometria.filter(d => d.id_del_jugador === selectedPlayerId)}
-            vo2max={vo2maxData.filter(d => d.id_del_jugador === selectedPlayerId)}
-            medicalReports={medicalReports.filter(d => d.id_del_jugador === selectedPlayerId)}
-            internalLoads={internalLoads.filter(d => d.id_del_jugador === selectedPlayerId)}
-            gps={gpsData.filter(d => d.id_del_jugador === selectedPlayerId)}
+            imtp={imtpData.filter(d => d.player_id === selectedPlayerId)}
+            speed={speedData.filter(d => d.player_id === selectedPlayerId)}
+            antropometria={antropometria.filter(d => d.player_id === selectedPlayerId)}
+            vo2max={vo2maxData.filter(d => d.player_id === selectedPlayerId)}
+            medicalReports={medicalReports.filter(d => d.player_id === selectedPlayerId)}
+            internalLoads={internalLoads.filter(d => d.player_id === selectedPlayerId)}
+            gps={gpsData.filter(d => d.player_id === selectedPlayerId)}
             allImtp={imtpData}
             allSpeed={speedData}
             allAntro={antropometria}
@@ -466,10 +483,10 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         {activeTab === 'individual' && (
           <IndividualDashboard 
             player={selectedPlayer} 
-            imtp={imtpData.filter(d => d.id_del_jugador === selectedPlayerId)}
-            speed={speedData.filter(d => d.id_del_jugador === selectedPlayerId)}
-            antropometria={antropometria.filter(d => d.id_del_jugador === selectedPlayerId)}
-            vo2max={vo2maxData.filter(d => d.id_del_jugador === selectedPlayerId)}
+            imtp={imtpData.filter(d => d.player_id === selectedPlayerId)}
+            speed={speedData.filter(d => d.player_id === selectedPlayerId)}
+            antropometria={antropometria.filter(d => d.player_id === selectedPlayerId)}
+            vo2max={vo2maxData.filter(d => d.player_id === selectedPlayerId)}
             clubs={clubs}
           />
         )}
@@ -522,7 +539,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
           <HealthLoad 
             player={selectedPlayer} 
             injury={injuries.find(i => i.player_id === selectedPlayerId)}
-            gps={gpsData.filter(d => d.id_del_jugador === selectedPlayerId)}
+            gps={gpsData.filter(d => d.player_id === selectedPlayerId)}
           />
         )}
 
@@ -676,11 +693,11 @@ const AthleteHuella = ({
     const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
     return pYear === playerYear;
   });
-  const categoryPlayerIds = categoryPlayers.map(p => p.id_del_jugador);
+  const categoryPlayerIds = categoryPlayers.map(p => p.player_id);
 
   const getAvg = (data: any[], key: string) => {
     const values = data
-      .filter(d => categoryPlayerIds.includes(d.id_del_jugador) && d[key] != null && !isNaN(Number(d[key])))
+      .filter(d => categoryPlayerIds.includes(d.player_id) && d[key] != null && !isNaN(Number(d[key])))
       .map(d => Number(d[key]));
     if (values.length === 0) return 0;
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
@@ -719,7 +736,7 @@ const AthleteHuella = ({
           <div className="relative z-10 flex-1">
             <div className="flex items-center gap-3 mb-3">
                <span className="bg-red-600 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-red-200">Elite Performance</span>
-               <span className="bg-slate-900 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">ID: {player.id_del_jugador}</span>
+               <span className="bg-slate-900 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">ID: {player.player_id}</span>
             </div>
             <h2 className="text-4xl md:text-5xl font-black text-slate-900 uppercase tracking-tighter italic leading-none mb-2">{player.nombre} {player.apellido1}</h2>
             <div className="flex items-center gap-3">
@@ -1468,8 +1485,8 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
       case 'antropometria': sourceData = antropometria; break;
     }
 
-    const playerIds = filteredPlayers.map(p => p.id_del_jugador);
-    const relevantData = sourceData.filter(d => playerIds.includes(d.id_del_jugador));
+    const playerIds = filteredPlayers.map(p => p.player_id);
+    const relevantData = sourceData.filter(d => playerIds.includes(d.player_id));
 
     const calculateStats = (values: number[]) => {
       if (values.length === 0) return null;
@@ -1491,9 +1508,9 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
     };
 
     const statsByPosition = ORDERED_POSITIONS.map(pos => {
-      const posPlayerIds = filteredPlayers.filter(p => p.posicion === pos).map(p => p.id_del_jugador);
+      const posPlayerIds = filteredPlayers.filter(p => p.posicion === pos).map(p => p.player_id);
       const posValues = relevantData
-        .filter(d => posPlayerIds.includes(d.id_del_jugador))
+        .filter(d => posPlayerIds.includes(d.player_id))
         .map(d => d[metricKey])
         .filter(v => v != null && v > 0);
       return { name: pos, stats: calculateStats(posValues) };
@@ -1976,10 +1993,10 @@ const CorrelationsInsights = ({ players, imtp, speed, vo2max, antropometria, sel
     });
 
     const playersData = filteredPlayers.map(p => {
-      const pImtp = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
-      const pSpeed = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-      const pVo2 = vo2max.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-      const pAntro = antropometria.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
+      const pImtp = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
+      const pSpeed = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+      const pVo2 = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+      const pAntro = antropometria.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
       
       return {
         ...pImtp,
@@ -2105,14 +2122,14 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
 
     const values = filteredPlayers.map(p => {
       let val: any = null;
-      if (metricKey === 'imtp_fuerza_n') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.imtp_fuerza_n;
-      else if (metricKey === 'vel_10m') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_10m;
+      if (metricKey === 'imtp_fuerza_n') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.imtp_fuerza_n;
+      else if (metricKey === 'vel_10m') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_10m;
       else {
         const option = METRICS_OPTIONS.find(o => o.key === metricKey);
-        if (option?.table === 'imtp') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
-        else if (option?.table === 'speed') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
-        else if (option?.table === 'vo2max') val = vo2max.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
-        else if (option?.table === 'antropometria') val = antropometria.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0]?.[metricKey as keyof AntropometriaData];
+        if (option?.table === 'imtp') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
+        else if (option?.table === 'speed') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
+        else if (option?.table === 'vo2max') val = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
+        else if (option?.table === 'antropometria') val = antropometria.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0]?.[metricKey as keyof AntropometriaData];
       }
       return Number(val);
     }).filter(v => v !== null && !isNaN(v));
@@ -2158,14 +2175,14 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
 
     const values = filteredPlayers.map(p => {
       let val: any = null;
-      if (metricKey === 'imtp_fuerza_n') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.imtp_fuerza_n;
-      else if (metricKey === 'vel_10m') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_10m;
+      if (metricKey === 'imtp_fuerza_n') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.imtp_fuerza_n;
+      else if (metricKey === 'vel_10m') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_10m;
       else {
         const option = METRICS_OPTIONS.find(o => o.key === metricKey);
-        if (option?.table === 'imtp') val = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
-        else if (option?.table === 'speed') val = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
-        else if (option?.table === 'vo2max') val = vo2max.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
-        else if (option?.table === 'antropometria') val = antropometria.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0]?.[metricKey as keyof AntropometriaData];
+        if (option?.table === 'imtp') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
+        else if (option?.table === 'speed') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
+        else if (option?.table === 'vo2max') val = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
+        else if (option?.table === 'antropometria') val = antropometria.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0]?.[metricKey as keyof AntropometriaData];
       }
       return Number(val);
     }).filter(v => v !== null && !isNaN(v));
@@ -2549,13 +2566,13 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
         return yearMatch && posMatch;
       })
       .map(p => {
-        const pImtp = imtp.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
-        const pSpeed = speed.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-        const pVo2 = vo2max.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-        const pAntro = antropometria.filter(d => d.id_del_jugador === p.id_del_jugador).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
+        const pImtp = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
+        const pSpeed = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+        const pVo2 = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+        const pAntro = antropometria.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
         
         return {
-          id: p.id_del_jugador,
+          id: p.player_id,
           name: `${p.nombre} ${p.apellido1}`,
           posicion: p.posicion,
           ...pImtp,
@@ -2859,7 +2876,7 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
 
   const playerMap = useMemo(() => {
     const map: Record<number, PlayerData> = {};
-    players.forEach(p => { map[p.id_del_jugador] = p; });
+    players.forEach(p => { map[p.player_id] = p; });
     return map;
   }, [players]);
 
@@ -2873,7 +2890,7 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
     if (!searchTerm) return data;
 
     return data.filter(d => {
-      const player = playerMap[d.id_del_jugador];
+      const player = playerMap[d.player_id];
       const name = player ? `${player.nombre} ${player.apellido1}`.toLowerCase() : '';
       return name.includes(searchTerm.toLowerCase());
     });
@@ -3015,7 +3032,7 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filteredData.map((row, idx) => {
-                const player = playerMap[row.id_del_jugador];
+                const player = playerMap[row.player_id];
                 return (
                   <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-50">

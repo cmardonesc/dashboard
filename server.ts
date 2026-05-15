@@ -4,13 +4,11 @@ import axios from "axios";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
-
 import nodemailer from "nodemailer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Lazy initialization for Nodemailer transporter
 let transporter: nodemailer.Transporter | null = null;
 
 function getTransporter() {
@@ -21,14 +19,14 @@ function getTransporter() {
     const pass = process.env.SMTP_PASS;
 
     if (!user || !pass) {
-      console.warn("[MAIL] SMTP_USER or SMTP_PASS not configured. Emails will not be sent.");
+      console.warn("[MAIL] SMTP_USER or SMTP_PASS not configured.");
       return null;
     }
 
     transporter = nodemailer.createTransport({
       host,
       port,
-      secure: port === 465, // true for 465, false for other ports
+      secure: port === 465,
       auth: { user, pass },
     });
   }
@@ -43,253 +41,249 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-  // Helper to get Catapult Base URL (defaulting to Openfield US region)
-  const getCatapultBaseUrl = (regionOverride?: string) => {
-    const region = regionOverride || process.env.CATAPULT_REGION || 'us';
-    // Variation 1: Regional subdomain (most common for Openfield Cloud)
-    if (region === 'global') return `https://api.catapultsports.com/api/v1`;
-    return `https://${region}.openfield.catapultsports.com/api/v1`;
-  };
-
-  // API Routes for Catapult Integration
+  // TEST CONNECTION
   app.get("/api/catapult/test", (req, res) => {
     res.json({ 
       status: "ok", 
       message: "Catapult Proxy is running",
-      region: process.env.CATAPULT_REGION || 'default (us)',
-      baseUrl: getCatapultBaseUrl()
+      endpoint: "bakestatus (CloudBaker API)"
     });
   });
 
-  // Proxy for activities
+  // ✅ ACTIVITIES ENDPOINT - bakestatus con filtros flexibles
   app.get("/api/catapult/activities", async (req, res) => {
     const token = process.env.CATAPULT_API_TOKEN?.trim();
     if (!token) {
-      return res.status(500).json({ error: "CATAPULT_API_TOKEN not configured in secrets" });
+      return res.status(500).json({ 
+        success: false,
+        error: "CATAPULT_API_TOKEN not configured" 
+      });
     }
 
-    const regions = [
-      { name: 'OpenField US', url: 'https://us.openfield.catapultsports.com/api/v1' },
-      { name: 'Global v1', url: 'https://api.catapultsports.com/api/v1' },
-      { name: 'Global v2', url: 'https://api.catapultsports.com/api/v2' },
-      { name: 'OpenField EU', url: 'https://eu.openfield.catapultsports.com/api/v1' },
-      { name: 'OpenField AU', url: 'https://au.openfield.catapultsports.com/api/v1' },
-      { name: 'Catapult One', url: 'https://api.catapultsports.com/v1' }
-    ];
+    console.log("\n========================================");
+    console.log("📡 CATAPULT BAKESTATUS REQUEST");
+    console.log("========================================");
+    console.log(`Token length: ${token.length}`);
+    console.log(`Query params:`, JSON.stringify(req.query));
 
-    const authMethods = [
-      { name: 'Bearer', header: (t: string) => ({ 'Authorization': `Bearer ${t}` }) },
-      { name: 'Token', header: (t: string) => ({ 'Authorization': `Token ${t}` }) },
-      { name: 'token', header: (t: string) => ({ 'Authorization': `token ${t}` }) },
-      { name: 'X-Auth-Token', header: (t: string) => ({ 'X-Auth-Token': t }) },
-      { name: 'X-API-Key', header: (t: string) => ({ 'X-API-Key': t }) },
-      { name: 'X-Api-Token', header: (t: string) => ({ 'X-Api-Token': t }) }
-    ];
+    try {
+      // Calcular rango de fechas (default: 30 días hacia atrás)
+      const endTime = new Date();
+      const startTime = new Date(endTime.getTime() - (30 * 24 * 60 * 60 * 1000));
 
-    let lastErrorDetails: any = null;
-    let lastStatus: number = 0;
-    let attempts: string[] = [];
+      // Permitir override desde query params
+      let finalStartTime = startTime;
+      let finalEndTime = endTime;
 
-    console.log(`== Catapult Auth Check Start (Token Length: ${token.length}) ==`);
+      // Intentar múltiples nombres de parámetros para flexibilidad
+      const startParam = req.query.start_time_after 
+        || req.query.startTime 
+        || req.query.StartTime
+        || req.query.from
+        || req.query.since;
 
-    for (const region of regions) {
-      for (const method of authMethods) {
-        try {
-          const url = `${region.url}/activities`;
-          const queryParams = Object.keys(req.query).length === 0 
-            ? { order_by: 'start_time', direction: 'desc' } 
-            : req.query;
-            
-          console.log(`Region: ${region.name} | Method: ${method.name} | URL: ${url}`);
-          
-          const axiosRes = await axios.get(url, {
-            headers: {
-              ...method.header(token),
-              'Accept': 'application/json',
-              'User-Agent': 'LaRojaSync/1.5'
-            },
-            params: { 
-              limit: 100,
-              ...queryParams
-            },
-            timeout: 10000
-          });
+      const endParam = req.query.end_time_before 
+        || req.query.endTime 
+        || req.query.EndTime
+        || req.query.to
+        || req.query.until;
 
-          if (axiosRes.status === 200) {
-            let rawData = axiosRes.data;
-            console.log(`-- DEBUG: Raw data received from ${region.name}:`, JSON.stringify(rawData).substring(0, 500));
-            let activities = Array.isArray(rawData) ? rawData : (rawData.activities || rawData.data || []);
-            
-            // DEEP DISCOVERY: If 0 activities found, try fetching teams first
-            if (activities.length === 0) {
-              console.log(`-- 0 activities in ${region.name}. Trying Deep Discovery (Teams)... --`);
-              try {
-                const teamsUrl = url.replace('/activities', '/teams');
-                const teamsRes = await axios.get(teamsUrl, {
-                  headers: { ...method.header(token), 'Accept': 'application/json' },
-                  timeout: 5000
-                });
-                
-                const teamsBody = teamsRes.data;
-                const teams = Array.isArray(teamsBody) ? teamsBody : (teamsBody.teams || teamsBody.data || []);
-                
-                if (teams.length > 0) {
-                  console.log(`   Found ${teams.length} teams. Attempting team-specific fetch...`);
-                  for (const team of teams.slice(0, 3)) {
-                    const teamId = team.id || team.uuid;
-                    if (!teamId) continue;
-                    
-                    const teamActivitiesUrl = `${region.url}/teams/${teamId}/activities`;
-                    const taRes = await axios.get(teamActivitiesUrl, {
-                      headers: { ...method.header(token), 'Accept': 'application/json' },
-                      params: { limit: 50 },
-                      timeout: 5000
-                    });
-                    const tData = taRes.data;
-                    const teamActs = Array.isArray(tData) ? tData : (tData.activities || tData.data || []);
-                    if (teamActs.length > 0) {
-                      activities = teamActs;
-                      console.log(`   SUCCESS! Found ${activities.length} activities via Team ID: ${teamId}`);
-                      break;
-                    }
-                  }
-                }
-              } catch (e: any) {
-                console.log(`   Deep Discovery failed: ${e.message}`);
-              }
-            }
-
-            // RECOVERY: Try /sessions if still 0
-            if (activities.length === 0) {
-               const sessionsUrl = url.replace('/activities', '/sessions');
-               try {
-                 const sessionRes = await axios.get(sessionsUrl, {
-                   headers: { ...method.header(token), 'Accept': 'application/json' },
-                   params: { limit: 50 },
-                   timeout: 5000
-                 });
-                 const sessionData = sessionRes.data;
-                 const sessionActivities = Array.isArray(sessionData) ? sessionData : (sessionData.activities || sessionData.sessions || sessionData.data || []);
-                 if (sessionActivities.length > 0) {
-                   activities = sessionActivities;
-                 }
-               } catch (e) {}
-            }
-
-            console.log(`== FINAL RESULT: Connected to ${region.name} via ${method.name}. Returning ${activities.length} activities. ==`);
-            return res.json({
-              activities,
-              metadata: {
-                region: region.name,
-                method: method.name
-              }
-            });
-          }
-        } catch (error: any) {
-          lastStatus = error.response?.status || 0;
-          lastErrorDetails = error.response?.data || error.message;
-          const attemptMsg = `${region.name} (${method.name}) -> ${lastStatus || error.code || 'ERR'}`;
-          attempts.push(attemptMsg);
-          console.log(`  Result: ${attemptMsg}`);
+      if (startParam) {
+        const parsed = new Date(String(startParam));
+        if (!isNaN(parsed.getTime())) {
+          finalStartTime = parsed;
+          console.log(`📅 Custom start time from params: ${finalStartTime.toISOString()}`);
         }
       }
-    }
 
-    console.log("== Catapult Auth Check All Failed =="); 
-    res.status(lastStatus || 401).json({ 
-      error: "Error de Autenticación con Catapult",
-      details: lastErrorDetails,
-      attempts,
-      hint: "Tu cuenta de Catapult muestra 'OpenField activation status: Not activated'. Es OBLIGATORIO que pidas a soporte de Catapult la activación de la API."
-    });
+      if (endParam) {
+        const parsed = new Date(String(endParam));
+        if (!isNaN(parsed.getTime())) {
+          finalEndTime = parsed;
+          console.log(`📅 Custom end time from params: ${finalEndTime.toISOString()}`);
+        }
+      }
+
+      console.log(`📊 Time range: ${finalStartTime.toISOString()} → ${finalEndTime.toISOString()}`);
+
+      // Construir URL del CloudBaker API
+      const baseUrl = 'https://of-prod-uw1-cloudbaker-api.openfield.catapultsports.com';
+      const endpoint = '/api/activity/bakestatus';
+      const url = `${baseUrl}${endpoint}`;
+
+      console.log(`🔗 Calling: ${url}`);
+      console.log(`⏱️  StartTime: ${finalStartTime.toISOString()}`);
+      console.log(`⏱️  EndTime: ${finalEndTime.toISOString()}`);
+
+      // Hacer request con timeout
+      const axiosRes = await axios.get(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'User-Agent': 'LaRojaSync/2.0'
+        },
+        params: {
+          StartTime: finalStartTime.toISOString(),
+          EndTime: finalEndTime.toISOString()
+        },
+        timeout: 10000
+      });
+
+      console.log(`✅ HTTP ${axiosRes.status} - Response received`);
+
+      // Procesar respuesta
+      let activities = axiosRes.data;
+
+      // Validar que sea array
+      if (!Array.isArray(activities)) {
+        console.log(`⚠️  Response is not an array, attempting to extract...`);
+        if (activities.data && Array.isArray(activities.data)) {
+          activities = activities.data;
+          console.log(`   Found data in response.data`);
+        } else if (activities.activities && Array.isArray(activities.activities)) {
+          activities = activities.activities;
+          console.log(`   Found data in response.activities`);
+        } else if (activities.results && Array.isArray(activities.results)) {
+          activities = activities.results;
+          console.log(`   Found data in response.results`);
+        } else {
+          activities = [];
+          console.log(`   Could not extract array from response`);
+        }
+      }
+
+      console.log(`📈 Total activities: ${activities.length}`);
+      
+      if (activities.length > 0) {
+        console.log(`📋 Sample activity:`, JSON.stringify(activities[0]));
+      }
+
+      console.log("========================================\n");
+
+      return res.json({
+        success: true,
+        activities,
+        metadata: {
+          source: 'CloudBaker API - bakestatus',
+          endpoint: url,
+          totalCount: activities.length,
+          timeRange: {
+            start: finalStartTime.toISOString(),
+            end: finalEndTime.toISOString()
+          },
+          timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (error: any) {
+      console.log(`\n❌ ERROR`);
+      console.log(`Status: ${error.response?.status}`);
+      console.log(`Message: ${error.message}`);
+      
+      const errorData = error.response?.data;
+      if (errorData) {
+        console.log(`Response:`, JSON.stringify(errorData).substring(0, 500));
+      }
+      console.log("========================================\n");
+
+      return res.status(error.response?.status || 500).json({
+        success: false,
+        error: "Error fetching from bakestatus endpoint",
+        details: {
+          status: error.response?.status,
+          message: error.message,
+          data: errorData
+        },
+        hint: "Verifica que el token sea válido. Si sigue fallando, contacta a Catapult Support."
+      });
+    }
   });
 
-  const tryFetchGeneric = async (url: string, params: any = {}) => {
-    const token = process.env.CATAPULT_API_TOKEN;
-    if (!token) throw new Error("CATAPULT_API_TOKEN not configured");
-
-    const attempts = [
-      { headers: { 'Authorization': `Bearer ${token}` } },
-      { headers: { 'X-API-Key': token } }
-    ];
-
-    for (const config of attempts) {
-      try {
-        const res = await axios.get(url, {
-          headers: { ...config.headers, 'Accept': 'application/json' },
-          params,
-          timeout: 8000
-        });
-        const contentType = String(res.headers['content-type'] || '');
-        if (contentType.includes('text/html')) continue;
-        return res;
-      } catch (e) {
-        continue;
-      }
-    }
-    throw new Error(`Failed to fetch from ${url} with available auth methods`);
-  };
-
-  // Proxy for specific activity data
+  // ACTIVITY DETAIL
   app.get("/api/catapult/activities/:id", async (req, res) => {
     const { id } = req.params;
-    const baseUrls = [
-      `https://api.catapultsports.com/api/v1`,
-      `https://us.openfield.catapultsports.com/api/v1`,
-      `https://eu.openfield.catapultsports.com/api/v1`,
-      `https://au.openfield.catapultsports.com/api/v1`,
-    ];
-
-    for (const baseUrl of baseUrls) {
-      try {
-        const response = await tryFetchGeneric(`${baseUrl}/activities/${id}`);
-        return res.json(response.data);
-      } catch (e) {}
+    const token = process.env.CATAPULT_API_TOKEN?.trim();
+    
+    if (!token) {
+      return res.status(500).json({ error: "Token not configured" });
     }
-    res.status(404).json({ error: "Activity not found in any region" });
+
+    try {
+      console.log(`\n🔍 Fetching activity detail: ${id}`);
+      
+      const url = `https://of-prod-uw1-cloudbaker-api.openfield.catapultsports.com/api/activity/${id}`;
+      
+      const response = await axios.get(url, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        },
+        timeout: 5000
+      });
+
+      console.log(`✅ Activity detail fetched successfully`);
+      return res.json(response.data);
+    } catch (e: any) {
+      console.log(`❌ Activity detail fetch failed: ${e.message}`);
+      res.status(404).json({ 
+        success: false,
+        error: "Activity not found" 
+      });
+    }
   });
 
-  // Proxy for activity stats
+  // ACTIVITY STATS
   app.get("/api/catapult/activities/:id/stats", async (req, res) => {
     const { id } = req.params;
-    const baseUrls = [
-      `https://api.catapultsports.com/api/v1`,
-      `https://us.openfield.catapultsports.com/api/v1`,
-      `https://eu.openfield.catapultsports.com/api/v1`,
-      `https://au.openfield.catapultsports.com/api/v1`,
-    ];
-
-    for (const baseUrl of baseUrls) {
-      try {
-        const response = await tryFetchGeneric(`${baseUrl}/activities/${id}/stats`);
-        return res.json(response.data);
-      } catch (e) {}
+    const token = process.env.CATAPULT_API_TOKEN?.trim();
+    
+    if (!token) {
+      return res.status(500).json({ error: "Token not configured" });
     }
-    res.status(404).json({ error: "Stats not found in any region" });
+
+    try {
+      console.log(`\n📊 Fetching activity stats: ${id}`);
+      
+      const url = `https://of-prod-uw1-cloudbaker-api.openfield.catapultsports.com/api/activity/${id}/stats`;
+      
+      const response = await axios.get(url, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        },
+        timeout: 5000
+      });
+
+      console.log(`✅ Stats fetched successfully`);
+      return res.json(response.data);
+    } catch (e: any) {
+      console.log(`❌ Stats fetch failed: ${e.message}`);
+      res.status(404).json({ 
+        success: false,
+        error: "Stats not found" 
+      });
+    }
   });
 
-  // API Route for Sending Nominas via Email
+  // SEND NOMINA EMAIL
   app.post("/api/send-nomina", async (req, res) => {
     try {
       const { recipients, clubName, microcicloInfo, players, attachment } = req.body;
       
       if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
-        return res.status(400).json({ error: "No se proporcionaron destinatarios válidos." });
+        return res.status(400).json({ error: "No recipients provided" });
       }
 
-      console.log(`[EMAIL SERVICE] Preparando envío para ${clubName} a ${recipients.length} destinatarios`);
+      console.log(`\n📧 [EMAIL] Sending nomina to ${recipients.length} recipients for ${clubName}`);
       
       const mailTransporter = getTransporter();
       if (!mailTransporter) {
-        return res.status(503).json({ 
-          error: "Servicio de correo no configurado. Por favor configure SMTP_USER y SMTP_PASS en las variables de entorno." 
-        });
+        return res.status(503).json({ error: "Email service not configured" });
       }
 
       const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
       const fromName = process.env.SMTP_FROM_NAME || "La Roja Performance";
 
-      // Enviar correos a cada destinatario
       const sendPromises = recipients.map(async (recipient: any) => {
         try {
           const playerListHtml = players
@@ -308,55 +302,51 @@ async function startServer() {
                 </div>
                 <div style="padding: 40px; color: #1e293b; line-height: 1.6;">
                   <p>Estimado(a) <b>${recipient.nombres || recipient.presidente || 'Encargado'}</b>,</p>
-                  <p>Por intermendio de la presente, se comunica oficialmente la citación de los siguientes jugadores de sus registros:</p>
+                  <p>Por intermendio de la presente, se comunica oficialmente la citación de los siguientes jugadores:</p>
                   <ul style="background-color: #f8fafc; padding: 20px 40px; border-radius: 8px; list-style-type: none;">
                     ${playerListHtml}
                   </ul>
-                  <p>Para participar en el <b>${microcicloInfo.type}</b> que se llevará a cabo desde el <b>${microcicloInfo.start_date}</b> hasta el <b>${microcicloInfo.end_date}</b> en la ciudad de ${microcicloInfo.city}.</p>
-                  <p>Se adjunta la carta formal de citación en formato PDF.</p>
-                  <p style="margin-top: 30px; font-size: 13px;">Favor confirmar recepción y disponibilidad de los atletas.</p>
-                  <p style="margin-top: 20px; font-size: 11px; color: #64748b;">Este es un envío automático desde La Roja Performance Hub.</p>
+                  <p>Para participar en el <b>${microcicloInfo.type}</b> desde ${microcicloInfo.start_date} hasta ${microcicloInfo.end_date} en ${microcicloInfo.city}.</p>
+                  <p>Se adjunta la citación oficial en PDF.</p>
                 </div>
                 <div style="background-color: #f8fafc; padding: 20px; text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px solid #e2e8f0;">
-                  <p>© 2026 CMSPORTECH.COM | Centro de Inteligencia Deportiva</p>
+                  <p>© 2026 CMSPORTECH.COM | La Roja Performance</p>
                 </div>
               </div>
             `
           };
 
           if (attachment && attachment.content) {
-            mailOptions.attachments = [
-              {
-                filename: attachment.filename || 'Citacion.pdf',
-                content: attachment.content,
-                encoding: 'base64'
-              }
-            ];
+            mailOptions.attachments = [{
+              filename: attachment.filename || 'Citacion.pdf',
+              content: attachment.content,
+              encoding: 'base64'
+            }];
           }
 
-          console.log(`[MAIL] Intentando enviar a: ${recipient.correo}`);
           const info = await mailTransporter.sendMail(mailOptions);
-          console.log(`[MAIL] Enviado con éxito a ${recipient.correo}:`, info.messageId);
+          console.log(`   ✅ Sent to ${recipient.correo}`);
           return info;
         } catch (sendError: any) {
-          console.error(`[MAIL] Error enviando a ${recipient.correo}:`, sendError);
-          throw new Error(`Error al enviar a ${recipient.correo}: ${sendError.message}`);
+          console.error(`   ❌ Failed to ${recipient.correo}: ${sendError.message}`);
+          throw sendError;
         }
       });
 
       await Promise.all(sendPromises);
       
+      console.log(`✅ All emails sent successfully\n`);
       return res.json({ 
         success: true, 
-        message: `Nómina enviada correctamente a ${recipients.length} destinatarios de ${clubName}` 
+        message: `Sent to ${recipients.length} recipients` 
       });
     } catch (error: any) {
-      console.error("Error enviando email:", error);
+      console.error("[EMAIL] Error:", error);
       return res.status(500).json({ error: error.message });
     }
   });
 
-  // Vite middleware for development
+  // VITE MIDDLEWARE
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -372,7 +362,10 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`\n🚀 Server running on http://localhost:${PORT}`);
+    console.log(`✅ Catapult Proxy ready`);
+    console.log(`📡 Endpoint: CloudBaker API (bakestatus)`);
+    console.log(`🔑 Token: ${process.env.CATAPULT_API_TOKEN ? '✅ Configured' : '❌ Missing'}\n`);
   });
 }
 

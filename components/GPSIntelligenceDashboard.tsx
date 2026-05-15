@@ -16,6 +16,7 @@ interface GPSIntelligenceDashboardProps {
   categoryName?: string | null;
   userRole?: string | null;
   userClub?: string | null;
+  userClubId?: number | null;
 }
 
 const POSITIONS = ['DEFENSA', 'VOLANTE', 'DELANTERO'];
@@ -29,7 +30,7 @@ const METRICS_CONFIG = [
   { id: 'sprints_n', name: 'Cantidad Sprints', unit: 'n', color: '#64748b' }
 ];
 
-export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [], categoryName, userRole, userClub }: GPSIntelligenceDashboardProps) {
+export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [], categoryName, userRole, userClub, userClubId }: GPSIntelligenceDashboardProps) {
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [sessionData, setSessionData] = useState<any[]>([]);
@@ -105,8 +106,8 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
           .from('gps_import')
           .select(`
             *,
-            players:id_del_jugador (
-              id_del_jugador,
+            players:player_id (
+              player_id,
               nombre,
               apellido1,
               apellido2,
@@ -122,7 +123,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
           // Aggregate data by player_id to handle multiple sessions (AM/PM)
           const aggregatedMap = new Map<number, any>();
           gpsRecords.forEach((gps: any) => {
-            const pid = gps.id_del_jugador;
+            const pid = gps.player_id;
             if (!aggregatedMap.has(pid)) {
               aggregatedMap.set(pid, { ...gps });
             } else {
@@ -146,7 +147,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
           });
 
           // Fetch citations for these players on this date to get microcycle and category
-          const playerIds = finalGpsRecords.map(r => r.id_del_jugador);
+          const playerIds = finalGpsRecords.map(r => r.player_id);
           
           const { data: citations, error: citError } = await supabase
             .from('citaciones')
@@ -175,7 +176,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
             const rawPos = p?.posicion?.toUpperCase() || 'S/D';
             
             // Priority: Citation Category (ID) > Player Record Category (Text)
-            const citationCatId = playerCategoryIdMap.get(d.id_del_jugador);
+            const citationCatId = playerCategoryIdMap.get(d.player_id);
             let catName = 'SIN CATEGORÍA';
             
             if (citationCatId && REVERSE_CATEGORY_ID_MAP[citationCatId]) {
@@ -187,19 +188,25 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
             let finalPlayer = {
               ...p,
               name: `${p?.nombre} ${p?.apellido1}`.trim(),
-              id: `player-${p?.id_del_jugador}`
+              id: `player-${p?.player_id}`
             };
 
             // Anonymization logic for club profile
-            if (userRole === 'club' && userClub) {
-              const pClub = p?.club || '';
-              const uClubNorm = normalizeClub(userClub);
-              const pClubNorm = normalizeClub(pClub);
+            if (userRole === 'club') {
+              let isOwnClub = false;
+              if (userClubId) {
+                isOwnClub = p?.id_club === userClubId;
+              } else if (userClub) {
+                const pClub = p?.club || '';
+                const uClubNorm = normalizeClub(userClub);
+                const pClubNorm = normalizeClub(pClub);
+                isOwnClub = pClubNorm === uClubNorm;
+              }
 
-              if (pClubNorm !== uClubNorm) {
-                finalPlayer.name = `JUGADOR X [${p?.id_del_jugador || 'EXT'}]`;
+              if (!isOwnClub) {
+                finalPlayer.name = `JUGADOR X [${p?.player_id || 'EXT'}]`;
                 finalPlayer.nombre = 'JUGADOR X';
-                finalPlayer.apellido1 = `[${p?.id_del_jugador || 'EXT'}]`;
+                finalPlayer.apellido1 = `[${p?.player_id || 'EXT'}]`;
                 finalPlayer.apellido2 = '';
                 finalPlayer.club = 'OTRO CLUB';
               }
@@ -375,7 +382,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
               >
                 <option value="">ELIJA UN JUGADOR...</option>
                 {[...filteredSessionData].sort((a, b) => a.player.name.localeCompare(b.player.name)).map(d => (
-                  <option key={d.id_del_jugador} value={d.id_del_jugador}>
+                  <option key={d.player_id} value={d.player_id}>
                     {d.player.name.toUpperCase()}
                   </option>
                 ))}
@@ -749,7 +756,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
 function IndividualPerformanceView({ playerId, sessionData, positionalAverages, referenceData }: { playerId: string | null, sessionData: any[], positionalAverages: any[], referenceData: any[] }) {
   const playerData = useMemo(() => {
     if (!playerId) return null;
-    return sessionData.find(d => String(d.id_del_jugador) === String(playerId));
+    return sessionData.find(d => String(d.player_id) === String(playerId));
   }, [playerId, sessionData]);
 
   const posAvg = useMemo(() => {

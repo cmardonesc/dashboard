@@ -6,7 +6,7 @@ import PlayerDashboard from './components/PlayerDashboard'
 import StaffDashboard from './components/StaffDashboard'
 import ClubHome from './components/ClubHome'
 import Sidebar from './components/Sidebar'
-import { AthletePerformanceRecord, User, UserRole, NutritionData, MenuId } from './types'
+import { AthletePerformanceRecord, User, UserRole, NutritionData, MenuId, Category } from './types'
 import { MOCK_PLAYERS } from './mockData'
 import { logActivity } from './lib/activityLogger'
 import { FEDERATION_LOGO } from './constants'
@@ -18,6 +18,7 @@ export default function App() {
   const [playersLoading, setPlayersLoading] = useState(true)
   const [role, setRole] = useState<Role>(null)
   const [userClub, setUserClub] = useState<string | null>(null)
+  const [userClubId, setUserClubId] = useState<number | null>(null)
   const [linkedPlayerId, setLinkedPlayerId] = useState<number | null>(null)
   const [sessionUser, setSessionUser] = useState<any>(null)
   const [activeMenu, setActiveMenu] = useState<MenuId>('inicio')
@@ -51,10 +52,10 @@ export default function App() {
       const dateStr = rangeDate.toISOString().split('T')[0];
 
       if (userRole === 'player' && pId) {
-        wellnessQuery = wellnessQuery.eq('id_del_jugador', pId);
-        loadsQuery = loadsQuery.eq('id_del_jugador', pId);
-        gpsQuery = gpsQuery.eq('id_del_jugador', pId);
-        nutritionQuery = nutritionQuery.eq('id_del_jugador', pId);
+        wellnessQuery = wellnessQuery.eq('player_id', pId);
+        loadsQuery = loadsQuery.eq('player_id', pId);
+        gpsQuery = gpsQuery.eq('player_id', pId);
+        nutritionQuery = nutritionQuery.eq('player_id', pId);
       } else {
         // Intentamos usar checkin_date, si falla el backend lo reportará
         wellnessQuery = wellnessQuery.gte('checkin_date', dateStr);
@@ -96,10 +97,21 @@ export default function App() {
         const rawDate = w.checkin_date || w.checkin_dat || w.fecha || '';
         const normalizedDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate.split(' ')[0];
         
+        // Resolver club si es ID
+        let resolvedClub = w.club || w.club_name ||'';
+        const clubId = w.id_club;
+        if (clubId) {
+          const cObj = dbClubs.find(c => Number(c.id_club) === Number(clubId));
+          if (cObj) resolvedClub = cObj.nombre;
+        }
+
         return {
           id: w.id?.toString() || Math.random().toString(),
-          playerId: `player-${w.id_del_jugador || w.player_id || w.id_jugador}`,
-          id_del_jugador: w.id_del_jugador || w.player_id || w.id_jugador,
+          playerId: `player-${w.player_id}`,
+          player_id: w.player_id,
+          player_name: w.player_name || w.nombre_jugador || w.jugador || w.nombre_raw || w.atleta || w.player || w.nombre_completo,
+          player_club: resolvedClub || clubId, // Mantener ID si no hay nombre
+          id_club: clubId,
           date: normalizedDate,
           fatigue: w.fatigue || w.fatiga || 0,
           sleep: w.sleep_quality || w.sleep_quali || w.sueno || 0,
@@ -118,10 +130,21 @@ export default function App() {
         const rpe = l.rpe || l.esfuerzo || 0;
         const duration = l.duration_min || l.duracion || l.minutos || 0;
 
+        // Resolver club si es ID
+        let resolvedClub = l.club || l.club_name ||'';
+        const clubId = l.id_club;
+        if (clubId) {
+          const cObj = dbClubs.find(c => Number(c.id_club) === Number(clubId));
+          if (cObj) resolvedClub = cObj.nombre;
+        }
+
         return {
           id: l.id?.toString() || Math.random().toString(),
-          playerId: `player-${l.id_del_jugador || l.player_id || l.id_jugador}`,
-          id_del_jugador: l.id_del_jugador || l.player_id || l.id_jugador,
+          playerId: `player-${l.player_id}`,
+          player_id: l.player_id,
+          player_name: l.player_name || l.nombre_jugador || l.jugador || l.nombre_raw || l.atleta || l.player || l.nombre_completo,
+          player_club: resolvedClub || clubId,
+          id_club: clubId,
           date: normalizedDate,
           duration: duration,
           rpe: rpe,
@@ -137,11 +160,22 @@ export default function App() {
         const rawDate = g.fecha || g.session_date || '';
         const normalizedDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate.split(' ')[0];
         const duration = Number(g.minutos || g.duration || 0);
+
+        // Resolver club si es ID
+        let resolvedClub = g.club || g.club_name ||'';
+        const clubId = g.id_club;
+        if (clubId) {
+          const cObj = dbClubs.find(c => Number(c.id_club) === Number(clubId));
+          if (cObj) resolvedClub = cObj.nombre;
+        }
+
         return {
           id: g.id?.toString() || Math.random().toString(),
-          playerId: `player-${g.id_del_jugador || g.player_id || g.id_jugador}`,
-          id_del_jugador: g.id_del_jugador || g.player_id || g.id_jugador,
-          jugador_nombre: g.jugador_nombre, // Guardamos el nombre para descubrimiento
+          playerId: `player-${g.player_id}`,
+          player_id: g.player_id,
+          jugador_nombre: g.jugador_nombre || g.nombre_jugador || g.jugador || g.atleta || g.player || g.nombre_raw, // Guardamos el nombre para descubrimiento
+          jugador_club: resolvedClub || clubId,
+          id_club: clubId,
           date: normalizedDate,
           duration: duration,
           totalDistance: Number(g.dist_total_m || g.totalDistance || 0),
@@ -163,7 +197,11 @@ export default function App() {
         wellness: mappedWellness,
         loads: mappedLoads,
         gps: mappedGps,
-        nutrition: nutritionRes.data || []
+        nutrition: (nutritionRes.data || []).map((n: any) => ({
+          ...n,
+          player_id: n.player_id,
+          jugador_nombre: n.nombre_raw || n.jugador_nombre
+        }))
       }));
     } catch (err) {
       console.error("Error cargando datos de rendimiento:", err);
@@ -175,54 +213,61 @@ export default function App() {
       const [{ data: playersData, error: playersError }, { data: clubsData, error: clubsError }] = await Promise.all([
         supabase
           .from('players')
-          .select('id_del_jugador, nombre, apellido1, apellido2, club, posicion, anio'),
+          .select('player_id, nombre, apellido1, apellido2, posicion, id_club, anio, foto_url'),
         supabase
           .from('clubes')
-          .select('*')
-          .eq('activo', true)
+          .select('id_club, nombre')
       ])
 
-      if (playersError) throw playersError
+      if (playersError) {
+        console.error("Supabase error fetching players:", playersError);
+        setPlayersLoading(false);
+        return;
+      }
       if (clubsError) console.error('Error al cargar clubes:', clubsError)
 
       if (clubsData) setDbClubs(clubsData)
 
       const mappedPlayers: User[] = (playersData || []).map((p: any) => {
-        const pid = p.id_del_jugador || p.id;
+        const pid = p.player_id;
         
-        // Inferir categoría si falta
-        let category = '';
+        let category: Category = Category.SUB_17; // Default
         if (p.anio) {
-          const age = 2026 - p.anio;
-          if (age <= 13) category = 'sub_13';
-          else if (age === 14) category = 'sub_14';
-          else if (age === 15) category = 'sub_15';
-          else if (age === 16) category = 'sub_16';
-          else if (age === 17) category = 'sub_17';
-          else if (age === 18) category = 'sub_18';
-          else if (age <= 20) category = 'sub_20';
-          else if (age <= 21) category = 'sub_21';
-          else if (age <= 23) category = 'sub_23';
-          else category = 'adulta';
-        } else if (!category) {
-          category = 'sub_17';
+          const year = Number(p.anio);
+          if (year === 2011) category = Category.SUB_15;
+          else if (year === 2009 || year === 2010) category = Category.SUB_16;
+          else if (year === 2007 || year === 2008) category = Category.SUB_17;
+          else if (year >= 2012) category = Category.SUB_13;
         }
+
+        const clubId = p.id_club;
+        const clubObj = (clubsData || []).find((c: any) => Number(c.id_club) === Number(clubId));
+        const clubName = clubObj?.nombre || (clubId ? `Club #${clubId}` : 'Sin Club');
+        
+        const dbName = `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${pid}`;
 
         return {
           id: `player-${pid}`,
-          id_del_jugador: pid ? Number(pid) : undefined,
-          name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${pid}`,
+          player_id: pid ? Number(pid) : undefined,
+          name: dbName,
           nombre: p.nombre,
           apellido1: p.apellido1,
           apellido2: p.apellido2,
           role: UserRole.PLAYER,
-          club: p.club,
-          position: p.posicion,
+          club: clubName,
+          club_name: clubName,
+          id_club: clubId ? Number(clubId) : undefined,
+          position: p.posicion || 'S/D',
           category: category,
-          anio: p.anio
+          anio: p.anio,
+          foto_url: p.foto_url
         };
       })
 
+      console.log("App: Successfully mapped players:", mappedPlayers.length);
+      if (mappedPlayers.some(p => p.player_id === 758)) {
+        console.log("App: Benjamin Villanueva (758) found in DB fetch");
+      }
       setDbPlayers(mappedPlayers)
     } catch (err) {
       console.error('Error al cargar jugadores:', err)
@@ -249,22 +294,23 @@ export default function App() {
 
   const fetchUserData = async (
     userId: string
-  ): Promise<{ role: Role; id_del_jugador: number | null; club_name: string | null }> => {
+  ): Promise<{ role: Role; player_id: number | null; club_name: string | null; id_club: number | null }> => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('role, id_del_jugador, club_name')
+        .select('role, player_id, club_name, id_club')
         .eq('id', userId)
         .maybeSingle()
 
-      if (error || !data) return { role: null, id_del_jugador: null, club_name: null }
+      if (error || !data) return { role: null, player_id: null, club_name: null, id_club: null }
       return {
         role: (data.role as Role) ?? null,
-        id_del_jugador: data.id_del_jugador ? Number(data.id_del_jugador) : null,
-        club_name: data.club_name || null
+        player_id: data.player_id ? Number(data.player_id) : null,
+        club_name: data.club_name || null,
+        id_club: data.id_club ? Number(data.id_club) : null
       }
     } catch (err) {
-      return { role: null, id_del_jugador: null, club_name: null }
+      return { role: null, player_id: null, club_name: null, id_club: null }
     }
   }
 
@@ -322,7 +368,7 @@ export default function App() {
         const { data: player } = await supabase
           .from('players')
           .select('nombre, apellido1')
-          .eq('id_del_jugador', record.id_del_jugador)
+          .eq('player_id', record.player_id)
           .single();
         
         const playerName = player ? `${player.nombre} ${player.apellido1}` : 'Jugador';
@@ -370,18 +416,19 @@ export default function App() {
           let userData = await fetchUserData(session.user.id)
           
           // RECOVERY: Si el perfil no tiene ID pero el metadata sí (común si el upsert falló por RLS en el registro)
-          if (userData.role === 'player' && !userData.id_del_jugador && session.user.user_metadata?.id_del_jugador) {
-            const recoveredId = Number(session.user.user_metadata.id_del_jugador);
-            console.log("Recuperando id_del_jugador desde metadata:", recoveredId);
-            await supabase.from('profiles').update({ id_del_jugador: recoveredId }).eq('id', session.user.id);
-            userData.id_del_jugador = recoveredId;
+          if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
+            const recoveredId = Number(session.user.user_metadata.player_id);
+            console.log("Recuperando player_id desde metadata:", recoveredId);
+            await supabase.from('profiles').update({ player_id: recoveredId }).eq('id', session.user.id);
+            userData.player_id = recoveredId;
           }
 
           if (isMounted) {
             setRole(userData.role)
             setUserClub(userData.club_name)
-            setLinkedPlayerId(userData.id_del_jugador)
-            fetchPerformanceData(userData.role, userData.id_del_jugador).catch(e => console.error("Error cargando datos de rendimiento:", e));
+            setUserClubId(userData.id_club)
+            setLinkedPlayerId(userData.player_id)
+            fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error("Error cargando datos de rendimiento:", e));
           }
         }
       } catch (err) {
@@ -430,8 +477,8 @@ export default function App() {
         if (isMounted) {
           setRole(userData.role)
           setUserClub(userData.club_name)
-          setLinkedPlayerId(userData.id_del_jugador)
-          fetchPerformanceData(userData.role, userData.id_del_jugador).catch(e => console.error(e));
+          setLinkedPlayerId(userData.player_id)
+          fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error(e));
         }
       } else {
         setSessionUser(null)
@@ -503,6 +550,7 @@ export default function App() {
       console.log(`Login de club desde tabla detectado: ${session.user.clubName}`);
       setRole('club');
       setUserClub(session.user.clubName);
+      setUserClubId(session.user.idClub);
       setLinkedPlayerId(null);
       fetchPerformanceData('club', null).catch(console.error);
       logActivity('Inicio de Sesión (Club - Tabla)', { username: emailLower, club: session.user.clubName });
@@ -525,26 +573,28 @@ export default function App() {
         console.log("Usando rol desde metadata:", session.user.user_metadata.role);
         userData = {
           role: session.user.user_metadata.role,
-          id_del_jugador: session.user.user_metadata.id_del_jugador ? Number(session.user.user_metadata.id_del_jugador) : null,
-          club_name: session.user.user_metadata.club_name || null
+          player_id: session.user.user_metadata.player_id ? Number(session.user.user_metadata.player_id) : null,
+          club_name: session.user.user_metadata.club_name || null,
+          id_club: session.user.user_metadata.id_club ? Number(session.user.user_metadata.id_club) : null
         };
       }
       
       // RECOVERY: Si el perfil no tiene ID pero el metadata sí
-      if (userData.role === 'player' && !userData.id_del_jugador && session.user.user_metadata?.id_del_jugador) {
-        const recoveredId = Number(session.user.user_metadata.id_del_jugador);
-        console.log("Recuperando id_del_jugador desde metadata en login:", recoveredId);
-        await supabase.from('profiles').update({ id_del_jugador: recoveredId }).eq('id', session.user.id);
-        userData.id_del_jugador = recoveredId;
+      if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
+        const recoveredId = Number(session.user.user_metadata.player_id);
+        console.log("Recuperando player_id desde metadata en login:", recoveredId);
+        await supabase.from('profiles').update({ player_id: recoveredId }).eq('id', session.user.id);
+        userData.player_id = recoveredId;
       }
       
       if (userData.role) {
         setRole(userData.role);
         setUserClub(userData.club_name);
-        setLinkedPlayerId(userData.id_del_jugador);
+        setUserClubId(userData.id_club);
+        setLinkedPlayerId(userData.player_id);
         // Cargar datos iniciales
-        fetchPerformanceData(userData.role, userData.id_del_jugador).catch(console.error);
-        logActivity(`Inicio de Sesión (${userData.role})`, { email: emailLower, playerId: userData.id_del_jugador });
+        fetchPerformanceData(userData.role, userData.player_id).catch(console.error);
+        logActivity(`Inicio de Sesión (${userData.role})`, { email: emailLower, playerId: userData.player_id });
       } else {
         console.warn("Usuario sin rol en tabla profiles. Asignando rol 'player' por defecto.");
         // Fallback: si no tiene perfil, lo tratamos como jugador nuevo
@@ -612,53 +662,108 @@ export default function App() {
     // 1. Empezamos con los jugadores reales de la tabla 'players'
     let playersToUse = [...dbPlayers];
     
-    // 2. "Descubrimiento" de jugadores: Si hay datos en nutrición, wellness o loads para un ID que no está en 'players',
-    // lo agregamos como un jugador virtual para que no se pierdan sus registros.
-    const discoverFrom = [
-      ...allData.nutrition.map((n: any) => ({ id: n.id_del_jugador || n.id_jugador || n.player_id, name: n.nombre_raw })),
-      ...allData.wellness.map((w: any) => ({ id: w.id_del_jugador || w.player_id || w.playerId, name: null })),
-      ...allData.loads.map((l: any) => ({ id: l.id_del_jugador || l.player_id || l.id_jugador, name: null })),
-      ...allData.gps.map((g: any) => ({ id: g.id_del_jugador, name: g.jugador_nombre }))
-    ];
+    // 2. "Descubrimiento" de jugadores
+    const discoverFrom: { id: any, name: string | null, club: any | null }[] = [
+      ...allData.nutrition.map((n: any) => ({ id: n.player_id, name: n.jugador_nombre || n.nombre_raw, club: n.id_club || n.club })),
+      ...allData.wellness.map((w: any) => ({ id: w.player_id, name: w.player_name, club: (w as any).player_club })),
+      ...allData.loads.map((l: any) => ({ id: l.player_id, name: l.player_name, club: (l as any).player_club })),
+      ...allData.gps.map((g: any) => ({ id: g.player_id, name: g.jugador_nombre, club: (g as any).jugador_club }))
+    ].filter(item => item.id);
 
-    discoverFrom.forEach((item: any) => {
-      const rawId = item.id?.toString().replace('player-', '');
-      if (!rawId) return;
+    discoverFrom.forEach((item) => {
+      const rawIdStr = item.id?.toString().replace('player-', '');
+      if (!rawIdStr) return;
+      const rawIdNum = Number(rawIdStr);
       
-      const exists = playersToUse.some(p => p.id_del_jugador?.toString() === rawId);
-      if (!exists) {
+      const existingIdx = playersToUse.findIndex(p => {
+        const pId = p.player_id;
+        if (pId === undefined) return false;
+        return Number(pId) === rawIdNum || String(pId) === String(rawIdNum);
+      });
+      
+      if (existingIdx === -1) {
+        const name = item.name || `Atleta #${rawIdStr}`;
+        const nameParts = name.trim().split(' ');
+        
+        // Resolver club si item.club es un ID
+        const clubObj = dbClubs.find(c => Number(c.id_club) === Number(item.club) || c.nombre === item.club);
+        const finalClub = clubObj?.nombre || item.club || 'Sin Club';
+
         playersToUse.push({
-          id: `player-v-${rawId}`,
-          id_del_jugador: isNaN(Number(rawId)) ? undefined : Number(rawId),
-          name: item.name || `Atleta #${rawId}`,
+          id: `player-v-${rawIdStr}`,
+          player_id: isNaN(rawIdNum) ? undefined : rawIdNum,
+          name: name,
+          nombre: nameParts[0],
+          apellido1: nameParts.slice(1).join(' '),
           role: UserRole.PLAYER,
-          club: 'Registro Histórico',
-          position: 'S/D'
+          club: finalClub,
+          club_name: finalClub,
+          id_club: clubObj?.id_club ? Number(clubObj.id_club) : (isNaN(Number(item.club)) ? undefined : Number(item.club)),
+          position: 'S/D',
+          category: Category.SUB_17
         });
+      } else {
+        // Si ya existe pero el nombre es genérico o nulo, y el log tiene un nombre real, actualizamos
+        const p = playersToUse[existingIdx];
+        let updated = false;
+        let newP = { ...p };
+
+        const isGenericName = !p.nombre || p.nombre.toLowerCase().includes('atleta') || p.nombre.toLowerCase().includes('jugador');
+        const isBetterName = item.name && !item.name.toLowerCase().includes('atleta') && !item.name.toLowerCase().includes('jugador');
+
+        if (isGenericName && isBetterName) {
+          const nameParts = item.name.trim().split(' ');
+          newP.name = item.name;
+          newP.nombre = nameParts[0];
+          newP.apellido1 = nameParts.slice(1).join(' ');
+          updated = true;
+        }
+
+        const isGenericClub = !p.club || p.club === 'Sin Club' || p.club === 'Registro Histórico';
+        if (item.club && isGenericClub) {
+          const clubObj = dbClubs.find(c => Number(c.id_club) === Number(item.club) || c.nombre === item.club);
+          const resolvedClub = clubObj?.nombre || item.club;
+          if (resolvedClub && resolvedClub !== p.club) {
+            newP.club = resolvedClub;
+            newP.club_name = resolvedClub;
+            newP.id_club = clubObj?.id_club ? Number(clubObj.id_club) : (isNaN(Number(item.club)) ? undefined : Number(item.club));
+            updated = true;
+          }
+        }
+
+        if (updated) {
+          playersToUse[existingIdx] = newP;
+        }
       }
     });
 
-    // 3. Fallback a MOCK si no hay nada de nada (solo para staff/admin)
-    if (playersToUse.length === 0 && role !== 'player') {
+    // 3. Fallback a MOCK si no hay nada (solo para staff/admin/club)
+    if (playersToUse.length === 0 && role !== 'player' && !playersLoading) {
       playersToUse = MOCK_PLAYERS;
     }
 
-    console.log(`PerformanceRecords: ${playersToUse.length} jugadores`);
+    console.log(`PerformanceRecords: ${playersToUse.length} jugadores filtrados`);
 
     return (playersToUse as User[]).map((player) => {
-      const pId = player.id_del_jugador?.toString();
+      const pId = player.player_id?.toString();
 
       // Lógica de anonimización para perfil de clubes
       let finalPlayer = { ...player };
-      if (role === 'club' && userClub) {
-        const pClub = player.club || player.club_name || '';
-        const uClubNorm = normalizeClub(userClub);
-        const pClubNorm = normalizeClub(pClub);
+      if (role === 'club') {
+        let isOwnClub = false;
+        if (userClubId) {
+          isOwnClub = player.id_club === userClubId;
+        } else if (userClub) {
+          const pClub = player.club || player.club_name || '';
+          const uClubNorm = normalizeClub(userClub);
+          const pClubNorm = normalizeClub(pClub);
+          isOwnClub = pClubNorm === uClubNorm;
+        }
 
-        if (pClubNorm !== uClubNorm) {
-          finalPlayer.name = `Jugador [${player.id_del_jugador || 'EXT'}]`;
+        if (!isOwnClub) {
+          finalPlayer.name = `Jugador [${player.player_id || 'EXT'}]`;
           finalPlayer.nombre = 'Jugador';
-          finalPlayer.apellido1 = `[${player.id_del_jugador || 'EXT'}]`;
+          finalPlayer.apellido1 = `[${player.player_id || 'EXT'}]`;
           finalPlayer.apellido2 = '';
           finalPlayer.club = 'OTRO CLUB';
           finalPlayer.club_name = 'OTRO CLUB';
@@ -668,31 +773,36 @@ export default function App() {
       return {
         player: finalPlayer,
         wellness: allData.wellness.filter((w: any) => {
-          const wId = (w.id_del_jugador || w.player_id || w.playerId)?.toString().replace('player-', '');
+          const wId = (w.player_id || w.playerId)?.toString().replace('player-', '');
           return wId && pId && String(wId) === String(pId);
         }),
         loads: allData.loads.filter((l: any) => {
-          const lId = (l.id_del_jugador || l.player_id || l.playerId)?.toString().replace('player-', '');
+          const lId = (l.player_id || l.playerId || l.id_jugador)?.toString().replace('player-', '');
           return lId && pId && String(lId) === String(pId);
         }),
         gps: allData.gps.filter((g: any) => {
-          const gId = (g.id_del_jugador || g.player_id || g.playerId)?.toString().replace('player-', '');
+          const gId = (g.player_id || g.playerId)?.toString().replace('player-', '');
           return gId && pId && String(gId) === String(pId);
         }),
         nutrition: allData.nutrition.filter((n: any) => {
-          const nId = (n.id_del_jugador || n.id_jugador || n.player_id)?.toString();
+          const nId = (n.player_id || n.id_jugador)?.toString();
           return nId && pId && String(nId) === String(pId);
         })
       };
-    })
-  }, [allData, dbPlayers, role])
+    });
+  }, [allData, dbPlayers, role, userClub, playersLoading, dbClubs]);
+
+  // Tracking performanceRecords population
+  useEffect(() => {
+    console.log("App: State update - dbPlayers:", dbPlayers.length, "performanceRecords:", performanceRecords.length);
+  }, [dbPlayers, performanceRecords]);
 
   const currentPlayerRecord = useMemo(() => {
     if (!sessionUser) return null
     let found: AthletePerformanceRecord | null = null
-    if (linkedPlayerId !== null) {
+    if (found === null && linkedPlayerId !== null) {
       found = performanceRecords.find(
-          (r) => r.player.id_del_jugador !== undefined && Number(r.player.id_del_jugador) === Number(linkedPlayerId)
+          (r) => r.player.player_id !== undefined && Number(r.player.player_id) === Number(linkedPlayerId)
         ) || null
     }
     if (!found && role === 'player') {
@@ -795,6 +905,7 @@ export default function App() {
               <ClubHome 
                 performanceRecords={performanceRecords} 
                 userClub={userClub || undefined} 
+                userClubId={userClubId}
                 clubs={dbClubs}
               />
             ) : (
@@ -803,8 +914,9 @@ export default function App() {
                 activeMenu={activeMenu} 
                 onMenuChange={setActiveMenu} 
                 userClub={userClub || undefined}
+                userClubId={userClubId}
                 userRole={role}
-                userId_del_jugador={linkedPlayerId}
+                player_id={linkedPlayerId}
                 clubs={dbClubs}
               />
             )}
@@ -916,6 +1028,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
             email: `${clubLogin.username}@club.la-roja.cl`, // Email virtual para compatibilidad
             isTableLogin: true,
             clubName: clubLogin.club_name,
+            idClub: clubLogin.id_club,
             role: 'authenticated'
           }
         });
@@ -939,7 +1052,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
           role: 'authenticated',
           user_metadata: {
             role: mode === 'signup' ? signupRole : (isOfficialStaff ? 'staff' : 'player'), 
-            id_del_jugador: (mode === 'signup' && signupRole === 'player') ? (parseInt(playerId) || null) : null,
+            player_id: (mode === 'signup' && signupRole === 'player') ? (parseInt(playerId) || null) : null,
             club_name: mode === 'signup' && signupRole === 'club' ? selectedClub : null
           }
         }
@@ -1021,8 +1134,8 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         // 1. Verificar existencia en tabla players
         const { data: pData, error: pErr } = await supabase
           .from('players')
-          .select('id_del_jugador')
-          .eq('id_del_jugador', pid)
+          .select('player_id')
+          .eq('player_id', pid)
           .maybeSingle();
         
         if (pErr) {
@@ -1042,7 +1155,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         const { data: uData } = await supabase
           .from('profiles')
           .select('id')
-          .eq('id_del_jugador', pid)
+          .eq('player_id', pid)
           .maybeSingle();
         
         if (uData) {
@@ -1069,7 +1182,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
         options: { 
           data: { 
             role: signupRole || 'staff',
-            id_del_jugador: safePid,
+            player_id: safePid,
             club_name: signupRole === 'club' ? (selectedClub || null) : null
           } 
         } 
@@ -1091,7 +1204,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
             await supabase.from('profiles').upsert({
               id: data.user.id,
               role: signupRole,
-              id_del_jugador: verifiedPlayerId,
+              player_id: verifiedPlayerId,
               club_name: signupRole === 'club' ? selectedClub : null
             });
           } catch (e) {

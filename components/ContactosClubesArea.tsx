@@ -7,6 +7,7 @@ import ClubBadge from './ClubBadge';
 interface ContactoClub {
   id: number;
   club: string;
+  id_club?: number | null;
   nombres: string;
   presidente: string;
   cargo: string;
@@ -18,11 +19,13 @@ export default function ContactosClubesArea() {
   const [clubs, setClubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [expandedClubs, setExpandedClubs] = useState<Set<string>>(new Set());
   const [editingContacto, setEditingContacto] = useState<ContactoClub | null>(null);
   const [formData, setFormData] = useState({
     club: '',
+    id_club: null as number | null,
     nombres: '',
     presidente: '',
     cargo: 'Presidente',
@@ -59,6 +62,7 @@ export default function ContactosClubesArea() {
     if (error) {
       console.error('Error fetching contactos:', error);
     } else {
+      console.log("📥 Contactos cargados:", (data || []).map(c => c.id));
       setContactos(data || []);
     }
   };
@@ -67,6 +71,7 @@ export default function ContactosClubesArea() {
     setEditingContacto(contacto);
     setFormData({
       club: contacto.club,
+      id_club: contacto.id_club || null,
       nombres: contacto.nombres || '',
       presidente: contacto.presidente || '',
       cargo: contacto.cargo || 'Presidente',
@@ -92,29 +97,74 @@ export default function ContactosClubesArea() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingContacto) {
-      const { error } = await supabase
-        .from('contactos_solicitudes')
-        .update(formData)
-        .eq('id', editingContacto.id);
-      
-      if (error) {
-        alert('Error al actualizar: ' + error.message);
+    setSubmitting(true);
+    console.log("🚀 Iniciando handleSubmit en ContactosClubesArea...", { editing: !!editingContacto, formData });
+    
+    try {
+      if (editingContacto) {
+        console.log("📝 Intentando actualizar contacto ID:", editingContacto.id);
+        
+        // Verificamos si existe antes por si acaso
+        const { data: currentData } = await supabase
+          .from('contactos_solicitudes')
+          .select('id')
+          .eq('id', editingContacto.id)
+          .maybeSingle();
+        
+        if (!currentData) {
+          console.error("❌ El contacto con ID " + editingContacto.id + " no existe en la DB.");
+          alert("Error: El registro que intenta editar ya no existe en la base de datos.");
+          setSubmitting(false);
+          setShowModal(false);
+          fetchContactos();
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('contactos_solicitudes')
+          .update({
+            club: formData.club,
+            id_club: formData.id_club,
+            nombres: formData.nombres,
+            presidente: formData.presidente,
+            cargo: formData.cargo,
+            correo: formData.correo
+          })
+          .eq('id', editingContacto.id)
+          .select();
+        
+        if (error) {
+          console.error('❌ Error Supabase al actualizar:', error);
+          alert('Error al actualizar: ' + error.message);
+        } else {
+          console.log("✅ Respuesta de update:", data);
+          // Si no hay error, consideramos éxito incluso si data es [] (aunque con select() no debería ser [])
+          setShowModal(false);
+          await fetchContactos();
+          alert('Contacto actualizado exitosamente');
+        }
       } else {
-        setShowModal(false);
-        fetchContactos();
+        console.log("➕ Creando nuevo contacto...");
+        const { data, error } = await supabase
+          .from('contactos_solicitudes')
+          .insert([formData])
+          .select();
+        
+        if (error) {
+          console.error('❌ Error al crear contacto:', error);
+          alert('Error al crear: ' + error.message);
+        } else {
+          console.log("✅ Nuevo contacto creado:", data);
+          setShowModal(false);
+          await fetchContactos();
+          alert('Contacto creado exitosamente');
+        }
       }
-    } else {
-      const { error } = await supabase
-        .from('contactos_solicitudes')
-        .insert([formData]);
-      
-      if (error) {
-        alert('Error al crear: ' + error.message);
-      } else {
-        setShowModal(false);
-        fetchContactos();
-      }
+    } catch (err: any) {
+      console.error("❌ Excepción en handleSubmit:", err);
+      alert('Error inesperado: ' + err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -158,7 +208,7 @@ export default function ContactosClubesArea() {
         <button 
           onClick={() => {
             setEditingContacto(null);
-            setFormData({ club: '', nombres: '', presidente: '', cargo: 'Presidente', correo: '' });
+            setFormData({ club: '', id_club: null, nombres: '', presidente: '', cargo: 'Presidente', correo: '' });
             setShowModal(true);
           }}
           className="bg-[#CF1B2B] text-white px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700 transition-all flex items-center gap-2 transform active:scale-95"
@@ -287,7 +337,7 @@ export default function ContactosClubesArea() {
           <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
               <h3 className="text-lg font-black text-[#0b1220] italic uppercase tracking-tighter">
-                {editingContacto ? 'EDITAR CONTACTO' : 'NUEVO CONTACTO'}
+                {editingContacto ? `EDITAR CONTACTO (ID: ${editingContacto.id})` : 'NUEVO CONTACTO'}
               </h3>
               <button 
                 onClick={() => setShowModal(false)}
@@ -306,13 +356,24 @@ export default function ContactosClubesArea() {
                   placeholder="Ej: Cobreloa"
                   className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-bold uppercase"
                   value={formData.club}
-                  onChange={(e) => setFormData({...formData, club: e.target.value.toUpperCase()})}
+                  onChange={(e) => {
+                    const val = e.target.value.toUpperCase();
+                    const matchedClub = clubs.find(c => c.nombre.toUpperCase() === val);
+                    setFormData({
+                      ...formData, 
+                      club: val,
+                      id_club: matchedClub ? matchedClub.id_club : formData.id_club
+                    });
+                  }}
                 />
                 <datalist id="club-suggestions">
                   {clubs.map(c => (
-                    <option key={c.id} value={c.nombre.toUpperCase()} />
+                    <option key={c.id_club} value={c.nombre.toUpperCase()} />
                   ))}
                 </datalist>
+                {formData.id_club && (
+                  <p className="text-[9px] font-bold text-emerald-500 uppercase ml-1">✓ Club vinculado (ID: {formData.id_club})</p>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Destinatario (Nombre Completo)</label>
@@ -349,9 +410,15 @@ export default function ContactosClubesArea() {
               </div>
               <button 
                 type="submit"
-                className="w-full py-5 bg-[#CF1B2B] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700 transition-all flex items-center justify-center gap-2 transform active:scale-95 mt-4"
+                disabled={submitting}
+                className="w-full py-5 bg-[#CF1B2B] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700 transition-all flex items-center justify-center gap-2 transform active:scale-95 mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <i className="fa-solid fa-save"></i> {editingContacto ? 'GUARDAR CAMBIOS' : 'CREAR REGISTRO'}
+                {submitting ? (
+                  <i className="fa-solid fa-spinner fa-spin"></i>
+                ) : (
+                  <i className="fa-solid fa-save"></i>
+                )}
+                {submitting ? 'GUARDANDO...' : (editingContacto ? 'GUARDAR CAMBIOS' : 'CREAR REGISTRO')}
               </button>
             </form>
           </div>

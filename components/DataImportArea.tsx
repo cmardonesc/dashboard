@@ -6,7 +6,7 @@ import { User } from '../types';
 
 import { fetchCatapultActivities, fetchCatapultActivityStats, testCatapultConnection } from '../services/catapultService';
 
-type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'velocidad' | 'aceleracion' | 'vo2max' | 'catapult_api';
+type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api';
 
 interface ImportConfig {
   label: string;
@@ -23,9 +23,9 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'gps_import',
     icon: 'fa-solid fa-satellite-dish',
     description: 'Carga de datos GPS acumulados por sesión.',
-    conflictColumns: ['id_del_jugador', 'fecha'],
+    conflictColumns: ['player_id', 'fecha'],
     fields: [
-      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Date', required: true, type: 'date' },
       { key: 'minutos', label: 'Min', required: false, type: 'number' },
       { key: 'dist_total_m', label: 'Total Distance (m)', required: false, type: 'number' },
@@ -43,9 +43,9 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'gps_tareas',
     icon: 'fa-solid fa-stopwatch-20',
     description: 'Carga de datos GPS desglosados por ejercicio o tarea.',
-    conflictColumns: ['id_del_jugador', 'fecha', 'tarea'],
+    conflictColumns: ['player_id', 'fecha', 'tarea'],
     fields: [
-      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Date', required: true, type: 'date' },
       { key: 'tarea', label: 'Name', required: true, type: 'string' },
       { key: 'jugador_nombre', label: 'Nombre Jugador', required: false, type: 'string' },
@@ -66,9 +66,9 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'antropometria',
     icon: 'fa-solid fa-ruler-combined',
     description: 'Carga de mediciones corporales y composición.',
-    conflictColumns: ['id_del_jugador', 'fecha_medicion'],
+    conflictColumns: ['player_id', 'fecha_medicion'],
     fields: [
-      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha_medicion', label: 'Fecha Medición', required: true, type: 'date' },
       { key: 'masa_corporal_kg', label: 'Masa Corporal (kg)', required: true, type: 'number' },
       { key: 'talla_cm', label: 'Talla (cm)', required: true, type: 'number' },
@@ -86,8 +86,11 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'somatotipo_endo', label: 'Somatotipo Endo', required: false, type: 'number' },
       { key: 'somatotipo_meso', label: 'Somatotipo Meso', required: false, type: 'number' },
       { key: 'somatotipo_ecto', label: 'Somatotipo Ecto', required: false, type: 'number' },
+      { key: 'somatotipo_eje_x', label: 'Somatotipo Eje X', required: false, type: 'number' },
+      { key: 'somatotipo_eje_y', label: 'Somatotipo Eje Y', required: false, type: 'number' },
       { key: 'maduracion_media', label: 'Maduración Media', required: false, type: 'number' },
       { key: 'phv_media', label: 'PHV Media', required: false, type: 'number' },
+      { key: 'cm_por_crecer_media', label: 'CM por Crecer (Media)', required: false, type: 'number' },
       { key: 'estatura_proy_media_cm', label: 'Estatura Proy Media (cm)', required: false, type: 'number' },
     ]
   },
@@ -96,10 +99,10 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'evaluaciones_imtp_salto',
     icon: 'fa-solid fa-dumbbell',
     description: 'Isometric Mid-Thigh Pull - Test de fuerza máxima.',
-    conflictColumns: ['id_del_jugador', 'fecha_test'],
+    conflictColumns: ['player_id', 'fecha_test'],
     fields: [
       { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
-      { key: 'id_del_jugador', label: 'ID JUGADOR', required: true, type: 'number' },
+      { key: 'player_id', label: 'ID JUGADOR', required: true, type: 'number' },
       { key: 'fecha_test', label: 'FECHA TEST', required: true, type: 'date' },
       { key: 'peso', label: 'PESO (kg)', required: false, type: 'number' },
       { key: 'imtp_fuerza_n', label: 'IMTP FUERZA (N)', required: true, type: 'number' },
@@ -137,9 +140,9 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'velocidad_tests',
     icon: 'fa-solid fa-bolt',
     description: 'Tests de velocidad con splits (10m, 20m, 30m).',
-    conflictColumns: ['id_del_jugador', 'fecha'],
+    conflictColumns: ['player_id', 'fecha'],
     fields: [
-      { key: 'id_del_jugador', label: 'ID JUGADOR', required: true, type: 'number' },
+      { key: 'player_id', label: 'ID JUGADOR', required: true, type: 'number' },
       { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
       { key: 'fecha', label: 'FECHA TEST', required: true, type: 'date' },
       { key: 'tiempo_10m', label: 'TIEMPO 10mts', required: false, type: 'number' },
@@ -157,9 +160,9 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'physical_tests',
     icon: 'fa-solid fa-gauge-high',
     description: 'Tests de aceleración específica.',
-    conflictColumns: ['id_del_jugador', 'fecha', 'test_type'],
+    conflictColumns: ['player_id', 'fecha', 'test_type'],
     fields: [
-      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
       { key: 'value', label: 'Valor (m/s²)', required: true, type: 'number' },
       { key: 'observation', label: 'Observación', required: false, type: 'string' },
@@ -170,9 +173,9 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'vo2max_tests',
     icon: 'fa-solid fa-lungs',
     description: 'VO2 Max - Capacidad aeróbica detallada.',
-    conflictColumns: ['id_del_jugador', 'fecha'],
+    conflictColumns: ['player_id', 'fecha'],
     fields: [
-      { key: 'id_del_jugador', label: 'ID JUGADOR', required: true, type: 'number' },
+      { key: 'player_id', label: 'ID JUGADOR', required: true, type: 'number' },
       { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
       { key: 'fecha', label: 'FECHA TEST', required: true, type: 'date' },
       { key: 'peso', label: 'PESO (kg)', required: false, type: 'number' },
@@ -192,14 +195,48 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
     ]
   },
+  wellness: {
+    label: 'Wellness',
+    table: 'wellness_checkin',
+    icon: 'fa-solid fa-sun',
+    description: 'Carga masiva de reportes de bienestar (Fatiga, Sueño, Estrés).',
+    conflictColumns: ['player_id', 'checkin_date'],
+    fields: [
+      { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'checkin_date', label: 'Fecha', required: true, type: 'date' },
+      { key: 'fatigue', label: 'Fatiga (1-5)', required: true, type: 'number' },
+      { key: 'sleep_quality', label: 'Calidad Sueño (1-5)', required: true, type: 'number' },
+      { key: 'stress', label: 'Estrés (1-5)', required: true, type: 'number' },
+      { key: 'mood', label: 'Estado Ánimo (1-5)', required: true, type: 'number' },
+      { key: 'soreness', label: 'Dolor (1-5)', required: false, type: 'number' },
+      { key: 'molestias', label: 'Molestias (Texto)', required: false, type: 'string' },
+      { key: 'enfermedad', label: 'Enfermedad (Texto)', required: false, type: 'string' },
+    ]
+  },
+  load: {
+    label: 'Carga Interna',
+    table: 'internal_load',
+    icon: 'fa-solid fa-chart-line',
+    description: 'Carga masiva de PSE y duración de sesiones.',
+    conflictColumns: ['player_id', 'session_date'],
+    fields: [
+      { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'session_date', label: 'Fecha', required: true, type: 'date' },
+      { key: 'rpe', label: 'RPE (1-10)', required: true, type: 'number' },
+      { key: 'duration_min', label: 'Duración (min)', required: true, type: 'number' },
+      { key: 'type', label: 'Tipo (FIELD/GYM/MATCH)', required: false, type: 'string' },
+      { key: 'molestias', label: 'Molestias (Texto)', required: false, type: 'string' },
+      { key: 'enfermedad', label: 'Enfermedad (Texto)', required: false, type: 'string' },
+    ]
+  },
   catapult_api: {
     label: 'Catapult Cloud Sync',
     table: 'gps_import',
     icon: 'fa-solid fa-cloud-arrow-down',
     description: 'Sincronización directa con la nube de Catapult Sports.',
-    conflictColumns: ['id_del_jugador', 'fecha'],
+    conflictColumns: ['player_id', 'fecha'],
     fields: [
-      { key: 'id_del_jugador', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
     ]
   }
@@ -358,7 +395,7 @@ export default function DataImportArea() {
                   const cleanName = getRowName(row);
                   const player = findPlayerByName(cleanName);
                   if (player) {
-                    initialResolved[index] = player.id_del_jugador;
+                    initialResolved[index] = player.player_id;
                   } else if (cleanName && !seenNames.has(normalizeString(cleanName))) {
                     unmatched.push({ ...row, _rowIndex: index, _cleanName: cleanName });
                     seenNames.add(normalizeString(cleanName));
@@ -379,7 +416,7 @@ export default function DataImportArea() {
     if (!selectedType || csvData.length === 0) return;
     
     const config = IMPORT_CONFIGS[selectedType];
-    const requiredFields = config.fields.filter(f => f.required && f.key !== 'id_del_jugador');
+    const requiredFields = config.fields.filter(f => f.required && f.key !== 'player_id');
     const missingFields = requiredFields.filter(f => !mapping[f.key]);
 
     if (missingFields.length > 0) {
@@ -451,8 +488,8 @@ export default function DataImportArea() {
 
         if (manualId || sharedId) {
           const pId = manualId || sharedId;
-          item.id_del_jugador = pId;
-          const player = players.find(p => p.id_del_jugador === pId);
+          item.player_id = pId;
+          const player = players.find(p => p.player_id === pId);
           if (player) {
             if (!item.jugador && config.fields.some(f => f.key === 'jugador')) item.jugador = `${player.nombre} ${player.apellido1}`;
             if (!item.jugador_nombre && config.fields.some(f => f.key === 'jugador_nombre')) item.jugador_nombre = `${player.nombre} ${player.apellido1}`;
@@ -481,7 +518,7 @@ export default function DataImportArea() {
       if (selectedType === 'gps_totales') {
         const aggregatedMap = new Map<string, any>();
         dataToInsert.forEach(item => {
-          const key = `${item.id_del_jugador}-${item.fecha}`;
+          const key = `${item.player_id}-${item.fecha}`;
           if (aggregatedMap.has(key)) {
             const existing = aggregatedMap.get(key);
             existing.minutos = (existing.minutos || 0) + (item.minutos || 0);
@@ -502,18 +539,18 @@ export default function DataImportArea() {
         
         // NUEVO: Contrastamos con lo que YA existe en la base de datos para SUMAR (no sobrescribir)
         // Esto permite que si cargan la sesión AM ahora y la PM después en archivos distintos, se acumulen correctamente.
-        const playerIds = Array.from(new Set(dataToInsert.map(d => d.id_del_jugador)));
+        const playerIds = Array.from(new Set(dataToInsert.map(d => d.player_id)));
         const dates = Array.from(new Set(dataToInsert.map(d => d.fecha)));
 
         const { data: dbRecords } = await supabase
           .from('gps_import')
           .select('*')
-          .in('id_del_jugador', playerIds)
+          .in('player_id', playerIds)
           .in('fecha', dates);
 
         if (dbRecords && dbRecords.length > 0) {
           dbRecords.forEach(dbRow => {
-            const key = `${dbRow.id_del_jugador}-${dbRow.fecha}`;
+            const key = `${dbRow.player_id}-${dbRow.fecha}`;
             if (aggregatedMap.has(key)) {
               const current = aggregatedMap.get(key);
               // Sumamos lo de la DB a lo que estamos cargando (Opción A)
@@ -647,7 +684,7 @@ export default function DataImportArea() {
           id: index,
           catapult_name: athName,
           stats: ath,
-          supabase_player_id: matchedPlayer ? matchedPlayer.id_del_jugador : null,
+          supabase_player_id: matchedPlayer ? matchedPlayer.player_id : null,
           matched_player: matchedPlayer
         };
       });
@@ -677,10 +714,10 @@ export default function DataImportArea() {
       
       let recordsToInsert = validMappings.map(ath => {
         const metrics = mapCatapultMetrics(ath.stats);
-        const player = players.find(p => p.id_del_jugador === ath.supabase_player_id);
+        const player = players.find(p => p.player_id === ath.supabase_player_id);
         
         return {
-          id_del_jugador: ath.supabase_player_id,
+          player_id: ath.supabase_player_id,
           fecha: sessionDate,
           jugador: player ? `${player.nombre} ${player.apellido1}` : ath.catapult_name,
           ...metrics
@@ -688,17 +725,17 @@ export default function DataImportArea() {
       });
 
       // NUEVO: Agregación para Catapult Sync (Opción A)
-      const playerIds = Array.from(new Set(recordsToInsert.map(d => d.id_del_jugador)));
+      const playerIds = Array.from(new Set(recordsToInsert.map(d => d.player_id)));
       const { data: existingDBRecords } = await supabase
         .from('gps_import')
         .select('*')
-        .in('id_del_jugador', playerIds)
+        .in('player_id', playerIds)
         .eq('fecha', sessionDate);
 
       const aggregatedMap = new Map<number, any>();
       recordsToInsert.forEach(item => {
-        if (aggregatedMap.has(item.id_del_jugador)) {
-          const existing = aggregatedMap.get(item.id_del_jugador);
+        if (aggregatedMap.has(item.player_id)) {
+          const existing = aggregatedMap.get(item.player_id);
           existing.minutos = (existing.minutos || 0) + (item.minutos || 0);
           existing.dist_total_m = (existing.dist_total_m || 0) + (item.dist_total_m || 0);
           existing.dist_ai_m_15_kmh = (existing.dist_ai_m_15_kmh || 0) + (item.dist_ai_m_15_kmh || 0);
@@ -711,15 +748,15 @@ export default function DataImportArea() {
             existing.m_por_min = existing.dist_total_m / existing.minutos;
           }
         } else {
-          aggregatedMap.set(item.id_del_jugador, { ...item });
+          aggregatedMap.set(item.player_id, { ...item });
         }
       });
 
       // Sumar con lo que ya existe en la DB
       if (existingDBRecords) {
         existingDBRecords.forEach(dbRow => {
-          if (aggregatedMap.has(dbRow.id_del_jugador)) {
-            const current = aggregatedMap.get(dbRow.id_del_jugador);
+          if (aggregatedMap.has(dbRow.player_id)) {
+            const current = aggregatedMap.get(dbRow.player_id);
             current.minutos = (current.minutos || 0) + (dbRow.minutos || 0);
             current.dist_total_m = (current.dist_total_m || 0) + (dbRow.dist_total_m || 0);
             current.dist_ai_m_15_kmh = (current.dist_ai_m_15_kmh || 0) + (dbRow.dist_ai_m_15_kmh || 0);
@@ -738,7 +775,7 @@ export default function DataImportArea() {
       recordsToInsert = Array.from(aggregatedMap.values());
 
       const { error } = await supabase.from('gps_import').upsert(recordsToInsert, {
-        onConflict: 'id_del_jugador,fecha'
+        onConflict: 'player_id,fecha'
       });
 
       if (error) throw error;
@@ -758,7 +795,7 @@ export default function DataImportArea() {
   const updateAthleteMapping = (athId: number, playerId: number) => {
     setCatapultAthletes(prev => prev.map(ath => {
       if (ath.id === athId) {
-        const player = players.find(p => p.id_del_jugador === playerId);
+        const player = players.find(p => p.player_id === playerId);
         return { ...ath, supabase_player_id: playerId, matched_player: player };
       }
       return ath;
@@ -953,8 +990,8 @@ export default function DataImportArea() {
                                 >
                                   <option value="">-- Vincular Jugador --</option>
                                   {players.map(p => (
-                                    <option key={p.id_del_jugador} value={p.id_del_jugador}>
-                                      {p.nombre} {p.apellido1} ({p.id_del_jugador})
+                                    <option key={p.player_id} value={p.player_id}>
+                                      {p.nombre} {p.apellido1} ({p.player_id})
                                     </option>
                                   ))}
                                 </select>
@@ -1157,7 +1194,7 @@ export default function DataImportArea() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {unmatchedRows.map((row) => {
                     const resolvedId = resolvedIds[row._rowIndex];
-                    const matchedPlayer = players.find(p => p.id_del_jugador === resolvedId);
+                    const matchedPlayer = players.find(p => p.player_id === resolvedId);
                     
                     return (
                       <div key={row._rowIndex} className="bg-white p-4 rounded-2xl border border-amber-200 shadow-sm flex flex-col gap-3">
@@ -1173,8 +1210,8 @@ export default function DataImportArea() {
                           >
                             <option value="">Seleccionar Jugador...</option>
                             {players.map(p => (
-                              <option key={p.id_del_jugador} value={p.id_del_jugador}>
-                                {p.nombre} {p.apellido1} (ID: {p.id_del_jugador})
+                              <option key={p.player_id} value={p.player_id}>
+                                {p.nombre} {p.apellido1} (ID: {p.player_id})
                               </option>
                             ))}
                           </select>

@@ -61,7 +61,7 @@ export const CATEGORY_COLORS: Record<number, string> = {
 
 export interface User {
   id: string; // auth.uid()
-  id_del_jugador?: number; // Primary key real
+  player_id?: number; // Primary key real
   name: string;
   nombre?: string;
   apellido1?: string;
@@ -70,8 +70,9 @@ export interface User {
   category?: string;
   position?: string;
   position_linea?: string;
-  club?: string;
-  club_name?: string;
+  club?: string; // Nombre del club para visualización
+  club_name?: string; // Deprecated, use id_club for logic
+  id_club?: number; // Foreign Key a la tabla clubes
   perfil_pierna?: string;
   fecha_nacimiento?: string;
   anio?: number; 
@@ -172,7 +173,7 @@ export interface TrainingLoadData {
 export interface GPSData {
   id?: string;
   playerId: string;
-  id_del_jugador?: number;
+  player_id?: number;
   date: string;
   duration: number; 
   totalDistance: number; 
@@ -192,7 +193,7 @@ export interface GPSData {
 
 export interface NutritionData {
   id: string;
-  id_del_jugador: number;
+  player_id: number;
   nombre_raw?: string;
   fecha_medicion: string;
   edad_cronologica: number;

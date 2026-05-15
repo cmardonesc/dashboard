@@ -24,9 +24,11 @@ import {
 
 interface NutricionAreaProps {
   performanceRecords: AthletePerformanceRecord[];
+  players?: User[];
   initialTab?: TabId;
   userRole?: string;
   userClub?: string;
+  userClubId?: number | null;
   clubs?: any[];
 }
 
@@ -54,13 +56,23 @@ const POSITION_ABBR: { [key: string]: string } = {
   'Sin definir': 'S/D',
 };
 
-const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initialTab = 'general', userRole, userClub, clubs = [] }) => {
+const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, players = [], initialTab = 'general', userRole, userClub, userClubId, clubs = [] }) => {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
   const [searchTerm, setSearchTerm] = useState('');
   
   // State para Selección Individual
   const [selectedIndividual, setSelectedIndividual] = useState<User | null>(null);
+
+  // Memo for ALL selectable players (even without nutrition data)
+  const allSelectablePlayers = useMemo(() => {
+    let base = players.length > 0 ? players : performanceRecords.map(r => r.player);
+    if (userRole === 'club' && userClub) {
+      base = base.filter(p => (p.club || p.club_name) === userClub);
+    }
+    return base;
+  }, [players, performanceRecords, userRole, userClub]);
+
   const [showReport, setShowReport] = useState(false);
 
   // State para Filtros Top 10
@@ -120,11 +132,15 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
     let base = performanceRecords.filter(r => r.nutrition && r.nutrition.length > 0);
     
     // Si es rol club, solo mostramos sus propios jugadores en las listas
-    if (userRole === 'club' && userClub) {
-      base = base.filter(r => {
-        const pClub = r.player.club || r.player.club_name;
-        return pClub === userClub;
-      });
+    if (userRole === 'club') {
+      if (userClubId) {
+        base = base.filter(r => r.player.id_club === userClubId);
+      } else if (userClub) {
+        base = base.filter(r => {
+          const pClub = r.player.club || r.player.club_name;
+          return pClub === userClub;
+        });
+      }
     }
 
     return base.map(r => ({
@@ -268,13 +284,13 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
       }
 
       const payload = {
-        id_del_jugador: selectedAthleteForm.id_del_jugador,
+        player_id: selectedAthleteForm.player_id,
         nombre_raw: selectedAthleteForm.name,
         ...formData,
         indice_imo: finalIMO
       };
 
-      const { error } = await supabase.from('antropometria').insert([payload]);
+      const { error } = await supabase.from('antropometria').upsert([payload], { onConflict: 'player_id,fecha_medicion' });
       if (error) throw error;
 
       alert("Ficha antropométrica sincronizada.");
@@ -296,8 +312,8 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
   const individualRecord = useMemo(() => {
     if (!selectedIndividual) return null;
     return nutritionList.find(n => {
-      const nId = n.player.id_del_jugador?.toString();
-      const sId = selectedIndividual.id_del_jugador?.toString();
+      const nId = n.player.player_id?.toString();
+      const sId = selectedIndividual.player_id?.toString();
       return nId && sId && nId === sId;
     });
   }, [selectedIndividual, nutritionList]);
@@ -604,7 +620,7 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
                       }
                       
                       return r.player.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                             r.player.id_del_jugador?.toString().includes(searchTerm);
+                             r.player.player_id?.toString().includes(searchTerm);
                     })
                     .map(r => (
                       <button key={r.player.id} onClick={() => { setSelectedIndividual(r.player); setSearchTerm(''); }} className="w-full p-4 hover:bg-red-50 text-left border-b border-slate-50 flex items-center justify-between group">
@@ -646,23 +662,21 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, initi
                 <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">{nutritionList.length} Atletas</span>
               </div>
               
-              {nutritionList.length > 0 ? (
+              {allSelectablePlayers.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {nutritionList.map((item, i) => (
+                  {allSelectablePlayers.slice(0, 50).map((player, i) => (
                     <button 
                       key={i} 
-                      onClick={() => setSelectedIndividual(item.player)}
+                      onClick={() => setSelectedIndividual(player)}
                       className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all text-left flex items-center gap-4 group"
                     >
                       <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 font-black italic text-lg group-hover:bg-[#0b1220] group-hover:text-white transition-all">
-                        {item.player.name?.charAt(0)}
+                        {player.name?.charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-black uppercase text-slate-900 italic truncate">{item.player.name}</p>
+                        <p className="text-xs font-black uppercase text-slate-900 italic truncate">{player.name}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{item.history.length} EVALS</span>
-                          <span className="w-1 h-1 rounded-full bg-slate-200"></span>
-                          <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest italic">ÚLTIMA: {new Date(item.data.fecha_medicion).toLocaleDateString('es-CL', { month: 'short', year: '2-digit' })}</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{player.club || 'S/C'}</span>
                         </div>
                       </div>
                       <i className="fa-solid fa-chevron-right text-slate-100 group-hover:text-red-500 transition-all"></i>

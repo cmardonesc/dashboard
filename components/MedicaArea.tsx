@@ -4,11 +4,15 @@ import { AthletePerformanceRecord, Category, User, MicrocicloDB, CATEGORY_ID_MAP
 import { supabase } from '../lib/supabase';
 import { triggerPushNotification } from '../lib/notifications';
 import { logActivity } from '../lib/activityLogger';
+import { normalizeClub } from '../lib/utils';
 import ClubBadge from './ClubBadge';
 
 interface MedicaAreaProps {
   performanceRecords: AthletePerformanceRecord[];
   onMenuChange?: (id: any) => void;
+  userRole?: string;
+  userClub?: string;
+  userClubId?: number | null;
   clubs?: any[];
 }
 
@@ -68,7 +72,7 @@ interface MedicalExam {
   description: string;
 }
 
-const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChange, clubs = [] }) => {
+const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChange, userRole, userClub, userClubId, clubs = [] }) => {
   const [view, setView] = useState<MedicaView>('daily_report');
   const [reportingPlayer, setReportingPlayer] = useState<User | null>(null);
   const [editingInjuryId, setEditingInjuryId] = useState<string | null>(null);
@@ -156,6 +160,15 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       const filtered = performanceRecords
         .map(r => r.player)
         .filter(p => {
+          if (userRole === 'club') {
+            if (userClubId) {
+              if (p.id_club !== userClubId) return false;
+            } else if (userClub) {
+              const uClubNorm = normalizeClub(userClub);
+              const pClub = p.club || p.club_name || '';
+              if (normalizeClub(pClub) !== uClubNorm) return false;
+            }
+          }
           const fullName = p.name.toLowerCase();
           return parts.every(part => fullName.includes(part));
         })
@@ -171,10 +184,20 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
   const fetchInjuredPlayers = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('lesionados')
-        .select('*, players(nombre, apellido1, posicion, club)')
+        .select('*, players!inner(nombre, apellido1, posicion, club, id_club)')
         .order('updated_at', { ascending: false });
+      
+      if (userRole === 'club') {
+        if (userClubId) {
+          query = query.eq('players.id_club', userClubId);
+        } else if (userClub) {
+          query = query.eq('players.club', userClub);
+        }
+      }
+
+      const { data, error } = await query;
       
       if (error) throw error;
       if (data) setDbInjuries(data);
@@ -187,10 +210,20 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     try {
       setLoading(true);
       // Fetch reports
-      const { data: reports, error: reportsError } = await supabase
+      let query = supabase
         .from('medical_daily_reports')
-        .select('*, players(id_del_jugador, nombre, apellido1, anio, club, posicion)')
+        .select('*, players!inner(player_id, nombre, apellido1, anio, club, posicion, id_club)')
         .order('report_date', { ascending: false });
+
+      if (userRole === 'club') {
+        if (userClubId) {
+          query = query.eq('players.id_club', userClubId);
+        } else if (userClub) {
+          query = query.eq('players.club', userClub);
+        }
+      }
+
+      const { data: reports, error: reportsError } = await query;
 
       if (reportsError) throw reportsError;
 
@@ -279,7 +312,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       const playerYear = reportingPlayer.anio || 0;
 
       const payload = {
-        player_id: reportingPlayer.id_del_jugador,
+        player_id: reportingPlayer.player_id,
         anio: playerYear,
         observation: dailyReportForm.observation,
         diagnostico_medico: dailyReportForm.diagnostico_medico,
@@ -332,7 +365,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
   const handleEditDailyReport = (report: DailyReport | any) => {
     setReportingPlayer({
       id: `p-${report.player_id}`,
-      id_del_jugador: report.player_id,
+      player_id: report.player_id,
       name: `${report.players?.nombre} ${report.players?.apellido1}`,
       role: UserRole.PLAYER,
       club: report.players?.club || '', 
@@ -404,7 +437,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
   const handleEditClick = (injury: DBInjury) => {
     setReportingPlayer({
       id: `p-${injury.player_id}`,
-      id_del_jugador: injury.player_id,
+      player_id: injury.player_id,
       name: `${injury.players?.nombre} ${injury.players?.apellido1}`,
       role: UserRole.PLAYER,
       club: injury.players?.club,
@@ -478,7 +511,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
   const handleSaveInjury = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reportingPlayer || !reportingPlayer.id_del_jugador) {
+    if (!reportingPlayer || !reportingPlayer.player_id) {
       setErrorMessage("Error: No se ha identificado correctamente al jugador.");
       return;
     }
@@ -488,7 +521,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       const finalObs = injuryForm.observaciones + (exams.length > 0 ? '\n\n[[EXAMS_DATA]]\n' + JSON.stringify(exams) : '');
 
       const payload = {
-        player_id: reportingPlayer.id_del_jugador,
+        player_id: reportingPlayer.player_id,
         fecha_inicio: injuryForm.fecha_inicio,
         momento_lesion: injuryForm.momento_lesion,
         lado: injuryForm.lado,

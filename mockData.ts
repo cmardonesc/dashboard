@@ -20,7 +20,7 @@ const POSITIONS = [
 
 export const MOCK_PLAYERS: User[] = PLAYER_NAMES.map((name, idx) => ({
   id: `p-${idx + 1}`,
-  id_del_jugador: idx + 1, // ID numérico para pruebas
+  player_id: idx + 1, // ID numérico para pruebas
   name,
   role: UserRole.PLAYER,
   category: idx < 4 ? Category.SUB_20 : idx < 9 ? Category.SUB_17 : Category.SUB_15,
@@ -55,7 +55,7 @@ export const generateMockData = () => {
     // Fix: Updated NutritionData mock generation to match the interface in types.ts and use correct property names
     nutrition.push({
       id: `n-${player.id}`,
-      id_del_jugador: player.id_del_jugador || 0,
+      player_id: player.player_id || 0,
       nombre_raw: player.name,
       fecha_medicion: dates[0],
       edad_cronologica: 16 + Math.floor(Math.random() * 8),

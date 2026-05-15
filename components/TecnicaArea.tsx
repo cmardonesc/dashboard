@@ -290,7 +290,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       
       const { data, error } = await supabase
         .from('match_reports')
-        .select('*, players(nombre, apellido1, club, id_del_jugador)')
+        .select('*, players(nombre, apellido1, club, player_id)')
         .order('fecha', { ascending: false });
 
       if (error) throw error;

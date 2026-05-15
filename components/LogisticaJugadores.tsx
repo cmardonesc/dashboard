@@ -49,8 +49,8 @@ const LogisticaJugadores: React.FC = () => {
       if (error) throw error;
 
       const mapped: User[] = (data || []).map((p: any) => ({
-        id: `player-${p.id_del_jugador}`,
-        id_del_jugador: p.id_del_jugador,
+        id: `player-${p.player_id}`,
+        player_id: p.player_id,
         name: `${p.nombre || ''} ${p.apellido1 || ''}`.trim(),
         nombre: p.nombre,
         apellido1: p.apellido1,
@@ -128,12 +128,12 @@ const LogisticaJugadores: React.FC = () => {
         fecha_nacimiento: editingPlayer.fecha_nacimiento
       };
 
-      if (editingPlayer.id_del_jugador) {
+      if (editingPlayer.player_id) {
         // Update
         const { error } = await supabase
           .from('players')
           .update(payload)
-          .eq('id_del_jugador', editingPlayer.id_del_jugador);
+          .eq('player_id', editingPlayer.player_id);
         if (error) throw error;
       } else {
         // Create
@@ -164,7 +164,7 @@ const LogisticaJugadores: React.FC = () => {
       const { error } = await supabase
         .from('players')
         .delete()
-        .eq('id_del_jugador', playerId);
+        .eq('player_id', playerId);
 
       if (error) throw error;
       
@@ -281,7 +281,7 @@ const LogisticaJugadores: React.FC = () => {
                         </div>
                         <div>
                           <p className="text-xs font-black text-slate-900 uppercase italic">{player.name}</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">ID: {player.id_del_jugador}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">ID: {player.player_id}</p>
                         </div>
                       </div>
                     </td>
@@ -301,7 +301,7 @@ const LogisticaJugadores: React.FC = () => {
                           <i className="fa-solid fa-pen-to-square text-xs"></i>
                         </button>
                         <button 
-                          onClick={(e) => handleDelete(e, player.id_del_jugador!)}
+                          onClick={(e) => handleDelete(e, player.player_id!)}
                           className="w-10 h-10 bg-red-50 text-red-300 rounded-xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-center"
                           title="Eliminar"
                         >
@@ -324,7 +324,7 @@ const LogisticaJugadores: React.FC = () => {
             <div className="bg-[#0b1220] p-10 flex justify-between items-center text-white">
               <div>
                 <h3 className="text-2xl font-black uppercase italic tracking-tighter">
-                  {editingPlayer?.id_del_jugador ? 'Editar Jugador' : 'Nuevo Jugador'}
+                  {editingPlayer?.player_id ? 'Editar Jugador' : 'Nuevo Jugador'}
                 </h3>
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Formulario de Registro Técnico</p>
               </div>

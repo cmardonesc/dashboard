@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import ClubBadge from './ClubBadge';
 
 interface PlayerOnField {
-  id_del_jugador: number;
+  player_id: number;
   nombre: string;
   apellido1: string;
   club: string;
@@ -49,7 +49,7 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
         const { data: playersData, error: playersErr } = await supabase
           .from('players')
           .select('*')
-          .in('id_del_jugador', playerIds);
+          .in('player_id', playerIds);
 
         if (playersErr) throw playersErr;
         setPlayers(playersData || []);
@@ -106,10 +106,10 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
   };
 
   const addPlayerToField = (player: any) => {
-    if (fieldPlayers.find(p => p.id_del_jugador === player.id_del_jugador)) return;
+    if (fieldPlayers.find(p => p.player_id === player.player_id)) return;
 
     const newPlayer: PlayerOnField = {
-      id_del_jugador: player.id_del_jugador,
+      player_id: player.player_id,
       nombre: player.nombre,
       apellido1: player.apellido1,
       club: player.club,
@@ -122,12 +122,12 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
   };
 
   const removePlayerFromField = (playerId: number) => {
-    setFieldPlayers(fieldPlayers.filter(p => p.id_del_jugador !== playerId));
+    setFieldPlayers(fieldPlayers.filter(p => p.player_id !== playerId));
   };
 
   const updatePosition = (playerId: number, x: number, y: number) => {
     setFieldPlayers(prev => prev.map(p => 
-      p.id_del_jugador === playerId ? { ...p, x, y } : p
+      p.player_id === playerId ? { ...p, x, y } : p
     ));
   };
 
@@ -166,11 +166,11 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
             </div>
           ) : players.length > 0 ? (
             players.map(player => {
-              const isOnField = fieldPlayers.some(p => p.id_del_jugador === player.id_del_jugador);
+              const isOnField = fieldPlayers.some(p => p.player_id === player.player_id);
               return (
                 <button
-                  key={player.id_del_jugador}
-                  onClick={() => isOnField ? removePlayerFromField(player.id_del_jugador) : addPlayerToField(player)}
+                  key={player.player_id}
+                  onClick={() => isOnField ? removePlayerFromField(player.player_id) : addPlayerToField(player)}
                   className={`w-full p-4 rounded-3xl border-2 transition-all flex items-center justify-between group h-20 outline-none ${
                     isOnField 
                     ? 'bg-[#CF1B2B] border-[#CF1B2B] text-white shadow-lg shadow-red-200' 
@@ -261,12 +261,12 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
           <AnimatePresence>
             {fieldPlayers.map((p) => (
               <motion.div
-                key={p.id_del_jugador}
+                key={p.player_id}
                 drag
                 dragConstraints={fieldRef}
                 dragElastic={0}
                 dragMomentum={false}
-                onDragEnd={(_, info) => handleDragEnd(p.id_del_jugador, info)}
+                onDragEnd={(_, info) => handleDragEnd(p.player_id, info)}
                 className="absolute z-20 cursor-move touch-none"
                 style={{
                   left: `${p.x}%`,

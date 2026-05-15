@@ -31,12 +31,14 @@ const TIPO_PROCESO_OPTIONS = [
 
 interface CitacionesAreaProps {
   performanceRecords?: any[];
+  players?: any[];
   onMenuChange?: (id: any) => void;
   clubs?: any[];
 }
 
 export default function CitacionesArea({ 
   performanceRecords = [], 
+  players: initialPlayers = [],
   onMenuChange = () => {}, 
   clubs: propClubs = [] 
 }: CitacionesAreaProps) {
@@ -55,6 +57,7 @@ export default function CitacionesArea({
   const [loadingCitados, setLoadingCitados] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [savingConfig, setSavingConfig] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [microciclos, setMicrociclos] = useState<MicrocicloUI[]>([])
@@ -62,6 +65,38 @@ export default function CitacionesArea({
   const [citadosIds, setCitadosIds] = useState<number[]>([])
   const [clubContacts, setClubContacts] = useState<any[]>([])
   const [clubs, setClubs] = useState<any[]>(propClubs)
+  
+  // Mapping function to convert standard player object to User (as used in allPlayers state)
+  const mapPlayerToUser = (p: any): User => {
+    let category = '';
+    const anio = p.anio || p.year_of_birth || p.year;
+    if (anio) {
+      const age = 2026 - anio;
+      if (age <= 13) category = Category.SUB_13;
+      else if (age === 14) category = Category.SUB_14;
+      else if (age === 15) category = Category.SUB_15;
+      else if (age === 16) category = Category.SUB_16;
+      else if (age === 17) category = Category.SUB_17;
+      else if (age === 18) category = Category.SUB_18;
+      else if (age <= 20) category = Category.SUB_20;
+      else if (age <= 21) category = Category.SUB_21;
+      else if (age <= 23) category = Category.SUB_23;
+      else category = Category.ADULTA;
+    } else {
+      category = p.category || Category.SUB_17;
+    }
+
+    return {
+      id: p.id || `p-${p.player_id}`,
+      player_id: p.player_id,
+      name: p.name || `${p.nombre || ''} ${p.apellido1 || ''}`.trim(),
+      role: UserRole.PLAYER, 
+      anio: anio,
+      club: p.club || p.club_name || 'SIN CLUB',
+      position: p.position || p.posicion || 'N/A',
+      category: category as Category
+    };
+  };
 
   // Modal State
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -86,6 +121,7 @@ export default function CitacionesArea({
   const [letterConfig, setLetterConfig] = useState({
     showEditor: false,
     headerRef: 'Ref.: Carta Convocatoria Selección Nacional',
+    headerCity: 'Santiago',
     bodyPart1: 'El Cuerpo Técnico de la Selección Chilena de Fútbol, junto con la Gerencia de Selecciones Nacionales, tiene el agrado de convocar al jugador de sus registros, ',
     bodyPart2: ', al Microciclo que se desarrollará entre los días ',
     presentation: 'El jugador debe presentarse en el CAR José Sulantay el día ',
@@ -98,12 +134,106 @@ export default function CitacionesArea({
 
   useEffect(() => {
     fetchMicrocycles();
-    fetchAllPlayers();
+    if (initialPlayers && initialPlayers.length > 0) {
+      console.log("CitacionesArea: Using passed players prop count:", initialPlayers.length);
+      setAllPlayers(initialPlayers.map(mapPlayerToUser));
+    } else {
+      console.log("CitacionesArea: No players prop received, fetching from DB...");
+      fetchAllPlayers();
+    }
     fetchClubContacts();
+    fetchLetterConfig();
     if (propClubs.length === 0) {
       fetchClubs();
     }
-  }, []);
+  }, [initialPlayers]);
+
+  // Debug useEffect to track player population
+  useEffect(() => {
+    console.log("CitacionesArea: Rendering with players:", allPlayers.length);
+    if (allPlayers.length > 0) {
+      console.log("CitacionesArea: Sample player category:", allPlayers[0].category);
+    }
+  }, [allPlayers]);
+
+  const fetchLetterConfig = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('citacion_config')
+        .select('*')
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error loading letter config:", error);
+        return;
+      }
+
+      if (data) {
+        console.log("📥 Configuración de carta cargada:", data);
+        setLetterConfig(prev => ({
+          ...prev,
+          headerRef: data.header_ref ?? prev.headerRef,
+          headerCity: data.header_city ?? 'Santiago',
+          bodyPart1: data.body_text ?? prev.bodyPart1,
+          bodyPart2: data.body_part_2 ?? prev.bodyPart2,
+          presentation: data.presentation ?? prev.presentation,
+          presentationSuffix: data.presentation_suffix ?? prev.presentationSuffix,
+          guidelines: data.guidelines ?? prev.guidelines,
+          closing: data.footer_text ?? prev.closing,
+          signatureName: data.signature_name ?? prev.signatureName,
+          signatureRole: data.signature_role ?? prev.signatureRole
+        }));
+      }
+    } catch (err) {
+      console.error("Critical error loading letter config:", err);
+    }
+  };
+
+  const saveLetterConfig = async () => {
+    setSavingConfig(true);
+    try {
+      console.log("💾 Guardando configuración de carta...", letterConfig);
+      const { data: existing } = await supabase.from('citacion_config').select('id').limit(1).maybeSingle();
+      
+      const payload = {
+        header_ref: letterConfig.headerRef,
+        header_city: letterConfig.headerCity || 'Santiago',
+        body_text: letterConfig.bodyPart1,
+        body_part_2: letterConfig.bodyPart2,
+        presentation: letterConfig.presentation,
+        presentation_suffix: letterConfig.presentationSuffix,
+        guidelines: letterConfig.guidelines,
+        footer_text: letterConfig.closing,
+        signature_name: letterConfig.signatureName,
+        signature_role: letterConfig.signatureRole,
+        updated_at: new Date().toISOString()
+      };
+
+      let error;
+      if (existing) {
+        console.log("📝 Actualizando registro existente ID:", existing.id);
+        const result = await supabase.from('citacion_config').update(payload).eq('id', existing.id);
+        error = result.error;
+      } else {
+        console.log("➕ No hay registro previo, insertando nuevo...");
+        const result = await supabase.from('citacion_config').insert([payload]);
+        error = result.error;
+      }
+
+      if (error) throw error;
+      
+      console.log("✅ Configuración guardada correctamente.");
+      alert('Configuración guardada exitosamente');
+      fetchLetterConfig(); // Refresh state
+    } catch (err: any) {
+      console.error("❌ Error al guardar configuración:", err);
+      alert('Error al guardar: ' + err.message);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
 
   const fetchClubs = async () => {
     const { data } = await supabase.from('clubes').select('*').eq('activo', true);
@@ -156,7 +286,7 @@ export default function CitacionesArea({
     try {
       const { data, error } = await supabase
         .from('players')
-        .select(`id_del_jugador, nombre, apellido1, club, posicion, anio`);
+        .select(`player_id, nombre, apellido1, club, posicion, anio`);
       
       if (error) throw error;
       
@@ -181,8 +311,8 @@ export default function CitacionesArea({
           }
 
           return {
-            id: `p-${p.id_del_jugador}`,
-            id_del_jugador: p.id_del_jugador,
+            id: `p-${p.player_id}`,
+            player_id: p.player_id,
             name: `${p.nombre} ${p.apellido1}`,
             role: UserRole.PLAYER, 
             anio: p.anio,
@@ -433,7 +563,7 @@ export default function CitacionesArea({
   };
 
   const currentCitados = useMemo(() => {
-    return allPlayers.filter(p => p.id_del_jugador && citadosIds.includes(p.id_del_jugador));
+    return allPlayers.filter(p => p.player_id && citadosIds.includes(p.player_id));
   }, [allPlayers, citadosIds]);
 
   const availableYears = useMemo(() => {
@@ -565,7 +695,7 @@ export default function CitacionesArea({
     doc.line(20, 40, 190, 40);
     
     // Proceso Info
-    doc.setFontSize(11);
+    doc.setFontSize(10.5);
     doc.setTextColor(11, 18, 32); // #0b1220
     doc.setFont("helvetica", "bold");
     doc.text("DETALLES DEL PROCESO", 20, 52);
@@ -629,13 +759,118 @@ export default function CitacionesArea({
         format: 'a4'
       });
 
-      const contact = clubContacts.find(c => 
-        (c.club?.toLowerCase() || "").includes(clubName.toLowerCase()) || 
-        clubName.toLowerCase().includes(c.club?.toLowerCase() || "")
-      );
+      const getClubContactInfo = (clubName: string) => {
+        const normalize = (s: string) => (s || "").toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]/g, "")
+          .trim();
 
-      const presidentName = contact?.presidente || 'Presidente';
-      const recipientCargo = contact?.cargo || 'Presidente';
+        const target = normalize(clubName);
+        
+        // Mapeos de nombres comunes para mejorar la búsqueda
+        const synonyms: Record<string, string[]> = {
+          'colocolo': ['colocolo', 'blanco y negro'],
+          'universidadcatolica': ['universidadcatolica', 'ucatolica', 'cruzados', 'u. catolica', 'u.catolica'],
+          'universidaddechile': ['universidaddechile', 'udechile', 'lau', 'u. de chile', 'u.de chile'],
+          'cobreloa': ['cobreloa'],
+          'deportescopiapo': ['deportescopiapo', 'copiapo'],
+          'coquimbounido': ['coquimbounido', 'coquimbo'],
+          'unionlacalera': ['unionlacalera', 'lacalera', 'u. la calera'],
+          'unionsanfelipe': ['unionsanfelipe', 'sanfelipe', 'u. san felipe'],
+          'deportesantofagasta': ['deportesantofagasta', 'antofagasta', 'cda'],
+          'deportestemuco': ['deportestemuco', 'temuco'],
+          'nublense': ['nublense'],
+          'everton': ['everton', 'viña del mar'],
+          'ohiggins': ['ohiggins', 'rancagua'],
+          'huachipato': ['huachipato'],
+          'cobresal': ['cobresal', 'elsalvador'],
+          'deportesiquique': ['deportesiquique', 'iquique'],
+          'rangers': ['rangers', 'talca'],
+          'santiagowanderers': ['santiagowanderers', 'wanderers', 'valparaiso'],
+          'curicounido': ['curicounido', 'curico'],
+          'deporteslaserena': ['deporteslaserena', 'laserena'],
+          'magallanes': ['magallanes'],
+          'santiagomorning': ['santiagomorning', 'morning']
+        };
+
+        const clubContactsForThisClub = clubContacts.filter(c => {
+          const contactClub = normalize(c.club || "");
+          
+          // Coincidencia directa
+          if (contactClub.includes(target) || target.includes(contactClub)) return true;
+          
+          // Coincidencia por sinónimos
+          for (const [key, aliases] of Object.entries(synonyms)) {
+            // Si el objetivo es un sinónimo de esta clave
+            const isTargetThisClub = target.includes(key) || aliases.some(a => normalize(a).includes(target));
+            // Si el contacto es un sinónimo de esta clave
+            const isContactThisClub = contactClub.includes(key) || aliases.some(a => normalize(a).includes(contactClub));
+            
+            if (isTargetThisClub && isContactThisClub) return true;
+          }
+          return false;
+        });
+
+        console.log(`[PDF] Buscando contactos para "${clubName}" (${target}). Coincidencias encontradas: ${clubContactsForThisClub.length}`);
+
+        // 1. Intentar encontrar alguien cuyo cargo REAL sea "Presidente"
+        const presidentByCargo = clubContactsForThisClub.find(c => 
+          (c.cargo || "").toLowerCase().includes("presidente")
+        );
+        if (presidentByCargo) {
+          const name = (presidentByCargo.presidente && presidentByCargo.presidente.trim() !== "" && presidentByCargo.presidente.toLowerCase() !== 'presidente')
+            ? presidentByCargo.presidente 
+            : presidentByCargo.nombres;
+          
+          if (name && name.trim() !== "") {
+            return {
+              name: name,
+              cargo: presidentByCargo.cargo || 'Presidente'
+            };
+          }
+        }
+
+        // 2. Buscar campo 'presidente' lleno en cualquier contacto
+        const withPresidentField = clubContactsForThisClub.find(c => 
+          c.presidente && c.presidente.trim() !== "" && c.presidente.toLowerCase() !== 'presidente'
+        );
+        if (withPresidentField) {
+          return {
+            name: withPresidentField.presidente,
+            cargo: (withPresidentField.cargo && withPresidentField.cargo.toLowerCase() !== 'presidente') 
+              ? withPresidentField.cargo 
+              : 'Presidente'
+          };
+        }
+
+        // 3. Fallback a Gerente
+        const managerContact = clubContactsForThisClub.find(c => {
+          const cargo = (c.cargo || "").toLowerCase();
+          return cargo.includes("gerente") || cargo.includes("gerencia") || cargo.includes("manager");
+        });
+        if (managerContact) {
+          return {
+            name: managerContact.nombres || managerContact.presidente || 'Gerente',
+            cargo: managerContact.cargo || 'Gerente'
+          };
+        }
+
+        // 4. Si hay algun contacto, usar el primero que tenga nombre
+        if (clubContactsForThisClub.length > 0) {
+          const firstWithName = clubContactsForThisClub.find(c => c.nombres || c.presidente);
+          if (firstWithName) {
+            return {
+              name: firstWithName.nombres || firstWithName.presidente,
+              cargo: firstWithName.cargo || 'Representante'
+            };
+          }
+        }
+
+        return { name: 'Presidente', cargo: 'Presidente' };
+      };
+
+      const { name: presidentName, cargo: recipientCargo } = getClubContactInfo(clubName);
       const recipientClub = clubName.toUpperCase();
       
       const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
@@ -691,7 +926,7 @@ export default function CitacionesArea({
         const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
         const formattedToday = `Santiago de Chile, ${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
         
-        doc.setFontSize(11);
+        doc.setFontSize(10.5);
         doc.setFont("helvetica", "normal");
         doc.text(formattedToday, 180, 55, { align: 'right' });
 
@@ -741,6 +976,7 @@ export default function CitacionesArea({
         doc.text(lines3, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
         currentY += lines3.length * lineHeight + 10;
 
+        doc.setFontSize(10.5);
         const text4 = letterConfig.guidelines;
         const lines4 = doc.splitTextToSize(text4, textMaxWidth);
         doc.text(lines4, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
@@ -758,9 +994,10 @@ export default function CitacionesArea({
         }
 
         doc.setFont("helvetica", "bold");
+        doc.setFontSize(10.5);
         doc.text(letterConfig.signatureName, 105, 265, { align: 'center' });
-        doc.setFontSize(9);
-        doc.text(letterConfig.signatureRole, 105, 270, { align: 'center' });
+        doc.setFontSize(9.5);
+        doc.text(letterConfig.signatureRole, 105, 271, { align: 'center' });
 
         doc.setFontSize(7);
         doc.setTextColor(200, 200, 200);
@@ -1289,6 +1526,22 @@ export default function CitacionesArea({
                    </div>
                 </div>
              </div>
+
+             {/* Save Button for Config */}
+             <div className="flex justify-center pt-4 border-t border-slate-50">
+               <button 
+                 onClick={saveLetterConfig}
+                 disabled={savingConfig}
+                 className="bg-red-600 text-white px-10 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl shadow-red-900/20 hover:bg-red-700 transition-all flex items-center gap-3 disabled:opacity-50"
+               >
+                 {savingConfig ? (
+                   <i className="fa-solid fa-spinner fa-spin"></i>
+                 ) : (
+                   <i className="fa-solid fa-floppy-disk"></i>
+                 )}
+                 GUARDAR CONFIGURACIÓN PERMANENTE
+               </button>
+             </div>
           </div>
         )}
 
@@ -1341,7 +1594,7 @@ export default function CitacionesArea({
                       <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px] font-black italic">
                         {p.name.charAt(0)}
                       </div>
-                      <span className="text-[11px] font-bold text-slate-700 uppercase">{p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.id_del_jugador}</span></span>
+                      <span className="text-[11px] font-bold text-slate-700 uppercase">{p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.player_id}</span></span>
                     </div>
                     <span className="text-[9px] font-black text-red-600 uppercase tracking-widest bg-red-50 px-2.5 py-1 rounded-full">{p.position}</span>
                   </div>
@@ -1391,13 +1644,13 @@ export default function CitacionesArea({
                 <div className="flex items-center justify-between text-white">
                   <div>
                     <div className="text-[11px] font-black uppercase italic leading-none mb-1">
-                      {p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.id_del_jugador}</span>
+                      {p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.player_id}</span>
                     </div>
                     <div className="text-[9px] text-slate-500 uppercase font-bold tracking-widest truncate w-48 flex items-center gap-2">
                       <span className="text-[#CF1B2B]">{p.position}</span> | <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-500 font-bold" />
                     </div>
                   </div>
-                  <button onClick={() => p.id_del_jugador && handleUncite(p.id_del_jugador)} className="w-8 h-8 rounded-lg bg-[#CF1B2B]/10 text-[#CF1B2B] flex items-center justify-center hover:bg-[#CF1B2B] hover:text-white transition-all">
+                  <button onClick={() => p.player_id && handleUncite(p.player_id)} className="w-8 h-8 rounded-lg bg-[#CF1B2B]/10 text-[#CF1B2B] flex items-center justify-center hover:bg-[#CF1B2B] hover:text-white transition-all">
                     <i className="fa-solid fa-user-minus text-[10px]"></i>
                   </button>
                 </div>
@@ -1493,13 +1746,13 @@ export default function CitacionesArea({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-12 gap-y-10 pr-6">
               {filteredPlayers.map(p => {
-                const isCited = p.id_del_jugador && citadosIds.includes(p.id_del_jugador);
+                const isCited = p.player_id && citadosIds.includes(p.player_id);
                 return (
                   <div key={p.id} className={`group relative bg-white p-6 rounded-[36px] border transition-all flex items-center justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 ${isCited ? 'border-emerald-200 bg-emerald-50/10' : 'border-slate-100'}`}>
                     
                     {/* Botón Citación (Más pequeño y abajo para no superponer nombre) */}
                     <button 
-                      onClick={() => p.id_del_jugador && (isCited ? handleUncite(p.id_del_jugador) : handleCite(p.id_del_jugador))}
+                      onClick={() => p.player_id && (isCited ? handleUncite(p.player_id) : handleCite(p.player_id))}
                       className={`absolute right-[-1px] bottom-4 w-[24px] h-[32px] rounded-l-[10px] flex flex-col items-center justify-center transition-all border-y border-l shadow-sm active:scale-95 z-10 ${
                         isCited 
                           ? 'bg-emerald-600 text-white border-emerald-500' 
@@ -1516,7 +1769,7 @@ export default function CitacionesArea({
                       </div>
                       <div className="overflow-hidden pr-4">
                         <div className={`text-[11px] font-black uppercase italic tracking-tighter leading-none mb-1 truncate ${isCited ? 'text-emerald-700' : 'text-slate-900'}`}>
-                          {p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.id_del_jugador}</span>
+                          {p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.player_id}</span>
                         </div>
                         <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate flex items-center gap-1.5 opacity-90">
                           <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-400 font-bold" /> <span className="text-slate-200">|</span> <span className={isCited ? 'text-emerald-500' : 'text-slate-500'}>{p.position}</span>

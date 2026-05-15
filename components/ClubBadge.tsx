@@ -5,6 +5,7 @@ import { CLUB_LOGOS } from '../constants';
 
 interface ClubBadgeProps {
   clubName?: string;
+  idClub?: number | null;
   clubs?: any[];
   className?: string;
   showName?: boolean;
@@ -13,6 +14,7 @@ interface ClubBadgeProps {
 
 const ClubBadge: React.FC<ClubBadgeProps> = ({ 
   clubName, 
+  idClub,
   clubs = [], 
   className = "", 
   showName = true,
@@ -25,27 +27,49 @@ const ClubBadge: React.FC<ClubBadgeProps> = ({
   React.useEffect(() => {
     setImgError(false);
     setRetryUrl(null);
-  }, [clubName]);
+  }, [clubName, idClub]);
 
-  if (!clubName) return null;
+  const hasNoClub = (!clubName || clubName === "Sin Club") && !idClub;
 
-  const getClubLogo = (name: string) => {
-    const normName = normalizeClub(name);
-    
-    // 1. Buscar en la base de datos (prioridad)
-    const club = clubs.find(c => normalizeClub(c.nombre) === normName);
-    if (club?.logo_url) {
-      return getDriveDirectLink(club.logo_url);
+  if (hasNoClub) {
+    return showName ? (
+      <div className={`inline-flex items-center gap-2 ${className}`}>
+        <div className={`${logoSize} flex items-center justify-center shrink-0`}>
+          <div className="w-full h-full bg-slate-50 rounded flex items-center justify-center opacity-50">
+            <i className="fa-solid fa-shield text-[10px] text-slate-300"></i>
+          </div>
+        </div>
+        <span className="truncate text-slate-400 italic">Sin Club</span>
+      </div>
+    ) : null;
+  }
+
+  const getClubLogo = (name?: string, id?: number | null) => {
+    // 1. Buscar por ID (máxima fiabilidad)
+    if (id) {
+      const clubById = clubs.find(c => Number(c.id_club) === Number(id));
+      if (clubById?.logo_url) {
+        return { url: getDriveDirectLink(clubById.logo_url), name: clubById.nombre };
+      }
+      if (clubById) return { url: null, name: clubById.nombre };
     }
-    
-    // 2. Buscar en la lista estática
-    const staticLogo = CLUB_LOGOS[normName];
-    if (staticLogo) return staticLogo;
 
-    return null;
+    // 2. Buscar por nombre
+    if (name) {
+      const normName = normalizeClub(name);
+      const clubByName = clubs.find(c => normalizeClub(c.nombre) === normName);
+      if (clubByName?.logo_url) {
+        return { url: getDriveDirectLink(clubByName.logo_url), name: clubByName.nombre };
+      }
+      
+      const staticLogo = CLUB_LOGOS[normName];
+      if (staticLogo) return { url: staticLogo, name: name };
+    }
+
+    return { url: null, name: name || 'Sin Club' };
   };
 
-  const logoUrl = getClubLogo(clubName);
+  const { url: logoUrl, name: displayName } = getClubLogo(clubName, idClub);
 
   const handleImgError = () => {
     if (!retryUrl && logoUrl?.includes('lh3.googleusercontent.com')) {
@@ -68,19 +92,19 @@ const ClubBadge: React.FC<ClubBadgeProps> = ({
         {currentUrl && !imgError ? (
           <img 
             src={currentUrl} 
-            alt={clubName} 
+            alt={displayName} 
             className="w-full h-full object-contain" 
             referrerPolicy="no-referrer" 
             onError={handleImgError}
           />
         ) : (
-          <div className="w-full h-full bg-slate-100 rounded flex items-center justify-center" title={clubName}>
+          <div className="w-full h-full bg-slate-100 rounded flex items-center justify-center" title={displayName}>
             <i className="fa-solid fa-shield-halved text-[10px] text-slate-300"></i>
           </div>
         )}
       </div>
       {showName && (
-        <span className="truncate">{clubName}</span>
+        <span className="truncate">{displayName}</span>
       )}
     </div>
   );

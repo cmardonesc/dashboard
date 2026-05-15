@@ -29,7 +29,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
     setLoading(true);
     try {
       const { data: profs, error: pErr } = await supabase.from('profiles').select('*, club_name');
-      const { data: plays, error: plErr } = await supabase.from('players').select('id_del_jugador, nombre, apellido1, club, id_club');
+      const { data: plays, error: plErr } = await supabase.from('players').select('player_id, nombre, apellido1, club, id_club');
       const { data: clubs, error: cErr } = await supabase.from('clubes').select('*').order('nombre', { ascending: true });
       
       if (pErr) throw pErr;
@@ -72,7 +72,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
       if (cErr) throw cErr;
 
       // 2. Obtener todos los jugadores
-      const { data: allPlayers, error: plErr } = await supabase.from('players').select('id_del_jugador, club');
+      const { data: allPlayers, error: plErr } = await supabase.from('players').select('player_id, club');
       if (plErr) throw plErr;
 
       let updatedCount = 0;
@@ -90,7 +90,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
           const { error: uErr } = await supabase
             .from('players')
             .update({ club: match.nombre })
-            .eq('id_del_jugador', player.id_del_jugador);
+            .eq('player_id', player.player_id);
           
           if (!uErr) updatedCount++;
         }
@@ -114,8 +114,9 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
         .from('profiles')
         .update({
           role: editingProfile.role,
-          id_del_jugador: editingProfile.id_del_jugador || null,
-          club_name: editingProfile.club_name || null
+          player_id: editingProfile.player_id || null,
+          club_name: editingProfile.club_name || null,
+          id_club: editingProfile.id_club || null
         })
         .eq('id', editingProfile.id);
 
@@ -281,7 +282,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                     </td>
                     <td className="px-8 py-4">
                       <p className="text-[10px] font-bold text-slate-600">
-                        {p.id_del_jugador ? players.find(pl => pl.id_del_jugador === p.id_del_jugador)?.nombre || `ID: ${p.id_del_jugador}` : 'N/A'}
+                        {p.player_id ? players.find(pl => pl.player_id === p.player_id)?.nombre || `ID: ${p.player_id}` : 'N/A'}
                       </p>
                     </td>
                     <td className="px-8 py-4 text-right">
@@ -324,28 +325,39 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
 
               {editingProfile.role === 'club' && (
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre del Club</label>
-                  <input 
-                    type="text"
-                    value={editingProfile.club_name || ''} 
-                    onChange={e => setEditingProfile({...editingProfile, club_name: e.target.value})}
-                    placeholder="Ej: Colo-Colo, U. de Chile..."
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Club (Oficial)</label>
+                  <select 
+                    value={editingProfile.id_club || ''} 
+                    onChange={e => {
+                      const cid = e.target.value ? Number(e.target.value) : null;
+                      const club = dbClubs.find(c => c.id_club === cid);
+                      setEditingProfile({
+                        ...editingProfile, 
+                        id_club: cid, 
+                        club_name: club ? club.nombre : editingProfile.club_name
+                      });
+                    }}
                     className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                  <p className="text-[8px] font-medium text-slate-400 ml-4 italic">Este nombre debe coincidir exactamente con el campo 'club' en la tabla de jugadores.</p>
+                  >
+                    <option value="">Selecciona un club oficial...</option>
+                    {dbClubs.map(c => (
+                      <option key={c.id_club} value={c.id_club}>{c.nombre}</option>
+                    ))}
+                  </select>
+                  <p className="text-[8px] font-medium text-slate-400 ml-4 italic">Vincular el perfil a un club oficial para habilitar el filtrado de datos.</p>
                 </div>
               )}
 
               <div className="space-y-2">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Vincular Jugador (Opcional)</label>
                 <select 
-                  value={editingProfile.id_del_jugador || ''} 
-                  onChange={e => setEditingProfile({...editingProfile, id_del_jugador: e.target.value ? Number(e.target.value) : null})}
+                  value={editingProfile.player_id || ''} 
+                  onChange={e => setEditingProfile({...editingProfile, player_id: e.target.value ? Number(e.target.value) : null})}
                   className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Ninguno</option>
                   {players.map(pl => (
-                    <option key={pl.id_del_jugador} value={pl.id_del_jugador}>{pl.nombre} {pl.apellido1}</option>
+                    <option key={pl.player_id} value={pl.player_id}>{pl.nombre} {pl.apellido1}</option>
                   ))}
                 </select>
               </div>

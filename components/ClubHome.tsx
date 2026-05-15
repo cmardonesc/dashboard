@@ -6,10 +6,11 @@ import { CLUB_LOGOS } from '../constants';
 interface ClubHomeProps {
   performanceRecords: AthletePerformanceRecord[];
   userClub?: string;
+  userClubId?: number | null;
   clubs?: any[];
 }
 
-const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, clubs = [] }) => {
+const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userClubId, clubs = [] }) => {
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
   const getClubLogo = (clubName: string) => {
@@ -28,16 +29,23 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, clubs
 
   const playersByYear = useMemo(() => {
     const groups: Record<number, User[]> = {};
-    const uClubNorm = userClub ? normalizeClub(userClub) : null;
 
     performanceRecords.forEach(record => {
       const player = record.player;
       
-      // Filter by club if userClub is provided
-      if (uClubNorm) {
+      // Filter by club logic
+      let isMyPlayer = true;
+      if (userClubId) {
+        isMyPlayer = player.id_club === userClubId;
+      } else if (userClub) {
+        const uClubNorm = normalizeClub(userClub);
         const pClub = player.club_name || player.club || '';
-        if (normalizeClub(pClub) !== uClubNorm) return;
+        isMyPlayer = normalizeClub(pClub) === uClubNorm;
+      } else {
+        isMyPlayer = false; // No club specified
       }
+
+      if (!isMyPlayer) return;
 
       let year = player.anio;
       
@@ -144,7 +152,7 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, clubs
               
               return (
                 <div 
-                  key={player.id_del_jugador}
+                  key={player.player_id}
                   className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-transparent hover:border-slate-200 transition-all group"
                 >
                   <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-slate-400 font-black text-xs shadow-sm group-hover:bg-red-600 group-hover:text-white transition-all overflow-hidden p-1">
@@ -193,7 +201,7 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, clubs
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {clubPlayers.map(player => (
-                    <tr key={player.id_del_jugador} className="hover:bg-slate-50/50 transition-colors group">
+                    <tr key={player.player_id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-black text-[10px] group-hover:bg-blue-600 group-hover:text-white transition-all overflow-hidden p-1">

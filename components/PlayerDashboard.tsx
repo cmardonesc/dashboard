@@ -84,8 +84,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       // Verificar si el jugador existe
       const { data: pData, error: pErr } = await supabase
         .from('players')
-        .select('id_del_jugador, nombre, apellido1')
-        .eq('id_del_jugador', pid)
+        .select('player_id, nombre, apellido1')
+        .eq('player_id', pid)
         .maybeSingle();
       
       if (pErr) throw pErr;
@@ -106,7 +106,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       const { error: upError } = await supabase
         .from('profiles')
-        .update({ id_del_jugador: pid })
+        .update({ player_id: pid })
         .eq('id', player.id);
       
       if (upError) throw upError;
@@ -196,7 +196,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   const handleBack = () => setActiveMenu('inicio')
 
   const handleWellnessSubmit = async (data: any) => {
-    if (player?.isUnlinked || !player?.id_del_jugador) {
+    if (player?.isUnlinked || !player?.player_id) {
       alert("⚠️ CUENTA NO VINCULADA: Tu usuario no está asociado a un perfil de jugador oficial en la base de datos.");
       return;
     }
@@ -213,7 +213,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         .maybeSingle();
       
       const payload = {
-        id_del_jugador: player.id_del_jugador,
+        player_id: player.player_id,
         microcycle_id: activeMC?.id || null,
         checkin_date: today,
         sleep_quality: data.sleep,
@@ -228,11 +228,11 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       const { error } = await supabase
         .from('wellness_checkin')
-        .upsert(payload, { onConflict: 'id_del_jugador,checkin_date' });
+        .upsert(payload, { onConflict: 'player_id,checkin_date' });
       
       if (error) throw error;
       
-      logActivity('Envío Wellness', { playerId: player.id_del_jugador, date: today });
+      logActivity('Envío Wellness', { playerId: player.player_id, date: today });
 
       // Disparar notificación push
       triggerPushNotification({
@@ -255,7 +255,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   };
 
   const handleLoadSubmit = async (data: any) => {
-    if (player?.isUnlinked || !player?.id_del_jugador) {
+    if (player?.isUnlinked || !player?.player_id) {
       alert("⚠️ CUENTA NO VINCULADA: No se detectó un vínculo oficial con la base de datos.");
       return;
     }
@@ -272,7 +272,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         .maybeSingle();
 
       const payload = {
-        id_del_jugador: player.id_del_jugador,
+        player_id: player.player_id,
         microcycle_id: activeMC?.id || null,
         session_date: today,
         rpe: data.rpe,
@@ -284,11 +284,11 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       const { error } = await supabase
         .from('internal_load')
-        .upsert(payload, { onConflict: 'id_del_jugador,session_date' });
+        .upsert(payload, { onConflict: 'player_id,session_date' });
       
       if (error) throw error;
       
-      logActivity('Envío Carga Interna (PSE)', { playerId: player.id_del_jugador, date: today, rpe: data.rpe });
+      logActivity('Envío Carga Interna (PSE)', { playerId: player.player_id, date: today, rpe: data.rpe });
 
       // Disparar notificación push
       triggerPushNotification({
@@ -311,7 +311,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   };
 
   const handleMatchSubmit = async (data: any) => {
-    if (player?.isUnlinked || !player?.id_del_jugador) {
+    if (player?.isUnlinked || !player?.player_id) {
       alert("⚠️ CUENTA NO VINCULADA: No se detectó un vínculo oficial con la base de datos.");
       return;
     }
@@ -321,7 +321,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       const today = new Date().toISOString().split('T')[0];
 
       const payload = {
-        id_del_jugador: player.id_del_jugador,
+        player_id: player.player_id,
         fecha: today,
         rival: data.rival,
         resultado: data.resultado,
@@ -338,7 +338,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       
       if (error) throw error;
       
-      logActivity('Envío Reporte de Competencia', { playerId: player.id_del_jugador, date: today, rival: data.rival });
+      logActivity('Envío Reporte de Competencia', { playerId: player.player_id, date: today, rival: data.rival });
 
       setSuccessModalConfig({
         show: true,
@@ -355,13 +355,13 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!player?.id_del_jugador) {
+    if (!player?.player_id) {
       alert("❌ Error: No se pudo identificar tu ID de jugador. Contacta al Staff técnico.");
       return;
     }
     
     setSubmitting(true);
-    console.log("Iniciando actualización de perfil para ID:", player.id_del_jugador);
+    console.log("Iniciando actualización de perfil para ID:", player.player_id);
     
     try {
       const finalClub = isOtherClub ? customClub : profileData.club;
@@ -389,7 +389,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       const { error, data, count } = await supabase
         .from('players')
         .update(payload)
-        .eq('id_del_jugador', Number(player.id_del_jugador))
+        .eq('player_id', Number(player.player_id))
         .select();
 
       if (error) {
@@ -401,7 +401,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       
       try {
         logActivity('Actualización Perfil Jugador', { 
-          playerId: player.id_del_jugador,
+          playerId: player.player_id,
           fields: Object.keys(payload).filter(k => (payload as any)[k] !== null)
         });
       } catch (logErr) {
@@ -812,7 +812,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           <div className="w-full max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
             <PlayerProfileArea 
               userRole="player"
-              initialPlayerId={player?.id_del_jugador}
+              initialPlayerId={player?.player_id}
               clubs={dbClubs}
             />
           </div>

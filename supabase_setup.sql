@@ -13,7 +13,7 @@ create table if not exists public.lesionados (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  player_id int not null references public.players(id_del_jugador),
+  player_id int not null references public.players(player_id),
   microcycle_id uuid references public.microcycles(id),
   category_id int,
   fecha_inicio date not null,
@@ -37,7 +37,7 @@ create table if not exists public.lesionados (
 create table if not exists public.medical_daily_reports (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  player_id int not null references public.players(id_del_jugador),
+  player_id int not null references public.players(player_id),
   category_id int,
   microcycle_id uuid references public.microcycles(id),
   report_date date default current_date,
@@ -52,7 +52,7 @@ create table if not exists public.medical_daily_reports (
 create table if not exists public.medical_treatments (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  player_id int not null references public.players(id_del_jugador),
+  player_id int not null references public.players(player_id),
   category_id int,
   treatment_date date default current_date,
   description text not null
@@ -112,7 +112,7 @@ create table if not exists public.annual_activities (
 
 -- Create players table
 create table if not exists public.players (
-  id_del_jugador int primary key,
+  player_id int primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   nombre text not null,
   apellido1 text not null,
@@ -130,7 +130,7 @@ create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   role text default 'player',
-  id_del_jugador int references public.players(id_del_jugador),
+  player_id int references public.players(player_id),
   club_name text
 );
 
@@ -148,7 +148,8 @@ create table if not exists public.clubes (
 create table if not exists public.wellness_checkin (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  id_del_jugador int not null references public.players(id_del_jugador),
+  player_id int not null references public.players(player_id),
+  microcycle_id uuid references public.microcycles(id),
   checkin_date date default current_date,
   fatigue int default 0,
   sleep_quality int default 0,
@@ -157,42 +158,73 @@ create table if not exists public.wellness_checkin (
   mood int default 0,
   molestias text,
   enfermedad text,
-  unique(id_del_jugador, checkin_date)
+  created_by uuid references auth.users,
+  unique(player_id, checkin_date)
 );
 
 -- Create internal_load table
 create table if not exists public.internal_load (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  id_del_jugador int not null references public.players(id_del_jugador),
+  player_id int not null references public.players(player_id),
+  microcycle_id uuid references public.microcycles(id),
   session_date date default current_date,
   rpe int default 0,
   duration_min int default 0,
   srpe int,
   type text default 'FIELD',
-  unique(id_del_jugador, session_date)
+  molestias text,
+  enfermedad text,
+  created_by uuid references auth.users,
+  unique(player_id, session_date)
 );
 
 -- Create antropometria table
 create table if not exists public.antropometria (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  id_del_jugador int not null references public.players(id_del_jugador),
+  player_id int not null references public.players(player_id),
   fecha_medicion date default current_date,
-  peso float8,
+  edad_cronologica float8,
+  masa_corporal_kg float8,
   talla_cm float8,
+  talla_sentada_cm float8,
+  masa_muscular_kg float8,
   masa_muscular_pct float8,
+  masa_adiposa_kg float8,
   masa_adiposa_pct float8,
-  sumatoria_6_pliegues float8,
+  masa_osea_kg float8,
+  masa_osea_pct float8,
+  indice_imo float8,
+  indice_imc float8,
+  sum_pliegues_6_mm float8,
+  sum_pliegues_8_mm float8,
+  somatotipo_endo float8,
+  somatotipo_meso float8,
+  somatotipo_ecto float8,
+  somatotipo_eje_x float8,
+  somatotipo_eje_y float8,
+  maduracion_mirwald float8,
+  maduracion_moore float8,
+  maduracion_media float8,
+  phv_mirwald float8,
+  phv_moore float8,
+  phv_media float8,
+  cm_por_crecer_mirwald float8,
+  cm_por_crecer_moore float8,
+  cm_por_crecer_media float8,
+  estatura_proy_mirwald float8,
+  estatura_proy_moore_cm float8,
+  estatura_proy_media_cm float8,
   nombre_raw text,
-  unique(id_del_jugador, fecha_medicion)
+  unique(player_id, fecha_medicion)
 );
 
 -- Create citaciones table
 create table if not exists public.citaciones (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  id_del_jugador int not null references public.players(id_del_jugador),
+  player_id int not null references public.players(player_id),
   fecha date not null,
   motivo text,
   estado text default 'Pendiente'
@@ -238,11 +270,11 @@ create policy "Enable all access for microcycles" on public.microcycles for all 
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, role, id_del_jugador, club_name)
+  insert into public.profiles (id, role, player_id, club_name)
   values (
     new.id, 
     coalesce(new.raw_user_meta_data->>'role', 'player'), 
-    (new.raw_user_meta_data->>'id_del_jugador')::int,
+    (new.raw_user_meta_data->>'player_id')::int,
     new.raw_user_meta_data->>'club_name'
   );
   return new;
@@ -257,7 +289,7 @@ create trigger on_auth_user_created
 create table if not exists public.gps_import (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  id_del_jugador int not null,
+  player_id int not null,
   fecha date not null,
   minutos float8,
   dist_total_m float8,
@@ -269,7 +301,7 @@ create table if not exists public.gps_import (
   vel_max_kmh float8,
   acc_decc_ai_n float8,
   jugador text,
-  unique(id_del_jugador, fecha)
+  unique(player_id, fecha)
 );
 
 alter table public.gps_import enable row level security;
@@ -279,7 +311,7 @@ create policy "Enable all access for gps_import" on public.gps_import for all us
 create table if not exists public.gps_tareas (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  id_del_jugador int not null,
+  player_id int not null,
   fecha date not null,
   tarea text not null,
   bloque int,
@@ -293,7 +325,7 @@ create table if not exists public.gps_tareas (
   vel_max_kmh float8,
   acc_decc_ai_n float8,
   jugador_nombre text,
-  unique(id_del_jugador, fecha, tarea)
+  unique(player_id, fecha, tarea)
 );
 
 alter table public.gps_tareas enable row level security;
@@ -303,13 +335,13 @@ create policy "Enable all access for gps_tareas" on public.gps_tareas for all us
 create table if not exists public.physical_tests (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  id_del_jugador int not null,
+  player_id int not null,
   fecha date not null,
   test_type text not null, -- 'IMTP', 'VELOCIDAD', 'ACELERACION', 'VO2MAX'
   value float8 not null,
   unit text,
   observation text,
-  unique(id_del_jugador, fecha, test_type)
+  unique(player_id, fecha, test_type)
 );
 
 -- Create evaluaciones_imtp_salto table
@@ -317,7 +349,7 @@ create table if not exists public.evaluaciones_imtp_salto (
   id int8 generated by default as identity primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   jugador text,
-  id_del_jugador int8 not null,
+  player_id int8 not null,
   fecha_test date not null,
   peso numeric,
   imtp_fuerza_n numeric,
@@ -348,7 +380,7 @@ create table if not exists public.evaluaciones_imtp_salto (
   slcmj_diferencia_pct_tv numeric,
   deficit_bilateral numeric,
   altura_x_rsi_mod numeric,
-  unique(id_del_jugador, fecha_test)
+  unique(player_id, fecha_test)
 );
 
 -- Create velocidad_tests table
@@ -356,7 +388,7 @@ create table if not exists public.velocidad_tests (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   jugador text,
-  id_del_jugador int not null,
+  player_id int not null,
   fecha date not null,
   tiempo_10m float8,
   vel_10m float8,
@@ -366,7 +398,7 @@ create table if not exists public.velocidad_tests (
   vel_20_30m float8,
   vel_max_kmh float8,
   tiempo_total float8 not null,
-  unique(id_del_jugador, fecha)
+  unique(player_id, fecha)
 );
 
 -- Create vo2max_tests table
@@ -374,7 +406,7 @@ create table if not exists public.vo2max_tests (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   jugador text,
-  id_del_jugador int not null,
+  player_id int not null,
   fecha date not null,
   peso float8,
   vt1_vel float8,
@@ -391,7 +423,7 @@ create table if not exists public.vo2max_tests (
   mts float8,
   vfa float8,
   observaciones text,
-  unique(id_del_jugador, fecha)
+  unique(player_id, fecha)
 );
 
 -- Enable RLS for physical_tests
@@ -539,7 +571,7 @@ on conflict (codigo) do update set
   nombre = excluded.nombre;
 
 -- Seed initial players
-insert into public.players (id_del_jugador, nombre, apellido1, apellido2, club, posicion, categoria, anio)
+insert into public.players (player_id, nombre, apellido1, apellido2, club, posicion, categoria, anio)
 values 
 (1, 'Julian', 'Alvarez', '', 'Audax Italiano', 'Delantero Extremo', 'sub_20', 2006),
 (2, 'Enzo', 'Fernandez', '', 'Audax Italiano', 'Volante', 'sub_20', 2006),
@@ -555,7 +587,7 @@ values
 (12, 'Arturo', 'Vidal', '', 'Colo-Colo', 'Volante', 'sub_15', 2011),
 (13, 'Marcelino', 'Nuñez', '', 'Universidad Católica', 'Volante', 'sub_15', 2011),
 (14, 'Darío', 'Osorio', '', 'Universidad de Chile', 'Delantero Extremo', 'sub_15', 2011)
-on conflict (id_del_jugador) do nothing;
+on conflict (player_id) do nothing;
 
 -- Function to safely create microcycles with unique code
 create or replace function public.create_microcycle_safe(
@@ -590,7 +622,7 @@ $$;
 create table if not exists public.match_reports (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  id_del_jugador int not null references public.players(id_del_jugador),
+  player_id int not null references public.players(player_id),
   fecha date default current_date,
   rival text,
   resultado text,
@@ -623,8 +655,62 @@ create policy "Enable all access for contactos_solicitudes" on public.contactos_
 -- Seed some contacts for testing
 insert into public.contactos_solicitudes (club, nombres, presidente, cargo, correo)
 values 
-('Audax Italiano', 'Secretaría Técnica', 'Secretaría Técnica', 'Coordinador', 'contacto@audaxitaliano.cl'),
+('Audax Italiano', 'Secretaría Técnica', 'Gonzalo Cilley', 'Presidente', 'contacto@audaxitaliano.cl'),
 ('Atlético Colina', 'Camilo Mardones', 'Camilo Mardones', 'Gerente Deportivo', 'mardones.camilo@gmail.com'),
-('Colo-Colo', 'Secretaría de Fútbol', 'Aníbal Mosa', 'Presidente', 'fútbol@colocolo.cl')
+('Colo-Colo', 'Secretaría de Fútbol', 'Aníbal Mosa', 'Presidente', 'fútbol@colocolo.cl'),
+('Deportes Copiapó', 'Secretaría', 'Luis Galdames', 'Presidente', 'contacto@copiapo.cl'),
+('Universidad de Chile', 'Gerencia Deportiva', 'Michael Clark', 'Presidente', 'contacto@udechile.cl'),
+('Universidad Católica', 'Secretaría Técnica', 'Juan Tagle', 'Presidente', 'contacto@cruzados.cl'),
+('Cobreloa', 'Secretaría', 'Harry Robledo', 'Presidente', 'contacto@cobreloa.cl'),
+('Everton', 'Secretaría', 'Pedro Cedillo', 'Presidente', 'contacto@everton.cl'),
+('Palestino', 'Secretaría', 'Jorge Uauy', 'Presidente', 'contacto@palestino.cl'),
+('Coquimbo Unido', 'Secretaría', 'Jorge Contador', 'Presidente', 'contacto@coquimbounido.cl')
+on conflict do nothing;
+
+-- Table for Citacion Configuration (Global settings for letters)
+create table if not exists public.citacion_config (
+  id int8 primary key generated always as identity,
+  header_ref text,
+  header_city text,
+  body_text text,
+  body_part_2 text,
+  presentation text,
+  presentation_suffix text,
+  guidelines text,
+  footer_text text,
+  signature_name text,
+  signature_role text,
+  updated_at timestamptz default now()
+);
+
+-- Enable RLS for citacion_config
+alter table public.citacion_config enable row level security;
+create policy "Enable all access for citacion_config" on public.citacion_config for all using (true) with check (true);
+
+-- Insert default record
+insert into public.citacion_config (
+  header_ref, 
+  header_city, 
+  body_text, 
+  body_part_2,
+  presentation,
+  presentation_suffix,
+  guidelines,
+  footer_text, 
+  signature_name, 
+  signature_role
+)
+values (
+  'Ref.: Carta Convocatoria Selección Nacional', 
+  'Santiago', 
+  'El Cuerpo Técnico de la Selección Chilena de Fútbol, junto con la Gerencia de Selecciones Nacionales, tiene el agrado de convocar al jugador de sus registros, ',
+  ', al Microciclo que se desarrollará entre los días ',
+  'El jugador debe presentarse en el CAR José Sulantay el día ',
+  ' en horario por confirmar.',
+  'Asimismo, queremos recordar que, en el marco de la formación integral de nuestros futbolistas, se solicita que los jugadores mantengan una presentación acorde a los lineamientos establecidos. Por ello, queda prohibido el uso de aros, piercings, cortes en la ceja, cabello teñido u otros elementos que no se ajusten a la imagen profesional que buscamos proyectar en nuestros seleccionados.',
+  'Aprovechamos la ocasión para agradecer desde ya la buena disposición de su club para con nuestra Selección Nacional, y esperamos una favorable acogida.',
+  'Felipe Correa',
+  'Gerente de Selecciones Nacionales'
+)
 on conflict do nothing;
 
