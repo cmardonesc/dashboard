@@ -320,7 +320,7 @@ export default function CitacionesArea({
       console.log("CitacionesArea: Fetching players with clubes join...");
       const { data, error } = await supabase
         .from('players')
-        .select(`player_id, nombre, apellido1, apellido2, posicion, anio, id_club, clubes(id_club, nombre)`);
+        .select(`player_id, nombre, apellido1, apellido2, posicion, anio, id_club, clubes!fk_players_clubes(id_club, nombre)`);
       
       if (error) throw error;
       
@@ -348,12 +348,13 @@ export default function CitacionesArea({
 
           const clubObjFromJoin = Array.isArray(p.clubes) ? p.clubes[0] : p.clubes;
           const clubObjFromProp = (propClubs || []).find((c: any) => 
-            Number(c.id_club) === Number(p.id_club) || Number(c.id) === Number(p.id_club)
+            (c.id_club && Number(c.id_club) === Number(p.id_club)) || 
+            (c.id && Number(c.id) === Number(p.id_club))
           );
           
           let resolvedClubName = clubObjFromJoin?.nombre || clubObjFromProp?.nombre || p.club_name || p.club;
           
-          if (!resolvedClubName || resolvedClubName.startsWith('Club #')) {
+          if (!resolvedClubName || resolvedClubName.startsWith('Club #') || resolvedClubName === 'SIN CLUB') {
             const fallbackName = p.id_club ? FALLBACK_CLUB_NAMES[Number(p.id_club)] : null;
             if (fallbackName) {
               resolvedClubName = fallbackName;
@@ -422,6 +423,7 @@ export default function CitacionesArea({
         .select('id, micro_number')
         .eq('category_id', catId)
         .eq('start_date', newMicroForm.start_date)
+        .limit(1)
         .maybeSingle();
 
       if (checkError) {
@@ -590,7 +592,7 @@ export default function CitacionesArea({
         const bulkData = playersToCopy.map(pid => ({
           microcycle_id: newMicro.id,
           player_id: pid,
-          fecha_citacion: new Date().toISOString().split('T')[0],
+          fecha: new Date().toISOString().split('T')[0],
           created_by: session?.user?.id
         }));
         const { error: copyError } = await supabase.from('citaciones').insert(bulkData);
@@ -676,7 +678,7 @@ export default function CitacionesArea({
         const bulkData = citadosIds.map(id => ({
           microcycle_id: selectedMicro.id,
           player_id: id,
-          fecha_citacion: new Date().toISOString().split('T')[0],
+          fecha: new Date().toISOString().split('T')[0],
           created_by: session?.user?.id
         }));
         const { error } = await supabase.from('citaciones').insert(bulkData);

@@ -240,7 +240,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           const playerIds = Array.from(new Set(gpsData.map(d => d.player_id)));
           const { data: playersData, error: playersError } = await supabase
             .from('players')
-            .select('player_id, nombre, apellido1, apellido2, club, posicion, anio, id_club')
+            .select('player_id, nombre, apellido1, apellido2, posicion, anio, id_club, clubes!fk_players_clubes(id_club, nombre)')
             .in('player_id', playerIds);
           
           if (playersError) throw playersError;

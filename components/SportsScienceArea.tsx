@@ -197,7 +197,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         { data: mData },
         { data: lData }
       ] = await Promise.all([
-        supabase.from('players').select('*'),
+        supabase.from('players').select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion'),
         supabase.from('evaluaciones_imtp_salto').select('*'),
         supabase.from('velocidad_tests').select('*'),
         supabase.from('antropometria').select('*'),

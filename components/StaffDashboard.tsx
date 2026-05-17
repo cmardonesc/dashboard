@@ -1261,7 +1261,16 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
           usuarios: UserManagementArea
         }[activeMenu as any] as any;
         
-        return ContentComponent ? <ContentComponent performanceRecords={performanceRecords} onMenuChange={onMenuChange} clubs={clubs} /> : null;
+        return ContentComponent ? (
+          <ContentComponent 
+            performanceRecords={performanceRecords} 
+            onMenuChange={onMenuChange} 
+            clubs={clubs}
+            userRole={userRole}
+            userClub={userClub}
+            userClubId={userClubId}
+          />
+        ) : null;
     }
   };
 

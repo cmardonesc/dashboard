@@ -43,7 +43,7 @@ const LogisticaJugadores: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('players')
-        .select('*')
+        .select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion, fecha_nacimiento')
         .order('nombre', { ascending: true });
 
       if (error) throw error;

@@ -29,12 +29,15 @@ interface DailyReport {
   severity: 'low' | 'medium' | 'high' | 'sick';
   displayCategory?: string;
   players?: {
+    player_id?: number;
     nombre: string;
     apellido1: string;
     apellido2?: string;
     anio?: number;
     posicion?: string;
+    id_club?: number;
     club?: string;
+    clubes?: { nombre: string } | { nombre: string }[];
   };
 }
 
@@ -63,7 +66,9 @@ interface DBInjury {
     apellido1: string;
     apellido2?: string;
     posicion: string;
+    id_club?: number;
     club?: string;
+    clubes?: { nombre: string } | { nombre: string }[];
   };
 }
 
@@ -188,14 +193,14 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     try {
       let query = supabase
         .from('lesionados')
-        .select('*, players!inner(nombre, apellido1, apellido2, posicion, club, id_club)')
+        .select('*, players!lesionados_id_del_jugador_fkey(nombre, apellido1, apellido2, posicion, id_club, club, clubes!fk_players_clubes(nombre))')
         .order('updated_at', { ascending: false });
       
       if (userRole === 'club') {
         if (userClubId) {
           query = query.eq('players.id_club', userClubId);
         } else if (userClub) {
-          query = query.eq('players.club', userClub);
+          query = query.eq('players.clubes.nombre', userClub);
         }
       }
 
@@ -214,14 +219,14 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       // Fetch reports
       let query = supabase
         .from('medical_daily_reports')
-        .select('*, players!inner(player_id, nombre, apellido1, apellido2, anio, club, posicion, id_club)')
+        .select('*, players!medical_daily_reports_id_del_jugador_fkey(player_id, nombre, apellido1, apellido2, anio, posicion, id_club, club, clubes!fk_players_clubes(nombre))')
         .order('report_date', { ascending: false });
 
       if (userRole === 'club') {
         if (userClubId) {
           query = query.eq('players.id_club', userClubId);
         } else if (userClub) {
-          query = query.eq('players.club', userClub);
+          query = query.eq('players.clubes.nombre', userClub);
         }
       }
 
@@ -229,11 +234,18 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
 
       if (reportsError) throw reportsError;
 
+      if (!reports || reports.length === 0) {
+        setDailyReports([]);
+        setLoading(false);
+        return;
+      }
+
       // Fetch citations to determine category at the time of report
+      const playerIds = reports.map(r => r.player_id);
       const { data: citations, error: citationsError } = await supabase
         .from('citaciones')
-        .select('player_id, fecha_citacion, microcycles(category_id)')
-        .filter('player_id', 'in', `(${reports.map(r => r.player_id).join(',')})`);
+        .select('player_id, fecha, microcycles!fk_citaciones_microcycles(category_id)')
+        .in('player_id', playerIds);
 
       if (citationsError) {
         console.warn("Could not fetch citations for categories, falling back to player default category.", citationsError);
@@ -243,7 +255,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         // Find matching citation by date and player
         const matchingCitation = citations?.find(c => 
           c.player_id === report.player_id && 
-          c.fecha_citacion === report.report_date
+          c.fecha === report.report_date
         );
 
         let categoryStr = report.players?.categoria || '-';
@@ -370,7 +382,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       player_id: report.player_id,
       name: `${report.players?.nombre} ${report.players?.apellido1} ${report.players?.apellido2 || ''}`.trim(),
       role: UserRole.PLAYER,
-      club: report.players?.club || '', 
+      club: (Array.isArray(report.players?.clubes) ? report.players?.clubes[0]?.nombre : report.players?.clubes?.nombre) || report.players?.club || '', 
       position: report.players?.posicion || ''
     });
     setEditingDailyReportId(report.id);
@@ -442,8 +454,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       player_id: injury.player_id,
       name: `${injury.players?.nombre} ${injury.players?.apellido1} ${injury.players?.apellido2 || ''}`.trim(),
       role: UserRole.PLAYER,
-      club: injury.players?.club,
-      position: injury.players?.posicion
+      club: (Array.isArray(injury.players?.clubes) ? injury.players?.clubes[0]?.nombre : injury.players?.clubes?.nombre) || injury.players?.club || '',
+      position: injury.players?.posicion || ''
     });
     setEditingInjuryId(injury.id);
 
@@ -1380,6 +1392,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                 <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest">
                   <tr>
                     <th className="px-6 py-4 text-left">Atleta</th>
+                    <th className="px-4 py-4 text-left">Club</th>
                     <th className="px-4 py-4">Año</th>
                     <th className="px-4 py-4">Categoría</th>
                     <th className="px-4 py-4">Fecha</th>
@@ -1407,6 +1420,21 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                               <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1} {report.players?.apellido2 || ''}</p>
                             </div>
                           </div>
+                        </td>
+                        <td className="px-4 py-4 text-left">
+                           {(() => {
+                             const clubObj = Array.isArray(report.players?.clubes) ? report.players?.clubes[0] : report.players?.clubes;
+                             return (
+                               <ClubBadge 
+                                 clubName={clubObj?.nombre || report.players?.club} 
+                                 idClub={report.players?.id_club} 
+                                 clubs={clubs} 
+                                 logoSize="w-5 h-5" 
+                                 showName={true}
+                                 className="text-[9px] font-bold text-slate-500 uppercase tracking-tight"
+                               />
+                             );
+                           })()}
                         </td>
                         <td className="px-4 py-4 text-slate-600 font-bold">{report.anio || report.players?.anio || '-'}</td>
                         <td className="px-4 py-4">

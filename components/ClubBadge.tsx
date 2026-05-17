@@ -89,7 +89,7 @@ const ClubBadge: React.FC<ClubBadgeProps> = ({
         return;
       }
     }
-    console.warn(`Error cargando logo para ${clubName}: ${retryUrl || logoUrl}`);
+    console.debug(`Error cargando logo para ${clubName}: ${retryUrl || logoUrl}`);
     setImgError(true);
   };
 

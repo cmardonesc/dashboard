@@ -214,7 +214,7 @@ export default function App() {
       const [{ data: playersData, error: playersError }, { data: clubsData, error: clubesError }] = await Promise.all([
         supabase
           .from('players')
-          .select('*, clubes(id_club, nombre)'),
+          .select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio, fecha_nacimiento, clubes!fk_players_clubes(id_club, nombre)'),
         supabase
           .from('clubes')
           .select('*')
@@ -230,19 +230,16 @@ export default function App() {
 
       // Fallback: si 'clubes' viene vacío pero no hay error, quizá la tabla se llame 'clubs'
       let finalClubsData = clubsData || [];
-      if (finalClubsData.length === 0 && !clubesError) {
-        console.log("App: 'clubes' regresó vacío. Intentando con 'clubs' como fallback...");
-        const { data: altData } = await supabase.from('clubs').select('*');
-        if (altData && altData.length > 0) {
-          console.log("App: Clubs encontrados en tabla 'clubs':", altData.length);
-          finalClubsData = altData;
-        }
+      if (finalClubsData.length === 0) {
+        console.warn("App: 'clubes' regresó vacío. Usando FALLBACK_CLUB_NAMES de constantes.");
+        finalClubsData = Object.entries(FALLBACK_CLUB_NAMES).map(([id, nombre]) => ({
+          id_club: Number(id),
+          nombre: nombre
+        }));
       }
 
       console.log("App: Final clubs count:", finalClubsData.length);
-      if (finalClubsData.length > 0) {
-        setDbClubs(finalClubsData)
-      }
+      setDbClubs(finalClubsData)
 
       processPlayerData(playersData || [], finalClubsData);
     } catch (err) {
@@ -268,23 +265,26 @@ export default function App() {
         // La relación puede venir en p.clubes como objeto o array según la definición en Supabase
         const clubObjFromJoin = Array.isArray(p.clubes) ? p.clubes[0] : p.clubes;
         const clubObjFromMap = (clubsData || []).find((c: any) => 
-          Number(c.id_club) === Number(clubId) || Number(c.id) === Number(clubId)
+          (c.id_club && Number(c.id_club) === Number(clubId)) || 
+          (c.id && Number(c.id) === Number(clubId))
         );
         
-        if (clubId && !clubObjFromJoin && !clubObjFromMap) {
-          console.warn(`App: No se encontró el club ${clubId} para el jugador ${pid}. Registros en clubes:`, clubsData?.length);
-        }
-
         // Priorizar el nombre de la tabla de clubes, luego fallback de constantes si es ID numérico popular
-        let clubName = clubObjFromJoin?.nombre || clubObjFromMap?.nombre || p.club;
+        let clubName = clubObjFromJoin?.nombre || clubObjFromMap?.nombre || p.club_name || p.club;
         
-        if (!clubName || clubName.startsWith('Club #')) {
+        if (!clubName || clubName.startsWith('Club #') || clubName === 'Sin Club') {
           const fallbackName = clubId ? FALLBACK_CLUB_NAMES[Number(clubId)] : null;
           if (fallbackName) {
             clubName = fallbackName;
           } else if (!clubName) {
             clubName = clubId ? `Club #${clubId}` : 'Sin Club';
           }
+        }
+
+        // Solo advertir si no hay absolutamente nunguna forma de identificar el club y tiene un ID
+        if (clubId && clubName.startsWith('Club #') && !FALLBACK_CLUB_NAMES[Number(clubId)]) {
+          // Usamos console.debug para no saturar con warnings si es un problema de data masivo
+          console.debug(`App: No se encontró nombre descriptivo para club ${clubId} (Jugador ${pid}).`);
         }
         
         const dbName = `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${pid}`;

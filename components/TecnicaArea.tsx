@@ -70,6 +70,7 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'Charla Psicológica', emoji: '🧠' },
   { label: 'Evaluaciones Físicas', emoji: '📏' },
   { label: 'Evaluación Nutricional', emoji: '⚖️' },
+  { label: 'Atenciones Médicas', emoji: '⚕️' },
   { label: 'Actividad Social', emoji: '🤝' },
   { label: 'Salida', emoji: '🛫' },
   { label: 'Retorno', emoji: '🛬' },
@@ -290,7 +291,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       
       const { data, error } = await supabase
         .from('match_reports')
-        .select('*, players(nombre, apellido1, club, player_id)')
+        .select('*, players!fk_match_reports_players(nombre, apellido1, id_club, club, clubes!fk_players_clubes(nombre), player_id)')
         .order('fecha', { ascending: false });
 
       if (error) throw error;
@@ -1842,7 +1843,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                             </div>
                             <div>
                               <p className="text-[11px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1}</p>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{report.players?.club}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                {(Array.isArray(report.players?.clubes) ? report.players?.clubes[0]?.nombre : report.players?.clubes?.nombre) || report.players?.club || 'SIN CLUB'}
+                              </p>
                             </div>
                           </div>
                         </td>

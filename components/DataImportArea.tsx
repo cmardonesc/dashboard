@@ -267,7 +267,7 @@ export default function DataImportArea() {
   }, []);
 
   const fetchPlayers = async () => {
-    const { data } = await supabase.from('players').select('*');
+    const { data } = await supabase.from('players').select('player_id, nombre, apellido1, id_club, anio, posicion');
     if (data) setPlayers(data);
   };
 

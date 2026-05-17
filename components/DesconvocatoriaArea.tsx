@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { User, UserRole, Category, CATEGORY_ID_MAP } from '../types'
-import { FEDERATION_LOGO } from '../constants'
-import { getDriveDirectLink } from '../lib/utils'
+import { FEDERATION_LOGO, FALLBACK_CLUB_NAMES } from '../constants'
+import { getDriveDirectLink, normalizeClub } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
@@ -51,7 +51,23 @@ interface ClubGroup {
   players: User[]
 }
 
-export default function DesconvocatoriaArea() {
+interface DesconvocatoriaAreaProps {
+  performanceRecords?: any[]
+  onMenuChange?: (id: any) => void
+  clubs?: any[]
+  userRole?: string
+  userClub?: string
+  userClubId?: number | null
+}
+
+export default function DesconvocatoriaArea({ 
+  performanceRecords, 
+  onMenuChange, 
+  clubs = [],
+  userRole,
+  userClub,
+  userClubId
+}: DesconvocatoriaAreaProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [selectedMicro, setSelectedMicro] = useState<MicrocicloBajas | null>(null)
   const [loading, setLoading] = useState(false)
@@ -153,25 +169,27 @@ export default function DesconvocatoriaArea() {
         .from('citaciones')
         .select(`
           player_id,
-          players (
+          players!citaciones_player_fk (
             player_id,
             nombre,
             apellido1,
             apellido2,
-            club,
             posicion,
-            anio
+            anio,
+            id_club,
+            clubes!fk_players_clubes (nombre)
           )
         `)
-      .eq('microcycle_id', microId)
+       .eq('microcycle_id', microId)
 
       if (error) throw error
       if (data) {
-        const mapped: User[] = data.map((d: any) => {
+        const mapped: User[] = data.filter((d: any) => d.players).map((d: any) => {
+          const p = d.players;
           // Inferir categoría si falta
           let category = '';
-          if (d.players.anio) {
-            const age = 2026 - d.players.anio;
+          if (p.anio) {
+            const age = 2026 - p.anio;
             if (age <= 13) category = Category.SUB_13;
             else if (age === 14) category = Category.SUB_14;
             else if (age === 15) category = Category.SUB_15;
@@ -186,18 +204,36 @@ export default function DesconvocatoriaArea() {
             category = Category.SUB_17;
           }
 
+          const clubObj = (Array.isArray(p.clubes) ? p.clubes[0] : p.clubes)
+          const clubNameFromProps = (clubs || []).find(c => (c.id_club && Number(c.id_club) === Number(p.id_club)) || (c.id && Number(c.id) === Number(p.id_club)))?.nombre
+          const fallbackClubName = p.id_club ? FALLBACK_CLUB_NAMES[Number(p.id_club)] : null;
+          
           return {
-            id: `p-${d.players.player_id}`,
-            player_id: d.players.player_id,
-            name: `${d.players.nombre || ''} ${d.players.apellido1 || ''} ${d.players.apellido2 || ''}`.trim() || `Atleta #${d.players.player_id}`,
+            id: `p-${p.player_id}`,
+            player_id: p.player_id,
+            id_club: p.id_club,
+            name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${p.player_id}`,
             role: UserRole.PLAYER,
-            club: d.players.club || 'SIN CLUB',
-            position: d.players.posicion || 'N/A',
-            category: category,
-            anio: d.players.anio
+            club: clubObj?.nombre || clubNameFromProps || fallbackClubName || 'SIN CLUB',
+            position: p.posicion || 'N/A',
+            category: category as Category,
+            anio: p.anio
           };
         })
-        setCitedPlayers(mapped)
+        
+        let finalPlayers = mapped;
+        if (userRole === 'club') {
+          finalPlayers = mapped.filter(p => {
+            if (userClubId) return Number(p.id_club) === Number(userClubId);
+            if (userClub) {
+              const uClubNorm = normalizeClub(userClub);
+              const pClubNorm = normalizeClub(p.club || '');
+              return pClubNorm === uClubNorm;
+            }
+            return true;
+          });
+        }
+        setCitedPlayers(finalPlayers)
       }
     } catch (err) {
       console.error("Error cargando citados:", err)

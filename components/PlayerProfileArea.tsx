@@ -62,12 +62,12 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const fetchPlayers = async () => {
     try {
       console.log("Fetching players in PlayerProfileArea (fallback)...");
-      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio');
+      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio, clubes!inner(nombre)');
       if (userRole === 'club') {
         if (userClubId) {
           query = query.eq('id_club', userClubId);
         } else if (userClub) {
-          query = query.eq('club', userClub);
+          query = query.eq('clubes.nombre', userClub);
         }
       }
       const { data } = await query.order('apellido1', { ascending: true });
@@ -81,7 +81,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     setLoading(true);
     try {
       // 1. Basic Player Info
-      const { data: pData } = await supabase.from('players').select('*').eq('player_id', playerId).single();
+      const { data: pData } = await supabase.from('players').select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion, fecha_nacimiento').eq('player_id', playerId).single();
       setProfileData(pData);
 
       // 2. Citations & Microcycles
@@ -89,7 +89,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         .from('citaciones')
         .select(`
           id,
-          fecha_citacion,
+          fecha,
           observacion,
           microcycles (
             id,
@@ -100,7 +100,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
           )
         `)
         .eq('player_id', playerId)
-        .order('fecha_citacion', { ascending: false });
+        .order('fecha', { ascending: false });
       setCitations(citData || []);
 
       // 3. Training & Matches (Internal Load)

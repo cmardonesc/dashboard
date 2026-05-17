@@ -102,25 +102,36 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
       setLoading(true);
       try {
         // Fetch GPS records for the date
-        const { data: gpsRecords, error: gpsError } = await supabase
+        const { data: gpsRecordsRaw, error: gpsError } = await supabase
           .from('gps_import')
-          .select(`
-            *,
-            players:player_id (
-              player_id,
-              nombre,
-              apellido1,
-              apellido2,
-              club,
-              posicion,
-              id_club
-            )
-          `)
+          .select('*')
           .eq('fecha', selectedDate);
         
         if (gpsError) throw gpsError;
 
-        if (gpsRecords) {
+        if (gpsRecordsRaw && gpsRecordsRaw.length > 0) {
+          // Fetch players separately to avoid embedding issues
+          const playerIdsForGps = Array.from(new Set(gpsRecordsRaw.map(d => d.player_id)));
+          const { data: playersData, error: playersError } = await supabase
+            .from('players')
+            .select(`
+              player_id,
+              nombre,
+              apellido1,
+              apellido2,
+              posicion,
+              id_club,
+              clubes!fk_players_clubes(nombre)
+            `)
+            .in('player_id', playerIdsForGps);
+          
+          if (playersError) throw playersError;
+
+          const gpsRecords = gpsRecordsRaw.map(gps => ({
+            ...gps,
+            players: playersData?.find(p => p.player_id === gps.player_id) || null
+          }));
+
           // Aggregate data by player_id to handle multiple sessions (AM/PM)
           const aggregatedMap = new Map<number, any>();
           gpsRecords.forEach((gps: any) => {
@@ -159,7 +170,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
               )
             `)
             .in('player_id', playerIds)
-            .eq('fecha_citacion', selectedDate);
+            .eq('fecha', selectedDate);
 
           if (citError) console.error("Error fetching citations for categories:", citError);
 
@@ -196,9 +207,10 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
             if (userRole === 'club') {
               let isOwnClub = false;
               if (userClubId) {
-                isOwnClub = p?.id_club === userClubId;
+                isOwnClub = Number(p?.id_club) === Number(userClubId);
               } else if (userClub) {
-                const pClub = p?.club || '';
+                const clubObj = Array.isArray(p?.clubes) ? p?.clubes[0] : p?.clubes;
+                const pClub = clubObj?.nombre || p?.club || '';
                 const uClubNorm = normalizeClub(userClub);
                 const pClubNorm = normalizeClub(pClub);
                 isOwnClub = pClubNorm === uClubNorm;
