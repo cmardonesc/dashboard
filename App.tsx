@@ -9,7 +9,7 @@ import Sidebar from './components/Sidebar'
 import { AthletePerformanceRecord, User, UserRole, NutritionData, MenuId, Category } from './types'
 import { MOCK_PLAYERS } from './mockData'
 import { logActivity } from './lib/activityLogger'
-import { FEDERATION_LOGO } from './constants'
+import { FEDERATION_LOGO, FALLBACK_CLUB_NAMES } from './constants'
 
 type Role = 'player' | 'staff' | 'admin' | 'club' | null
 
@@ -210,24 +210,48 @@ export default function App() {
 
   const fetchRealPlayers = useCallback(async () => {
     try {
-      const [{ data: playersData, error: playersError }, { data: clubsData, error: clubsError }] = await Promise.all([
+      console.log("App: Fetching players and clubes...");
+      const [{ data: playersData, error: playersError }, { data: clubsData, error: clubesError }] = await Promise.all([
         supabase
           .from('players')
-          .select('player_id, nombre, apellido1, apellido2, posicion, id_club, anio, foto_url'),
+          .select('*, clubes(id_club, nombre)'),
         supabase
           .from('clubes')
-          .select('id_club, nombre')
+          .select('*')
       ])
 
       if (playersError) {
-        console.error("Supabase error fetching players:", playersError);
-        setPlayersLoading(false);
-        return;
+        console.error("App: Players fetch failed:", playersError);
       }
-      if (clubsError) console.error('Error al cargar clubes:', clubsError)
+      
+      if (clubesError) {
+        console.error('App: Error al cargar clubes:', clubesError);
+      }
 
-      if (clubsData) setDbClubs(clubsData)
+      // Fallback: si 'clubes' viene vacío pero no hay error, quizá la tabla se llame 'clubs'
+      let finalClubsData = clubsData || [];
+      if (finalClubsData.length === 0 && !clubesError) {
+        console.log("App: 'clubes' regresó vacío. Intentando con 'clubs' como fallback...");
+        const { data: altData } = await supabase.from('clubs').select('*');
+        if (altData && altData.length > 0) {
+          console.log("App: Clubs encontrados en tabla 'clubs':", altData.length);
+          finalClubsData = altData;
+        }
+      }
 
+      console.log("App: Final clubs count:", finalClubsData.length);
+      if (finalClubsData.length > 0) {
+        setDbClubs(finalClubsData)
+      }
+
+      processPlayerData(playersData || [], finalClubsData);
+    } catch (err) {
+      console.error("App: Error crítico en fetchRealPlayers:", err);
+      setPlayersLoading(false);
+    }
+  }, []);
+
+  const processPlayerData = (playersData: any[], clubsData: any[]) => {
       const mappedPlayers: User[] = (playersData || []).map((p: any) => {
         const pid = p.player_id;
         
@@ -240,9 +264,28 @@ export default function App() {
           else if (year >= 2012) category = Category.SUB_13;
         }
 
-        const clubId = p.id_club;
-        const clubObj = (clubsData || []).find((c: any) => Number(c.id_club) === Number(clubId));
-        const clubName = clubObj?.nombre || (clubId ? `Club #${clubId}` : 'Sin Club');
+        const clubId = p.id_club || p.club_id;
+        // La relación puede venir en p.clubes como objeto o array según la definición en Supabase
+        const clubObjFromJoin = Array.isArray(p.clubes) ? p.clubes[0] : p.clubes;
+        const clubObjFromMap = (clubsData || []).find((c: any) => 
+          Number(c.id_club) === Number(clubId) || Number(c.id) === Number(clubId)
+        );
+        
+        if (clubId && !clubObjFromJoin && !clubObjFromMap) {
+          console.warn(`App: No se encontró el club ${clubId} para el jugador ${pid}. Registros en clubes:`, clubsData?.length);
+        }
+
+        // Priorizar el nombre de la tabla de clubes, luego fallback de constantes si es ID numérico popular
+        let clubName = clubObjFromJoin?.nombre || clubObjFromMap?.nombre || p.club;
+        
+        if (!clubName || clubName.startsWith('Club #')) {
+          const fallbackName = clubId ? FALLBACK_CLUB_NAMES[Number(clubId)] : null;
+          if (fallbackName) {
+            clubName = fallbackName;
+          } else if (!clubName) {
+            clubName = clubId ? `Club #${clubId}` : 'Sin Club';
+          }
+        }
         
         const dbName = `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${pid}`;
 
@@ -259,22 +302,17 @@ export default function App() {
           id_club: clubId ? Number(clubId) : undefined,
           position: p.posicion || 'S/D',
           category: category,
-          anio: p.anio,
-          foto_url: p.foto_url
+          anio: p.anio
         };
-      })
+      });
 
       console.log("App: Successfully mapped players:", mappedPlayers.length);
       if (mappedPlayers.some(p => p.player_id === 758)) {
         console.log("App: Benjamin Villanueva (758) found in DB fetch");
       }
-      setDbPlayers(mappedPlayers)
-    } catch (err) {
-      console.error('Error al cargar jugadores:', err)
-    } finally {
-      setPlayersLoading(false)
-    }
-  }, []);
+      setDbPlayers(mappedPlayers);
+      setPlayersLoading(false);
+  };
 
   const handleManualRefresh = useCallback(async () => {
     if (refreshing) return;

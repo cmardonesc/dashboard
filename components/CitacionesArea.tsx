@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { User, Category, CATEGORY_ID_MAP, MicrocicloDB, UserRole } from '../types'
 import { supabase } from '../lib/supabase'
 import { triggerPushNotification } from '../lib/notifications'
-import { FEDERATION_LOGO } from '../constants'
+import { FEDERATION_LOGO, FALLBACK_CLUB_NAMES } from '../constants'
 import { getDriveDirectLink } from '../lib/utils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -64,7 +64,6 @@ export default function CitacionesArea({
   const [allPlayers, setAllPlayers] = useState<User[]>([])
   const [citadosIds, setCitadosIds] = useState<number[]>([])
   const [clubContacts, setClubContacts] = useState<any[]>([])
-  const [clubs, setClubs] = useState<any[]>(propClubs)
   
   // Mapping function to convert standard player object to User (as used in allPlayers state)
   const mapPlayerToUser = (p: any): User => {
@@ -86,13 +85,30 @@ export default function CitacionesArea({
       category = p.category || Category.SUB_17;
     }
 
+    const clubIdFromObj = p.id_club || p.club_id;
+    // Buscamos el club en las props pasadas desde App.tsx
+    const clubObj = (propClubs || []).find((c: any) => 
+      Number(c.id_club) === Number(clubIdFromObj) || Number(c.id) === Number(clubIdFromObj)
+    );
+    
+    // Si tenemos el objeto del club, usamos su nombre. Si no, pero el nombre actual es genérico "Club #XX", 
+    // intentamos mantener el ID o usar lo que haya.
+    let resolvedClubName = clubObj?.nombre || p.club_name || p.club || 'SIN CLUB';
+    
+    // Si el nombre sigue siendo genérico y tenemos propClubs, intentamos una última vez
+    if (resolvedClubName.startsWith('Club #') && propClubs.length > 0) {
+      const match = propClubs.find(c => `Club #${c.id_club}` === resolvedClubName || `Club #${c.id}` === resolvedClubName);
+      if (match) resolvedClubName = match.nombre;
+    }
+
     return {
       id: p.id || `p-${p.player_id}`,
       player_id: p.player_id,
-      name: p.name || `${p.nombre || ''} ${p.apellido1 || ''}`.trim(),
+      name: p.name || `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim(),
       role: UserRole.PLAYER, 
       anio: anio,
-      club: p.club || p.club_name || 'SIN CLUB',
+      club: resolvedClubName,
+      id_club: clubIdFromObj,
       position: p.position || p.posicion || 'N/A',
       category: category as Category
     };
@@ -113,6 +129,7 @@ export default function CitacionesArea({
   // Email States
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [emailClub, setEmailClub] = useState('')
+  const [emailClubId, setEmailClubId] = useState<number | null>(null)
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<number[]>([])
   const [sendingEmails, setSendingEmails] = useState(false)
   const [emailStatus, setEmailStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' })
@@ -143,10 +160,25 @@ export default function CitacionesArea({
     }
     fetchClubContacts();
     fetchLetterConfig();
-    if (propClubs.length === 0) {
-      fetchClubs();
+  }, [initialPlayers, propClubs]);
+
+  // Actualizar nombres de clubes cuando cargan los clubes o cambian los jugadores
+  useEffect(() => {
+    if (propClubs.length > 0 && allPlayers.length > 0) {
+      setAllPlayers(prev => prev.map(p => {
+        const clubId = p.id_club;
+        if (!clubId) return p;
+        
+        const clubObj = propClubs.find(c => Number(c.id_club) === Number(clubId) || Number(c.id) === Number(clubId));
+        
+        if (clubObj && clubObj.nombre !== p.club) {
+          console.log(`CitacionesArea: Updating club name for player ${p.player_id}: ${p.club} -> ${clubObj.nombre}`);
+          return { ...p, club: clubObj.nombre };
+        }
+        return p;
+      }));
     }
-  }, [initialPlayers]);
+  }, [propClubs]);
 
   // Debug useEffect to track player population
   useEffect(() => {
@@ -158,6 +190,7 @@ export default function CitacionesArea({
 
   const fetchLetterConfig = async () => {
     try {
+      // Intentar cargar la configuración, si falla no bloqueamos la app
       const { data, error } = await supabase
         .from('citacion_config')
         .select('*')
@@ -166,7 +199,11 @@ export default function CitacionesArea({
         .maybeSingle();
 
       if (error) {
-        console.error("Error loading letter config:", error);
+        if (error.code === 'PGRST204' || error.code === 'PGRST205') {
+          console.warn("CitacionesArea: La tabla citacion_config no existe aún.");
+        } else {
+          console.error("Error loading letter config:", error);
+        }
         return;
       }
 
@@ -235,10 +272,6 @@ export default function CitacionesArea({
     }
   };
 
-  const fetchClubs = async () => {
-    const { data } = await supabase.from('clubes').select('*').eq('activo', true);
-    if (data) setClubs(data);
-  };
 
   const fetchClubContacts = async () => {
     const { data } = await supabase.from('contactos_solicitudes').select('*');
@@ -284,9 +317,10 @@ export default function CitacionesArea({
   const fetchAllPlayers = async () => {
     setLoadingPlayers(true);
     try {
+      console.log("CitacionesArea: Fetching players with clubes join...");
       const { data, error } = await supabase
         .from('players')
-        .select(`player_id, nombre, apellido1, club, posicion, anio`);
+        .select(`player_id, nombre, apellido1, apellido2, posicion, anio, id_club, clubes(id_club, nombre)`);
       
       if (error) throw error;
       
@@ -310,15 +344,34 @@ export default function CitacionesArea({
             category = Category.SUB_17;
           }
 
+          const fullName = `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${p.player_id}`;
+
+          const clubObjFromJoin = Array.isArray(p.clubes) ? p.clubes[0] : p.clubes;
+          const clubObjFromProp = (propClubs || []).find((c: any) => 
+            Number(c.id_club) === Number(p.id_club) || Number(c.id) === Number(p.id_club)
+          );
+          
+          let resolvedClubName = clubObjFromJoin?.nombre || clubObjFromProp?.nombre || p.club_name || p.club;
+          
+          if (!resolvedClubName || resolvedClubName.startsWith('Club #')) {
+            const fallbackName = p.id_club ? FALLBACK_CLUB_NAMES[Number(p.id_club)] : null;
+            if (fallbackName) {
+              resolvedClubName = fallbackName;
+            } else if (!resolvedClubName) {
+              resolvedClubName = p.id_club ? `Club #${p.id_club}` : 'SIN CLUB';
+            }
+          }
+
           return {
             id: `p-${p.player_id}`,
             player_id: p.player_id,
-            name: `${p.nombre} ${p.apellido1}`,
+            name: fullName,
             role: UserRole.PLAYER, 
             anio: p.anio,
-            club: p.club || 'SIN CLUB',
+            club: resolvedClubName,
+            id_club: p.id_club,
             position: p.posicion || 'N/A',
-            category: category
+            category: category as Category
           };
         });
         setAllPlayers(mapped);
@@ -1074,6 +1127,14 @@ export default function CitacionesArea({
     console.log("[MAIL] Abriendo modal para club:", clubName);
     setEmailClub(clubName);
     
+    // Obtener id_club del primer jugador de este club para el badge
+    const clubPlayers = citadosByClub[clubName] || [];
+    if (clubPlayers.length > 0) {
+      setEmailClubId(clubPlayers[0].id_club);
+    } else {
+      setEmailClubId(null);
+    }
+    
     const normalizedClubName = normalize(clubName);
     
     const clubContactsFiltered = clubContacts.filter(c => {
@@ -1552,7 +1613,8 @@ export default function CitacionesArea({
                 <div className="flex items-center gap-4">
                   <ClubBadge 
                     clubName={clubName} 
-                    clubs={clubs} 
+                    idClub={players[0]?.id_club}
+                    clubs={propClubs} 
                     showName={false} 
                     logoSize="w-12 h-12" 
                     className="bg-white rounded-2xl shadow-sm border border-slate-200 p-2"
@@ -1647,7 +1709,7 @@ export default function CitacionesArea({
                       {p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.player_id}</span>
                     </div>
                     <div className="text-[9px] text-slate-500 uppercase font-bold tracking-widest truncate w-48 flex items-center gap-2">
-                      <span className="text-[#CF1B2B]">{p.position}</span> | <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-500 font-bold" />
+                      <span className="text-[#CF1B2B]">{p.position}</span> | <ClubBadge clubName={p.club} idClub={p.id_club} clubs={propClubs} logoSize="w-3 h-3" className="text-slate-500 font-bold" />
                     </div>
                   </div>
                   <button onClick={() => p.player_id && handleUncite(p.player_id)} className="w-8 h-8 rounded-lg bg-[#CF1B2B]/10 text-[#CF1B2B] flex items-center justify-center hover:bg-[#CF1B2B] hover:text-white transition-all">
@@ -1772,7 +1834,7 @@ export default function CitacionesArea({
                           {p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.player_id}</span>
                         </div>
                         <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate flex items-center gap-1.5 opacity-90">
-                          <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-400 font-bold" /> <span className="text-slate-200">|</span> <span className={isCited ? 'text-emerald-500' : 'text-slate-500'}>{p.position}</span>
+                          <ClubBadge clubName={p.club} idClub={p.id_club} clubs={propClubs} logoSize="w-3 h-3" className="text-slate-400 font-bold" /> <span className="text-slate-200">|</span> <span className={isCited ? 'text-emerald-500' : 'text-slate-500'}>{p.position}</span>
                         </div>
                       </div>
                     </div>
@@ -1846,7 +1908,8 @@ export default function CitacionesArea({
                           <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 shrink-0">
                             <ClubBadge 
                               clubName={emailClub} 
-                              clubs={clubs} 
+                              idClub={emailClubId}
+                              clubs={propClubs} 
                               showName={false} 
                               logoSize="w-6 h-6"
                             />

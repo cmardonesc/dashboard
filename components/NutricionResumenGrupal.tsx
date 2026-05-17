@@ -335,7 +335,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
                       <td className="px-8 py-4">
                         <p className="text-xs font-black text-slate-900 uppercase italic">{displayName}</p>
                         <div className="flex items-center gap-1 mt-1">
-                          <ClubBadge clubName={displayClub} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase" />
+                          <ClubBadge clubName={displayClub} idClub={isMyClub ? item.player.id_club : undefined} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase" />
                           <span className="text-slate-300">•</span>
                           <span className="text-[9px] font-bold text-slate-400 uppercase">Cat {item.player.anio}</span>
                         </div>

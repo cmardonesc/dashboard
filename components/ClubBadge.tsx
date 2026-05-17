@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { normalizeClub, getDriveDirectLink } from '../lib/utils';
-import { CLUB_LOGOS } from '../constants';
+import { CLUB_LOGOS, FALLBACK_CLUB_NAMES } from '../constants';
 
 interface ClubBadgeProps {
   clubName?: string;
@@ -47,7 +47,9 @@ const ClubBadge: React.FC<ClubBadgeProps> = ({
   const getClubLogo = (name?: string, id?: number | null) => {
     // 1. Buscar por ID (máxima fiabilidad)
     if (id) {
-      const clubById = clubs.find(c => Number(c.id_club) === Number(id));
+      const clubById = clubs.find(c => 
+        Number(c.id_club) === Number(id) || Number(c.id) === Number(id)
+      );
       if (clubById?.logo_url) {
         return { url: getDriveDirectLink(clubById.logo_url), name: clubById.nombre };
       }
@@ -66,7 +68,14 @@ const ClubBadge: React.FC<ClubBadgeProps> = ({
       if (staticLogo) return { url: staticLogo, name: name };
     }
 
-    return { url: null, name: name || 'Sin Club' };
+    // 3. Fallback a constantes si el nombre es genérico o nulo
+    let finalName = name || 'Sin Club';
+    if (finalName.startsWith('Club #') || finalName === 'Sin Club') {
+        const fb = id ? FALLBACK_CLUB_NAMES[Number(id)] : null;
+        if (fb) finalName = fb;
+    }
+
+    return { url: null, name: finalName };
   };
 
   const { url: logoUrl, name: displayName } = getClubLogo(clubName, idClub);

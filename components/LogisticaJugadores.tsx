@@ -48,20 +48,26 @@ const LogisticaJugadores: React.FC = () => {
 
       if (error) throw error;
 
-      const mapped: User[] = (data || []).map((p: any) => ({
-        id: `player-${p.player_id}`,
-        player_id: p.player_id,
-        name: `${p.nombre || ''} ${p.apellido1 || ''}`.trim(),
-        nombre: p.nombre,
-        apellido1: p.apellido1,
-        apellido2: p.apellido2,
-        role: UserRole.PLAYER,
-        club: p.club,
-        position: p.posicion,
-        anio: p.anio,
-        category: '',
-        fecha_nacimiento: p.fecha_nacimiento
-      }));
+      const mapped: User[] = (data || []).map((p: any) => {
+        const clubObj = dbClubs.find(c => Number(c.id_club) === Number(p.id_club));
+        const clubName = clubObj?.nombre || p.club || 'SIN CLUB';
+
+        return {
+          id: `player-${p.player_id}`,
+          player_id: p.player_id,
+          name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim(),
+          nombre: p.nombre,
+          apellido1: p.apellido1,
+          apellido2: p.apellido2,
+          role: UserRole.PLAYER,
+          club: clubName,
+          id_club: p.id_club,
+          position: p.posicion,
+          anio: p.anio,
+          category: '',
+          fecha_nacimiento: p.fecha_nacimiento
+        };
+      });
 
       // Inferir categorías si es necesario
       const finalMapped = mapped.map(p => {
@@ -286,7 +292,7 @@ const LogisticaJugadores: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-8 py-6">
-                      <ClubBadge clubName={player.club} clubs={dbClubs} logoSize="w-3 h-3" className="text-[11px] font-black text-slate-700 uppercase" />
+                      <ClubBadge clubName={player.club} idClub={player.id_club} clubs={dbClubs} logoSize="w-3 h-3" className="text-[11px] font-black text-slate-700 uppercase" />
                     </td>
                     <td className="px-8 py-6">
                       <p className="text-[11px] font-black text-slate-700 uppercase">{player.position || 'S/D'}</p>

@@ -8,7 +8,9 @@ interface PlayerOnField {
   player_id: number;
   nombre: string;
   apellido1: string;
+  apellido2?: string;
   club: string;
+  id_club?: number | null;
   posicion_especifica: string;
   x: number;
   y: number;
@@ -112,6 +114,7 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
       player_id: player.player_id,
       nombre: player.nombre,
       apellido1: player.apellido1,
+      apellido2: player.apellido2,
       club: player.club,
       posicion_especifica: player.posicion || 'N/A',
       x: 50, // Centro
@@ -179,11 +182,11 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
                 >
                   <div className="flex items-center gap-4 overflow-hidden">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${isOnField ? 'bg-white/20' : 'bg-slate-100'}`}>
-                      <ClubBadge clubName={player.club} clubs={clubs} logoSize="w-8 h-8" showName={false} />
+                      <ClubBadge clubName={player.club} idClub={player.id_club} clubs={clubs} logoSize="w-8 h-8" showName={false} />
                     </div>
                     <div className="text-left overflow-hidden">
                       <p className={`text-[11px] font-black uppercase italic leading-tight truncate ${isOnField ? 'text-white' : 'text-slate-900'}`}>
-                        {player.nombre} {player.apellido1}
+                        {player.nombre} {player.apellido1} {player.apellido2 || ''}
                       </p>
                       <p className={`text-[8px] font-bold uppercase tracking-widest mt-0.5 ${isOnField ? 'text-white/60' : 'text-[#CF1B2B]'}`}>
                         {player.posicion || 'CAMPO'}
@@ -283,11 +286,11 @@ export const ConvocatoriaTactical: React.FC<ConvocatoriaTacticalProps> = ({ micr
                 <div className="flex flex-col items-center">
                   <div className="bg-[#CF1B2B] text-white flex items-center gap-2.5 p-1.5 pr-4 rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.4)] border border-white/50 backdrop-blur-md min-w-[140px]">
                     <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center p-1.5 shrink-0 overflow-hidden shadow-inner border border-white/20">
-                      <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-7 h-7" showName={false} />
+                      <ClubBadge clubName={p.club} idClub={p.id_club} clubs={clubs} logoSize="w-7 h-7" showName={false} />
                     </div>
                     <div className="flex flex-col">
                       <p className="text-[10px] font-black uppercase italic leading-none whitespace-nowrap tracking-tight">
-                        {p.nombre.split(' ')[0]} {p.apellido1}
+                        {p.nombre.split(' ')[0]} {p.apellido1} {p.apellido2 || ''}
                       </p>
                       <p className="text-[7px] font-bold text-white/70 uppercase tracking-widest mt-0.5">
                         {p.posicion_especifica}

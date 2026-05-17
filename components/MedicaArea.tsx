@@ -31,6 +31,7 @@ interface DailyReport {
   players?: {
     nombre: string;
     apellido1: string;
+    apellido2?: string;
     anio?: number;
     posicion?: string;
     club?: string;
@@ -60,6 +61,7 @@ interface DBInjury {
   players?: {
     nombre: string;
     apellido1: string;
+    apellido2?: string;
     posicion: string;
     club?: string;
   };
@@ -186,7 +188,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     try {
       let query = supabase
         .from('lesionados')
-        .select('*, players!inner(nombre, apellido1, posicion, club, id_club)')
+        .select('*, players!inner(nombre, apellido1, apellido2, posicion, club, id_club)')
         .order('updated_at', { ascending: false });
       
       if (userRole === 'club') {
@@ -212,7 +214,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       // Fetch reports
       let query = supabase
         .from('medical_daily_reports')
-        .select('*, players!inner(player_id, nombre, apellido1, anio, club, posicion, id_club)')
+        .select('*, players!inner(player_id, nombre, apellido1, apellido2, anio, club, posicion, id_club)')
         .order('report_date', { ascending: false });
 
       if (userRole === 'club') {
@@ -366,7 +368,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     setReportingPlayer({
       id: `p-${report.player_id}`,
       player_id: report.player_id,
-      name: `${report.players?.nombre} ${report.players?.apellido1}`,
+      name: `${report.players?.nombre} ${report.players?.apellido1} ${report.players?.apellido2 || ''}`.trim(),
       role: UserRole.PLAYER,
       club: report.players?.club || '', 
       position: report.players?.posicion || ''
@@ -438,7 +440,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     setReportingPlayer({
       id: `p-${injury.player_id}`,
       player_id: injury.player_id,
-      name: `${injury.players?.nombre} ${injury.players?.apellido1}`,
+      name: `${injury.players?.nombre} ${injury.players?.apellido1} ${injury.players?.apellido2 || ''}`.trim(),
       role: UserRole.PLAYER,
       club: injury.players?.club,
       position: injury.players?.posicion
@@ -680,7 +682,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                               <div>
                                 <p className="text-[10px] md:text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
                                 <div className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 flex items-center">
-                                  <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-400 font-bold uppercase text-[9px]" />
+                                  <ClubBadge clubName={p.club} idClub={p.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-400 font-bold uppercase text-[9px]" />
                                   <span className="text-slate-400 mx-1">•</span>
                                   <span className="text-slate-400 font-bold uppercase text-[9px]">{p.position}</span>
                                 </div>
@@ -749,7 +751,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                     </tr>
                   ) : (
                     filteredInjuries.map(injury => {
-                      const athleteName = `${injury.players?.nombre} ${injury.players?.apellido1}`;
+                      const athleteName = `${injury.players?.nombre} ${injury.players?.apellido1} ${injury.players?.apellido2 || ''}`.trim();
                       return (
                         <tr key={injury.id} className="hover:bg-slate-50 transition-colors group">
                           <td className="px-6 md:px-10 py-4 md:py-6 text-left">
@@ -820,7 +822,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
             <div className="flex items-center justify-center gap-2 mt-3">
               <span className="text-white/70 font-bold uppercase text-[8px] md:text-[10px] tracking-[0.3em]">{reportingPlayer.name}</span>
               <span className="text-white/30">•</span>
-              <ClubBadge clubName={reportingPlayer.club} clubs={clubs} logoSize="w-3 h-3" className="text-white/70 font-bold uppercase text-[8px] md:text-[10px] tracking-[0.3em]" />
+              <ClubBadge clubName={reportingPlayer.club} idClub={reportingPlayer.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-white/70 font-bold uppercase text-[8px] md:text-[10px] tracking-[0.3em]" />
             </div>
           </div>
 
@@ -1006,7 +1008,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
               </div>
             ) : (
               dbInjuries.map(injury => {
-                const athleteName = `${injury.players?.nombre} ${injury.players?.apellido1}`;
+                const athleteName = `${injury.players?.nombre} ${injury.players?.apellido1} ${injury.players?.apellido2 || ''}`.trim();
                 return (
                   <div key={injury.id} className="bg-white rounded-[24px] md:rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm hover:shadow-xl transition-all">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
@@ -1098,7 +1100,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                             {injury.players?.nombre?.charAt(0)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className={`text-[11px] font-black uppercase italic leading-none truncate ${selectedGpsPlayer?.id === injury.id ? 'text-white' : 'text-slate-900'}`}>{injury.players?.nombre} {injury.players?.apellido1}</p>
+                            <p className={`text-[11px] font-black uppercase italic leading-none truncate ${selectedGpsPlayer?.id === injury.id ? 'text-white' : 'text-slate-900'}`}>{injury.players?.nombre} {injury.players?.apellido1} {injury.players?.apellido2 || ''}</p>
                             <p className={`text-[8px] font-bold uppercase tracking-widest mt-1 truncate ${selectedGpsPlayer?.id === injury.id ? 'text-blue-100' : 'text-slate-400'}`}>{injury.localizacion}</p>
                           </div>
                         </div>
@@ -1127,7 +1129,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                           {selectedGpsPlayer.players?.nombre?.charAt(0)}
                         </div>
                         <div>
-                          <h4 className="text-2xl md:text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">{selectedGpsPlayer.players?.nombre} {selectedGpsPlayer.players?.apellido1}</h4>
+                          <h4 className="text-2xl md:text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">{selectedGpsPlayer.players?.nombre} {selectedGpsPlayer.players?.apellido1} {selectedGpsPlayer.players?.apellido2 || ''}</h4>
                           <div className="flex items-center gap-3 mt-2">
                             <span className="bg-blue-100 text-blue-600 font-black uppercase text-[8px] tracking-widest px-2 py-1 rounded-md">Fase: {selectedGpsPlayer.estado}</span>
                             <span className="text-slate-400 font-black uppercase text-[8px] tracking-widest">{selectedGpsPlayer.localizacion}</span>
@@ -1223,7 +1225,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                             <div>
                               <p className="text-xs font-black text-slate-900 uppercase italic leading-none">{p.name}</p>
                               <div className="flex items-center gap-1 mt-1">
-                                <ClubBadge clubName={p.club} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest" />
+                                <ClubBadge clubName={p.club} idClub={p.id_club} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest" />
                                 <span className="text-slate-300">•</span>
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{p.position}</span>
                               </div>
@@ -1245,7 +1247,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                     <div>
                       <h4 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter leading-none">{reportingPlayer.name}</h4>
                       <div className="flex items-center gap-1 mt-1">
-                        <ClubBadge clubName={reportingPlayer.club} clubs={clubs} logoSize="w-3 h-3" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest" />
+                        <ClubBadge clubName={reportingPlayer.club} idClub={reportingPlayer.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest" />
                         <span className="text-slate-300">•</span>
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{reportingPlayer.position}</span>
                       </div>
@@ -1402,7 +1404,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                               {report.players?.nombre?.charAt(0)}
                             </div>
                             <div>
-                              <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1}</p>
+                              <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1} {report.players?.apellido2 || ''}</p>
                             </div>
                           </div>
                         </td>
@@ -1445,7 +1447,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                               <i className="fa-solid fa-pen text-[9px]"></i>
                             </button>
                             <button
-                              onClick={() => setShowConfirmDeleteReport({ id: report.id, name: `${report.players?.nombre} ${report.players?.apellido1}` })}
+                              onClick={() => setShowConfirmDeleteReport({ id: report.id, name: `${report.players?.nombre} ${report.players?.apellido1} ${report.players?.apellido2 || ''}`.trim() })}
                               className="w-7 h-7 bg-slate-50 text-slate-400 rounded-lg flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
                               title="Eliminar Reporte"
                             >

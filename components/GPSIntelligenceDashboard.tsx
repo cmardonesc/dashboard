@@ -112,7 +112,8 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
               apellido1,
               apellido2,
               club,
-              posicion
+              posicion,
+              id_club
             )
           `)
           .eq('fecha', selectedDate);
@@ -187,7 +188,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
             
             let finalPlayer = {
               ...p,
-              name: `${p?.nombre} ${p?.apellido1}`.trim(),
+              name: `${p?.nombre} ${p?.apellido1} ${p?.apellido2 || ''}`.trim(),
               id: `player-${p?.player_id}`
             };
 
@@ -585,7 +586,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
                           const data = payload[0].payload;
                           return (
                             <div className="bg-[#0b1220] p-4 rounded-2xl text-white shadow-2xl border border-white/10">
-                              <p className="text-[10px] font-black uppercase italic mb-2">{data.player.nombre} {data.player.apellido1}</p>
+                              <p className="text-[10px] font-black uppercase italic mb-2">{data.player.nombre} {data.player.apellido1} {data.player.apellido2 || ''}</p>
                               <div className="space-y-1">
                                 <p className="text-[9px] font-bold opacity-60 uppercase">{currentScatterX.name}: {Math.round(data[scatterXMetricId])}{currentScatterX.unit}</p>
                                 <p className="text-[9px] font-bold opacity-60 uppercase">{currentScatterY.name}: {Number(data[scatterYMetricId]).toFixed(1)}{currentScatterY.unit}</p>
@@ -746,6 +747,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
           sessionData={filteredSessionData} 
           positionalAverages={positionalData}
           referenceData={referenceData}
+          clubs={clubs}
         />
       )}
 
@@ -753,7 +755,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
   );
 }
 
-function IndividualPerformanceView({ playerId, sessionData, positionalAverages, referenceData }: { playerId: string | null, sessionData: any[], positionalAverages: any[], referenceData: any[] }) {
+function IndividualPerformanceView({ playerId, sessionData, positionalAverages, referenceData, clubs }: { playerId: string | null, sessionData: any[], positionalAverages: any[], referenceData: any[], clubs: any[] }) {
   const playerData = useMemo(() => {
     if (!playerId) return null;
     return sessionData.find(d => String(d.player_id) === String(playerId));
@@ -833,7 +835,7 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
               {playerData.posicion}
             </span>
           </div>
-          <ClubBadge clubName={playerData.player.club} clubs={[]} logoSize="w-5 h-5" className="text-sm font-bold text-slate-400 uppercase tracking-[0.2em] italic mb-6 justify-center md:justify-start" />
+          <ClubBadge clubName={playerData.player.club} idClub={playerData.player.id_club} clubs={clubs} logoSize="w-5 h-5" className="text-sm font-bold text-slate-400 uppercase tracking-[0.2em] italic mb-6 justify-center md:justify-start" />
           
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-12 border-t border-slate-50 pt-6">
             <div>
@@ -1162,7 +1164,7 @@ function LeaderboardCard({ title, metricId, onMetricChange, data }: { title: str
                 {idx + 1}
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase text-slate-900 italic leading-none mb-1 truncate w-24 sm:w-auto">{player.player.nombre} {player.player.apellido1}</p>
+                <p className="text-[10px] font-black uppercase text-slate-900 italic leading-none mb-1 truncate w-24 sm:w-auto">{player.player.nombre} {player.player.apellido1} {player.player.apellido2 || ''}</p>
                 <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{player.posicion}</p>
               </div>
             </div>
@@ -1204,7 +1206,7 @@ function DistributionZone({ title, subtitle, players, metricId, color, bgColor, 
       <div className="flex-1 space-y-2 max-h-[160px] overflow-y-auto pr-2 custom-scrollbar relative z-10">
         {players.map((p, idx) => (
           <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 group">
-             <span className="text-[9px] font-bold text-slate-600 uppercase truncate w-24">{p.player.nombre} {p.player.apellido1}</span>
+             <span className="text-[9px] font-bold text-slate-600 uppercase truncate w-24">{p.player.nombre} {p.player.apellido1} {p.player.apellido2 || ''}</span>
              <span className="text-[9px] font-black text-slate-900 italic">
                {Number(p[metricId]).toFixed(metricId === 'sprints_n' ? 0 : 1)}
              </span>

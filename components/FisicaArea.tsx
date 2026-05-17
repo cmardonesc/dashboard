@@ -240,7 +240,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           const playerIds = Array.from(new Set(gpsData.map(d => d.player_id)));
           const { data: playersData, error: playersError } = await supabase
             .from('players')
-            .select('player_id, nombre, apellido1, apellido2, club, posicion, anio')
+            .select('player_id, nombre, apellido1, apellido2, club, posicion, anio, id_club')
             .in('player_id', playerIds);
           
           if (playersError) throw playersError;
@@ -775,7 +775,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         if (!matchesCategory) return false;
       }
 
-      const playerName = player ? `${player.nombre} ${player.apellido1}`.trim().toLowerCase() : 'atleta desconocido';
+      const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim().toLowerCase() : 'atleta desconocido';
       const matchesSearch = playerName.includes(athleteSearch.toLowerCase());
       const duration = row.minutos || 0;
       const matchesDuration = duration >= minDuration && duration <= maxDuration;
@@ -1130,6 +1130,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           <div className="hidden md:block">
                             <ClubBadge 
                               clubName={row.player.club_name || row.player.club} 
+                              idClub={row.player.id_club}
                               clubs={clubs}
                               className="mt-0.5"
                               logoSize="w-3 h-3"
@@ -1439,6 +1440,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
                                    <ClubBadge 
                                      clubName={player.club_name || player.club} 
+                                     idClub={player.id_club}
                                      clubs={clubs}
                                      className="mt-0.5"
                                      logoSize="w-2.5 h-2.5"
@@ -1554,6 +1556,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
                                    <ClubBadge 
                                      clubName={player.club_name || player.club} 
+                                     idClub={player.id_club}
                                      clubs={clubs}
                                      className="mt-0.5"
                                      logoSize="w-2.5 h-2.5"
@@ -1642,7 +1645,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         <tbody className="text-[8px] font-mono font-black text-slate-900">
                           {chunk.map((row) => {
                             const player = row.players;
-                            const playerName = player ? `${player.nombre} ${player.apellido1}`.trim() : `ID: ${row.player_id}`;
+                            const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim() : `ID: ${row.player_id}`;
                             const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
                             
                             // Use stored IFR if available, otherwise calculate it
@@ -1659,6 +1662,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                    <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{playerName}</span>
                                    <ClubBadge 
                                      clubName={player?.club_name || player?.club} 
+                                     idClub={player?.id_club}
                                      clubs={clubs}
                                      className="mt-0.5"
                                      logoSize="w-2.5 h-2.5"

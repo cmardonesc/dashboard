@@ -107,7 +107,7 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
       const playerIds = Array.from(new Set(gpsData.map(d => d.player_id)));
       const { data: playersData, error: playersError } = await supabase
         .from('players')
-        .select('player_id, nombre, apellido1, posicion, club, anio')
+        .select('player_id, nombre, apellido1, posicion, club, anio, id_club')
         .in('player_id', playerIds);
       
       if (playersError) throw playersError;
@@ -550,7 +550,7 @@ export default function CargaTareasArea({ performanceRecords, userRole, userClub
                             {row.player?.nombre || row.jugador_nombre} {row.player?.apellido1 || ""}
                           </p>
                           <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                            {row.player?.posicion || 'N/A'} | <ClubBadge clubName={row.player?.club || 'Sin Club'} clubs={clubs} logoSize="w-3 h-3" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest" />
+                            {row.player?.posicion || 'N/A'} | <ClubBadge clubName={row.player?.club || 'Sin Club'} idClub={row.player?.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest" />
                           </div>
                        </div>
                     </div>

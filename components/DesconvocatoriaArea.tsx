@@ -157,6 +157,7 @@ export default function DesconvocatoriaArea() {
             player_id,
             nombre,
             apellido1,
+            apellido2,
             club,
             posicion,
             anio
@@ -188,7 +189,7 @@ export default function DesconvocatoriaArea() {
           return {
             id: `p-${d.players.player_id}`,
             player_id: d.players.player_id,
-            name: `${d.players.nombre} ${d.players.apellido1}`,
+            name: `${d.players.nombre || ''} ${d.players.apellido1 || ''} ${d.players.apellido2 || ''}`.trim() || `Atleta #${d.players.player_id}`,
             role: UserRole.PLAYER,
             club: d.players.club || 'SIN CLUB',
             position: d.players.posicion || 'N/A',

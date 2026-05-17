@@ -855,7 +855,7 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
                         <button key={r.player.id} onClick={() => handleSelectAthleteForm(r.player)} className="p-4 bg-slate-50 hover:bg-red-50 rounded-2xl text-left transition-all border border-transparent hover:border-red-100 group">
                           <p className="text-xs font-black uppercase italic text-slate-900 group-hover:text-red-600 transition-colors">{r.player.name}</p>
                           <div className="flex items-center gap-1">
-                            <ClubBadge clubName={r.player.club || r.player.club_name} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase" />
+                            <ClubBadge clubName={r.player.club || r.player.club_name} idClub={r.player.id_club} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase" />
                             <span className="text-slate-300">|</span>
                             <span className="text-[9px] font-bold text-slate-400 uppercase">{r.player.position}</span>
                           </div>
@@ -869,7 +869,7 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
                     <div className="w-12 h-12 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black italic text-lg shadow-lg">{selectedAthleteForm.name?.charAt(0)}</div>
                     <div>
                       <p className="text-white text-sm font-black uppercase italic leading-none">{selectedAthleteForm.name}</p>
-                      <ClubBadge clubName={selectedAthleteForm.club} clubs={clubs} logoSize="w-3 h-3" className="text-red-500 text-[9px] font-black uppercase tracking-widest mt-1" />
+                      <ClubBadge clubName={selectedAthleteForm.club} idClub={selectedAthleteForm.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-red-500 text-[9px] font-black uppercase tracking-widest mt-1" />
                     </div>
                   </div>
                   <button onClick={() => setSelectedAthleteForm(null)} className="text-white/20 hover:text-white transition-colors p-2"><i className="fa-solid fa-rotate-left"></i></button>
@@ -1128,7 +1128,7 @@ function RankingCard({ title, data, field, unit, color, icon, clubs, inverted = 
                 <span className="text-[10px] font-black text-slate-300 w-4 group-hover:text-red-500">#{i + 1}</span>
                 <div>
                   <p className="text-xs font-black text-slate-900 uppercase italic leading-none mb-1 group-hover:text-white">{item.player.name}</p>
-                  <ClubBadge clubName={item.player.club} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-500" />
+                  <ClubBadge clubName={item.player.club} idClub={item.player.id_club} clubs={clubs} logoSize="w-2.5 h-2.5" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-500" />
                 </div>
               </div>
               <span className={`text-sm font-black italic tracking-tighter ${colorMap[color].split(' ')[1]} group-hover:text-white`}>

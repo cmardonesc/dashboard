@@ -30,7 +30,8 @@ export default function VO2MaxArea({ clubs = [] }: VO2MaxAreaProps) {
             apellido1,
             apellido2,
             anio,
-            club
+            club,
+            id_club
           )
         `)
         .order('fecha', { ascending: false });
@@ -158,7 +159,7 @@ export default function VO2MaxArea({ clubs = [] }: VO2MaxAreaProps) {
                       <p className="font-black text-slate-900 uppercase italic text-[13px] leading-none mb-1 group-hover:text-red-600 transition-colors">
                         {test.players.nombre} {test.players.apellido1}
                       </p>
-                      <ClubBadge clubName={test.players.club || 'Sin Club'} clubs={clubs} logoSize="w-3 h-3" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest" />
+                      <ClubBadge clubName={test.players.club || 'Sin Club'} idClub={test.players.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-[9px] font-bold text-slate-400 uppercase tracking-widest" />
                     </td>
                     <td className="px-4 py-5 text-slate-500">{new Date(test.fecha).toLocaleDateString()}</td>
                     <td className="px-4 py-5">{test.peso} kg</td>

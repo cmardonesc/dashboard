@@ -492,7 +492,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                 <div className="relative z-10 flex flex-col gap-1">
                   <h2 className="text-white text-lg md:text-4xl font-black italic uppercase tracking-tighter leading-none">{player?.name || 'ATLETA DEMO'}</h2>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-white/40 text-[7px] md:text-[10px] font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">
-                    <ClubBadge clubName={player?.club} clubs={dbClubs} logoSize="w-3 h-3" className="text-white/40 font-bold uppercase" />
+                    <ClubBadge clubName={player?.club} idClub={player?.id_club} clubs={dbClubs} logoSize="w-3 h-3" className="text-white/40 font-bold uppercase" />
                     <span className="text-white/20">|</span>
                     <span>{player?.position || 'SIN POSICIÓN'}</span>
                     <span className="text-white/20">|</span>

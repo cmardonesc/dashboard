@@ -176,10 +176,16 @@ export default function ContactosClubesArea() {
 
   const groupedContactos = filteredContactos.reduce((acc, contacto) => {
     const clubName = contacto.club || 'SIN CLUB';
-    if (!acc[clubName]) acc[clubName] = [];
-    acc[clubName].push(contacto);
+    if (!acc[clubName]) {
+      acc[clubName] = {
+        name: clubName,
+        id_club: contacto.id_club,
+        list: []
+      };
+    }
+    acc[clubName].list.push(contacto);
     return acc;
-  }, {} as Record<string, ContactoClub[]>);
+  }, {} as Record<string, { name: string, id_club?: number | null, list: ContactoClub[] }>);
 
   const toggleClub = (clubName: string) => {
     const newExpanded = new Set(expandedClubs);
@@ -191,7 +197,7 @@ export default function ContactosClubesArea() {
     setExpandedClubs(newExpanded);
   };
 
-  const sortedClubs = Object.keys(groupedContactos).sort();
+  const sortedClubNames = Object.keys(groupedContactos).sort();
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -236,15 +242,16 @@ export default function ContactosClubesArea() {
             <div className="px-8 py-20 text-center">
               <i className="fa-solid fa-circle-notch fa-spin text-red-600 text-2xl"></i>
             </div>
-          ) : sortedClubs.length === 0 ? (
+          ) : sortedClubNames.length === 0 ? (
             <div className="px-8 py-20 text-center">
               <p className="text-slate-400 text-sm font-medium">No se encontraron contactos registrados.</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-50">
-              {sortedClubs.map((clubName) => {
+              {sortedClubNames.map((clubName) => {
+                const group = groupedContactos[clubName];
                 const isExpanded = expandedClubs.has(clubName);
-                const clubContactos = groupedContactos[clubName];
+                const clubContactos = group.list;
                 
                 return (
                   <div key={clubName} className="flex flex-col">
@@ -257,6 +264,7 @@ export default function ContactosClubesArea() {
                         <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all bg-white border border-slate-100 shadow-sm ${isExpanded ? 'ring-2 ring-red-500/20' : ''}`}>
                           <ClubBadge 
                             clubName={clubName} 
+                            idClub={group.id_club}
                             clubs={clubs} 
                             showName={false} 
                             logoSize="w-6 h-6"

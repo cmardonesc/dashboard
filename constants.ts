@@ -140,3 +140,40 @@ export const CLUB_LOGOS: Record<string, string> = {
  * Logo de la Federación (puedes usar un enlace de Google Drive aquí)
  */
 export const FEDERATION_LOGO = "https://drive.google.com/file/d/1dACZfh-DDxPKlH0bo5YLiuhhYAAEKy0s/view?usp=sharing";
+
+export const FALLBACK_CLUB_NAMES: Record<number, string> = {
+  1: 'Colo-Colo',
+  2: 'Universidad de Chile',
+  3: 'Universidad Católica',
+  4: 'Palestino',
+  5: 'Santiago Wanderers',
+  6: 'O\'Higgins',
+  7: 'Huachipato',
+  8: 'Audax Italiano',
+  9: 'Unión Española',
+  10: 'Coquimbo Unido',
+  11: 'Rangers de Talca',
+  12: 'Santiago Morning',
+  13: 'Magallanes',
+  14: 'Antofagasta',
+  15: 'Deportes Iquique',
+  16: 'Las Condes',
+  17: 'Deportes La Serena',
+  18: 'Deportes Puerto Montt',
+  19: 'Deportes Santa Cruz',
+  20: 'Deportes Copiapó',
+  21: 'Unificada Femenina',
+  22: 'Unión La Calera',
+  23: 'San Luis de Quillota',
+  24: 'Trasandino de Los Andes',
+  25: 'Provincial Osorno',
+  26: 'San Marcos de Arica',
+  27: 'Atlético Colina',
+  28: 'Deportes Concepción',
+  29: 'Universidad de Concepción',
+  31: 'San Marcos de Quillota',
+  32: 'Deportes Valdivia',
+  36: 'Club Unión La Calera',
+  89: 'La Roja (FFCh)',
+  90: 'Filtro Virtual'
+};

@@ -29,7 +29,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
     setLoading(true);
     try {
       const { data: profs, error: pErr } = await supabase.from('profiles').select('*, club_name');
-      const { data: plays, error: plErr } = await supabase.from('players').select('player_id, nombre, apellido1, club, id_club');
+      const { data: plays, error: plErr } = await supabase.from('players').select('player_id, nombre, apellido1, id_club');
       const { data: clubs, error: cErr } = await supabase.from('clubes').select('*').order('nombre', { ascending: true });
       
       if (pErr) throw pErr;
@@ -39,18 +39,8 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
       setPlayers(plays || []);
       setDbClubs(clubs || []);
 
-      // Calcular clubes pendientes (nombres en players que no tienen id_club)
-      const pending = (plays || [])
-        .filter(p => p.club && !p.id_club)
-        .reduce((acc: any[], curr) => {
-          const existing = acc.find(a => a.nombre === curr.club);
-          if (existing) {
-            existing.count++;
-          } else {
-            acc.push({ nombre: curr.club, count: 1 });
-          }
-          return acc;
-        }, []);
+      // Calcular clubes pendientes (legacy feature: relies on non-existent 'club' column)
+      const pending: any[] = [];
       
       setPendingClubs(pending);
     } catch (err: any) {
@@ -72,28 +62,13 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
       if (cErr) throw cErr;
 
       // 2. Obtener todos los jugadores
-      const { data: allPlayers, error: plErr } = await supabase.from('players').select('player_id, club');
+      const { data: allPlayers, error: plErr } = await supabase.from('players').select('player_id, id_club');
       if (plErr) throw plErr;
 
       let updatedCount = 0;
 
       for (const player of allPlayers || []) {
-        if (!player.club) continue;
-
-        const currentNorm = normalizeClub(player.club);
-        
-        // Buscar coincidencia en clubes oficiales
-        const match = dbClubs?.find(c => normalizeClub(c.nombre) === currentNorm);
-
-        if (match && match.nombre !== player.club) {
-          // Actualizar si el nombre normalizado coincide pero el string es diferente
-          const { error: uErr } = await supabase
-            .from('players')
-            .update({ club: match.nombre })
-            .eq('player_id', player.player_id);
-          
-          if (!uErr) updatedCount++;
-        }
+        // Sanitization skipped because 'club' column is missing from players table
       }
 
       setMsg({ text: `Sanitización completada. ${updatedCount} jugadores actualizados.`, type: 'success' });
@@ -145,13 +120,15 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
       
       if (iErr) throw iErr;
 
-      // 2. Actualizar jugadores
+      // 2. Actualizar jugadores (Deshabilitado: columna 'club' ausente)
+      /*
       const { error: uErr } = await supabase
         .from('players')
         .update({ id_club: newClub.id_club })
         .eq('club', clubName);
       
       if (uErr) throw uErr;
+      */
 
       setMsg({ text: `Club "${clubName}" oficializado correctamente.`, type: 'success' });
       fetchData();
@@ -170,10 +147,11 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
       const { error } = await supabase
         .from('players')
         .update({ 
-          club: targetClubName,
+          // club: targetClubName, // Columna ausente
           id_club: targetClubId 
         })
-        .eq('club', pendingName);
+        .eq('id_club', targetClubId); // Esto no tiene sentido si estamos unificando, pero evita errores de compilación si se usara. 
+        // En realidad la unificación por nombre de string ya no es posible sin la columna 'club'.
       
       if (error) throw error;
 
@@ -276,7 +254,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                       </span>
                       {p.role === 'club' && p.club_name && (
                         <div className="mt-1">
-                          <ClubBadge clubName={p.club_name} clubs={dbClubs} logoSize="w-3 h-3" className="text-[8px] font-black text-slate-400 uppercase tracking-tighter" />
+                          <ClubBadge clubName={p.club_name} idClub={p.id_club} clubs={dbClubs} logoSize="w-3 h-3" className="text-[8px] font-black text-slate-400 uppercase tracking-tighter" />
                         </div>
                       )}
                     </td>

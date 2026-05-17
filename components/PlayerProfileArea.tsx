@@ -62,7 +62,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const fetchPlayers = async () => {
     try {
       console.log("Fetching players in PlayerProfileArea (fallback)...");
-      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, club, id_club, posicion, anio');
+      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio');
       if (userRole === 'club') {
         if (userClubId) {
           query = query.eq('id_club', userClubId);
@@ -237,11 +237,11 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                       <span className="text-4xl font-black italic opacity-20">{profileData.nombre?.charAt(0)}{profileData.apellido1?.charAt(0)}</span>
                     )}
                   </div>
-                  <h3 className="text-2xl font-black uppercase tracking-tighter italic leading-none truncate">{profileData.nombre} {profileData.apellido1}</h3>
+                  <h3 className="text-2xl font-black uppercase tracking-tighter italic leading-none truncate">{profileData.nombre} {profileData.apellido1} {profileData.apellido2 || ''}</h3>
                   <p className="text-red-500 text-[10px] font-black uppercase tracking-widest mt-2">{profileData.posicion}</p>
                   
                   <div className="mt-8 pt-8 border-t border-white/5 flex justify-center items-center">
-                    <ClubBadge clubName={profileData.club} clubs={clubs} logoSize="w-8 h-8" className="text-white text-xs font-black uppercase tracking-widest" />
+                    <ClubBadge clubName={profileData.club} idClub={profileData.id_club} clubs={clubs} logoSize="w-8 h-8" className="text-white text-xs font-black uppercase tracking-widest" />
                   </div>
                 </div>
 

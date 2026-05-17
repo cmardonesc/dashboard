@@ -453,7 +453,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
                   return yearMatch && posMatch;
                 })
                 .map(p => (
-                  <option key={p.player_id} value={p.player_id}>{p.nombre} {p.apellido1}</option>
+                  <option key={p.player_id} value={p.player_id}>{p.nombre} {p.apellido1} {p.apellido2 || ''}</option>
                 ))}
             </select>
           </div>
@@ -738,11 +738,11 @@ const AthleteHuella = ({
                <span className="bg-red-600 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-red-200">Elite Performance</span>
                <span className="bg-slate-900 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">ID: {player.player_id}</span>
             </div>
-            <h2 className="text-4xl md:text-5xl font-black text-slate-900 uppercase tracking-tighter italic leading-none mb-2">{player.nombre} {player.apellido1}</h2>
+            <h2 className="text-4xl md:text-5xl font-black text-slate-900 uppercase tracking-tighter italic leading-none mb-2">{player.nombre} {player.apellido1} {player.apellido2 || ''}</h2>
             <div className="flex items-center gap-3">
               <span className="text-slate-400 font-black text-sm uppercase tracking-widest">{player.posicion}</span>
               <span className="text-slate-200">|</span>
-              <ClubBadge clubName={player.club || player.club_name} clubs={clubs} logoSize="w-5 h-5" className="text-slate-600 font-black text-sm uppercase tracking-widest" />
+              <ClubBadge clubName={player.club || player.club_name} idClub={player.id_club} clubs={clubs} logoSize="w-5 h-5" className="text-slate-600 font-black text-sm uppercase tracking-widest" />
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8">
@@ -1082,7 +1082,7 @@ const IndividualDashboard = ({
                 <i className="fa-solid fa-building text-emerald-500"></i>
                 <div className="flex items-center gap-1">
                   <span className="text-slate-500">Club:</span>
-                  <ClubBadge clubName={player.club || player.club_name} clubs={clubs} logoSize="w-3 h-3" className="text-slate-900 font-bold" />
+                  <ClubBadge clubName={player.club || player.club_name} idClub={player.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-slate-900 font-bold" />
                 </div>
               </div>
             </div>

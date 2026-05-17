@@ -636,7 +636,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
                 <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-slate-400 font-black italic text-[10px] border border-slate-100 overflow-hidden">
-                      {p.foto_url ? <img src={p.foto_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : p.nombre?.charAt(0)}
+                      {p.nombre?.charAt(0)}
                     </div>
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
@@ -672,7 +672,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
                 <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-slate-400 font-black italic text-[10px] border border-slate-100 overflow-hidden">
-                      {p.foto_url ? <img src={p.foto_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : p.nombre?.charAt(0)}
+                      {p.nombre?.charAt(0)}
                     </div>
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
@@ -710,7 +710,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
                 <div key={i} className="flex items-center justify-between p-3 bg-red-50 rounded-2xl border border-red-100">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-red-600 font-black italic text-[10px] border border-red-100 overflow-hidden">
-                      {w.players?.foto_url ? <img src={w.players.foto_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : w.players?.nombre?.charAt(0)}
+                      {w.players?.nombre?.charAt(0)}
                     </div>
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
@@ -750,7 +750,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
                 <div key={i} className="flex items-center justify-between p-3 bg-amber-50 rounded-2xl border border-amber-100">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-amber-600 font-black italic text-[10px] border border-amber-100 overflow-hidden">
-                      {w.players?.foto_url ? <img src={w.players.foto_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : w.players?.nombre?.charAt(0)}
+                      {w.players?.nombre?.charAt(0)}
                     </div>
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
