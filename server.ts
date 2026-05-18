@@ -106,56 +106,70 @@ async function startServer() {
 
       console.log(`📊 Time range: ${finalStartTime.toISOString()} → ${finalEndTime.toISOString()}`);
 
-      // Construir URL del CloudBaker API
+      // CONSTRUIR URLS POSIBLES
       const baseUrl = 'https://of-prod-uw1-cloudbaker-api.openfield.catapultsports.com';
-      const endpoint = '/api/activity/bakestatus';
-      const url = `${baseUrl}${endpoint}`;
+      
+      // Intentamos primero el endpoint de actividades estándar
+      const endpoints = ['/api/activity', '/api/activity/bakestatus'];
+      let activities: any[] = [];
+      let successEndpoint = '';
 
-      console.log(`🔗 Calling: ${url}`);
-      console.log(`⏱️  StartTime: ${finalStartTime.toISOString()}`);
-      console.log(`⏱️  EndTime: ${finalEndTime.toISOString()}`);
+      for (const endpoint of endpoints) {
+        try {
+          const url = `${baseUrl}${endpoint}`;
+          console.log(`🔗 Attempting: ${url}`);
+          
+          const params: any = {
+            StartTime: finalStartTime.toISOString(),
+            EndTime: finalEndTime.toISOString()
+          };
 
-      // Hacer request con timeout
-      const axiosRes = await axios.get(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json',
-          'User-Agent': 'LaRojaSync/2.0'
-        },
-        params: {
-          StartTime: finalStartTime.toISOString(),
-          EndTime: finalEndTime.toISOString()
-        },
-        timeout: 10000
-      });
+          // Para bakestatus a veces no se necesitan params o son distintos
+          const axiosRes = await axios.get(url, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json',
+              'User-Agent': 'LaRojaSync/2.0'
+            },
+            params,
+            timeout: 10000
+          });
 
-      console.log(`✅ HTTP ${axiosRes.status} - Response received`);
+          let data = axiosRes.data;
+          let currentActivities = [];
 
-      // Procesar respuesta
-      let activities = axiosRes.data;
+          if (Array.isArray(data)) {
+            currentActivities = data;
+          } else if (data.data && Array.isArray(data.data)) {
+            currentActivities = data.data;
+          } else if (data.activities && Array.isArray(data.activities)) {
+            currentActivities = data.activities;
+          } else if (data.results && Array.isArray(data.results)) {
+            currentActivities = data.results;
+          }
 
-      // Validar que sea array
-      if (!Array.isArray(activities)) {
-        console.log(`⚠️  Response is not an array, attempting to extract...`);
-        if (activities.data && Array.isArray(activities.data)) {
-          activities = activities.data;
-          console.log(`   Found data in response.data`);
-        } else if (activities.activities && Array.isArray(activities.activities)) {
-          activities = activities.activities;
-          console.log(`   Found data in response.activities`);
-        } else if (activities.results && Array.isArray(activities.results)) {
-          activities = activities.results;
-          console.log(`   Found data in response.results`);
-        } else {
-          activities = [];
-          console.log(`   Could not extract array from response`);
+          if (currentActivities.length > 0) {
+            activities = currentActivities;
+            successEndpoint = url;
+            console.log(`✅ Success with: ${endpoint} (${activities.length} items)`);
+            break; 
+          }
+        } catch (e: any) {
+          console.log(`❌ Failed: ${endpoint} - ${e.message}`);
         }
       }
 
-      console.log(`📈 Total activities: ${activities.length}`);
+      console.log(`📈 Final total activities: ${activities.length}`);
       
       if (activities.length > 0) {
-        console.log(`📋 Sample activity:`, JSON.stringify(activities[0]));
+        console.log(`📋 Raw Sample Activity (first 1000 chars):`, JSON.stringify(activities[0]).substring(0, 1000));
+        console.log(`📋 Sample activity keys:`, Object.keys(activities[0]));
+        
+        const sampleId = activities[0].id || activities[0].Identifier || activities[0].activity_id || activities[0].ExternalId;
+        const sampleName = activities[0].name || activities[0].Name || activities[0].SessionName || activities[0].IdentifierName;
+        const sampleStatus = activities[0].bakestatus || activities[0].Bakestatus || activities[0].status || activities[0].Status;
+        
+        console.log(`📋 Sample ID: ${sampleId}, Name: ${sampleName}, Status: ${sampleStatus}`);
       }
 
       console.log("========================================\n");
@@ -164,8 +178,8 @@ async function startServer() {
         success: true,
         activities,
         metadata: {
-          source: 'CloudBaker API - bakestatus',
-          endpoint: url,
+          source: 'CloudBaker API',
+          endpoint: successEndpoint,
           totalCount: activities.length,
           timeRange: {
             start: finalStartTime.toISOString(),
@@ -242,25 +256,35 @@ async function startServer() {
     }
 
     try {
-      console.log(`\n📊 Fetching activity stats: ${id}`);
+      console.log(`\n📊 [CATAPULT] Fetching stats for ID: ${id}`);
       
-      const url = `https://of-prod-uw1-cloudbaker-api.openfield.catapultsports.com/api/activity/${id}/stats`;
+      const baseUrl = 'https://of-prod-uw1-cloudbaker-api.openfield.catapultsports.com';
+      const url = `${baseUrl}/api/activity/${id}/stats`;
+      
+      console.log(`🔗 Requesting URL: ${url}`);
       
       const response = await axios.get(url, {
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json'
         },
-        timeout: 5000
+        timeout: 10000
       });
 
-      console.log(`✅ Stats fetched successfully`);
+      console.log(`✅ [CATAPULT] Stats fetched successfully for ${id}`);
       return res.json(response.data);
     } catch (e: any) {
-      console.log(`❌ Stats fetch failed: ${e.message}`);
-      res.status(404).json({ 
+      console.log(`❌ [CATAPULT] Stats fetch failed for ${id}`);
+      console.log(`   Message: ${e.message}`);
+      if (e.response) {
+        console.log(`   Status: ${e.response.status}`);
+        console.log(`   Data:`, JSON.stringify(e.response.data));
+      }
+      
+      res.status(e.response?.status || 404).json({ 
         success: false,
-        error: "Stats not found" 
+        error: e.response?.data?.error || "Stats not found",
+        details: e.response?.data
       });
     }
   });

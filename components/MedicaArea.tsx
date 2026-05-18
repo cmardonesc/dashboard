@@ -16,7 +16,7 @@ interface MedicaAreaProps {
   clubs?: any[];
 }
 
-type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar' | 'daily_report';
+type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar' | 'medical_attention';
 
 interface DailyReport {
   id: string;
@@ -80,7 +80,7 @@ interface MedicalExam {
 }
 
 const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChange, userRole, userClub, userClubId, clubs = [] }) => {
-  const [view, setView] = useState<MedicaView>('daily_report');
+  const [view, setView] = useState<MedicaView>('medical_attention');
   const [reportingPlayer, setReportingPlayer] = useState<User | null>(null);
   const [editingInjuryId, setEditingInjuryId] = useState<string | null>(null);
   const [editingDailyReportId, setEditingDailyReportId] = useState<string | null>(null);
@@ -634,10 +634,10 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
             Tablero Lesiones
           </button>
           <button 
-            onClick={() => setView('daily_report')}
-            className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'daily_report' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
+            onClick={() => setView('medical_attention')}
+            className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'medical_attention' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
           >
-            Reporte Diario
+            Atenciones Médicas
           </button>
           <button 
             onClick={() => setView('calendar')}
@@ -1202,12 +1202,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         </div>
       )}
 
-      {view === 'daily_report' && (
+      {view === 'medical_attention' && (
         <div className="space-y-8 animate-in fade-in duration-300">
           <section className="bg-white p-6 md:p-10 rounded-[32px] md:rounded-[48px] border border-slate-100 shadow-sm space-y-6">
             <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
               <span className="w-2 h-6 rounded-full bg-blue-600"></span>
-              Reporte Médico Diario (Doctor)
+              Atenciones Médicas (Kinesiología / Médica)
             </h3>
 
             {!reportingPlayer ? (
@@ -1372,7 +1372,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                   </div>
                   <button type="submit" disabled={loading} className="w-full bg-[#0b1220] text-white py-6 rounded-3xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-600 transition-all active:scale-95 flex items-center justify-center gap-3">
                     {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
-                    {editingDailyReportId ? 'Actualizar Reporte' : 'Guardar Reporte Diario'}
+                    {editingDailyReportId ? 'Actualizar Atención' : 'Guardar Atención Médica'}
                   </button>
                 </form>
               </div>
@@ -1383,7 +1383,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
                 <span className="w-2 h-6 rounded-full bg-blue-600"></span>
-                Historial Reciente
+                Historial de Atenciones
               </h3>
             </div>
             

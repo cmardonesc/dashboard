@@ -48,6 +48,7 @@ export default function CitacionesArea({
   const [selectedYear, setSelectedYear] = useState('TODOS')
   const [selectedCategoryPlayer, setSelectedCategoryPlayer] = useState<string>('TODOS')
   const [selectedPositions, setSelectedPositions] = useState<string[]>(['TODAS'])
+  const [selectedClubId, setSelectedClubId] = useState<string>('TODOS')
   const [showPosDropdown, setShowPosDropdown] = useState(false)
   
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('TODOS')
@@ -628,6 +629,20 @@ export default function CitacionesArea({
     return Array.from(new Set(years)).sort((a: number, b: number) => b - a);
   }, [allPlayers]);
 
+  const uniqueClubs = useMemo(() => {
+    const clubsMap = new Map();
+    allPlayers.forEach(p => {
+      const clubId = p.id_club;
+      const clubName = p.club;
+      if (clubId !== undefined && clubId !== null && clubName && clubName !== 'SIN CLUB') {
+        clubsMap.set(Number(clubId), clubName);
+      }
+    });
+    return Array.from(clubsMap.entries())
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [allPlayers]);
+
   const sortedCitados = useMemo(() => {
     return [...currentCitados].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }, [currentCitados]);
@@ -648,9 +663,10 @@ export default function CitacionesArea({
       const matchesYear = selectedYear === 'TODOS' || p.anio?.toString() === selectedYear;
       const matchesPos = selectedPositions.includes('TODAS') || selectedPositions.some(pos => (p.position || "").includes(pos));
       const matchesCat = selectedCategoryPlayer === 'TODOS' || p.category === selectedCategoryPlayer;
-      return matchesSearch && matchesYear && matchesPos && matchesCat;
+      const matchesClub = selectedClubId === 'TODOS' || Number(p.id_club) === Number(selectedClubId);
+      return matchesSearch && matchesYear && matchesPos && matchesCat && matchesClub;
     });
-  }, [allPlayers, searchTerm, selectedYear, selectedPositions, selectedCategoryPlayer]);
+  }, [allPlayers, searchTerm, selectedYear, selectedPositions, selectedCategoryPlayer, selectedClubId]);
 
   const filteredMicrociclos = useMemo(() => {
     if (selectedCategoryFilter === 'TODOS') return microciclos;
@@ -1737,12 +1753,20 @@ export default function CitacionesArea({
 
       <div className="flex-1 bg-[#f8fafc] rounded-[48px] border border-slate-200 shadow-sm flex flex-col overflow-hidden relative">
         <div className="p-10 bg-white border-b border-slate-200">
-           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
              <div className="md:col-span-4 relative">
                <i className="fa-solid fa-magnifying-glass absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
                <input type="text" placeholder="BUSCAR ATLETA..." className="w-full bg-slate-50 p-5 pl-14 rounded-[24px] font-black text-[11px] uppercase tracking-widest outline-none focus:ring-4 focus:ring-red-500/10 border-none transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
              </div>
-             <div className="md:col-span-3">
+             <div className="md:col-span-2">
+               <select className="w-full bg-slate-50 p-5 rounded-[24px] font-black text-[10px] uppercase tracking-widest outline-none appearance-none cursor-pointer border-none shadow-sm" value={selectedClubId} onChange={e => setSelectedClubId(e.target.value)}>
+                 <option value="TODOS">CLUB: TODOS</option>
+                 {uniqueClubs.map(c => (
+                   <option key={c.id} value={c.id.toString()}>{c.nombre}</option>
+                 ))}
+               </select>
+             </div>
+             <div className="md:col-span-2">
                <select className="w-full bg-slate-50 p-5 rounded-[24px] font-black text-[10px] uppercase tracking-widest outline-none appearance-none cursor-pointer border-none shadow-sm" value={selectedCategoryPlayer} onChange={e => setSelectedCategoryPlayer(e.target.value)}>
                  <option value="TODOS">CAT: TODAS</option>
                  {Object.values(Category).map(cat => (
@@ -1756,7 +1780,7 @@ export default function CitacionesArea({
                  {availableYears.map(y => <option key={y} value={y.toString()}>{y}</option>)}
                </select>
              </div>
-              <div className="md:col-span-3 relative">
+              <div className="md:col-span-2 relative">
                 <button 
                   onClick={() => setShowPosDropdown(!showPosDropdown)}
                   className="w-full bg-slate-50 p-5 rounded-[24px] font-black text-[10px] uppercase tracking-widest outline-none border-none shadow-sm flex justify-between items-center text-left"

@@ -9,6 +9,7 @@ import {
 } from 'recharts';
 import ClubBadge from './ClubBadge';
 import { UserRole } from '../types';
+import { FALLBACK_CLUB_NAMES } from '../constants';
 
 interface PlayerProfileAreaProps {
   userRole?: string;
@@ -24,6 +25,11 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const [players, setPlayers] = useState<any[]>(initialPlayers || []);
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState<any>(null);
+  
+  // Filter States
+  const [filterYear, setFilterYear] = useState<string>('');
+  const [filterPosition, setFilterPosition] = useState<string>('');
+  const [filterClubId, setFilterClubId] = useState<string>('');
   
   // Data States
   const [citations, setCitations] = useState<any[]>([]);
@@ -62,7 +68,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const fetchPlayers = async () => {
     try {
       console.log("Fetching players in PlayerProfileArea (fallback)...");
-      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio, clubes!inner(nombre)');
+      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio, clubes(nombre)');
       if (userRole === 'club') {
         if (userClubId) {
           query = query.eq('id_club', userClubId);
@@ -159,6 +165,50 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     };
   }, [citations, trainingData, matchData, gpsStats]);
 
+  const uniqueYears = useMemo(() => {
+    const years = players.map(p => p.anio || p.year).filter(Boolean);
+    return Array.from(new Set(years)).sort((a, b) => Number(b) - Number(a));
+  }, [players]);
+
+  const uniqueClubs = useMemo(() => {
+    const clubsMap = new Map();
+    players.forEach(p => {
+      const clubId = p.id_club || p.club_id;
+      // Support multiple possible field names for club name
+      let clubName = p.club || p.club_name || (p.clubes && !Array.isArray(p.clubes) ? (p.clubes as any).nombre : null);
+      
+      // Fallback
+      if (!clubName && clubId && FALLBACK_CLUB_NAMES[clubId]) {
+        clubName = FALLBACK_CLUB_NAMES[clubId];
+      }
+      
+      if (clubId !== undefined && clubId !== null && clubName) {
+        clubsMap.set(clubId, clubName);
+      }
+    });
+    return Array.from(clubsMap.entries()).map(([id, nombre]) => ({ id, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [players]);
+
+  const uniquePositions = useMemo(() => {
+    // Support both 'posicion' and 'position'
+    const pos = players.map(p => p.posicion || p.position).filter(Boolean);
+    return Array.from(new Set(pos)).sort();
+  }, [players]);
+
+  const filteredPlayers = useMemo(() => {
+    return players.filter(p => {
+      const playerYear = p.anio || p.year;
+      const playerPos = p.posicion || p.position;
+      const playerClubId = p.id_club || p.club_id;
+
+      const matchYear = !filterYear || String(playerYear) === filterYear;
+      const matchPosition = !filterPosition || playerPos === filterPosition;
+      const matchClub = !filterClubId || String(playerClubId) === filterClubId;
+      
+      return matchYear && matchPosition && matchClub;
+    });
+  }, [players, filterYear, filterPosition, filterClubId]);
+
   const radarData = useMemo(() => {
     if (!profileData) return [];
     
@@ -193,20 +243,56 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         </div>
         
         {userRole !== UserRole.PLAYER && (
-          <div className="flex items-center gap-3">
-             <i className="fa-solid fa-magnifying-glass text-slate-300"></i>
+          <div className="flex flex-wrap items-center gap-3">
+             {/* Year Filter */}
              <select 
-               value={selectedPlayerId || ''} 
-               onChange={(e) => setSelectedPlayerId(Number(e.target.value))}
-               className="bg-slate-50 border-none rounded-xl px-6 py-3 text-xs font-black text-slate-900 outline-none focus:ring-4 focus:ring-red-500/10 transition-all min-w-[250px]"
+               value={filterYear} 
+               onChange={(e) => setFilterYear(e.target.value)}
+               className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500/10 transition-all"
              >
-               <option value="">Seleccionar Atleta</option>
-               {players.map(p => (
-                 <option key={p.player_id} value={p.player_id}>
-                   {p.apellido1} {p.apellido2}, {p.nombre} ({p.player_id})
-                 </option>
-               ))}
+               <option value="">Año (Todos)</option>
+               {uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}
              </select>
+
+             {/* Position Filter */}
+             <select 
+               value={filterPosition} 
+               onChange={(e) => setFilterPosition(e.target.value)}
+               className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500/10 transition-all"
+             >
+               <option value="">Posición (Todas)</option>
+               {uniquePositions.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+             </select>
+
+             {/* Club Filter */}
+             {userRole !== 'club' && (
+               <select 
+                 value={filterClubId} 
+                 onChange={(e) => setFilterClubId(e.target.value)}
+                 className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500/10 transition-all"
+               >
+                 <option value="">Club (Todos)</option>
+                 {uniqueClubs.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+               </select>
+             )}
+
+             <div className="h-8 w-px bg-slate-100 mx-2 hidden md:block"></div>
+
+             <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-red-500/10 transition-all">
+                <i className="fa-solid fa-user-check text-slate-300 text-xs"></i>
+                <select 
+                  value={selectedPlayerId || ''} 
+                  onChange={(e) => setSelectedPlayerId(Number(e.target.value))}
+                  className="bg-transparent border-none p-0 text-xs font-black text-slate-900 outline-none min-w-[200px]"
+                >
+                  <option value="">Seleccionar Atleta</option>
+                  {filteredPlayers.map(p => (
+                    <option key={p.player_id} value={p.player_id}>
+                      {p.apellido1} {p.apellido2}, {p.nombre} ({p.player_id})
+                    </option>
+                  ))}
+                </select>
+             </div>
           </div>
         )}
       </div>

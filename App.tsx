@@ -1,6 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabase } from './lib/supabase'
+import { LEGACY_EMAIL_MAPPING } from './lib/legacyMapping'
 import { normalizeClub, getDriveDirectLink } from './lib/utils'
 import PlayerDashboard from './components/PlayerDashboard'
 import StaffDashboard from './components/StaffDashboard'
@@ -332,23 +333,24 @@ export default function App() {
 
   const fetchUserData = async (
     userId: string
-  ): Promise<{ role: Role; player_id: number | null; club_name: string | null; id_club: number | null }> => {
+  ): Promise<{ role: Role; player_id: number | null; club_name: string | null; id_club: number | null; email: string | null }> => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('role, player_id, club_name, id_club')
+        .select('role, player_id, club_name, id_club, email')
         .eq('id', userId)
         .maybeSingle()
 
-      if (error || !data) return { role: null, player_id: null, club_name: null, id_club: null }
+      if (error || !data) return { role: null, player_id: null, club_name: null, id_club: null, email: null }
       return {
         role: (data.role as Role) ?? null,
         player_id: data.player_id ? Number(data.player_id) : null,
         club_name: data.club_name || null,
-        id_club: data.id_club ? Number(data.id_club) : null
+        id_club: data.id_club ? Number(data.id_club) : null,
+        email: data.email || null
       }
     } catch (err) {
-      return { role: null, player_id: null, club_name: null, id_club: null }
+      return { role: null, player_id: null, club_name: null, id_club: null, email: null }
     }
   }
 
@@ -600,10 +602,66 @@ export default function App() {
       let userData = await fetchUserData(session.user.id);
       console.log("Datos de usuario obtenidos:", userData);
       
+      // AUTO-POBLAR EMAIL si falta en la tabla profiles
+      if (userData.role && !userData.email && session.user.email) {
+        console.log("Actualizando email en perfil...");
+        supabase.from('profiles').update({ email: session.user.email }).eq('id', session.user.id).then();
+      }
+
+      // NUEVO: RECOVERY FROM LEGACY CSV MAPPING
+      const emailMatch = session.user.email?.toLowerCase();
+      if (emailMatch && LEGACY_EMAIL_MAPPING[emailMatch]) {
+        const legacyPlayerId = LEGACY_EMAIL_MAPPING[emailMatch];
+        console.log(`Mapeo legacy detectado para ${emailMatch}: player_id ${legacyPlayerId}`);
+        
+        if (!userData.role) {
+          userData.role = 'player';
+        }
+        
+        if (!userData.player_id) {
+          console.log(`Auto-vinculando player_id legacy ${legacyPlayerId}`);
+          userData.player_id = legacyPlayerId;
+          // Persistir vínculo en DB de forma asíncrona
+          supabase.from('profiles').upsert({
+             id: session.user.id,
+             role: userData.role,
+             player_id: legacyPlayerId,
+             email: session.user.email
+          }).then(({error}) => {
+             if (error) console.error("Error persistiendo mapeo legacy:", error);
+          });
+        }
+      }
+
       // DOMAIN-BASED AUTO ASSIGNMENT (Staff/Official domains)
       if (!userData.role && emailLower && (emailLower.endsWith('@anfpchile.cl') || emailLower.endsWith('@anfp.cl'))) {
         console.log("Dominio oficial detectado sin rol. Asignando STAFF.");
         userData.role = 'staff';
+      }
+
+      // RECOVERY BY EMAIL: Si no hay perfil con este UUID, ver si hay uno con el mismo EMAIL (crucial para mock users)
+      if (!userData.role && session.user.email) {
+        const { data: altProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', session.user.email)
+          .maybeSingle();
+        
+        if (altProfile) {
+          console.log("¡Vínculo recuperado por EMAIL!", altProfile);
+          userData = {
+            role: altProfile.role as Role,
+            player_id: altProfile.player_id,
+            club_name: altProfile.club_name,
+            id_club: altProfile.id_club,
+            email: altProfile.email
+          };
+          // Si el ID cambió (ej: de mock a real), actualizamos el perfil real con el ID real
+          if (altProfile.id !== session.user.id) {
+             console.log("Actualizando ID de perfil recuperado al ID de sesión actual...");
+             supabase.from('profiles').update({ id: session.user.id }).eq('id', altProfile.id).then();
+          }
+        }
       }
 
       // RECOVERY / MOCK HANDLING: Si el perfil no tiene rol (mock users o fallo de registro)
@@ -613,7 +671,8 @@ export default function App() {
           role: session.user.user_metadata.role,
           player_id: session.user.user_metadata.player_id ? Number(session.user.user_metadata.player_id) : null,
           club_name: session.user.user_metadata.club_name || null,
-          id_club: session.user.user_metadata.id_club ? Number(session.user.user_metadata.id_club) : null
+          id_club: session.user.user_metadata.id_club ? Number(session.user.user_metadata.id_club) : null,
+          email: session.user.email || null
         };
       }
       
@@ -846,7 +905,13 @@ export default function App() {
     if (!found && role === 'player') {
       if (playersLoading) return null
       return {
-        player: { id: sessionUser.id, name: sessionUser.email, role: UserRole.PLAYER, isUnlinked: true },
+        player: { 
+          id: sessionUser.id, 
+          name: sessionUser.email, 
+          email: sessionUser.email, 
+          role: UserRole.PLAYER, 
+          isUnlinked: true 
+        },
         wellness: [], loads: [], gps: [], nutrition: []
       } as AthletePerformanceRecord
     }
@@ -1083,9 +1148,24 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
       console.log("Master password bypass activado para:", emailLower);
       const isOfficialStaff = emailLower.endsWith('@anfpchile.cl') || emailLower.endsWith('@anfp.cl') || emailLower === 'mardones.camilo@gmail.com';
       
+      // Generar un UUID determinístico basado en el email para que sea persistente en la tabla profiles
+      // Usamos un formato simple de UUID v4 (basado en hash o simplemente formateado)
+      // Nota: Esto es un mock para permitir que el campo 'id' de uuid en Postgres acepte el valor
+      const generateMockUUID = (str: string) => {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+          hash = ((hash << 5) - hash) + str.charCodeAt(i);
+          hash |= 0;
+        }
+        const h = Math.abs(hash).toString(16).padStart(8, '0');
+        return `00000000-0000-4000-8000-${h.padStart(12, '0')}`;
+      };
+
+      const mockId = generateMockUUID(emailLower);
+
       onLoginSuccess({
         user: {
-          id: `mock-user-${emailLower.split('@')[0]}`,
+          id: mockId,
           email: emailLower,
           role: 'authenticated',
           user_metadata: {

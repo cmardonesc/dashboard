@@ -175,5 +175,6 @@ export const FALLBACK_CLUB_NAMES: Record<number, string> = {
   32: 'Deportes Valdivia',
   36: 'Club Unión La Calera',
   89: 'La Roja (FFCh)',
-  90: 'Filtro Virtual'
+  90: 'Filtro Virtual',
+  91: 'Cobresal'
 };

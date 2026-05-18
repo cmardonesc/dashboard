@@ -106,10 +106,19 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       const { error: upError } = await supabase
         .from('profiles')
-        .update({ player_id: pid })
+        .update({ player_id: pid, email: player.email || null })
         .eq('id', player.id);
       
       if (upError) throw upError;
+
+      // Persistir también en metadata de Supabase Auth para recuperación en login
+      try {
+        await supabase.auth.updateUser({
+          data: { player_id: pid }
+        });
+      } catch (authErr) {
+        console.warn("No se pudo actualizar metadata de Auth, pero el perfil se guardó:", authErr);
+      }
 
       alert(`✅ VÍNCULO EXITOSO: Tu cuenta ha sido asociada a ${pData.nombre} ${pData.apellido1}.`);
       if (onRefresh) onRefresh();

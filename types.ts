@@ -63,6 +63,7 @@ export interface User {
   id: string; // auth.uid()
   player_id?: number; // Primary key real
   name: string;
+  email?: string; // Nuevo: persistencia de correo
   nombre?: string;
   apellido1?: string;
   apellido2?: string;

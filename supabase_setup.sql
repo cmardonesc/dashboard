@@ -131,7 +131,8 @@ create table if not exists public.profiles (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   role text default 'player',
   player_id int references public.players(player_id),
-  club_name text
+  club_name text,
+  email text
 );
 
 -- Create clubes table
@@ -270,12 +271,13 @@ create policy "Enable all access for microcycles" on public.microcycles for all 
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, role, player_id, club_name)
+  insert into public.profiles (id, role, player_id, club_name, email)
   values (
     new.id, 
     coalesce(new.raw_user_meta_data->>'role', 'player'), 
     (new.raw_user_meta_data->>'player_id')::int,
-    new.raw_user_meta_data->>'club_name'
+    new.raw_user_meta_data->>'club_name',
+    new.email
   );
   return new;
 end;

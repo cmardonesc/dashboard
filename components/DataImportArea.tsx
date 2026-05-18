@@ -4,7 +4,7 @@ import Papa from 'papaparse';
 import { supabase } from '../lib/supabase';
 import { User } from '../types';
 
-import { fetchCatapultActivities, fetchCatapultActivityStats, testCatapultConnection } from '../services/catapultService';
+import { fetchCatapultActivities, fetchCatapultActivityStats, fetchCatapultActivityDetail, testCatapultConnection } from '../services/catapultService';
 
 type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api';
 
@@ -249,7 +249,7 @@ export default function DataImportArea() {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const [players, setPlayers] = useState<User[]>([]);
+  const [players, setPlayers] = useState<any[]>([]);
   const [unmatchedRows, setUnmatchedRows] = useState<any[]>([]);
   const [resolvedIds, setResolvedIds] = useState<Record<number, number>>({}); // rowIndex -> playerId
   const [nameHeader, setNameHeader] = useState<string | null>(null);
@@ -267,7 +267,7 @@ export default function DataImportArea() {
   }, []);
 
   const fetchPlayers = async () => {
-    const { data } = await supabase.from('players').select('player_id, nombre, apellido1, id_club, anio, posicion');
+    const { data } = await supabase.from('players').select('*');
     if (data) setPlayers(data);
   };
 
@@ -321,21 +321,33 @@ export default function DataImportArea() {
   const mapCatapultMetrics = (catStats: any) => {
     const findMetric = (keys: string[]) => {
       for (const k of keys) {
-        if (catStats[k] !== undefined) return Number(catStats[k]);
+        if (catStats[k] !== undefined && catStats[k] !== null) return Number(catStats[k]);
       }
       return 0;
     };
 
+    // Duration is often in seconds in Catapult API, but can vary
+    let durationSec = findMetric(['duration', 'total_duration', 'TotalDuration', 'Duration', 'minutes', 'Minutes']);
+    // If it's less than 10, it's likely hours, if it's > 10000 likely seconds or ms.
+    // Usually minutes is what we want for the UI, but GPS import expects minutes.
+    // If duration was found in 'minutes' field, use it as is.
+    let durationMin = 0;
+    if (catStats.minutes !== undefined || catStats.Minutes !== undefined) {
+      durationMin = findMetric(['minutes', 'Minutes']);
+    } else {
+      durationMin = durationSec / 60;
+    }
+
     return {
-      minutos: findMetric(['duration', 'total_duration', 'minutes']) / 60 || 0, // Convert to minutes if seconds
-      dist_total_m: findMetric(['total_distance', 'distance', 'total_dist']),
-      m_por_min: findMetric(['meters_per_minute', 'metres_per_minute', 'relative_distance']),
-      dist_ai_m_15_kmh: findMetric(['high_intensity_distance', 'hi_intensity_dist', 'band4_distance']),
-      dist_mai_m_20_kmh: findMetric(['very_high_intensity_distance', 'vhi_intensity_dist', 'band5_distance']),
-      dist_sprint_m_25_kmh: findMetric(['sprint_distance', 'band6_distance']),
-      sprints_n: findMetric(['sprint_count', 'sprints']),
-      vel_max_kmh: findMetric(['max_velocity', 'top_speed', 'velocity_max']),
-      acc_decc_ai_n: findMetric(['accelerations_count', 'accel_count']) + findMetric(['decelerations_count', 'decel_count'])
+      minutos: durationMin || 0,
+      dist_total_m: findMetric(['total_distance', 'TotalDistance', 'distance', 'Distance', 'total_dist', 'Distance_m', 'Total_Distance']),
+      m_por_min: findMetric(['meters_per_minute', 'MetresPerMinute', 'metres_per_minute', 'relative_distance', 'RelativeDistance', 'MetersPerMinute']),
+      dist_ai_m_15_kmh: findMetric(['high_intensity_distance', 'HighIntensityDistance', 'hi_intensity_dist', 'band4_distance', 'Band4Distance', 'VelocityBand4Distance', 'High_Intensity_Distance']),
+      dist_mai_m_20_kmh: findMetric(['very_high_intensity_distance', 'VeryHighIntensityDistance', 'vhi_intensity_dist', 'band5_distance', 'Band5Distance', 'VelocityBand5Distance', 'Very_High_Intensity_Distance']),
+      dist_sprint_m_25_kmh: findMetric(['sprint_distance', 'SprintDistance', 'band6_distance', 'Band6Distance', 'VelocityBand6Distance', 'Sprint_Distance']),
+      sprints_n: findMetric(['sprint_count', 'SprintCount', 'sprints', 'Sprints', 'Number_of_Sprints']),
+      vel_max_kmh: findMetric(['max_velocity', 'MaxVelocity', 'top_speed', 'TopSpeed', 'velocity_max', 'Maximum_Velocity']),
+      acc_decc_ai_n: findMetric(['accelerations_count', 'AccelerationsCount', 'accel_count', 'Total_Accelerations']) + findMetric(['decelerations_count', 'DecelerationsCount', 'decel_count', 'Total_Decelerations'])
     };
   };
 
@@ -624,9 +636,101 @@ export default function DataImportArea() {
         activities = response.data || response.results || [];
       }
 
-      setCatapultActivities(activities);
+      const rawActivities = activities;
+      console.log("Raw activities received:", rawActivities.length > 0 ? rawActivities[0] : "Empty");
+
+      const normalizedActivities = rawActivities.map((item: any) => {
+        // Resolve nested activity if present
+        let a = item;
+        if (item.Activity && typeof item.Activity === 'object') a = item.Activity;
+        else if (item.activity && typeof item.activity === 'object') a = item.activity;
+        else if (item.session && typeof item.session === 'object') a = item.session;
+
+        // Pattern matching helper
+        const findVal = (obj: any, patterns: string[]) => {
+          for (const p of patterns) {
+            const pLower = p.toLowerCase();
+            const key = Object.keys(obj).find(k => k.toLowerCase() === pLower || k.toLowerCase().includes(pLower));
+            if (key !== undefined && obj[key] !== null) return obj[key];
+          }
+          return null;
+        };
+
+        // Robust detection for IDs
+        const id = findVal(a, ['id', 'Identifier', 'activity_id', 'ExternalId', 'ActivityId']) || findVal(item, ['Identifier', 'id']);
+        
+        // Robust detection for Names
+        const name = findVal(a, ['name', 'SessionName', 'IdentifierName', 'activity_name', 'tag']) || 
+                    findVal(item, ['SessionName', 'IdentifierName', 'name']) || 'SESIÓN SIN NOMBRE';
+        
+        // Robust detection for Times
+        const parseTime = (time: any) => {
+          if (!time) return null;
+          try {
+            if (typeof time === 'number') {
+              return time < 2000000000 ? new Date(time * 1000).toISOString() : new Date(time).toISOString();
+            }
+            if (typeof time === 'string') {
+              // Handle DD/MM/YYYY
+              if (time.includes('/') && time.split('/').length === 3) {
+                const parts = time.split(' ');
+                const dateParts = parts[0].split('/');
+                const [d, m, y] = dateParts;
+                const timeStr = parts[1] || '00:00:00';
+                const iso = `${y.length === 2 ? '20' + y : y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T${timeStr}`;
+                const validDate = new Date(iso);
+                if (!isNaN(validDate.getTime())) return validDate.toISOString();
+              }
+            }
+            const date = new Date(time);
+            if (isNaN(date.getTime())) return null;
+            return date.toISOString();
+          } catch (e) {
+            return null;
+          }
+        };
+
+        const startTime = parseTime(findVal(a, ['StartTime', 'start_at', 'start_time', 'Date', 'ModifiedTime']) || findVal(item, ['StartTime', 'startTime', 'Date']));
+        const endTime = parseTime(findVal(a, ['EndTime', 'end_at', 'end_time', 'FinishTime']) || findVal(item, ['EndTime', 'endTime']));
+        
+        // Robust athlete count detection
+        const athleteCount = findVal(a, ['AthleteCount', 'athlete_count', 'athletes']) || 
+                          findVal(item, ['AthleteCount', 'athlete_count']) ||
+                          (Array.isArray(a.athlete_ids) ? a.athlete_ids.length : 
+                          (Array.isArray(a.athletes) ? a.athletes.length : 0));
+        
+        let durationMin = findVal(a, ['duration', 'total_time', 'Duration', 'Minutes']) || findVal(item, ['duration', 'minutes']) || 0;
+        
+        if (durationMin > 600 && !String(durationMin).includes('min')) {
+          durationMin = Math.round(Number(durationMin) / 60);
+        }
+
+        if (!durationMin && startTime && endTime) {
+          try {
+            const start = new Date(startTime).getTime();
+            const end = new Date(endTime).getTime();
+            if (!isNaN(start) && !isNaN(end)) {
+              durationMin = Math.round((end - start) / 60000);
+            }
+          } catch (e) {}
+        }
+
+        return {
+          ...item,
+          ...a,
+          id,
+          name,
+          startTime,
+          endTime,
+          athleteCount: Number(athleteCount) || 0,
+          duration: Number(durationMin) || 0,
+          bakestatus: findVal(a, ['Bakestatus', 'Status']) || findVal(item, ['Bakestatus', 'Status']) || 'Ready'
+        };
+      });
+
+      setCatapultActivities(normalizedActivities);
       
-      if (activities.length === 0) {
+      if (normalizedActivities.length === 0) {
         setMessage({ 
           type: 'success', 
           text: `Conexión establecida con éxito${regionInfo}. No se encontraron sesiones recientes.` 
@@ -662,8 +766,45 @@ export default function DataImportArea() {
     setSyncingCatapult(true);
     setMessage(null);
     setSelectedActivity(activity);
+    console.log("Inspecting Activity:", activity);
+    
     try {
-      const statsResponse = await fetchCatapultActivityStats(activity.id);
+      if (selectedActivity?.bakestatus === 'Baking') {
+        throw new Error("La sesión aún se está procesando (Baking). Espera unos minutos y vuelve a intentar.");
+      }
+
+      // Prioritize identifying the best ID for the stats call
+      const bestId = activity.id || activity.Identifier || activity.identifier || activity.activity_id;
+      console.log(`Fetching stats for ID: ${bestId}`);
+      
+      let statsResponse;
+      try {
+        statsResponse = await fetchCatapultActivityStats(bestId);
+      } catch (statsErr: any) {
+        console.error("Initial stats fetch failed:", statsErr);
+        
+        // Fallback 1: Try activity_id or other IDs
+        const fallbackId = activity.activity_id || activity.activityId || (bestId === activity.Identifier ? activity.id : activity.Identifier);
+        
+        if (fallbackId && fallbackId !== bestId) {
+          console.log(`Attempting fallback with ID: ${fallbackId}`);
+          try {
+            statsResponse = await fetchCatapultActivityStats(fallbackId);
+          } catch (e2) {
+            // Fallback 2: Maybe fetch the full activity and check if stats are embedded
+            console.log("Trying to fetch full activity detail as fallback...");
+            const detail = await fetchCatapultActivityDetail(bestId);
+            if (detail && (detail.stats || detail.results)) {
+              statsResponse = detail.stats || detail.results;
+            } else {
+              throw statsErr; // Throw original error if detail doesn't help
+            }
+          }
+        } else {
+          throw statsErr;
+        }
+      }
+
       console.log("Catapult Stats Received:", statsResponse);
       
       // Normalize stats to an array of athletes
@@ -676,9 +817,13 @@ export default function DataImportArea() {
         athletesData = statsResponse.results;
       }
 
+      if (athletesData.length === 0) {
+        console.warn("Stats response returned no athletes data.");
+      }
+
       // Initial auto-mapping
       const initialAthletes = athletesData.map((ath: any, index: number) => {
-        const athName = ath.athlete_name || ath.name || ath.athlete?.name || '';
+        const athName = ath.athlete_name || ath.name || ath.athlete?.name || ath.AthleteName || ath.Athlete?.Name || '';
         const matchedPlayer = findPlayerByName(athName);
         return {
           id: index,
@@ -692,7 +837,8 @@ export default function DataImportArea() {
       setCatapultAthletes(initialAthletes);
       setInspectingStats(true);
     } catch (err: any) {
-      setMessage({ type: 'error', text: `Error obteniendo métricas: ${err.message}` });
+      console.error("Critical error in handleInspectActivity:", err);
+      setMessage({ type: 'error', text: `Error obteniendo métricas: ${err.message}. ID usado: ${activity.id || 'N/A'}` });
     } finally {
       setSyncingCatapult(false);
     }
@@ -910,13 +1056,31 @@ export default function DataImportArea() {
                 {catapultActivities.map((session) => (
                   <div key={session.id || Math.random()} className="bg-white rounded-3xl border border-slate-100 p-6 hover:shadow-lg transition-all group border-l-4 border-l-sky-500">
                     <div className="flex justify-between items-start mb-4">
-                      <span className="bg-sky-50 text-sky-600 text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest">
-                        {session.startTime ? new Date(session.startTime).toLocaleDateString() : 'N/A'}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className="bg-sky-50 text-sky-600 text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest w-fit">
+                          {session.startTime ? new Date(session.startTime).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'FECHA N/A'}
+                        </span>
+                        {session.startTime && (
+                          <span className="text-[8px] font-bold text-slate-400 ml-1">
+                            {new Date(session.startTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
                       <i className="fa-solid fa-chevron-right text-slate-200 group-hover:text-sky-500 transition-colors"></i>
                     </div>
                     <h5 className="text-slate-900 font-black uppercase tracking-tight text-sm mb-1">{session.name || 'Sesión sin nombre'}</h5>
-                    <p className="text-slate-400 text-[10px] font-bold mb-4 uppercase">{session.athleteCount || 0} Atletas • {session.duration || 0} min</p>
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-slate-400 text-[10px] font-bold uppercase">{session.athleteCount || 0} Atletas • {session.duration || 0} min</p>
+                      {session.bakestatus && (
+                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter ${
+                          session.bakestatus === 'Ready' ? 'bg-emerald-50 text-emerald-600' : 
+                          session.bakestatus === 'Baking' ? 'bg-amber-50 text-amber-600 animate-pulse' : 
+                          'bg-slate-50 text-slate-400'
+                        }`}>
+                          {session.bakestatus}
+                        </span>
+                      )}
+                    </div>
                     <button 
                       className="w-full bg-slate-50 text-slate-900 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 hover:text-white transition-all disabled:opacity-50"
                       disabled={syncingCatapult}
