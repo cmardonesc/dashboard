@@ -176,8 +176,9 @@ create table if not exists public.internal_load (
   type text default 'FIELD',
   molestias text,
   enfermedad text,
+  session_index int default 1,
   created_by uuid references auth.users,
-  unique(player_id, session_date)
+  unique(player_id, session_date, session_index)
 );
 
 -- Create antropometria table

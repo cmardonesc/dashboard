@@ -56,7 +56,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const menuItems = [
     { id: 'inicio', label: 'Inicio', icon: 'fa-solid fa-house' },
     { id: 'perfil_jugador', label: 'Perfil Jugador', icon: 'fa-solid fa-id-card' },
-    { id: 'tecnica', label: 'Área Técnica', icon: 'fa-solid fa-bullseye' },
   ];
 
   const handleMenuClick = (id: MenuId) => {

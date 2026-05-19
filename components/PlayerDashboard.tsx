@@ -69,7 +69,9 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const todayWellness = useMemo(() => wellness.find(w => w.date === todayStr), [wellness, todayStr]);
-  const todayLoad = useMemo(() => loads.find(l => l.date === todayStr), [loads, todayStr]);
+  const todayLoads = useMemo(() => loads.filter(l => l.date === todayStr), [loads, todayStr]);
+  const todayLoadS1 = useMemo(() => todayLoads.find(l => l.session_index === 1), [todayLoads]);
+  const todayLoadS2 = useMemo(() => todayLoads.find(l => l.session_index === 2), [todayLoads]);
 
   const handleLinkAccount = async () => {
     if (!linkingId || !player?.id) return;
@@ -284,6 +286,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         player_id: player.player_id,
         microcycle_id: activeMC?.id || null,
         session_date: today,
+        session_index: data.session_index || 1,
         rpe: data.rpe,
         duration_min: data.duration,
         molestias: data.sorenessAreas.join(', '),
@@ -293,7 +296,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       const { error } = await supabase
         .from('internal_load')
-        .upsert(payload, { onConflict: 'player_id,session_date' });
+        .upsert(payload, { onConflict: 'player_id,session_date,session_index' });
       
       if (error) throw error;
       
@@ -448,11 +451,13 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
     return dates.map(date => {
       const w = last14Wellness.find(x => x.date.substring(0, 10) === date);
-      const l = last14Loads.find(x => x.date.substring(0, 10) === date);
+      const dayLoads = last14Loads.filter(x => x.date.substring(0, 10) === date);
+      const totalLoad = dayLoads.reduce((acc, curr) => acc + (curr.load || 0), 0);
+      
       return {
         date: new Date(date + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short' }).toUpperCase(),
         wellness: w ? (w.fatigue + w.sleep + w.mood) / 3 : 0,
-        load: l ? l.load : 0
+        load: totalLoad
       };
     });
   }, [wellness, loads]);
@@ -583,20 +588,30 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                 </div>
               </div>
 
-              <div className={`p-4 md:p-6 rounded-[24px] md:rounded-[32px] border flex items-center justify-between transition-all duration-500 ${todayLoad ? 'bg-emerald-50/50 border-emerald-100 shadow-sm' : 'bg-slate-50/50 border-slate-100 shadow-sm'}`}>
+              <div className={`p-4 md:p-6 rounded-[24px] md:rounded-[32px] border flex items-center justify-between transition-all duration-500 ${(todayLoadS1 || todayLoadS2) ? 'bg-emerald-50/50 border-emerald-100 shadow-sm' : 'bg-slate-50/50 border-slate-100 shadow-sm'}`}>
                 <div className="flex items-center gap-3 md:gap-4">
-                  <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center text-lg md:text-xl ${todayLoad ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                  <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center text-lg md:text-xl ${(todayLoadS1 || todayLoadS2) ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
                     <i className="fa-solid fa-chart-line"></i>
                   </div>
                   <div>
                     <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5 md:mb-1">Carga</p>
-                    <p className={`text-[9px] md:text-xs font-black uppercase tracking-tighter ${todayLoad ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      {todayLoad ? `LISTO` : 'PENDIENTE'}
-                    </p>
+                    <div className="flex flex-col">
+                      <p className={`text-[8px] md:text-[9px] font-black uppercase tracking-tighter ${todayLoadS1 ? 'text-emerald-700' : 'text-slate-400 opacity-50'}`}>
+                        S1: {todayLoadS1 ? `OK` : 'PEND'}
+                      </p>
+                      <p className={`text-[8px] md:text-[9px] font-black uppercase tracking-tighter ${todayLoadS2 ? 'text-emerald-700' : 'text-slate-400 opacity-50'}`}>
+                        S2: {todayLoadS2 ? `OK` : 'PEND'}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-[8px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{todayLoad ? formatTime(todayLoad.created_at) : '-'}</p>
+                  <p className="text-[8px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">
+                    {todayLoadS1 ? `S1: ${formatTime(todayLoadS1.created_at)}` : ''}
+                    {todayLoadS1 && todayLoadS2 ? <br /> : ''}
+                    {todayLoadS2 ? `S2: ${formatTime(todayLoadS2.created_at)}` : ''}
+                    {!todayLoadS1 && !todayLoadS2 ? '-' : ''}
+                  </p>
                 </div>
               </div>
             </div>

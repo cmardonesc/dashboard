@@ -27,7 +27,11 @@ const TIPO_COLORS: Record<string, string> = {
 
 const MULTI_DAY_TYPES = ['SUDAMERICANO', 'GIRA', 'MUNDIAL', 'REGIONALES'];
 
-const PlanificacionAnual: React.FC = () => {
+interface PlanificacionAnualProps {
+  onRefresh?: () => void;
+}
+
+const PlanificacionAnual: React.FC<PlanificacionAnualProps> = ({ onRefresh }) => {
   const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 1));
   const [activities, setActivities] = useState<AnnualActivity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -122,6 +126,8 @@ const PlanificacionAnual: React.FC = () => {
       }
 
       await fetchMonthActivities();
+      if (onRefresh) onRefresh();
+      
       setSuccessMessage(editingActivityId ? "Actividad actualizada" : (isMultiDay ? "Evento multi-día programado" : "Actividad agregada"));
       setNewActivity({ ...newActivity, observation: '', endDate: '' });
       setEditingActivityId(null);
@@ -158,6 +164,8 @@ const PlanificacionAnual: React.FC = () => {
       setSuccessMessage("Actividad eliminada");
       setActivities(prev => prev.filter(a => String(a.id) !== String(id)));
       await fetchMonthActivities();
+      if (onRefresh) onRefresh();
+      
       setShowConfirmDelete(null);
     } catch (err: any) {
       console.error("Error al eliminar:", err);
@@ -265,6 +273,8 @@ const PlanificacionAnual: React.FC = () => {
 
       if (insertError) throw insertError;
 
+      if (onRefresh) onRefresh();
+      
       setSuccessMessage(`Se copiaron ${newActivities.length} actividades con éxito desde el día ${sourceDate}.`);
       fetchMonthActivities();
     } catch (err: any) {

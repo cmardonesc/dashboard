@@ -31,6 +31,7 @@ interface MicrocicloUI extends MicrocicloDB {
 interface TecnicaAreaProps {
   performanceRecords?: AthletePerformanceRecord[];
   onMenuChange?: (id: any) => void;
+  onRefresh?: () => void;
   initialTab?: SubTab;
   hideCronograma?: boolean;
   clubs?: any[];
@@ -82,7 +83,7 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'OTRA', emoji: '📝' },
 ];
 
-const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuChange, initialTab, hideCronograma, clubs }) => {
+const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuChange, onRefresh, initialTab, hideCronograma, clubs }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('selection');
   const [activeTab, setActiveTab] = useState<SubTab>(initialTab || (hideCronograma ? 'partidos' : 'cronograma'));
   const [selectedMicro, setSelectedMicro] = useState<MicrocicloUI | null>(null);
@@ -427,6 +428,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       setEditingActivityId(null);
       setShowActivityModal(false);
       setSelectedDayIndex(null);
+
+      // Notificar al padre que hubo un cambio para que otros componentes se actualicen
+      if (onRefresh) onRefresh();
       
     } catch (err: any) {
       console.error("Error al agendar:", err);
@@ -476,6 +480,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         taskCount: dayTasks.length
       });
 
+      if (onRefresh) onRefresh();
+      
       alert(`Sincronización exitosa: Tareas (${selectedJornada}) del día ${dateKey} guardadas.`);
     } catch (err: any) {
       console.error("Error al sincronizar tareas:", err);
@@ -1286,25 +1292,13 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         </div>
       </div>
 
-      <div className="bg-white/50 p-1.5 rounded-[24px] border border-slate-100 flex items-center gap-2 max-w-fit shadow-sm overflow-x-auto">
-        {!hideCronograma && (
+      {!hideCronograma && (
+        <div className="bg-white/50 p-1.5 rounded-[24px] border border-slate-100 flex items-center gap-2 max-w-fit shadow-sm overflow-x-auto">
           <button onClick={() => setActiveTab('cronograma')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'cronograma' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
             <i className="fa-solid fa-calendar-week text-sm"></i> Cronograma Semanal
           </button>
-        )}
-        <button onClick={() => setActiveTab('partidos')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'partidos' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-          <i className="fa-solid fa-trophy text-sm"></i> Partidos
-        </button>
-        <button onClick={() => setActiveTab('convocatoria')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'convocatoria' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-          <i className="fa-solid fa-users-rectangle text-sm"></i> Convocatoria
-        </button>
-        <button onClick={() => setActiveTab('tareas')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'tareas' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-          <i className="fa-solid fa-futbol text-sm"></i> Tareas Semanales
-        </button>
-        <button onClick={() => setActiveTab('competencia')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'competencia' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-          <i className="fa-solid fa-trophy text-sm"></i> Reportes Competición
-        </button>
-      </div>
+        </div>
+      )}
 
       {activeTab === 'cronograma' && (
         <div className="space-y-12 animate-in fade-in duration-300 transform-gpu">

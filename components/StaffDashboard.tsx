@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect, useRef } from 'react'
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { AthletePerformanceRecord, Category, CATEGORY_ID_MAP, CATEGORY_COLORS, MenuId } from '../types'
 import { supabase } from '../lib/supabase'
 import ClubBadge from './ClubBadge'
@@ -33,6 +33,7 @@ interface StaffDashboardProps {
   performanceRecords: AthletePerformanceRecord[];
   activeMenu: MenuId;
   onMenuChange: (id: MenuId) => void;
+  onRefresh?: () => void;
   userClub?: string;
   userClubId?: number | null;
   userRole?: string;
@@ -44,6 +45,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   performanceRecords, 
   activeMenu, 
   onMenuChange, 
+  onRefresh,
   userClub, 
   userClubId,
   userRole, 
@@ -196,107 +198,112 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       }));
   }, [performanceRecords, todayStr, playerToCategory]);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      // 1. Fetch Microcycles
-      const { data: mcData } = await supabase.from('microcycles').select('*');
+  const fetchDashboardData = useCallback(async () => {
+    // 1. Fetch Microcycles
+    const { data: mcData } = await supabase.from('microcycles').select('*');
+    
+    if (mcData) {
+      setRealMicrocycles(mcData);
+      const active = mcData.filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
       
-      if (mcData) {
-        setRealMicrocycles(mcData);
-        const active = mcData.filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
-        
-        if (active.length > 0) {
-          setLoadingTasks(true);
-          const { data: tasksData } = await supabase
-            .from('tareas_semanales')
-            .select('*')
-            .in('id_microcycles', active.map(m => m.id))
-            .eq('fecha', todayStr);
-          
-          if (tasksData) {
-            setActiveTasks(tasksData);
-          }
-          setLoadingTasks(false);
-        } else {
-          setActiveTasks([]);
-        }
-      }
-
-      // 2. Fetch Citaciones for pending logic
-      const activeMcIds = (mcData || [])
-        .filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10))
-        .map(m => m.id);
-      
-      if (activeMcIds.length > 0) {
-        const { data: citRes } = await supabase
-          .from('citaciones')
-          .select('player_id, microcycle_id')
-          .in('microcycle_id', activeMcIds);
-        
-        if (citRes) setCitData(citRes);
-      }
-
-      // 3. Fetch Weekly Activities (Cronograma from Area Tecnica)
-      if (activeMcIds.length > 0) {
-        const { data: activities } = await supabase
-          .from('cronograma_semanal')
+      if (active.length > 0) {
+        setLoadingTasks(true);
+        const { data: tasksData } = await supabase
+          .from('tareas_semanales')
           .select('*')
-          .in('id_microcycles', activeMcIds)
-          .order('fecha', { ascending: true })
-          .order('hora', { ascending: true });
+          .in('id_microcycles', active.map(m => m.id))
+          .eq('fecha', todayStr);
         
-        if (activities) {
-          setDailyActivities(activities);
+        if (tasksData) {
+          setActiveTasks(tasksData);
         }
+        setLoadingTasks(false);
       } else {
-        setDailyActivities([]);
+        setActiveTasks([]);
       }
+    }
 
-      // 4. Fetch Medical and Kinesic data
-      const { data: medData } = await supabase
-        .from('medical_daily_reports')
-        .select('*')
-        .eq('report_date', todayStr);
+    // 2. Fetch Citaciones for pending logic
+    const activeMcIds = (mcData || [])
+      .filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10))
+      .map(m => m.id);
+    
+    if (activeMcIds.length > 0) {
+      const { data: citRes } = await supabase
+        .from('citaciones')
+        .select('player_id, microcycle_id')
+        .in('microcycle_id', activeMcIds);
       
-      const { data: kinData } = await supabase
-        .from('medical_treatments')
+      if (citRes) setCitData(citRes);
+    }
+
+    // 3. Fetch Weekly Activities (Cronograma from Area Tecnica)
+    if (activeMcIds.length > 0) {
+      const { data: activities } = await supabase
+        .from('cronograma_semanal')
         .select('*')
-        .eq('treatment_date', todayStr);
-
-      if (medData) {
-        const enriched = medData.map(m => ({
-          ...m,
-          players: performanceRecords.find(r => r.player.player_id === m.player_id)?.player
-        }));
-        setMedicalReportsToday(enriched);
-      }
+        .in('id_microcycles', activeMcIds)
+        .order('fecha', { ascending: true })
+        .order('hora', { ascending: true });
       
-      if (kinData) {
-        const enriched = kinData.map(k => ({
-          ...k,
-          players: performanceRecords.find(r => r.player.player_id === k.player_id)?.player
-        }));
-        setKinesicTreatmentsToday(enriched);
+      if (activities) {
+        setDailyActivities(activities);
       }
+    } else {
+      setDailyActivities([]);
+    }
 
-      // 5. Fetch Weather
-      try {
-        const weatherRes = await getWeatherForecast('Santiago', 'Chile');
-        if (weatherRes.data) setWeather(weatherRes.data);
-      } catch (e) {
-        console.error('Error fetching weather:', e);
-      }
+    // 4. Fetch Medical and Kinesic data
+    const { data: medData } = await supabase
+      .from('medical_daily_reports')
+      .select('*')
+      .eq('report_date', todayStr);
+    
+    const { data: kinData } = await supabase
+      .from('medical_treatments')
+      .select('*')
+      .eq('treatment_date', todayStr);
 
-      // 6. Generate AI Insight if not present
-      if (!aiInsight && performanceRecords.length > 0) {
-        handleGenerateAiInsight();
-      }
-    };
+    if (medData) {
+      const enriched = medData.map(m => ({
+        ...m,
+        players: performanceRecords.find(r => r.player.player_id === m.player_id)?.player
+      }));
+      setMedicalReportsToday(enriched);
+    }
+    
+    if (kinData) {
+      const enriched = kinData.map(k => ({
+        ...k,
+        players: performanceRecords.find(r => r.player.player_id === k.player_id)?.player
+      }));
+      setKinesicTreatmentsToday(enriched);
+    }
 
+    // 5. Fetch Weather
+    try {
+      const weatherRes = await getWeatherForecast('Santiago', 'Chile');
+      if (weatherRes.data) setWeather(weatherRes.data);
+    } catch (e) {
+      console.error('Error fetching weather:', e);
+    }
+
+    // 6. Generate AI Insight if not present
+    if (!aiInsight && performanceRecords.length > 0) {
+      handleGenerateAiInsight();
+    }
+  }, [todayStr, performanceRecords, aiInsight]);
+
+  const handleRefresh = async () => {
+    await fetchDashboardData();
+    if (onRefresh) onRefresh();
+  };
+
+  useEffect(() => {
     if (activeMenu === 'inicio') {
       fetchDashboardData();
     }
-  }, [activeMenu, todayStr]);
+  }, [activeMenu, todayStr, fetchDashboardData]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1214,10 +1221,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         return <LogisticaJugadores />;
       case 'contactos_clubes':
         return <ContactosClubesArea />;
+      case 'planificacion_anual':
+        return <PlanificacionAnual onRefresh={handleRefresh} />;
       case 'planificacion_semanal':
-        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} initialTab="cronograma" clubs={clubs} />;
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} initialTab="cronograma" clubs={clubs} />;
       case 'tecnica':
-        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} clubs={clubs} hideCronograma={true} />;
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} clubs={clubs} hideCronograma={true} />;
       case 'citaciones':
         return <CitacionesArea 
           performanceRecords={performanceRecords} 
@@ -1265,6 +1274,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
           <ContentComponent 
             performanceRecords={performanceRecords} 
             onMenuChange={onMenuChange} 
+            onRefresh={handleRefresh}
             clubs={clubs}
             userRole={userRole}
             userClub={userClub}

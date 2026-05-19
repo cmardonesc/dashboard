@@ -390,6 +390,21 @@ export default function App() {
         }
       )
       .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cronograma_semanal' },
+        () => {
+          console.log('Cronograma semanal changed, triggering refresh...');
+          // Optional: handleRefresh if we decide to pass it or use a global signal
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tareas_semanales' },
+        () => {
+          console.log('Tareas semanales changed, triggering refresh...');
+        }
+      )
+      .on(
         'broadcast',
         { event: 'notification' },
         (payload) => {
@@ -1016,6 +1031,7 @@ export default function App() {
                 performanceRecords={performanceRecords} 
                 activeMenu={activeMenu} 
                 onMenuChange={setActiveMenu} 
+                onRefresh={handleManualRefresh}
                 userClub={userClub || undefined}
                 userClubId={userClubId}
                 userRole={role}

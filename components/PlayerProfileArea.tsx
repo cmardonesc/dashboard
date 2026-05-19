@@ -8,7 +8,7 @@ import {
   PolarAngleAxis, PolarRadiusAxis, Radar 
 } from 'recharts';
 import ClubBadge from './ClubBadge';
-import { UserRole } from '../types';
+import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS } from '../types';
 import { FALLBACK_CLUB_NAMES } from '../constants';
 
 interface PlayerProfileAreaProps {
@@ -25,6 +25,8 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const [players, setPlayers] = useState<any[]>(initialPlayers || []);
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<string>('evolucion'); 
+  const [gpsChartMetric, setGpsChartMetric] = useState<'dist_total_m' | 'dist_mai_m_20_kmh' | 'm_por_min' | 'acc_decc_ai_n'>('dist_total_m');
   
   // Filter States
   const [filterYear, setFilterYear] = useState<string>('');
@@ -91,14 +93,16 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       setProfileData(pData);
 
       // 2. Citations & Microcycles
-      const { data: citData } = await supabase
+      const { data: citData, error: citError } = await supabase
         .from('citaciones')
         .select(`
           id,
-          fecha,
+          fecha_citacion,
           observacion,
-          microcycles (
+          microcycles!fk_citaciones_microcycles (
             id,
+            category_id,
+            micro_number,
             type,
             start_date,
             end_date,
@@ -106,7 +110,12 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
           )
         `)
         .eq('player_id', playerId)
-        .order('fecha', { ascending: false });
+        .order('fecha_citacion', { ascending: false });
+      
+      if (citError) {
+        console.error("Error fetching citations:", citError);
+        // Fallback or handle error
+      }
       setCitations(citData || []);
 
       // 3. Training & Matches (Internal Load)
@@ -157,11 +166,35 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const latestSpeed = useMemo(() => physicalData.speed.length > 0 ? physicalData.speed[physicalData.speed.length - 1] : null, [physicalData.speed]);
 
   const stats = useMemo(() => {
+    const totalCitations = citations.length;
+    const totalTrainings = trainingData.length;
+    const totalMatches = matchData.length;
+    const totalMinGps = gpsStats.reduce((acc, curr) => acc + (Number(curr.minutos) || 0), 0);
+    const totalDistGps = gpsStats.reduce((acc, curr) => acc + (Number(curr.dist_total_m) || 0), 0);
+    const totalHsrGps = gpsStats.reduce((acc, curr) => acc + (Number(curr.dist_mai_m_20_kmh) || 0), 0);
+    const totalSprints = gpsStats.reduce((acc, curr) => acc + (Number(curr.sprints_n) || 0), 0);
+    const maxVel = Math.max(...gpsStats.map(g => Number(g.vel_max_kmh) || 0), 0);
+
+    // Citations by Category
+    const citByCategory: Record<string, number> = {};
+    citations.forEach(cit => {
+      const catId = cit.microcycles?.category_id;
+      if (catId) {
+        const catLabel = REVERSE_CATEGORY_ID_MAP[catId] || `CAT ${catId}`;
+        citByCategory[catLabel] = (citByCategory[catLabel] || 0) + 1;
+      }
+    });
+
     return {
-      citaciones: citations.length,
-      entrenamientos: trainingData.length,
-      partidos: matchData.length,
-      minutosGps: gpsStats.reduce((acc, curr) => acc + (Number(curr.minutos) || 0), 0)
+      citaciones: totalCitations,
+      citByCategory,
+      entrenamientos: totalTrainings,
+      partidos: totalMatches,
+      minutosGps: totalMinGps,
+      distanciaGps: totalDistGps,
+      sprints: totalSprints,
+      velocidadMax: maxVel,
+      hsr: totalHsrGps
     };
   }, [citations, trainingData, matchData, gpsStats]);
 
@@ -227,6 +260,19 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       { subject: 'Perfil Graso', A: fatBonus, fullMark: 100 },
     ];
   }, [profileData, latestImtp, latestSpeed, latestVo2, latestAnthro]);
+
+  const inferredCategory = useMemo(() => {
+    if (!profileData) return 'S/D';
+    if (profileData.categoria) return profileData.categoria;
+    if (profileData.anio) {
+      const year = Number(profileData.anio);
+      if (year === 2011) return 'sub_15';
+      if (year === 2009 || year === 2010) return 'sub_16';
+      if (year === 2007 || year === 2008) return 'sub_17';
+      if (year >= 2012) return 'sub_13';
+    }
+    return 'SUB 17'; // Default fallback
+  }, [profileData]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -333,7 +379,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
                 <div className="mt-10 space-y-4">
                    <BioItem label="Clase" value={profileData.anio || 'N/A'} />
-                   <BioItem label="Categoría" value={profileData.categoria?.toUpperCase().replace('_', ' ') || 'S/D'} />
+                   <BioItem label="Categoría" value={inferredCategory.toUpperCase().replace('_', ' ')} />
                    <BioItem label="Pierna" value={profileData.perfil_pierna || 'S/D'} />
                    <BioItem label="ID Unico" value={profileData.player_id} />
                 </div>
@@ -341,10 +387,34 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
               {/* Counts Badge */}
               <div className="grid grid-cols-2 gap-4">
-                <StatCard label="Citaciones" value={stats.citaciones} icon="fa-calendar-check" color="blue" />
+                <StatCard 
+                  label="Citaciones" 
+                  value={stats.citaciones} 
+                  icon="fa-calendar-check" 
+                  color="blue" 
+                  extra={
+                    <div className="flex flex-wrap gap-1 mt-2">
+                       {Object.entries(stats.citByCategory).map(([cat, count]) => (
+                         <span key={cat} className="text-[7px] font-black bg-white/20 px-1.5 py-0.5 rounded-full uppercase">
+                           {cat.replace('sub_', '')}: {count}
+                         </span>
+                       ))}
+                    </div>
+                  }
+                />
                 <StatCard label="Entrenamientos" value={stats.entrenamientos} icon="fa-person-running" color="emerald" />
                 <StatCard label="Partidos" value={stats.partidos} icon="fa-trophy" color="red" />
-                <StatCard label="Minutos GPS" value={Math.round(stats.minutosGps)} icon="fa-clock" color="slate" />
+                <StatCard 
+                  label="Distancia GPS" 
+                  value={`${(stats.distanciaGps / 1000).toFixed(1)}km`} 
+                  icon="fa-route" 
+                  color="slate" 
+                  extra={
+                    <div className="text-[7px] font-black opacity-50 mt-1 uppercase">
+                      {Math.round(stats.minutosGps)} MIN TOTALES
+                    </div>
+                  }
+                />
               </div>
             </div>
 
@@ -378,15 +448,17 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                         <LastEvalItem label="Antropometría" date={latestAnthro?.fecha_medicion} value={latestAnthro ? `${latestAnthro.masa_adiposa_pct}% grasa` : 'Pendiente'} />
                         <LastEvalItem label="VO2 Max" date={latestVo2?.fecha} value={latestVo2 ? `${latestVo2.vo2_max} ml/kg/min` : 'Pendiente'} />
                         <LastEvalItem label="IMTP (Fuerza)" date={latestImtp?.fecha_test} value={latestImtp ? `${latestImtp.imtp_fuerza_n} N` : 'Pendiente'} />
-                        <LastEvalItem label="Velocidad 30m" date={latestSpeed?.fecha} value={latestSpeed ? `${latestSpeed.tiempo_total}s` : 'Pendiente'} />
+                        <LastEvalItem label="Vel. Max GPS" date={gpsStats[0]?.fecha} value={stats.velocidadMax > 0 ? `${stats.velocidadMax.toFixed(1)} km/h` : 'Pendiente'} />
                       </div>
                     </div>
                     <div className="mt-8 pt-8 border-t border-white/5">
                        <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-4">Última Citación</p>
                        {citations.length > 0 ? (
                          <div className="flex justify-between items-center bg-white/5 p-4 rounded-3xl">
-                            <span className="text-xs font-bold">{citations[0].microcycles?.city || 'S/D'} - {citations[0].microcycles?.type || 'S/D'}</span>
-                            <span className="text-[10px] font-black text-red-500">{citations[0].fecha_citacion}</span>
+                            <span className="text-xs font-bold text-white/90 truncate mr-2">
+                              {citations[0].microcycles?.city || 'S/D'} • {citations[0].microcycles?.type || 'S/D'}
+                            </span>
+                            <span className="text-[10px] font-black text-red-500 shrink-0">{citations[0].fecha_citacion}</span>
                          </div>
                        ) : (
                          <div className="bg-white/5 p-4 rounded-3xl text-center">
@@ -421,18 +493,55 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
               {/* GPS History */}
               <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
-                   <span className="w-2 h-6 bg-emerald-600 rounded-full"></span>
-                   Volumen de Carga Externa (GPS)
-                 </h3>
+                 <div className="flex flex-wrap items-center justify-between gap-4 mb-10">
+                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
+                      <span className="w-2 h-6 bg-emerald-600 rounded-full"></span>
+                      Desempeño Físico (GPS)
+                    </h3>
+                    <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100">
+                       <button 
+                         onClick={() => setGpsChartMetric('dist_total_m')}
+                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${gpsChartMetric === 'dist_total_m' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
+                       >
+                         Distancia
+                       </button>
+                       <button 
+                         onClick={() => setGpsChartMetric('dist_mai_m_20_kmh')}
+                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${gpsChartMetric === 'dist_mai_m_20_kmh' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
+                       >
+                         HSR ({'>'}20)
+                       </button>
+                       <button 
+                         onClick={() => setGpsChartMetric('m_por_min')}
+                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${gpsChartMetric === 'm_por_min' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
+                       >
+                         Relativa
+                       </button>
+                       <button 
+                         onClick={() => setGpsChartMetric('acc_decc_ai_n')}
+                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${gpsChartMetric === 'acc_decc_ai_n' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
+                       >
+                         A/D
+                       </button>
+                    </div>
+                 </div>
                  <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
-                       <BarChart data={gpsStats.slice(0, 20).reverse()}>
+                       <BarChart data={gpsStats.slice(0, 15).reverse()}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                           <XAxis dataKey="fecha" tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
                           <YAxis tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
-                          <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                          <Bar name="Distancia Total (m)" dataKey="dist_total_m" fill="#10b981" radius={[8, 8, 0, 0]} barSize={24} />
+                          <Tooltip 
+                            contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                            cursor={{fill: '#f8fafc'}}
+                          />
+                          <Bar 
+                            name={gpsChartMetric === 'dist_total_m' ? 'Distancia (m)' : gpsChartMetric === 'dist_mai_m_20_kmh' ? 'HSR >20km/h (m)' : gpsChartMetric === 'm_por_min' ? 'M/min' : 'Acc/Decc (n)'} 
+                            dataKey={gpsChartMetric} 
+                            fill="#10b981" 
+                            radius={[8, 8, 0, 0]} 
+                            barSize={32} 
+                          />
                        </BarChart>
                     </ResponsiveContainer>
                  </div>
@@ -447,11 +556,14 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                        {citations.map((cit, i) => (
                          <div key={i} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 hover:border-blue-200 transition-all flex items-center justify-between">
                             <div>
-                               <p className="text-[10px] font-black uppercase text-slate-900">{cit.microcycles?.city || 'S/D'} ({cit.microcycles?.type || 'CIT' })</p>
-                               <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase tracking-widest">{cit.fecha_citacion}</p>
+                               <p className="text-[10px] font-black uppercase text-slate-900">
+                                 {cit.microcycles?.micro_number ? `MICROCICLO ${cit.microcycles.micro_number}` : 'MICROCICLO'} - <span className="text-red-600">{cit.microcycles?.category_id ? REVERSE_CATEGORY_ID_MAP[cit.microcycles.category_id]?.replace('sub_', 'SUB ') : 'S/D'}</span>
+                               </p>
+                               <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase tracking-widest">{cit.microcycles?.city || 'S/D'} • {cit.microcycles?.type || 'CIT'}</p>
                             </div>
-                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
-                               <i className="fa-solid fa-check text-[10px]"></i>
+                            <div className="text-right">
+                               <p className="text-[9px] font-black text-slate-900 italic leading-none">{cit.fecha_citacion}</p>
+                               <p className="text-[7px] font-bold text-red-500 uppercase mt-1 tracking-tighter">CONVOCADO</p>
                             </div>
                          </div>
                        ))}
@@ -507,19 +619,24 @@ const BioItem = ({ label, value }: { label: string, value: any }) => (
   </div>
 );
 
-const StatCard = ({ label, value, icon, color }: { label: string, value: number, icon: string, color: 'blue' | 'emerald' | 'red' | 'slate' }) => {
+const StatCard = ({ label, value, icon, color, extra }: { label: string, value: any, icon: string, color: 'blue' | 'emerald' | 'red' | 'slate', extra?: React.ReactNode }) => {
   const colors = {
-    blue: 'bg-blue-50 text-blue-600 border-blue-100',
-    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    red: 'bg-red-50 text-red-600 border-red-100',
-    slate: 'bg-slate-50 text-slate-600 border-slate-100 shadow-inner'
+    blue: 'bg-blue-600 text-white border-blue-400 shadow-blue-500/20',
+    emerald: 'bg-emerald-600 text-white border-emerald-400 shadow-emerald-500/20',
+    red: 'bg-red-600 text-white border-red-400 shadow-red-500/20',
+    slate: 'bg-[#1e293b] text-white border-slate-700 shadow-slate-900/20'
   };
   return (
-    <div className={`${colors[color]} p-4 rounded-3xl border shadow-sm flex flex-col justify-between h-28`}>
-      <i className={`fa-solid ${icon} text-lg`}></i>
+    <div className={`${colors[color]} p-4 rounded-[32px] border shadow-lg flex flex-col justify-between h-36 transition-transform hover:scale-[1.02] duration-300`}>
+      <div className="flex justify-between items-start">
+        <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md">
+          <i className={`fa-solid ${icon} text-sm`}></i>
+        </div>
+      </div>
       <div>
-        <p className="text-[7px] font-black uppercase tracking-widest mb-1 opacity-70">{label}</p>
-        <p className="text-xl font-black italic leading-none">{value}</p>
+        <p className="text-[8px] font-black uppercase tracking-[0.1em] opacity-80 mb-1">{label}</p>
+        <p className="text-2xl font-black italic leading-none truncate">{value}</p>
+        {extra}
       </div>
     </div>
   );

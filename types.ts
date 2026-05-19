@@ -169,6 +169,7 @@ export interface TrainingLoadData {
   created_at?: string;
   molestias?: string;
   enfermedad?: string;
+  session_index?: number;
 }
 
 export interface GPSData {

@@ -15,6 +15,7 @@ const TrainingLoadForm: React.FC<TrainingLoadFormProps> = ({ onSubmit, submittin
   const [formData, setFormData] = useState({
     type: 'FIELD' as 'FIELD' | 'GYM' | 'MATCH',
     duration: 90,
+    session_index: 1,
     rpe: 5,
     sorenessAreas: [] as string[],
     illnessSymptoms: [] as string[]
@@ -68,6 +69,24 @@ const TrainingLoadForm: React.FC<TrainingLoadFormProps> = ({ onSubmit, submittin
               >
                 <i className={`fa-solid ${t === 'FIELD' ? 'fa-futbol' : t === 'GYM' ? 'fa-dumbbell' : 'fa-trophy'} text-xl`}></i>
                 <span className="text-[9px] font-black uppercase tracking-widest">{t === 'FIELD' ? 'CAMPO' : t === 'GYM' ? 'GYM' : 'MATCH'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-4">Número de Sesión</label>
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2].map((idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setFormData({ ...formData, session_index: idx })}
+                className={`py-4 rounded-[20px] border-2 transition-all flex items-center justify-center gap-2 ${
+                  formData.session_index === idx ? 'bg-[#0b1220] text-white border-[#0b1220] shadow-md' : 'bg-white text-slate-400 border-slate-50'
+                }`}
+              >
+                <span className="text-[10px] font-black uppercase tracking-widest">Sesión {idx}</span>
               </button>
             ))}
           </div>
