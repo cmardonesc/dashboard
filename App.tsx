@@ -333,24 +333,23 @@ export default function App() {
 
   const fetchUserData = async (
     userId: string
-  ): Promise<{ role: Role; player_id: number | null; club_name: string | null; id_club: number | null; email: string | null }> => {
+  ): Promise<{ role: Role; player_id: number | null; club_name: string | null; email: string | null }> => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('role, player_id, club_name, id_club, email')
+        .select('role, player_id, club_name')
         .eq('id', userId)
         .maybeSingle()
 
-      if (error || !data) return { role: null, player_id: null, club_name: null, id_club: null, email: null }
+      if (error || !data) return { role: null, player_id: null, club_name: null, email: null }
       return {
         role: (data.role as Role) ?? null,
         player_id: data.player_id ? Number(data.player_id) : null,
         club_name: data.club_name || null,
-        id_club: data.id_club ? Number(data.id_club) : null,
-        email: data.email || null
+        email: null // El email se obtiene de la sesión de auth, no de profiles
       }
     } catch (err) {
-      return { role: null, player_id: null, club_name: null, id_club: null, email: null }
+      return { role: null, player_id: null, club_name: null, email: null }
     }
   }
 
@@ -481,8 +480,14 @@ export default function App() {
           if (isMounted) {
             setRole(userData.role)
             setUserClub(userData.club_name)
-            setUserClubId(userData.id_club)
             setLinkedPlayerId(userData.player_id)
+            
+            // Si tenemos club_name pero no ID, intentamos recuperarlo de la tabla clubes
+            if (userData.club_name) {
+              supabase.from('clubes').select('id_club').eq('nombre', userData.club_name).maybeSingle()
+                .then(({data}) => { if (data) setUserClubId(data.id_club); });
+            }
+
             fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error("Error cargando datos de rendimiento:", e));
           }
         }
@@ -654,39 +659,32 @@ export default function App() {
         userData.role = 'staff';
       }
 
-      // RECOVERY BY EMAIL: Si no hay perfil con este UUID, ver si hay uno con el mismo EMAIL (crucial para mock users)
+      // RECOVERY BY EMAIL: Buscar si hay uno con el mismo metadata o ID
       if (!userData.role && session.user.email) {
         const { data: altProfile } = await supabase
           .from('profiles')
           .select('*')
-          .eq('email', session.user.email)
+          .eq('id', session.user.id)
           .maybeSingle();
         
         if (altProfile) {
-          console.log("¡Vínculo recuperado por EMAIL!", altProfile);
+          console.log("¡Vínculo recuperado!", altProfile);
           userData = {
             role: altProfile.role as Role,
             player_id: altProfile.player_id,
             club_name: altProfile.club_name,
-            id_club: altProfile.id_club,
-            email: altProfile.email
+            email: null
           };
-          // Si el ID cambió (ej: de mock a real), actualizamos el perfil real con el ID real
-          if (altProfile.id !== session.user.id) {
-             console.log("Actualizando ID de perfil recuperado al ID de sesión actual...");
-             supabase.from('profiles').update({ id: session.user.id }).eq('id', altProfile.id).then();
-          }
         }
       }
 
-      // RECOVERY / MOCK HANDLING: Si el perfil no tiene rol (mock users o fallo de registro)
+      // RECOVERY / MOCK HANDLING: Si el perfil no tiene rol
       if (!userData.role && session.user.user_metadata?.role) {
         console.log("Usando rol desde metadata:", session.user.user_metadata.role);
         userData = {
           role: session.user.user_metadata.role,
           player_id: session.user.user_metadata.player_id ? Number(session.user.user_metadata.player_id) : null,
           club_name: session.user.user_metadata.club_name || null,
-          id_club: session.user.user_metadata.id_club ? Number(session.user.user_metadata.id_club) : null,
           email: session.user.email || null
         };
       }
@@ -702,8 +700,14 @@ export default function App() {
       if (userData.role) {
         setRole(userData.role);
         setUserClub(userData.club_name);
-        setUserClubId(userData.id_club);
         setLinkedPlayerId(userData.player_id);
+        
+        // Resolver ID del club si existe
+        if (userData.club_name) {
+           const { data: cData } = await supabase.from('clubes').select('id_club').eq('nombre', userData.club_name).maybeSingle();
+           if (cData) setUserClubId(cData.id_club);
+        }
+
         // Cargar datos iniciales
         fetchPerformanceData(userData.role, userData.player_id).catch(console.error);
         logActivity(`Inicio de Sesión (${userData.role})`, { email: emailLower, playerId: userData.player_id });
