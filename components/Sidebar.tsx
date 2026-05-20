@@ -50,6 +50,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const isPlanificacionActive = PLANIFICACION_IDS.includes(activeMenu);
   const [planificacionOpen, setPlanificacionOpen] = useState(isPlanificacionActive);
 
+  // Estado para Área Técnica y sus submenús
+  const TECNICA_IDS = ['tecnica', 'tecnica_biblioteca', 'tecnica_convocatoria', 'tecnica_partidos'];
+  const isTecnicaActive = TECNICA_IDS.includes(activeMenu);
+  const [tecnicaOpen, setTecnicaOpen] = useState(isTecnicaActive);
+
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
 
@@ -75,6 +80,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
     if (!PLANIFICACION_IDS.includes(id)) {
       setPlanificacionOpen(false);
     }
+    if (!TECNICA_IDS.includes(id)) {
+      setTecnicaOpen(false);
+    }
   };
 
   const toggleCollapse = () => {
@@ -86,6 +94,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
       setNutricionOpen(false);
       setLogisticsOpen(false);
       setPlanificacionOpen(false);
+      setTecnicaOpen(false);
     }
   };
 
@@ -436,6 +445,65 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
             <i className={`fa-solid fa-trophy text-xl ${isCollapsed ? '' : 'w-6'} ${activeMenu === 'competencia' ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
             {!isCollapsed && <span className="font-bold text-sm tracking-tight">Competencia</span>}
           </button>
+        )}
+
+        {userRole !== 'club' && (
+          <div className="pt-2">
+            <button
+              onClick={() => handleSubmenuClick(setTecnicaOpen, !tecnicaOpen)}
+              title={isCollapsed ? 'Área Técnica' : ''}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 ${
+                tecnicaOpen ? 'text-white bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
+                <i className={`fa-solid fa-clipboard-list text-xl ${isCollapsed ? '' : 'w-6'} ${tecnicaOpen ? 'text-[#CF1B2B]' : 'text-slate-500'}`}></i>
+                {!isCollapsed && <span className="font-bold text-sm tracking-tight">Área Técnica</span>}
+              </div>
+              {!isCollapsed && <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${tecnicaOpen ? 'rotate-180' : ''}`}></i>}
+            </button>
+            
+            {tecnicaOpen && !isCollapsed && (
+              <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
+                <button
+                  onClick={() => onMenuChange('planificacion_semanal')}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeMenu === 'planificacion_semanal' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_semanal' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                  <span className="text-[10px] font-bold">Cronograma Semanal</span>
+                </button>
+                <button
+                  onClick={() => onMenuChange('tecnica_biblioteca')}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeMenu === 'tecnica_biblioteca' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_biblioteca' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                  <span className="text-[10px] font-bold">Base de Tareas</span>
+                </button>
+                <button
+                  onClick={() => onMenuChange('tecnica_convocatoria')}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeMenu === 'tecnica_convocatoria' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_convocatoria' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                  <span className="text-[10px] font-bold">Convocatoria Táctica</span>
+                </button>
+                <button
+                  onClick={() => onMenuChange('tecnica_partidos')}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeMenu === 'tecnica_partidos' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_partidos' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                  <span className="text-[10px] font-bold">Informes de Partido</span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         {userRole !== 'club' && (

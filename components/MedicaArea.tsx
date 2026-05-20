@@ -193,7 +193,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     try {
       let query = supabase
         .from('lesionados')
-        .select('*, players!lesionados_id_del_jugador_fkey(nombre, apellido1, apellido2, posicion, id_club, club, clubes!fk_players_clubes(nombre))')
+        .select('*, players!lesionados_id_del_jugador_fkey(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))')
         .order('updated_at', { ascending: false });
       
       if (userRole === 'club') {
@@ -219,7 +219,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       // Fetch reports
       let query = supabase
         .from('medical_daily_reports')
-        .select('*, players!medical_daily_reports_id_del_jugador_fkey(player_id, nombre, apellido1, apellido2, anio, posicion, id_club, club, clubes!fk_players_clubes(nombre))')
+        .select('*, players!fk_medical_daily_reports_players(player_id, nombre, apellido1, apellido2, anio, posicion, id_club, clubes!fk_players_clubes(nombre))')
         .order('report_date', { ascending: false });
 
       if (userRole === 'club') {

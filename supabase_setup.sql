@@ -272,12 +272,13 @@ create policy "Enable all access for microcycles" on public.microcycles for all 
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, role, player_id, club_name)
+  insert into public.profiles (id, role, player_id, club_name, email)
   values (
     new.id, 
     coalesce(new.raw_user_meta_data->>'role', 'player'), 
     (new.raw_user_meta_data->>'player_id')::int,
-    new.raw_user_meta_data->>'club_name'
+    new.raw_user_meta_data->>'club_name',
+    new.email
   );
   return new;
 end;

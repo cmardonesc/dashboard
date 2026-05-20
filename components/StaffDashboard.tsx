@@ -1226,7 +1226,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       case 'planificacion_semanal':
         return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} initialTab="cronograma" clubs={clubs} />;
       case 'tecnica':
-        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} clubs={clubs} hideCronograma={true} />;
+      case 'tecnica_partidos':
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} clubs={clubs} hideCronograma={true} initialTab="partidos" />;
+      case 'tecnica_biblioteca':
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} clubs={clubs} hideCronograma={true} initialTab="tareas" />;
+      case 'tecnica_convocatoria':
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} clubs={clubs} hideCronograma={true} initialTab="convocatoria" />;
       case 'citaciones':
         return <CitacionesArea 
           performanceRecords={performanceRecords} 

@@ -70,7 +70,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const fetchPlayers = async () => {
     try {
       console.log("Fetching players in PlayerProfileArea (fallback)...");
-      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio, clubes(nombre)');
+      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio, clubes!fk_players_clubes(nombre)');
       if (userRole === 'club') {
         if (userClubId) {
           query = query.eq('id_club', userClubId);

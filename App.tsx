@@ -964,7 +964,10 @@ export default function App() {
 
   const menuTitle = role === 'club' 
     ? `${userClub || 'CLUB'} - PERFIL DE CLUB`
-    : (activeMenu === 'citaciones' ? 'CITAS' : activeMenu === 'fisica_carga_externa_tareas' ? 'CARGA TAREAS' : activeMenu.toUpperCase().replace('_', ' '))
+    : (activeMenu === 'citaciones' ? 'CITAS' : 
+       activeMenu === 'fisica_carga_externa_tareas' ? 'CARGA TAREAS' : 
+       (activeMenu === 'tecnica' || activeMenu.startsWith('tecnica_')) ? 'ÁREA TÉCNICA' : 
+       activeMenu.toUpperCase().replace('_', ' '))
 
   if (role === 'staff' || role === 'admin' || role === 'club') {
     return (
