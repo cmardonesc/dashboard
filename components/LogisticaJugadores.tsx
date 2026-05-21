@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { User, UserRole } from '../types';
 import { useClubs } from '../lib/useClubs';
+import { FALLBACK_CLUB_NAMES } from '../constants';
 import ClubBadge from './ClubBadge';
 
 const LogisticaJugadores: React.FC = () => {
@@ -41,16 +42,32 @@ const LogisticaJugadores: React.FC = () => {
   const fetchPlayers = async () => {
     setLoading(true);
     try {
+      console.log('LogisticaJugadores: Fetching players...');
       const { data, error } = await supabase
         .from('players')
-        .select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion, fecha_nacimiento')
+        .select('*') // Seleccionamos todo para evitar omitir columnas necesarias
         .order('nombre', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error supabase fetching players:', error);
+        throw error;
+      }
+
+      console.log('LogisticaJugadores: Players data received:', data?.length || 0);
 
       const mapped: User[] = (data || []).map((p: any) => {
-        const clubObj = dbClubs.find(c => Number(c.id_club) === Number(p.id_club));
-        const clubName = clubObj?.nombre || p.club || 'SIN CLUB';
+        // Encontrar club en la lista de clubes cargada
+        const clubObj = dbClubs.find(c => 
+          Number(c.id_club) === Number(p.id_club)
+        );
+        
+        let clubName = clubObj?.nombre || 'SIN CLUB';
+        
+        // Fallback a nombres constantes si es un ID conocido pero no está en la DB activa
+        if (clubName === 'SIN CLUB' && p.id_club) {
+           const fb = FALLBACK_CLUB_NAMES[Number(p.id_club)];
+           if (fb) clubName = fb;
+        }
 
         return {
           id: `player-${p.player_id}`,
@@ -97,7 +114,7 @@ const LogisticaJugadores: React.FC = () => {
 
   useEffect(() => {
     fetchPlayers();
-  }, []);
+  }, [dbClubs]);
 
   const categories = useMemo(() => {
     const cats = new Set<string>();
@@ -129,7 +146,7 @@ const LogisticaJugadores: React.FC = () => {
         nombre: editingPlayer.nombre,
         apellido1: editingPlayer.apellido1,
         apellido2: editingPlayer.apellido2,
-        club: editingPlayer.club,
+        id_club: editingPlayer.id_club,
         posicion: editingPlayer.position,
         fecha_nacimiento: editingPlayer.fecha_nacimiento
       };
@@ -143,9 +160,18 @@ const LogisticaJugadores: React.FC = () => {
         if (error) throw error;
       } else {
         // Create
+        // Generar un player_id si no existe (esto debería ser manual en este dashboard o autoincremental en DB)
+        // Por ahora asumimos que la DB lo maneja si no lo pasamos, pero la tabla tiene player_id as PRIMARY KEY (int)
+        // en supabase_setup.sql: player_id int primary key
+        // Si no es identity, fallará el insert sin id.
+        
+        // Buscamos el max id actual para el nuevo jugador
+        const { data: maxIdData } = await supabase.from('players').select('player_id').order('player_id', { ascending: false }).limit(1);
+        const nextId = maxIdData && maxIdData.length > 0 ? maxIdData[0].player_id + 1 : 1000;
+
         const { error } = await supabase
           .from('players')
-          .insert([payload]);
+          .insert([{ ...payload, player_id: nextId }]);
         if (error) throw error;
       }
 
@@ -373,12 +399,21 @@ const LogisticaJugadores: React.FC = () => {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Club</label>
                   <select 
-                    value={editingPlayer?.club || ''}
-                    onChange={e => setEditingPlayer(prev => ({ ...prev!, club: e.target.value }))}
+                    value={editingPlayer?.id_club || ''}
+                    onChange={e => {
+                      const id = Number(e.target.value);
+                      const club = dbClubs.find(c => Number(c.id_club) === id);
+                      setEditingPlayer(prev => ({ 
+                        ...prev!, 
+                        id_club: id,
+                        club: club?.nombre || ''
+                      }));
+                    }}
                     className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
                   >
                     <option value="">Seleccionar Club</option>
-                    {CLUBS.map(c => <option key={c} value={c}>{c}</option>)}
+                    {dbClubs.map(c => <option key={c.id_club} value={c.id_club}>{c.nombre}</option>)}
+                    <option value="0">Otro / Extranjero / S/C</option>
                   </select>
                 </div>
                 <div className="space-y-2">
