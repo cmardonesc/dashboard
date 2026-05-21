@@ -190,26 +190,93 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
   }, [searchTerm, performanceRecords]);
 
   const fetchInjuredPlayers = async () => {
-    try {
-      let query = supabase
-        .from('lesionados')
-        .select('*, players!lesionados_id_del_jugador_fkey(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))')
-        .order('updated_at', { ascending: false });
-      
-      if (userRole === 'club') {
-        if (userClubId) {
-          query = query.eq('players.id_club', userClubId);
-        } else if (userClub) {
-          query = query.eq('players.clubes.nombre', userClub);
-        }
-      }
+    const possibleSchemas = [
+      '*, players!lesionados_player_id_fkey(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))',
+      '*, players(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))',
+      '*, players!lesionados_id_del_jugador_fkey(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))'
+    ];
 
-      const { data, error } = await query;
-      
-      if (error) throw error;
-      if (data) setDbInjuries(data);
-    } catch (err) {
-      console.error("Error cargando lesionados:", err);
+    let lastError = null;
+
+    for (const schema of possibleSchemas) {
+      try {
+        let query = supabase
+          .from('lesionados')
+          .select(schema)
+          .order('updated_at', { ascending: false });
+        
+        if (userRole === 'club') {
+          if (userClubId) {
+            query = query.eq('players.id_club', userClubId);
+          } else if (userClub) {
+            query = query.eq('players.clubes.nombre', userClub);
+          }
+        }
+
+        const { data, error } = await query;
+        if (error) {
+          lastError = error;
+          continue;
+        }
+        
+        if (data) {
+          setDbInjuries(data as any);
+          return;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    // Fallback extremadamente robusto en memoria si fallan los joins
+    if (lastError) {
+      console.warn("⚠️ Error con joins, ejecutando fallback de carga de 'lesionados' sin join + mapeo en memoria...");
+      try {
+        const { data, error } = await supabase
+          .from('lesionados')
+          .select('*')
+          .order('updated_at', { ascending: false });
+
+        if (error) throw error;
+
+        if (data) {
+          const mappedData = data.map((injury: any) => {
+            const matchingRecord = performanceRecords.find(r => r.player.player_id === injury.player_id);
+            if (matchingRecord) {
+              const p = matchingRecord.player;
+              const clubName = p.club || (clubs && p.id_club ? clubs.find(c => c.id_club === p.id_club || c.id === p.id_club)?.nombre : undefined);
+              return {
+                ...injury,
+                players: {
+                  nombre: p.nombre || p.name || '',
+                  apellido1: p.apellido1 || '',
+                  apellido2: p.apellido2 || '',
+                  posicion: p.position || '',
+                  id_club: p.id_club,
+                  club: clubName || '',
+                  clubes: clubName ? { nombre: clubName } : undefined
+                }
+              };
+            }
+            return injury;
+          });
+
+          // Filtrar por rol de club si es necesario
+          let filteredMapped = mappedData;
+          if (userRole === 'club') {
+            if (userClubId) {
+              filteredMapped = mappedData.filter((i: any) => i.players?.id_club === userClubId);
+            } else if (userClub) {
+              filteredMapped = mappedData.filter((i: any) => i.players?.club === userClub);
+            }
+          }
+
+          setDbInjuries(filteredMapped as any);
+          return;
+        }
+      } catch (fallbackErr) {
+        console.error("Fallo definitivo cargando lesionados con fallback sin join:", fallbackErr);
+      }
     }
   };
 
@@ -217,22 +284,93 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
     try {
       setLoading(true);
       // Fetch reports
-      let query = supabase
-        .from('medical_daily_reports')
-        .select('*, players!fk_medical_daily_reports_players(player_id, nombre, apellido1, apellido2, anio, posicion, id_club, clubes!fk_players_clubes(nombre))')
-        .order('report_date', { ascending: false });
+      const possibleSchemas = [
+        '*, players!fk_medical_daily_reports_players(player_id, nombre, apellido1, apellido2, anio, posicion, id_club, clubes!fk_players_clubes(nombre))',
+        '*, players!medical_daily_reports_player_id_fkey(player_id, nombre, apellido1, apellido2, anio, posicion, id_club, clubes!fk_players_clubes(nombre))',
+        '*, players(player_id, nombre, apellido1, apellido2, anio, posicion, id_club, clubes!fk_players_clubes(nombre))'
+      ];
 
-      if (userRole === 'club') {
-        if (userClubId) {
-          query = query.eq('players.id_club', userClubId);
-        } else if (userClub) {
-          query = query.eq('players.clubes.nombre', userClub);
+      let reports = null;
+      let reportsError = null;
+
+      for (const schema of possibleSchemas) {
+        try {
+          let query = supabase
+            .from('medical_daily_reports')
+            .select(schema)
+            .order('report_date', { ascending: false });
+
+          if (userRole === 'club') {
+            if (userClubId) {
+              query = query.eq('players.id_club', userClubId);
+            } else if (userClub) {
+              query = query.eq('players.clubes.nombre', userClub);
+            }
+          }
+
+          const { data, error } = await query;
+          if (error) {
+            reportsError = error;
+            continue;
+          }
+          reports = data;
+          break;
+        } catch (err) {
+          reportsError = err;
         }
       }
 
-      const { data: reports, error: reportsError } = await query;
+      // Fallback extremadamente robusto en memoria si fallan los joins
+      if (reportsError && !reports) {
+        console.warn("⚠️ Error con joins en daily reports, intentando fallback sin join + mapeo en memoria...");
+        try {
+          const { data, error } = await supabase
+            .from('medical_daily_reports')
+            .select('*')
+            .order('report_date', { ascending: false });
 
-      if (reportsError) throw reportsError;
+          if (error) throw error;
+          
+          if (data) {
+            const mappedReports = data.map((report: any) => {
+              const matchingRecord = performanceRecords.find(r => r.player.player_id === report.player_id);
+              if (matchingRecord) {
+                const p = matchingRecord.player;
+                const clubName = p.club || (clubs && p.id_club ? clubs.find(c => c.id_club === p.id_club || c.id === p.id_club)?.nombre : undefined);
+                return {
+                  ...report,
+                  players: {
+                    player_id: p.player_id,
+                    nombre: p.nombre || p.name || '',
+                    apellido1: p.apellido1 || '',
+                    apellido2: p.apellido2 || '',
+                    anio: p.anio,
+                    posicion: p.position || '',
+                    id_club: p.id_club,
+                    club: clubName || '',
+                    clubes: clubName ? { nombre: clubName } : undefined
+                  }
+                };
+              }
+              return report;
+            });
+
+            // Filtrar por rol de club si es necesario
+            let filteredMapped = mappedReports;
+            if (userRole === 'club') {
+              if (userClubId) {
+                filteredMapped = mappedReports.filter((r: any) => r.players?.id_club === userClubId);
+              } else if (userClub) {
+                filteredMapped = mappedReports.filter((r: any) => r.players?.club === userClub);
+              }
+            }
+
+            reports = filteredMapped;
+          }
+        } catch (fallbackErr) {
+          console.error("Fallo definitivo cargando medical_daily_reports con fallback sin join:", fallbackErr);
+        }
+      }
 
       if (!reports || reports.length === 0) {
         setDailyReports([]);
@@ -240,22 +378,31 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
         return;
       }
 
-      // Fetch citations to determine category at the time of report
+      // Fetch citations to determine category at the time of report using Correct database column fecha_citacion
       const playerIds = reports.map(r => r.player_id);
-      const { data: citations, error: citationsError } = await supabase
-        .from('citaciones')
-        .select('player_id, fecha, microcycles!fk_citaciones_microcycles(category_id)')
-        .in('player_id', playerIds);
-
-      if (citationsError) {
-        console.warn("Could not fetch citations for categories, falling back to player default category.", citationsError);
+      let citations: any[] | null = null;
+      try {
+        const { data, error } = await supabase
+          .from('citaciones')
+          .select('player_id, fecha_citacion, microcycles!fk_citaciones_microcycles(category_id)')
+          .in('player_id', playerIds);
+        if (!error) citations = data;
+        else {
+          const { data: fallbackData } = await supabase
+            .from('citaciones')
+            .select('player_id, fecha_citacion')
+            .in('player_id', playerIds);
+          citations = fallbackData;
+        }
+      } catch (e) {
+        console.warn("Could not fetch citations for categories, falling back to player default category.", e);
       }
 
       const processedReports = reports.map(report => {
         // Find matching citation by date and player
         const matchingCitation = citations?.find(c => 
           c.player_id === report.player_id && 
-          c.fecha === report.report_date
+          (c.fecha || c.fecha_citacion) === report.report_date
         );
 
         let categoryStr = report.players?.categoria || '-';

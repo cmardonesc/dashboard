@@ -282,11 +282,10 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         .gte('end_date', today)
         .maybeSingle();
 
-      const payload = {
+      const payloadWithoutIndex = {
         player_id: player.player_id,
         microcycle_id: activeMC?.id || null,
         session_date: today,
-        session_index: data.session_index || 1,
         rpe: data.rpe,
         duration_min: data.duration,
         molestias: data.sorenessAreas.join(', '),
@@ -294,11 +293,39 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         created_by: user?.id
       };
 
-      const { error } = await supabase
-        .from('internal_load')
-        .upsert(payload, { onConflict: 'player_id,session_date,session_index' });
+      const payloadWithIndex = {
+        ...payloadWithoutIndex,
+        session_index: data.session_index || 1
+      };
+
+      let saveError;
       
-      if (error) throw error;
+      try {
+        // Primero intentamos con session_index (requerido por la especificación más reciente)
+        const { error } = await supabase
+          .from('internal_load')
+          .upsert(payloadWithIndex, { onConflict: 'player_id,session_date,session_index' });
+        
+        saveError = error;
+      } catch (err: any) {
+        saveError = err;
+      }
+
+      // Si el error indica que la columna 'session_index' no existe, caemos a un upsert sin ese campo
+      if (saveError && (
+        saveError.message?.includes('session_index') || 
+        saveError.details?.includes('session_index') ||
+        JSON.stringify(saveError).includes('session_index')
+      )) {
+        console.warn("⚠️ Columna 'session_index' no encontrada en base de datos. Cayendo en modo compatible (sin session_index)...");
+        const { error: retryError } = await supabase
+          .from('internal_load')
+          .upsert(payloadWithoutIndex, { onConflict: 'player_id,session_date' });
+        
+        if (retryError) throw retryError;
+      } else if (saveError) {
+        throw saveError;
+      }
       
       logActivity('Envío Carga Interna (PSE)', { playerId: player.player_id, date: today, rpe: data.rpe });
 
@@ -344,11 +371,59 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         created_by: user?.id
       };
 
-      const { error } = await supabase
-        .from('match_reports')
-        .insert(payload);
-      
-      if (error) throw error;
+      let saveError;
+      try {
+        const { error } = await supabase
+          .from('match_reports')
+          .insert(payload);
+        saveError = error;
+      } catch (err: any) {
+        saveError = err;
+      }
+
+      if (saveError) {
+        const errorMsg = saveError.message || JSON.stringify(saveError);
+        // Si no se encuentra la tabla match_reports o falta en cache, hacemos fallback a internal_load de tipo MATCH
+        if (errorMsg.includes('match_reports') || errorMsg.includes('schema cache') || errorMsg.includes('relation "public.match_reports" does not exist')) {
+          console.warn("⚠️ Tabla 'match_reports' no encontrada. Utilizando fallback robusto en 'internal_load'...");
+          
+          const fallbackPayload = {
+            player_id: player.player_id,
+            session_date: today,
+            rpe: data.rpe,
+            duration_min: Number(data.minutos) || 90,
+            type: 'MATCH',
+            molestias: `[Partido vs ${data.rival || 'Desconocido'} - Resultado: ${data.resultado || 'Titular'}] | ` + (data.sorenessAreas.join(', ') || 'Sin molestias'),
+            enfermedad: data.illnessSymptoms.join(', ') || null,
+            session_index: 2, // Se registra con session_index 2 para no chocar si ya envió un check-out previo en index 1
+            created_by: user?.id
+          };
+
+          const fallbackPayloadWithoutIndex = { ...fallbackPayload };
+          delete (fallbackPayloadWithoutIndex as any).session_index;
+
+          let internalLoadErr;
+          try {
+            // Intentar con session_index
+            const { error: err1 } = await supabase
+              .from('internal_load')
+              .upsert(fallbackPayload, { onConflict: 'player_id,session_date,session_index' });
+            internalLoadErr = err1;
+          } catch (e: any) {
+            internalLoadErr = e;
+          }
+
+          if (internalLoadErr) {
+            // Fallback sin session_index si choca la estructura
+            const { error: err2 } = await supabase
+              .from('internal_load')
+              .upsert(fallbackPayloadWithoutIndex, { onConflict: 'player_id,session_date' });
+            if (err2) throw err2;
+          }
+        } else {
+          throw saveError;
+        }
+      }
       
       logActivity('Envío Reporte de Competencia', { playerId: player.player_id, date: today, rival: data.rival });
 
@@ -380,7 +455,11 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       
       // Buscar id_club equivalente
       let idClubToAssign = null;
-      if (!isOtherClub && profileData.club) {
+      if (isOtherClub) {
+        // Buscar si existe un club con el mismo nombre en base de datos
+        const foundClub = dbClubs.find(c => c.nombre.toLowerCase() === customClub.trim().toLowerCase());
+        idClubToAssign = foundClub ? foundClub.id_club : 91; // 91 is Desconocido/SC fallback
+      } else if (profileData.club) {
         const foundClub = dbClubs.find(c => c.nombre === profileData.club);
         if (foundClub) idClubToAssign = foundClub.id_club;
       }
@@ -389,7 +468,6 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         nombre: profileData.nombre?.trim() || null,
         apellido1: profileData.apellido1?.trim() || null,
         apellido2: profileData.apellido2?.trim() || null,
-        club: finalClub?.trim() || null,
         id_club: idClubToAssign,
         posicion: profileData.position || null,
         fecha_nacimiento: profileData.fecha_nacimiento || null,

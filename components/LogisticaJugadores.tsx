@@ -16,6 +16,9 @@ const LogisticaJugadores: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Partial<User> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [playerToDelete, setPlayerToDelete] = useState<User | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErrorMsg, setDeleteErrorMsg] = useState<string | null>(null);
 
   const { clubs: dbClubs, loading: loadingClubs } = useClubs();
 
@@ -160,19 +163,40 @@ const LogisticaJugadores: React.FC = () => {
         if (error) throw error;
       } else {
         // Create
-        // Generar un player_id si no existe (esto debería ser manual en este dashboard o autoincremental en DB)
-        // Por ahora asumimos que la DB lo maneja si no lo pasamos, pero la tabla tiene player_id as PRIMARY KEY (int)
-        // en supabase_setup.sql: player_id int primary key
-        // Si no es identity, fallará el insert sin id.
-        
-        // Buscamos el max id actual para el nuevo jugador
-        const { data: maxIdData } = await supabase.from('players').select('player_id').order('player_id', { ascending: false }).limit(1);
-        const nextId = maxIdData && maxIdData.length > 0 ? maxIdData[0].player_id + 1 : 1000;
+        // Intentamos primero insertar sin player_id dejando que la BD lo genere automáticamente (identity generated always)
+        let insertError;
+        try {
+          const { error } = await supabase
+            .from('players')
+            .insert([payload]);
+          insertError = error;
+        } catch (err: any) {
+          insertError = err;
+        }
 
-        const { error } = await supabase
-          .from('players')
-          .insert([{ ...payload, player_id: nextId }]);
-        if (error) throw error;
+        if (insertError) {
+          const errMsg = insertError.message || JSON.stringify(insertError);
+          // Si falló porque player_id no tiene default/es requerido (por ejemplo si no fuera identity en alguna bd)
+          const isIdRequired = errMsg.includes('player_id') && (
+            errMsg.includes('null value') || 
+            errMsg.includes('violates not-null') || 
+            errMsg.includes('violates non-null') ||
+            errMsg.includes('missing')
+          );
+          
+          if (isIdRequired) {
+            console.warn("⚠️ player_id requerido en BD. Intentando inserción explícita con ID manual...");
+            const { data: maxIdData } = await supabase.from('players').select('player_id').order('player_id', { ascending: false }).limit(1);
+            const nextId = maxIdData && maxIdData.length > 0 ? maxIdData[0].player_id + 1 : 1000;
+
+            const { error: fallbackError } = await supabase
+              .from('players')
+              .insert([{ ...payload, player_id: nextId }]);
+            if (fallbackError) throw fallbackError;
+          } else {
+            throw insertError;
+          }
+        }
       }
 
       setIsModalOpen(false);
@@ -186,24 +210,32 @@ const LogisticaJugadores: React.FC = () => {
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, playerId: number) => {
+  const handleDelete = (e: React.MouseEvent, player: User) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    if (!window.confirm('¿Estás seguro de eliminar este jugador? Esta acción no se puede deshacer y podría fallar si el jugador tiene registros técnicos asociados (GPS, Wellness, etc).')) return;
-    
+    setPlayerToDelete(player);
+    setDeleteErrorMsg(null);
+  };
+
+  const confirmDeletePlayer = async () => {
+    if (!playerToDelete) return;
+    setDeleting(true);
+    setDeleteErrorMsg(null);
     try {
       const { error } = await supabase
         .from('players')
         .delete()
-        .eq('player_id', playerId);
+        .eq('player_id', playerToDelete.player_id);
 
       if (error) throw error;
       
+      setPlayerToDelete(null);
       await fetchPlayers();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting player:', err);
-      alert('No se pudo eliminar el jugador. Probablemente tiene datos vinculados en otras áreas (GPS, Médico, Física). Debes eliminar esos registros primero.');
+      setDeleteErrorMsg('No se pudo eliminar el jugador. Probablemente tiene datos vinculados en otras áreas de registro (por ejemplo: GPS, Médico, o Física) que deben eliminarse primero.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -333,7 +365,7 @@ const LogisticaJugadores: React.FC = () => {
                           <i className="fa-solid fa-pen-to-square text-xs"></i>
                         </button>
                         <button 
-                          onClick={(e) => handleDelete(e, player.player_id!)}
+                          onClick={(e) => handleDelete(e, player)}
                           className="w-10 h-10 bg-red-50 text-red-300 rounded-xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-center"
                           title="Eliminar"
                         >
@@ -455,6 +487,59 @@ const LogisticaJugadores: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal De Confirmación de Eliminación */}
+      {playerToDelete && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-[#0b1220]/80 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden p-10 space-y-8 animate-in zoom-in-95 duration-300 text-center">
+            <div className="w-20 h-20 bg-red-50 text-[#CF1B2B] rounded-full flex items-center justify-center mx-auto text-3xl">
+              <i className="fa-solid fa-triangle-exclamation animate-pulse"></i>
+            </div>
+            <div className="space-y-3">
+              <h3 className="text-xl font-black uppercase italic tracking-tight text-slate-900">
+                ¿Eliminar Jugador?
+              </h3>
+              <p className="text-xs text-slate-500 font-bold max-w-sm mx-auto">
+                ¿Estás seguro de que deseas eliminar a <span className="text-slate-800 font-black uppercase italic">{playerToDelete.name}</span>?
+              </p>
+              <p className="text-[10px] text-red-500 font-bold max-w-xs mx-auto leading-relaxed">
+                Esta acción no se puede deshacer y fallará si el atleta ya tiene registros técnicos (GPS, Wellness, o Evaluaciones Médicas) asociados en otras áreas.
+              </p>
+            </div>
+
+            {deleteErrorMsg && (
+              <div className="bg-red-50 border border-red-100 text-[#CF1B2B] rounded-2xl p-4 text-[10px] font-bold uppercase tracking-wider text-left leading-relaxed">
+                ⚠️ {deleteErrorMsg}
+              </div>
+            )}
+
+            <div className="flex gap-4">
+              <button
+                disabled={deleting}
+                onClick={() => {
+                  setPlayerToDelete(null);
+                  setDeleteErrorMsg(null);
+                }}
+                className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px] hover:bg-slate-200 transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={deleting}
+                onClick={confirmDeletePlayer}
+                className="flex-1 py-4 rounded-2xl bg-[#CF1B2B] text-white font-black uppercase tracking-widest text-[10px] hover:bg-red-700 transition-all shadow-xl shadow-red-900/20 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deleting ? (
+                  <>
+                    <i className="fa-solid fa-spinner fa-spin"></i>
+                    ELIMINANDO...
+                  </>
+                ) : 'SÍ, ELIMINAR'}
+              </button>
+            </div>
           </div>
         </div>
       )}

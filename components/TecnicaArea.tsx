@@ -303,7 +303,72 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         setMatchReports(data);
       }
     } catch (err) {
-      console.error("Error cargando reportes de competencia:", err);
+      console.warn("Error cargando reportes de competencia de 'match_reports', intentando fallback de tipo MATCH en 'internal_load':", err);
+      try {
+        const { data: loads, error: loadErr } = await supabase
+          .from('internal_load')
+          .select(`
+            id,
+            session_date,
+            rpe,
+            duration_min,
+            type,
+            molestias,
+            enfermedad,
+            players(
+              player_id,
+              nombre,
+              apellido1,
+              id_club,
+              clubes!fk_players_clubes(nombre)
+            )
+          `)
+          .eq('type', 'MATCH')
+          .order('session_date', { ascending: false });
+
+        if (loadErr) throw loadErr;
+
+        if (loads) {
+          const mapped = loads.map((l: any) => {
+            let rival = 'Desconocido';
+            let resultado = 'Titular';
+            let cleanMolestias = l.molestias || '';
+
+            if (cleanMolestias.startsWith('[Partido vs')) {
+              // Parse: "[Partido vs RIVAL - Resultado: RESULTADO] | MOLESTIAS"
+              const match = cleanMolestias.match(/^\[Partido vs (.*?) - Resultado: (.*?)\]\s*\|?\s*(.*)$/);
+              if (match) {
+                rival = match[1] || 'Desconocido';
+                resultado = match[2] || 'Titular';
+                cleanMolestias = match[3] || 'Sin molestias';
+              }
+            }
+
+            return {
+              id: l.id,
+              player_id: l.players?.player_id,
+              fecha: l.session_date,
+              rival,
+              resultado,
+              minutos_jugados: l.duration_min || 90,
+              rpe: l.rpe,
+              molestias: cleanMolestias,
+              enfermedad: l.enfermedad,
+              players: l.players ? {
+                player_id: l.players.player_id,
+                nombre: l.players.nombre,
+                apellido1: l.players.apellido1,
+                id_club: l.players.id_club,
+                clubes: l.players.clubes
+              } : null
+            };
+          });
+
+          setMatchReports(mapped);
+        }
+      } catch (fallbackErr) {
+        console.error("Fallo definitivo cargando reportes de competencia:", fallbackErr);
+      }
     }
   };
 

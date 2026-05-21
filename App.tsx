@@ -153,6 +153,7 @@ export default function App() {
           type: l.type || 'FIELD',
           molestias: l.molestias || '',
           enfermedad: l.enfermedad || '',
+          session_index: l.session_index || 1,
           created_at: l.created_at
         };
       });
