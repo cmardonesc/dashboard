@@ -274,13 +274,19 @@ const LogisticaJugadores: React.FC = () => {
       const isCustomClub = editingPlayer.id_club && editingPlayer.id_club >= 15000;
       const dbIdClub = isCustomClub ? 91 : editingPlayer.id_club;
 
+      // Calcular automáticamente el año de nacimiento (anio) desde la fecha de nacimiento (fecha_nacimiento)
+      const inferredAnio = editingPlayer.fecha_nacimiento && editingPlayer.fecha_nacimiento.length >= 4
+        ? Number(editingPlayer.fecha_nacimiento.substring(0, 4))
+        : (editingPlayer.anio || new Date().getFullYear());
+
       const payload = {
         nombre: editingPlayer.nombre,
         apellido1: editingPlayer.apellido1,
         apellido2: editingPlayer.apellido2,
         id_club: dbIdClub,
         posicion: editingPlayer.position,
-        fecha_nacimiento: editingPlayer.fecha_nacimiento
+        fecha_nacimiento: editingPlayer.fecha_nacimiento,
+        anio: inferredAnio
       };
 
       if (editingPlayer.player_id) {
@@ -691,18 +697,6 @@ const LogisticaJugadores: React.FC = () => {
                     type="date" 
                     value={editingPlayer?.fecha_nacimiento || ''}
                     onChange={e => setEditingPlayer(prev => ({ ...prev!, fecha_nacimiento: e.target.value }))}
-                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Año de Nacimiento/Categoría</label>
-                  <input 
-                    type="number" 
-                    min="1900"
-                    max="2100"
-                    placeholder="Ej: 2008"
-                    value={editingPlayer?.anio || ''}
-                    onChange={e => setEditingPlayer(prev => ({ ...prev!, anio: e.target.value ? Number(e.target.value) : undefined }))}
                     className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
                   />
                 </div>
