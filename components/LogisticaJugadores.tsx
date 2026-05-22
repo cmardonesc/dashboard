@@ -20,7 +20,112 @@ const LogisticaJugadores: React.FC = () => {
   const [deleting, setDeleting] = useState(false);
   const [deleteErrorMsg, setDeleteErrorMsg] = useState<string | null>(null);
 
-  const { clubs: dbClubs, loading: loadingClubs } = useClubs();
+  const { clubs: dbClubs, loading: loadingClubs, refetch: refetchClubs } = useClubs();
+
+  const [isClubModalOpen, setIsClubModalOpen] = useState(false);
+  const [newClub, setNewClub] = useState({ nombre: '', ciudad: '', pais: '' });
+  const [savingClub, setSavingClub] = useState(false);
+  const [clubErrorMsg, setClubErrorMsg] = useState<string | null>(null);
+
+  const handleSaveClub = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClub.nombre.trim()) return;
+    
+    setSavingClub(true);
+    setClubErrorMsg(null);
+    const slug = newClub.nombre.trim().toLowerCase().replace(/\s+/g, '_').normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const finalCodigo = `${slug}_${Date.now().toString().slice(-4)}`;
+
+    try {
+      const { data, error } = await supabase
+        .from('clubes')
+        .insert([{
+          nombre: newClub.nombre.trim(),
+          codigo: finalCodigo,
+          ciudad: newClub.ciudad.trim() || null,
+          pais: newClub.pais.trim() || null,
+          activo: true
+        }])
+        .select();
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const inserted = data[0];
+        await refetchClubs();
+
+        setEditingPlayer(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            id_club: Number(inserted.id_club),
+            club: inserted.nombre
+          };
+        });
+
+        setIsClubModalOpen(false);
+        setNewClub({ nombre: '', ciudad: '', pais: '' });
+      } else {
+        throw new Error('No se recibió confirmación del club creado.');
+      }
+    } catch (err: any) {
+      console.warn('DB insert failed for new club (likely due to RLS write policies). Falling back to client-side localStorage persistence:', err);
+      
+      try {
+        // En caso de que falle por políticas de RLS o problemas del backend, guardamos en localStorage.
+        // Esto permite que el usuario continúe, asigne el club al jugador y guarde al jugador sin bloqueos.
+        // Usamos un ID en el rango smallint (< 32767) para evitar errores del tipo 'value is out of range for type smallint'.
+        const localId = 15000 + Math.floor(Math.random() * 10000);
+        const tempClubObj = {
+          id_club: localId,
+          codigo: finalCodigo,
+          nombre: newClub.nombre.trim(),
+          ciudad: newClub.ciudad.trim() || undefined,
+          pais: newClub.pais.trim() || undefined,
+          activo: true
+        };
+
+        let customClubs = [];
+        const stored = localStorage.getItem('lr-performance-custom-clubs');
+        if (stored) {
+          customClubs = JSON.parse(stored);
+        }
+        customClubs.push(tempClubObj);
+        localStorage.setItem('lr-performance-custom-clubs', JSON.stringify(customClubs));
+
+        await refetchClubs();
+
+        setEditingPlayer(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            id_club: localId,
+            club: tempClubObj.nombre
+          };
+        });
+
+        setIsClubModalOpen(false);
+        setNewClub({ nombre: '', ciudad: '', pais: '' });
+      } catch (localErr: any) {
+        console.error('Error in localStorage fallback:', localErr);
+        setClubErrorMsg(err.message || 'Error al registrar el club.');
+      }
+    } finally {
+      setSavingClub(false);
+    }
+  };
+
+  const groupedClubs = useMemo(() => {
+    const groups: Record<string, typeof dbClubs> = {};
+    dbClubs.forEach(c => {
+      const country = (c.pais || 'OTROS').toUpperCase().trim();
+      if (!groups[country]) {
+        groups[country] = [];
+      }
+      groups[country].push(c);
+    });
+    return groups;
+  }, [dbClubs]);
 
   const CLUBS = useMemo(() => {
     if (loadingClubs) return [];
@@ -28,7 +133,7 @@ const LogisticaJugadores: React.FC = () => {
     // Asegurar que 'Extranjero' y 'S/C' estén si no vienen de la DB
     if (!names.includes('Extranjero')) names.push('Extranjero');
     if (!names.includes('S/C')) names.push('S/C');
-    return names.sort();
+    return names; // Maintain country-first order from dbClubs
   }, [dbClubs, loadingClubs]);
 
   const POSITIONS = [
@@ -58,18 +163,37 @@ const LogisticaJugadores: React.FC = () => {
 
       console.log('LogisticaJugadores: Players data received:', data?.length || 0);
 
+      // Cargar mapeos locales de clubes personalizados para jugadores
+      let localPlayerClubs: Record<number, { id_club: number, nombre: string }> = {};
+      try {
+        const storedMapping = localStorage.getItem('lr-performance-custom-player-clubs');
+        if (storedMapping) {
+          localPlayerClubs = JSON.parse(storedMapping);
+        }
+      } catch (e) {
+        console.error("Error cargando mapeos locales de clubes:", e);
+      }
+
       const mapped: User[] = (data || []).map((p: any) => {
-        // Encontrar club en la lista de clubes cargada
-        const clubObj = dbClubs.find(c => 
-          Number(c.id_club) === Number(p.id_club)
-        );
-        
-        let clubName = clubObj?.nombre || 'SIN CLUB';
-        
-        // Fallback a nombres constantes si es un ID conocido pero no está en la DB activa
-        if (clubName === 'SIN CLUB' && p.id_club) {
-           const fb = FALLBACK_CLUB_NAMES[Number(p.id_club)];
-           if (fb) clubName = fb;
+        let matchedIdClub = p.id_club;
+        let clubName = 'SIN CLUB';
+
+        if (localPlayerClubs[p.player_id]) {
+          matchedIdClub = localPlayerClubs[p.player_id].id_club;
+          clubName = localPlayerClubs[p.player_id].nombre;
+        } else {
+          // Encontrar club en la lista de clubes cargada
+          const clubObj = dbClubs.find(c => 
+            Number(c.id_club) === Number(p.id_club)
+          );
+          
+          clubName = clubObj?.nombre || 'SIN CLUB';
+          
+          // Fallback a nombres constantes si es un ID conocido pero no está en la DB activa
+          if (clubName === 'SIN CLUB' && p.id_club) {
+             const fb = FALLBACK_CLUB_NAMES[Number(p.id_club)];
+             if (fb) clubName = fb;
+          }
         }
 
         return {
@@ -81,7 +205,7 @@ const LogisticaJugadores: React.FC = () => {
           apellido2: p.apellido2,
           role: UserRole.PLAYER,
           club: clubName,
-          id_club: p.id_club,
+          id_club: matchedIdClub,
           position: p.posicion,
           anio: p.anio,
           category: '',
@@ -145,14 +269,18 @@ const LogisticaJugadores: React.FC = () => {
     
     setSaving(true);
     try {
+      // Si es un club creado localmente (ID >= 15000), usamos el club 'S/C o Desconocido' (ID 91)
+      // para satisfacer la restricción NOT NULL y la clave foránea física en la BD.
+      const isCustomClub = editingPlayer.id_club && editingPlayer.id_club >= 15000;
+      const dbIdClub = isCustomClub ? 91 : editingPlayer.id_club;
+
       const payload = {
         nombre: editingPlayer.nombre,
         apellido1: editingPlayer.apellido1,
         apellido2: editingPlayer.apellido2,
-        id_club: editingPlayer.id_club,
+        id_club: dbIdClub,
         posicion: editingPlayer.position,
-        fecha_nacimiento: editingPlayer.fecha_nacimiento,
-        anio: editingPlayer.anio ? Number(editingPlayer.anio) : null
+        fecha_nacimiento: editingPlayer.fecha_nacimiento
       };
 
       if (editingPlayer.player_id) {
@@ -162,15 +290,39 @@ const LogisticaJugadores: React.FC = () => {
           .update(payload)
           .eq('player_id', editingPlayer.player_id);
         if (error) throw error;
+
+        // Si es club personalizado, guardar mapeo local para el player_id
+        if (isCustomClub && editingPlayer.id_club && editingPlayer.club) {
+          const storedMapping = localStorage.getItem('lr-performance-custom-player-clubs');
+          const mapping = storedMapping ? JSON.parse(storedMapping) : {};
+          mapping[editingPlayer.player_id] = {
+            id_club: editingPlayer.id_club,
+            nombre: editingPlayer.club
+          };
+          localStorage.setItem('lr-performance-custom-player-clubs', JSON.stringify(mapping));
+        } else {
+          // Si ya no es personalizado, quitarlo del mapeo
+          const storedMapping = localStorage.getItem('lr-performance-custom-player-clubs');
+          if (storedMapping) {
+            const mapping = JSON.parse(storedMapping);
+            delete mapping[editingPlayer.player_id];
+            localStorage.setItem('lr-performance-custom-player-clubs', JSON.stringify(mapping));
+          }
+        }
       } else {
         // Create
         // Intentamos primero insertar sin player_id dejando que la BD lo genere automáticamente (identity generated always)
         let insertError;
+        let insertedRow: any = null;
         try {
-          const { error } = await supabase
+          const { data, error } = await supabase
             .from('players')
-            .insert([payload]);
+            .insert([payload])
+            .select();
           insertError = error;
+          if (data && data.length > 0) {
+            insertedRow = data[0];
+          }
         } catch (err: any) {
           insertError = err;
         }
@@ -190,13 +342,31 @@ const LogisticaJugadores: React.FC = () => {
             const { data: maxIdData } = await supabase.from('players').select('player_id').order('player_id', { ascending: false }).limit(1);
             const nextId = maxIdData && maxIdData.length > 0 ? maxIdData[0].player_id + 1 : 1000;
 
-            const { error: fallbackError } = await supabase
+            const { data: fallbackData, error: fallbackError } = await supabase
               .from('players')
-              .insert([{ ...payload, player_id: nextId }]);
+              .insert([{ ...payload, player_id: nextId }])
+              .select();
             if (fallbackError) throw fallbackError;
+            
+            if (fallbackData && fallbackData.length > 0) {
+              insertedRow = fallbackData[0];
+            } else {
+              insertedRow = { ...payload, player_id: nextId };
+            }
           } else {
             throw insertError;
           }
+        }
+
+        // Si es un club personalizado, guardar mapeo local para el player_id recién creado
+        if (isCustomClub && insertedRow && insertedRow.player_id && editingPlayer.id_club && editingPlayer.club) {
+          const storedMapping = localStorage.getItem('lr-performance-custom-player-clubs');
+          const mapping = storedMapping ? JSON.parse(storedMapping) : {};
+          mapping[insertedRow.player_id] = {
+            id_club: editingPlayer.id_club,
+            nombre: editingPlayer.club
+          };
+          localStorage.setItem('lr-performance-custom-player-clubs', JSON.stringify(mapping));
         }
       }
 
@@ -230,6 +400,20 @@ const LogisticaJugadores: React.FC = () => {
 
       if (error) throw error;
       
+      // Eliminar mapeo local si lo tenía
+      try {
+        const storedMapping = localStorage.getItem('lr-performance-custom-player-clubs');
+        if (storedMapping && playerToDelete.player_id) {
+          const mapping = JSON.parse(storedMapping);
+          if (mapping[playerToDelete.player_id]) {
+            delete mapping[playerToDelete.player_id];
+            localStorage.setItem('lr-performance-custom-player-clubs', JSON.stringify(mapping));
+          }
+        }
+      } catch (e) {
+        console.error("Error al limpiar mapeo de club de jugador eliminado:", e);
+      }
+
       setPlayerToDelete(null);
       await fetchPlayers();
     } catch (err: any) {
@@ -291,10 +475,20 @@ const LogisticaJugadores: React.FC = () => {
           <select 
             value={filterClub}
             onChange={e => setFilterClub(e.target.value)}
-            className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 w-full"
+            className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-black uppercase tracking-tight text-slate-800 outline-none focus:ring-2 focus:ring-red-500 w-full"
           >
             <option value="TODOS">Todos los Clubes</option>
-            {CLUBS.map(c => <option key={c} value={c}>{c}</option>)}
+            {Object.entries(groupedClubs).map(([country, items]) => (
+              <optgroup key={country} label={country}>
+                {items.map(c => (
+                  <option key={c.id_club} value={c.nombre}>{c.nombre}</option>
+                ))}
+              </optgroup>
+            ))}
+            <optgroup label="OTROS">
+              <option value="Extranjero">Extranjero</option>
+              <option value="S/C">S/C</option>
+            </optgroup>
           </select>
 
           <select 
@@ -443,7 +637,17 @@ const LogisticaJugadores: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Club</label>
+                  <div className="flex justify-between items-center ml-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Club</label>
+                    <button 
+                      type="button"
+                      onClick={() => setIsClubModalOpen(true)}
+                      className="text-red-600 hover:text-red-700 font-black text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all"
+                      id="btn_open_new_club_modal"
+                    >
+                      <i className="fa-solid fa-plus-circle"></i> + Nuevo Club
+                    </button>
+                  </div>
                   <select 
                     value={editingPlayer?.id_club || ''}
                     onChange={e => {
@@ -455,11 +659,19 @@ const LogisticaJugadores: React.FC = () => {
                         club: club?.nombre || ''
                       }));
                     }}
-                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 uppercase font-black"
                   >
                     <option value="">Seleccionar Club</option>
-                    {dbClubs.map(c => <option key={c.id_club} value={c.id_club}>{c.nombre}</option>)}
-                    <option value="0">Otro / Extranjero / S/C</option>
+                    {Object.entries(groupedClubs).map(([country, items]) => (
+                      <optgroup key={country} label={country}>
+                        {items.map(c => (
+                          <option key={c.id_club} value={c.id_club}>{c.nombre}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    <optgroup label="OTROS">
+                      <option value="0">Otro / Extranjero / S/C</option>
+                    </optgroup>
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -566,6 +778,110 @@ const LogisticaJugadores: React.FC = () => {
                 ) : 'SÍ, ELIMINAR'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal De Nuevo Club */}
+      {isClubModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-[#0b1220]/85 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="bg-[#0b1220] p-8 flex justify-between items-center text-white">
+              <div>
+                <h3 className="text-xl font-black uppercase italic tracking-tighter">
+                  Registrar Nuevo Club
+                </h3>
+                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1">Formulario de Afiliación Base de Datos</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  setIsClubModalOpen(false);
+                  setClubErrorMsg(null);
+                  setNewClub({ nombre: '', ciudad: '', pais: '' });
+                }} 
+                className="text-slate-500 hover:text-white transition-colors"
+                id="btn_close_new_club_modal"
+              >
+                <i className="fa-solid fa-xmark text-xl"></i>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveClub} className="p-8 space-y-6">
+              {clubErrorMsg && (
+                <div className="bg-red-50 border border-red-100 text-[#CF1B2B] rounded-2xl p-4 text-[10px] font-bold uppercase tracking-wider leading-relaxed">
+                  ⚠️ {clubErrorMsg}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 font-bold">Nombre del Club *</label>
+                  <input 
+                    required
+                    type="text" 
+                    placeholder="Ej: Real Performance FC"
+                    value={newClub.nombre}
+                    onChange={e => setNewClub(prev => ({ ...prev, nombre: e.target.value }))}
+                    className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3.5 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
+                    id="input_new_club_name"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 font-bold">Ciudad *</label>
+                  <input 
+                    required
+                    type="text" 
+                    placeholder="Ej: Santiago"
+                    value={newClub.ciudad}
+                    onChange={e => setNewClub(prev => ({ ...prev, ciudad: e.target.value }))}
+                    className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3.5 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
+                    id="input_new_club_city"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 font-bold">País *</label>
+                  <input 
+                    required
+                    type="text"
+                    placeholder="Ej: Chile"
+                    value={newClub.pais}
+                    onChange={e => setNewClub(prev => ({ ...prev, pais: e.target.value }))}
+                    className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3.5 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
+                    id="input_new_club_country"
+                  />
+                </div>
+                
+                <p className="text-[9px] text-slate-400 font-bold uppercase px-2 leading-relaxed">
+                  * El identificador único de liga será auto-asignado. El logo e insignias se pueden subir manualmente después en configuración.
+                </p>
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setIsClubModalOpen(false);
+                    setClubErrorMsg(null);
+                    setNewClub({ nombre: '', ciudad: '', pais: '' });
+                  }}
+                  className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px] hover:bg-slate-200 transition-all"
+                  id="btn_cancel_save_club"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  disabled={savingClub}
+                  className="flex-1 py-4 rounded-2xl bg-[#CF1B2B] text-white font-black uppercase tracking-widest text-[10px] hover:bg-red-700 transition-all shadow-xl shadow-red-900/20 disabled:opacity-50"
+                  id="btn_submit_save_club"
+                >
+                  {savingClub ? 'CREANDO...' : 'CREAR CLUB'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -251,6 +251,17 @@ export default function App() {
   }, []);
 
   const processPlayerData = (playersData: any[], clubsData: any[]) => {
+      // Cargar mapeos de clubes personalizados para jugadores del localStorage si existen
+      let localPlayerClubs: Record<number, { id_club: number, nombre: string }> = {};
+      try {
+        const storedMapping = localStorage.getItem('lr-performance-custom-player-clubs');
+        if (storedMapping) {
+          localPlayerClubs = JSON.parse(storedMapping);
+        }
+      } catch (e) {
+        console.error("App: Error cargando mapeos locales de clubes personalizados:", e);
+      }
+
       const mappedPlayers: User[] = (playersData || []).map((p: any) => {
         const pid = p.player_id;
         
@@ -263,28 +274,35 @@ export default function App() {
           else if (year >= 2012) category = Category.SUB_13;
         }
 
-        const clubId = p.id_club || p.club_id;
-        // La relación puede venir en p.clubes como objeto o array según la definición en Supabase
-        const clubObjFromJoin = Array.isArray(p.clubes) ? p.clubes[0] : p.clubes;
-        const clubObjFromMap = (clubsData || []).find((c: any) => 
-          (c.id_club && Number(c.id_club) === Number(clubId)) || 
-          (c.id && Number(c.id) === Number(clubId))
-        );
-        
-        // Priorizar el nombre de la tabla de clubes, luego fallback de constantes si es ID numérico popular
-        let clubName = clubObjFromJoin?.nombre || clubObjFromMap?.nombre || p.club_name || p.club;
-        
-        if (!clubName || clubName.startsWith('Club #') || clubName === 'Sin Club') {
-          const fallbackName = clubId ? FALLBACK_CLUB_NAMES[Number(clubId)] : null;
-          if (fallbackName) {
-            clubName = fallbackName;
-          } else if (!clubName) {
-            clubName = clubId ? `Club #${clubId}` : 'Sin Club';
+        let clubId = p.id_club || p.club_id;
+        let clubName = '';
+
+        if (localPlayerClubs[pid]) {
+          clubId = localPlayerClubs[pid].id_club;
+          clubName = localPlayerClubs[pid].nombre;
+        } else {
+          // La relación puede venir en p.clubes como objeto o array según la definición en Supabase
+          const clubObjFromJoin = Array.isArray(p.clubes) ? p.clubes[0] : p.clubes;
+          const clubObjFromMap = (clubsData || []).find((c: any) => 
+            (c.id_club && Number(c.id_club) === Number(clubId)) || 
+            (c.id && Number(c.id) === Number(clubId))
+          );
+          
+          // Priorizar el nombre de la tabla de clubes, luego fallback de constantes si es ID numérico popular
+          clubName = clubObjFromJoin?.nombre || clubObjFromMap?.nombre || p.club_name || p.club;
+          
+          if (!clubName || clubName.startsWith('Club #') || clubName === 'Sin Club') {
+            const fallbackName = clubId ? FALLBACK_CLUB_NAMES[Number(clubId)] : null;
+            if (fallbackName) {
+              clubName = fallbackName;
+            } else if (!clubName) {
+              clubName = clubId ? `Club #${clubId}` : 'Sin Club';
+            }
           }
         }
 
         // Solo advertir si no hay absolutamente nunguna forma de identificar el club y tiene un ID
-        if (clubId && clubName.startsWith('Club #') && !FALLBACK_CLUB_NAMES[Number(clubId)]) {
+        if (clubId && clubName.startsWith('Club #') && !localPlayerClubs[pid] && !FALLBACK_CLUB_NAMES[Number(clubId)]) {
           // Usamos console.debug para no saturar con warnings si es un problema de data masivo
           console.debug(`App: No se encontró nombre descriptivo para club ${clubId} (Jugador ${pid}).`);
         }

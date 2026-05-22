@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import ClubBadge from './ClubBadge';
+import { FALLBACK_CLUBS } from '../lib/fallback_clubs';
 
 interface ContactoClub {
   id: number;
@@ -64,8 +65,65 @@ export default function ContactosClubesArea() {
     if (contactosRes.error) console.error('Error fetching contactos:', contactosRes.error);
     if (clubsRes.error) console.error('Error fetching clubs:', clubsRes.error);
     
+    let fetchedClubs = clubsRes.data || [];
+    if (fetchedClubs.length === 0) {
+      fetchedClubs = [...FALLBACK_CLUBS];
+    } else {
+      const dbNames = new Set(fetchedClubs.map(c => (c.nombre || '').toUpperCase().trim()));
+      const dbIds = new Set(fetchedClubs.map(c => c.id_club));
+      
+      FALLBACK_CLUBS.forEach(fc => {
+        if (!dbIds.has(fc.id_club) && !dbNames.has((fc.nombre || '').toUpperCase().trim())) {
+          fetchedClubs.push(fc);
+        }
+      });
+      
+      fetchedClubs = fetchedClubs.map(c => {
+        const fc = FALLBACK_CLUBS.find(f => 
+          f.id_club === c.id_club || 
+          (f.nombre && c.nombre && f.nombre.toUpperCase().trim() === c.nombre.toUpperCase().trim())
+        );
+        if (fc) {
+          return {
+            id_club: c.id_club,
+            codigo: c.codigo || fc.codigo,
+            nombre: c.nombre || fc.nombre,
+            activo: c.activo !== undefined ? c.activo : fc.activo,
+            pais: c.pais || fc.pais,
+            logo_url: c.logo_url || fc.logo_url,
+            nombre_corto: c.nombre_corto || fc.nombre_corto,
+            ciudad: c.ciudad || fc.ciudad,
+            region: c.region || fc.region,
+            id_pais: c.id_pais !== undefined ? c.id_pais : fc.id_pais,
+          };
+        }
+        return c;
+      });
+    }
+
+    fetchedClubs.sort((a: any, b: any) => {
+      const countryA = (a.pais || '').toUpperCase().trim();
+      const countryB = (b.pais || '').toUpperCase().trim();
+
+      const isChileA = countryA === 'CHILE';
+      const isChileB = countryB === 'CHILE';
+
+      if (isChileA && !isChileB) return -1;
+      if (!isChileA && isChileB) return 1;
+
+      if (countryA !== countryB) {
+        if (!countryA) return 1;
+        if (!countryB) return -1;
+        return countryA.localeCompare(countryB);
+      }
+
+      const nameA = (a.nombre || '').toUpperCase().trim();
+      const nameB = (b.nombre || '').toUpperCase().trim();
+      return nameA.localeCompare(nameB);
+    });
+
     setContactos(contactosRes.data || []);
-    setClubs(clubsRes.data || []);
+    setClubs(fetchedClubs);
     setLoading(false);
   };
 

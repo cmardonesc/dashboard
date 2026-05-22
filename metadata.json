@@ -2,6 +2,7 @@
   "name": "LA ROJA Dashboard",
   "description": "A professional sports performance dashboard for national football programs, featuring player wellness tracking, training load analysis, and AI-driven performance insights for coaches.",
   "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"],
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0"
   }

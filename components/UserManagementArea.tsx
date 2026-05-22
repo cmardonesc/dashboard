@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { User, UserRole } from '../types';
 import { normalizeClub } from '../lib/utils';
 import ClubBadge from './ClubBadge';
+import { FALLBACK_CLUBS } from '../lib/fallback_clubs';
 
 interface UserManagementAreaProps {
   onMenuChange?: (menu: any) => void;
@@ -21,6 +22,18 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
 
   const [editingProfile, setEditingProfile] = useState<any>(null);
 
+  const groupedClubs = useMemo(() => {
+    const groups: Record<string, typeof dbClubs> = {};
+    dbClubs.forEach(c => {
+      const country = (c.pais || 'OTROS').toUpperCase().trim();
+      if (!groups[country]) {
+        groups[country] = [];
+      }
+      groups[country].push(c);
+    });
+    return groups;
+  }, [dbClubs]);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -30,14 +43,71 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
     try {
       const { data: profs, error: pErr } = await supabase.from('profiles').select('*, club_name');
       const { data: plays, error: plErr } = await supabase.from('players').select('player_id, nombre, apellido1, id_club');
-      const { data: clubs, error: cErr } = await supabase.from('clubes').select('*').order('nombre', { ascending: true });
+      const { data: clubs, error: cErr } = await supabase.from('clubes').select('*');
       
       if (pErr) throw pErr;
       if (cErr) throw cErr;
 
+      let finalClubs = clubs || [];
+      if (finalClubs.length === 0) {
+        finalClubs = [...FALLBACK_CLUBS];
+      } else {
+        const dbNames = new Set(finalClubs.map(c => (c.nombre || '').toUpperCase().trim()));
+        const dbIds = new Set(finalClubs.map(c => c.id_club));
+        
+        FALLBACK_CLUBS.forEach(fc => {
+          if (!dbIds.has(fc.id_club) && !dbNames.has((fc.nombre || '').toUpperCase().trim())) {
+            finalClubs.push(fc);
+          }
+        });
+        
+        finalClubs = finalClubs.map(c => {
+          const fc = FALLBACK_CLUBS.find(f => 
+            f.id_club === c.id_club || 
+            (f.nombre && c.nombre && f.nombre.toUpperCase().trim() === c.nombre.toUpperCase().trim())
+          );
+          if (fc) {
+            return {
+              id_club: c.id_club,
+              codigo: c.codigo || fc.codigo,
+              nombre: c.nombre || fc.nombre,
+              activo: c.activo !== undefined ? c.activo : fc.activo,
+              pais: c.pais || fc.pais,
+              logo_url: c.logo_url || fc.logo_url,
+              nombre_corto: c.nombre_corto || fc.nombre_corto,
+              ciudad: c.ciudad || fc.ciudad,
+              region: c.region || fc.region,
+              id_pais: c.id_pais !== undefined ? c.id_pais : fc.id_pais,
+            };
+          }
+          return c;
+        });
+      }
+
+      finalClubs.sort((a: any, b: any) => {
+        const countryA = (a.pais || '').toUpperCase().trim();
+        const countryB = (b.pais || '').toUpperCase().trim();
+
+        const isChileA = countryA === 'CHILE';
+        const isChileB = countryB === 'CHILE';
+
+        if (isChileA && !isChileB) return -1;
+        if (!isChileA && isChileB) return 1;
+
+        if (countryA !== countryB) {
+          if (!countryA) return 1;
+          if (!countryB) return -1;
+          return countryA.localeCompare(countryB);
+        }
+
+        const nameA = (a.nombre || '').toUpperCase().trim();
+        const nameB = (b.nombre || '').toUpperCase().trim();
+        return nameA.localeCompare(nameB);
+      });
+
       setProfiles(profs || []);
       setPlayers(plays || []);
-      setDbClubs(clubs || []);
+      setDbClubs(finalClubs);
 
       // Calcular clubes pendientes (legacy feature: relies on non-existent 'club' column)
       const pending: any[] = [];
@@ -315,11 +385,15 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                         club_name: club ? club.nombre : editingProfile.club_name
                       });
                     }}
-                    className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500 uppercase font-black"
                   >
                     <option value="">Selecciona un club oficial...</option>
-                    {dbClubs.map(c => (
-                      <option key={c.id_club} value={c.id_club}>{c.nombre}</option>
+                    {Object.entries(groupedClubs).map(([country, items]) => (
+                      <optgroup key={country} label={country}>
+                        {items.map(c => (
+                          <option key={c.id_club} value={c.id_club}>{c.nombre}</option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                   <p className="text-[8px] font-medium text-slate-400 ml-4 italic">Vincular el perfil a un club oficial para habilitar el filtrado de datos.</p>
