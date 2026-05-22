@@ -151,7 +151,8 @@ const LogisticaJugadores: React.FC = () => {
         apellido2: editingPlayer.apellido2,
         id_club: editingPlayer.id_club,
         posicion: editingPlayer.position,
-        fecha_nacimiento: editingPlayer.fecha_nacimiento
+        fecha_nacimiento: editingPlayer.fecha_nacimiento,
+        anio: editingPlayer.anio ? Number(editingPlayer.anio) : null
       };
 
       if (editingPlayer.player_id) {
@@ -275,22 +276,22 @@ const LogisticaJugadores: React.FC = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="relative">
             <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
             <input 
               type="text" 
-              placeholder="Buscar por nombre..."
+              placeholder="Buscar por nombre o club..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="bg-slate-50 border-none rounded-2xl px-12 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 w-full"
+              className="bg-slate-50 border-none rounded-2xl px-12 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 w-full animate-in fade-in"
             />
           </div>
 
           <select 
             value={filterClub}
             onChange={e => setFilterClub(e.target.value)}
-            className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 w-full md:col-span-2"
+            className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 w-full"
           >
             <option value="TODOS">Todos los Clubes</option>
             {CLUBS.map(c => <option key={c} value={c}>{c}</option>)}
@@ -299,10 +300,19 @@ const LogisticaJugadores: React.FC = () => {
           <select 
             value={filterPosition}
             onChange={e => setFilterPosition(e.target.value)}
-            className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 w-full md:col-span-2"
+            className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500 w-full"
           >
             <option value="TODAS">Todas las Posiciones</option>
             {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+
+          <select 
+            value={filterCategory}
+            onChange={e => setFilterCategory(e.target.value)}
+            className="bg-slate-50 border-[#CF1B2B]/20 rounded-2xl px-6 py-4 text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-red-500 w-full border"
+          >
+            <option value="TODAS">Todos los Años (Año de Nacimiento)</option>
+            {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
           </select>
         </div>
       </div>
@@ -315,6 +325,7 @@ const LogisticaJugadores: React.FC = () => {
               <tr className="bg-slate-50/50 border-b border-slate-100">
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club</th>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Año</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
               </tr>
@@ -351,6 +362,9 @@ const LogisticaJugadores: React.FC = () => {
                     </td>
                     <td className="px-8 py-6">
                       <ClubBadge clubName={player.club} idClub={player.id_club} clubs={dbClubs} logoSize="w-3 h-3" className="text-[11px] font-black text-slate-700 uppercase" />
+                    </td>
+                    <td className="px-8 py-6">
+                      <span className="text-[11px] font-black text-slate-700 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-lg animate-in fade-in duration-250 uppercase">{player.anio || 'S/D'}</span>
                     </td>
                     <td className="px-8 py-6">
                       <p className="text-[11px] font-black text-slate-700 uppercase">{player.position || 'S/D'}</p>
@@ -465,6 +479,18 @@ const LogisticaJugadores: React.FC = () => {
                     type="date" 
                     value={editingPlayer?.fecha_nacimiento || ''}
                     onChange={e => setEditingPlayer(prev => ({ ...prev!, fecha_nacimiento: e.target.value }))}
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Año de Nacimiento/Categoría</label>
+                  <input 
+                    type="number" 
+                    min="1900"
+                    max="2100"
+                    placeholder="Ej: 2008"
+                    value={editingPlayer?.anio || ''}
+                    onChange={e => setEditingPlayer(prev => ({ ...prev!, anio: e.target.value ? Number(e.target.value) : undefined }))}
                     className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
                   />
                 </div>

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import ClubBadge from './ClubBadge';
@@ -15,6 +15,7 @@ interface ContactoClub {
 }
 
 export default function ContactosClubesArea() {
+  const [activeTab, setActiveTab] = useState<'contactos' | 'clubes'>('contactos');
   const [contactos, setContactos] = useState<ContactoClub[]>([]);
   const [clubs, setClubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +31,21 @@ export default function ContactosClubesArea() {
     presidente: '',
     cargo: 'Presidente',
     correo: ''
+  });
+
+  // States for Club Management
+  const [showClubModal, setShowClubModal] = useState(false);
+  const [editingClub, setEditingClub] = useState<any | null>(null);
+  const [submittingClub, setSubmittingClub] = useState(false);
+  const [clubFormData, setClubFormData] = useState({
+    nombre: '',
+    codigo: '',
+    nombre_corto: '',
+    ciudad: '',
+    region: '',
+    pais: '',
+    logo_url: '',
+    activo: true
   });
 
   useEffect(() => {
@@ -168,6 +184,106 @@ export default function ContactosClubesArea() {
     }
   };
 
+  const handleEditClub = (club: any) => {
+    setEditingClub(club);
+    setClubFormData({
+      nombre: club.nombre || '',
+      codigo: club.codigo || '',
+      nombre_corto: club.nombre_corto || '',
+      ciudad: club.ciudad || '',
+      region: club.region || '',
+      pais: club.pais || '',
+      logo_url: club.logo_url || '',
+      activo: club.activo !== undefined ? club.activo : true
+    });
+    setShowClubModal(true);
+  };
+
+  const handleDeleteClub = async (id_club: number) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este club de la base de datos oficial? Esto puede causar inconsistencias si hay jugadores o informes asignados a él.')) return;
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('clubes')
+        .delete()
+        .eq('id_club', id_club);
+      
+      if (error) {
+        throw error;
+      }
+      alert('Club eliminado satisfactoriamente');
+      await fetchData();
+    } catch (err: any) {
+      console.error('Error al eliminar club:', err);
+      alert('Error al eliminar club: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateClub = () => {
+    setEditingClub(null);
+    setClubFormData({
+      nombre: '',
+      codigo: '',
+      nombre_corto: '',
+      ciudad: '',
+      region: '',
+      pais: '',
+      logo_url: '',
+      activo: true
+    });
+    setShowClubModal(true);
+  };
+
+  const handleSaveClub = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clubFormData.nombre || !clubFormData.codigo) return;
+
+    setSubmittingClub(true);
+    try {
+      const payload = {
+        nombre: clubFormData.nombre.toUpperCase(),
+        codigo: clubFormData.codigo.toUpperCase(),
+        nombre_corto: clubFormData.nombre_corto ? clubFormData.nombre_corto.toUpperCase() : null,
+        ciudad: clubFormData.ciudad || null,
+        region: clubFormData.region || null,
+        pais: clubFormData.pais ? clubFormData.pais.toUpperCase() : null,
+        activo: clubFormData.activo !== undefined ? clubFormData.activo : true,
+        logo_url: clubFormData.logo_url || null
+      };
+
+      if (editingClub) {
+        // Update
+        const { error } = await supabase
+          .from('clubes')
+          .update(payload)
+          .eq('id_club', editingClub.id_club);
+        
+        if (error) throw error;
+        alert('Club actualizado correctamente');
+      } else {
+        // Insert
+        const { error } = await supabase
+          .from('clubes')
+          .insert([payload]);
+        
+        if (error) throw error;
+        alert('Club insertado correctamente');
+      }
+
+      setShowClubModal(false);
+      setEditingClub(null);
+      await fetchData();
+    } catch (err: any) {
+      console.error('Error al guardar el club:', err);
+      alert('Error al guardar el club: ' + err.message);
+    } finally {
+      setSubmittingClub(false);
+    }
+  };
+
   const filteredContactos = contactos.filter(c => 
     (c.club?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
     (c.nombres?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
@@ -197,145 +313,332 @@ export default function ContactosClubesArea() {
     setExpandedClubs(newExpanded);
   };
 
+  const sortedAndFilteredClubs = useMemo(() => {
+    const cleanSearch = searchTerm.toLowerCase().trim();
+    const filtered = clubs.filter(c => 
+      (c.nombre || '').toLowerCase().includes(cleanSearch) || 
+      (c.codigo || '').toLowerCase().includes(cleanSearch) ||
+      (c.pais || '').toLowerCase().includes(cleanSearch) ||
+      (c.ciudad || '').toLowerCase().includes(cleanSearch)
+    );
+
+    // Order by country, chile first, then alphabetical country, then alphabetical name
+    return [...filtered].sort((a, b) => {
+      const countryA = (a.pais || '').toLowerCase().trim();
+      const countryB = (b.pais || '').toLowerCase().trim();
+
+      const isChileA = countryA === 'chile';
+      const isChileB = countryB === 'chile';
+
+      if (isChileA && !isChileB) return -1;
+      if (!isChileA && isChileB) return 1;
+
+      if (countryA !== countryB) {
+        return countryA.localeCompare(countryB);
+      }
+
+      const nameA = (a.nombre || '').toLowerCase().trim();
+      const nameB = (b.nombre || '').toLowerCase().trim();
+      return nameA.localeCompare(nameB);
+    });
+  }, [clubs, searchTerm]);
+
   const sortedClubNames = Object.keys(groupedContactos).sort();
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
-      <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm flex items-center justify-between">
+      {/* Tab Switching Headers */}
+      <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-6">
           <div className="w-14 h-14 bg-[#0b1220] rounded-2xl flex items-center justify-center text-white shadow-xl">
-            <i className="fa-solid fa-address-book text-xl"></i>
+            {activeTab === 'contactos' ? (
+              <i className="fa-solid fa-address-book text-xl"></i>
+            ) : (
+              <i className="fa-solid fa-shield-halved text-xl"></i>
+            )}
           </div>
           <div>
-            <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">CONTACTOS DE CLUBES</h2>
-            <p className="text-slate-400 text-xs font-medium uppercase tracking-widest mt-1">Gestión de destinatarios para cartas oficiales.</p>
+            <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">
+              {activeTab === 'contactos' ? 'CONTACTOS DE CLUBES' : 'BASE DE DATOS DE CLUBES'}
+            </h2>
+            <p className="text-slate-400 text-xs font-medium uppercase tracking-widest mt-1">
+              {activeTab === 'contactos' 
+                ? 'Gestión de destinatarios para cartas y solicitudes oficiales.' 
+                : 'Tabla maestra de clubes oficiales con clasificación e información país.'}
+            </p>
           </div>
         </div>
+        
+        {activeTab === 'contactos' ? (
+          <button 
+            onClick={() => {
+              setEditingContacto(null);
+              setFormData({ club: '', id_club: null, nombres: '', presidente: '', cargo: 'Presidente', correo: '' });
+              setShowModal(true);
+            }}
+            className="bg-[#CF1B2B] text-white px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700 transition-all flex items-center gap-2 transform active:scale-95 self-start md:self-auto"
+          >
+            <i className="fa-solid fa-plus"></i> NUEVO CONTACTO
+          </button>
+        ) : (
+          <button 
+            onClick={handleCreateClub}
+            className="bg-[#0b1220] text-white px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-[#CF1B2B] transition-all flex items-center gap-2 transform active:scale-95 self-start md:self-auto"
+          >
+            <i className="fa-solid fa-shield-halved"></i> NUEVO CLUB
+          </button>
+        )}
+      </div>
+
+      {/* Sub-tabs Toggle bar */}
+      <div className="flex gap-2 p-1.5 bg-slate-100 rounded-3xl w-fit">
         <button 
           onClick={() => {
-            setEditingContacto(null);
-            setFormData({ club: '', id_club: null, nombres: '', presidente: '', cargo: 'Presidente', correo: '' });
-            setShowModal(true);
-          }}
-          className="bg-[#CF1B2B] text-white px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700 transition-all flex items-center gap-2 transform active:scale-95"
+            setActiveTab('contactos');
+            setSearchTerm('');
+          }} 
+          className={`px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+            activeTab === 'contactos' 
+              ? 'bg-[#0b1220] text-white shadow-lg shadow-slate-900/10' 
+              : 'text-slate-400 hover:text-slate-600'
+          }`}
         >
-          <i className="fa-solid fa-plus"></i> NUEVO CONTACTO
+          <i className="fa-solid fa-address-book mr-2"></i>
+          Contactos de Envío
+        </button>
+        <button 
+          onClick={() => {
+            setActiveTab('clubes');
+            setSearchTerm('');
+          }} 
+          className={`px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+            activeTab === 'clubes' 
+              ? 'bg-[#0b1220] text-white shadow-lg shadow-slate-900/10' 
+              : 'text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <i className="fa-solid fa-shield-halved mr-2"></i>
+          Listado de Clubes Maestra
         </button>
       </div>
 
       <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden min-h-[400px]">
-        <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-4">
+        {/* Search & Refresh controller */}
+        <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="relative flex-1 max-w-md">
             <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
             <input 
               type="text" 
-              placeholder="Buscar por club o nombre..."
-              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
+              placeholder={activeTab === 'contactos' ? "Buscar por club o nombre..." : "Buscar club, código, ciudad o país..."}
+              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#CF1B2B]/20 focus:border-[#CF1B2B] transition-all font-medium"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {activeTab === 'clubes' && (
+            <button 
+              onClick={fetchData} 
+              disabled={loading}
+              className="px-6 py-3 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-sm active:scale-95"
+              title="Sincronizar base de datos de clubes de Supabase"
+            >
+              <i className={`fa-solid fa-rotate ${loading ? 'animate-spin text-red-500' : ''}`}></i>
+              ACTUALIZAR TABLA
+            </button>
+          )}
         </div>
 
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="px-8 py-20 text-center">
-              <i className="fa-solid fa-circle-notch fa-spin text-red-600 text-2xl"></i>
+            <div className="px-8 py-20 text-center flex flex-col items-center gap-3">
+              <i className="fa-solid fa-circle-notch fa-spin text-[#CF1B2B] text-2xl"></i>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sincronizando con Supabase...</p>
             </div>
-          ) : sortedClubNames.length === 0 ? (
-            <div className="px-8 py-20 text-center">
-              <p className="text-slate-400 text-sm font-medium">No se encontraron contactos registrados.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-50">
-              {sortedClubNames.map((clubName) => {
-                const group = groupedContactos[clubName];
-                const isExpanded = expandedClubs.has(clubName);
-                const clubContactos = group.list;
-                
-                return (
-                  <div key={clubName} className="flex flex-col">
-                    {/* Club Header */}
-                    <button 
-                      onClick={() => toggleClub(clubName)}
-                      className="w-full px-8 py-6 flex items-center justify-between hover:bg-slate-50/80 transition-colors group text-left"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all bg-white border border-slate-100 shadow-sm ${isExpanded ? 'ring-2 ring-red-500/20' : ''}`}>
-                          <ClubBadge 
-                            clubName={clubName} 
-                            idClub={group.id_club}
-                            clubs={clubs} 
-                            showName={false} 
-                            logoSize="w-6 h-6"
-                          />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-black text-slate-900 uppercase italic tracking-tighter">{clubName}</h3>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                            {clubContactos.length} {clubContactos.length === 1 ? 'Contacto' : 'Contactos'}
-                          </p>
-                        </div>
-                      </div>
-                      <i className={`fa-solid fa-chevron-down text-[10px] text-slate-300 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-red-500' : ''}`}></i>
-                    </button>
-
-                    {/* Contacts Sub-list */}
-                    <AnimatePresence>
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.3, ease: 'easeInOut' }}
-                          className="overflow-hidden bg-slate-50/30"
-                        >
-                          <div className="px-8 pb-6 space-y-3">
-                            <div className="grid grid-cols-12 px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                              <div className="col-span-4">Destinatario</div>
-                              <div className="col-span-3">Cargo</div>
-                              <div className="col-span-4">Email</div>
-                              <div className="col-span-1 text-right">Acciones</div>
-                            </div>
-                            {clubContactos.map((contacto) => (
-                              <div key={contacto.id} className="grid grid-cols-12 items-center px-4 py-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group/row">
-                                <div className="col-span-4">
-                                  <span className="text-sm font-bold text-slate-700 italic uppercase">{contacto.nombres || contacto.presidente}</span>
-                                </div>
-                                <div className="col-span-3">
-                                  <span className="text-[10px] font-black text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 uppercase tracking-tight">
-                                    {contacto.cargo || 'Presidente'}
-                                  </span>
-                                </div>
-                                <div className="col-span-4">
-                                  <span className="text-sm text-slate-500 truncate block mr-4">{contacto.correo || '-'}</span>
-                                </div>
-                                <div className="col-span-1 flex items-center justify-end gap-1">
-                                  <button 
-                                    onClick={() => handleEdit(contacto)}
-                                    className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
-                                    title="Editar"
-                                  >
-                                    <i className="fa-solid fa-pen-to-square text-xs"></i>
-                                  </button>
-                                  <button 
-                                    onClick={() => handleDelete(contacto.id)}
-                                    className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                                    title="Eliminar"
-                                  >
-                                    <i className="fa-solid fa-trash text-xs"></i>
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
+          ) : activeTab === 'contactos' ? (
+            /* --- CONTACTS TAB VIEW --- */
+            sortedClubNames.length === 0 ? (
+              <div className="px-8 py-20 text-center">
+                <p className="text-slate-400 text-sm font-medium">No se encontraron contactos registrados.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {sortedClubNames.map((clubName) => {
+                  const group = groupedContactos[clubName];
+                  const isExpanded = expandedClubs.has(clubName);
+                  const clubContactos = group.list;
+                  
+                  return (
+                    <div key={clubName} className="flex flex-col">
+                      {/* Club Header */}
+                      <button 
+                        onClick={() => toggleClub(clubName)}
+                        className="w-full px-8 py-6 flex items-center justify-between hover:bg-slate-50/80 transition-colors group text-left"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all bg-white border border-slate-100 shadow-sm ${isExpanded ? 'ring-2 ring-red-500/20' : ''}`}>
+                            <ClubBadge 
+                              clubName={clubName} 
+                              idClub={group.id_club}
+                              clubs={clubs} 
+                              showName={false} 
+                              logoSize="w-6 h-6"
+                            />
                           </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                );
-              })}
-            </div>
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900 uppercase italic tracking-tighter">{clubName}</h3>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                              {clubContactos.length} {clubContactos.length === 1 ? 'Contacto' : 'Contactos'}
+                            </p>
+                          </div>
+                        </div>
+                        <i className={`fa-solid fa-chevron-down text-[10px] text-slate-300 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-red-500' : ''}`}></i>
+                      </button>
+
+                      {/* Contacts Sub-list */}
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3, ease: 'easeInOut' }}
+                            className="overflow-hidden bg-slate-50/30"
+                          >
+                            <div className="px-8 pb-6 space-y-3">
+                              <div className="grid grid-cols-12 px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                                <div className="col-span-4">Destinatario</div>
+                                <div className="col-span-3">Cargo</div>
+                                <div className="col-span-4">Email</div>
+                                <div className="col-span-1 text-right">Acciones</div>
+                              </div>
+                              {clubContactos.map((contacto) => (
+                                <div key={contacto.id} className="grid grid-cols-12 items-center px-4 py-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group/row">
+                                  <div className="col-span-4">
+                                    <span className="text-sm font-bold text-slate-700 italic uppercase">{contacto.nombres || contacto.presidente}</span>
+                                  </div>
+                                  <div className="col-span-3">
+                                    <span className="text-[10px] font-black text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 uppercase tracking-tight">
+                                      {contacto.cargo || 'Presidente'}
+                                    </span>
+                                  </div>
+                                  <div className="col-span-4">
+                                    <span className="text-sm text-slate-500 truncate block mr-4">{contacto.correo || '-'}</span>
+                                  </div>
+                                  <div className="col-span-1 flex items-center justify-end gap-1">
+                                    <button 
+                                      onClick={() => handleEdit(contacto)}
+                                      className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                                      title="Editar"
+                                    >
+                                      <i className="fa-solid fa-pen-to-square text-xs"></i>
+                                    </button>
+                                    <button 
+                                      onClick={() => handleDelete(contacto.id)}
+                                      className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                                      title="Eliminar"
+                                    >
+                                      <i className="fa-solid fa-trash text-xs"></i>
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            /* --- MASTER CLUB LIST TAB VIEW --- */
+            sortedAndFilteredClubs.length === 0 ? (
+              <div className="px-8 py-20 text-center">
+                <p className="text-slate-400 text-sm font-medium">No se encontraron clubes registrados en la base de datos maestro.</p>
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-400 font-black uppercase text-[9px] tracking-widest">
+                    <th className="px-8 py-5">Escudo / Club</th>
+                    <th className="px-8 py-5">Código</th>
+                    <th className="px-8 py-5">Nombre Corto</th>
+                    <th className="px-8 py-5 cursor-pointer hover:text-[#CF1B2B] select-none transition-colors group">
+                      País <i className="fa-solid fa-sort-down ml-1 text-red-500 animate-pulse"></i>
+                    </th>
+                    <th className="px-8 py-5">Ciudad / Región</th>
+                    <th className="px-8 py-5">Estado</th>
+                    <th className="px-8 py-5 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50 text-slate-700">
+                  {sortedAndFilteredClubs.map((club) => {
+                    const isChile = (club.pais || '').toLowerCase().trim() === 'chile';
+                    return (
+                      <tr key={club.id_club} className="hover:bg-slate-50/50 transition-colors animate-in fade-in duration-200">
+                        <td className="px-8 py-4.5">
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-xl border border-slate-100 p-1 flex items-center justify-center bg-white shadow-sm">
+                              <ClubBadge clubName={club.nombre} idClub={club.id_club} clubs={clubs} showName={false} logoSize="w-7 h-7" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-black text-slate-900 uppercase italic">{club.nombre}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">ID: {club.id_club}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-8 py-4.5 text-xs font-black tracking-widest text-[#0b1220]">
+                          {club.codigo || '-'}
+                        </td>
+                        <td className="px-8 py-4.5 text-xs text-slate-500 uppercase font-bold">
+                          {club.nombre_corto || '-'}
+                        </td>
+                        <td className="px-8 py-4.5">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider ${
+                            isChile 
+                              ? 'bg-red-50 text-[#CF1B2B] border border-red-100/50' 
+                              : 'bg-emerald-50 text-emerald-600 border border-emerald-100/50'
+                          }`}>
+                            {isChile ? <i className="fa-solid fa-star text-[8px]"></i> : <i className="fa-solid fa-globe text-[8px]"></i>}
+                            {club.pais || 'S/D'}
+                          </span>
+                        </td>
+                        <td className="px-8 py-4.5 text-xs">
+                          <p className="font-bold text-slate-600 uppercase">{club.ciudad || '-'}</p>
+                          <p className="text-[9px] text-slate-400 font-medium uppercase">{club.region || '-'}</p>
+                        </td>
+                        <td className="px-8 py-4.5">
+                          <span className={`px-3 py-1 rounded-full text-[8.5px] font-black uppercase tracking-widest leading-none ${
+                            club.activo !== false ? 'bg-emerald-50 text-emerald-600 border border-emerald-100/30' : 'bg-rose-50 text-rose-500 border border-rose-100/30'
+                          } border`}>
+                            {club.activo !== false ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </td>
+                        <td className="px-8 py-4.5 text-right animate-in fade-in">
+                          <div className="flex justify-end gap-1">
+                            <button 
+                              onClick={() => handleEditClub(club)}
+                              className="p-2 text-slate-300 hover:text-[#0b1220] hover:bg-slate-50 rounded-xl transition-all"
+                              title="Editar Club"
+                            >
+                              <i className="fa-solid fa-pen-to-square text-xs"></i>
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteClub(club.id_club)}
+                              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                              title="Eliminar Club"
+                            >
+                              <i className="fa-solid fa-trash-can text-xs"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )
           )}
         </div>
       </div>
@@ -428,6 +731,153 @@ export default function ContactosClubesArea() {
                 )}
                 {submitting ? 'GUARDANDO...' : (editingContacto ? 'GUARDAR CAMBIOS' : 'CREAR REGISTRO')}
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MASTER CLUB CREATOR/EDITOR MODAL --- */}
+      {showClubModal && (
+        <div className="fixed inset-0 bg-[#0b1220]/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 my-8">
+            <div className="p-8 border-b border-slate-100 bg-[#0b1220] text-white flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-black italic uppercase tracking-tighter">
+                  {editingClub ? `EDITAR CLUB: ${editingClub.nombre}` : 'NUEVO CLUB OFICIAL'}
+                </h3>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Soporte técnico para base de datos Supabase</p>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowClubModal(false);
+                  setEditingClub(null);
+                }}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <i className="fa-solid fa-xmark text-xl"></i>
+              </button>
+            </div>
+            
+            <form onSubmit={handleSaveClub} className="p-8 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2 col-span-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Oficial del Club <span className="text-red-500">*</span></label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="Ej: CLUB DE PORTES COLO-COLO"
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-bold uppercase"
+                    value={clubFormData.nombre}
+                    onChange={(e) => setClubFormData({...clubFormData, nombre: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Código / Sigla <span className="text-red-500">*</span></label>
+                  <input 
+                    type="text" 
+                    required
+                    maxLength={10}
+                    placeholder="Ej: COL, UCH, CCS"
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-black uppercase tracking-widest"
+                    value={clubFormData.codigo}
+                    onChange={(e) => setClubFormData({...clubFormData, codigo: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Corto</label>
+                  <input 
+                    type="text" 
+                    placeholder="Ej: COLO COLO"
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-bold uppercase"
+                    value={clubFormData.nombre_corto}
+                    onChange={(e) => setClubFormData({...clubFormData, nombre_corto: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">País</label>
+                  <input 
+                    type="text" 
+                    placeholder="Ej: CHILE, ARGENTINA, ESPAÑA"
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-bold uppercase"
+                    value={clubFormData.pais}
+                    onChange={(e) => setClubFormData({...clubFormData, pais: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ciudad</label>
+                  <input 
+                    type="text" 
+                    placeholder="Ej: SANTIAGO, CALAMA, VALPARAISO"
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-bold uppercase"
+                    value={clubFormData.ciudad}
+                    onChange={(e) => setClubFormData({...clubFormData, ciudad: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Región</label>
+                  <input 
+                    type="text" 
+                    placeholder="Ej: SANTIAGO METROPOLITANA"
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-bold uppercase"
+                    value={clubFormData.region}
+                    onChange={(e) => setClubFormData({...clubFormData, region: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Estado de Club</label>
+                  <div className="flex items-center gap-3 px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <input 
+                      type="checkbox"
+                      id="club-activo"
+                      className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                      checked={clubFormData.activo}
+                      onChange={(e) => setClubFormData({...clubFormData, activo: e.target.checked})}
+                    />
+                    <label htmlFor="club-activo" className="text-xs font-bold text-slate-700 uppercase cursor-pointer select-none">
+                      {clubFormData.activo ? 'CLUB ACTIVO' : 'CLUB INACTIVO'}
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2 col-span-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">URL del Escudo/Logo (Google Drive o Web)</label>
+                  <input 
+                    type="text" 
+                    placeholder="Ej: https://drive.google.com/file/d/xxxxxx"
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
+                    value={clubFormData.logo_url}
+                    onChange={(e) => setClubFormData({...clubFormData, logo_url: e.target.value})}
+                  />
+                  <p className="text-[9px] text-slate-400 font-bold uppercase ml-1">Si insertas un enlace de Google Drive, el sistema lo convertirá automáticamente para visualización directa.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowClubModal(false);
+                    setEditingClub(null);
+                  }}
+                  className="flex-1 py-4.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+                >
+                  CANCELAR
+                </button>
+                <button 
+                  type="submit"
+                  disabled={submittingClub}
+                  className="flex-1 py-4.5 bg-[#CF1B2B] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {submittingClub ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-save"></i>}
+                  {submittingClub ? 'GUARDANDO...' : 'GUARDAR CLUB'}
+                </button>
+              </div>
             </form>
           </div>
         </div>

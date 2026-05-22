@@ -593,7 +593,7 @@ export default function CitacionesArea({
         const bulkData = playersToCopy.map(pid => ({
           microcycle_id: newMicro.id,
           player_id: pid,
-          fecha: new Date().toISOString().split('T')[0],
+          fecha_citacion: new Date().toISOString().split('T')[0],
           created_by: session?.user?.id
         }));
         const { error: copyError } = await supabase.from('citaciones').insert(bulkData);
@@ -694,7 +694,7 @@ export default function CitacionesArea({
         const bulkData = citadosIds.map(id => ({
           microcycle_id: selectedMicro.id,
           player_id: id,
-          fecha: new Date().toISOString().split('T')[0],
+          fecha_citacion: new Date().toISOString().split('T')[0],
           created_by: session?.user?.id
         }));
         const { error } = await supabase.from('citaciones').insert(bulkData);
