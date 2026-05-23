@@ -34,7 +34,7 @@ const ChefAssistant: React.FC = () => {
       Solo devuelve el JSON, sin texto adicional.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json"
@@ -44,8 +44,92 @@ const ChefAssistant: React.FC = () => {
       const data = JSON.parse(response.text || '{}');
       setRecipe(data);
     } catch (err) {
-      console.error("Error generating recipe:", err);
-      setError("No pude contactar al Chef en este momento. Intenta de nuevo.");
+      console.warn("Chef Assistant Error (fallback triggered):", err);
+      // High quality sports recipes fallback
+      let fallbackRecipe: Recipe;
+      const normalizedCat = category.toLowerCase();
+      if (normalizedCat.includes("post") || normalizedCat.includes("entren")) {
+        fallbackRecipe = {
+          title: "Bowl Recuperador de Quinoa y Pollo Teriyaki",
+          ingredients: [
+            "100g de pechuga de pollo a la plancha en cubos",
+            "1 taza de quinoa cocida tibia",
+            "1/2 taza de brócoli al vapor",
+            "1/4 de palta en rebanadas",
+            "1 cucharada de salsa teriyaki baja en sodio",
+            "Semillas de sésamo para decorar"
+          ],
+          instructions: [
+            "Colocar la quinoa tibia como base en un bowl hondo.",
+            "Agregar el pollo en cubos, el brócoli y las rebanadas de palta de forma ordenada.",
+            "Rociar con la salsa teriyaki baja en sodio.",
+            "Decorar con semillas de sésamo y consumir dentro de los 45 minutos post-entreno para maximizar la ventana anabólica."
+          ],
+          protein: "38g",
+          calories: "450"
+        };
+      } else if (normalizedCat.includes("desayuno") || normalizedCat.includes("rápido") || normalizedCat.includes("rapido")) {
+        fallbackRecipe = {
+          title: "Avena Nocturna (Overnight Oats) Fuerza Roja",
+          ingredients: [
+            "1/2 taza de avena integral en hojuelas",
+            "1 scoop de proteína de suero (Whey Protein) sabor vainilla",
+            "3/4 taza de leche descremada o de almendras",
+            "1 cucharada de semillas de chía",
+            "Puñado de arándanos y fresas picadas",
+            "1 cucharadita de miel orgánica"
+          ],
+          instructions: [
+            "En un frasco de vidrio, mezclar la avena, la proteína, las semillas de chía y la leche hasta homogeneizar.",
+            "Tapar y refrigerar durante toda la noche (mínimo 6 horas).",
+            "Por la mañana, agregar los frutos rojos frescos por encima.",
+            "Endulzar con la cucharadita de miel y disfrutar inmediatamente para un aporte energético sostenido."
+          ],
+          protein: "32g",
+          calories: "380"
+        };
+      } else if (normalizedCat.includes("snack") || normalizedCat.includes("proteico")) {
+        fallbackRecipe = {
+          title: "Tortitas Fit de Plátano y Claras de Huevo",
+          ingredients: [
+            "1 plátano maduro mediano",
+            "4 claras de huevo",
+            "3 cucharadas de harina de avena integral",
+            "1/2 cucharadita de canela en polvo",
+            "Aceite de oliva en spray para la sartén"
+          ],
+          instructions: [
+            "En una licuadora, mezclar el plátano, las claras de huevo, la harina de avena y la canela hasta obtener una masa homogénea.",
+            "Calentar una sartén antiadherente a fuego medio y aplicar un toque de aceite de oliva en spray.",
+            "Verter porciones de la mezcla formando pequeñas tortitas y cocinar por 2 minutos de cada lado hasta dorar.",
+            "Servir templado para un snack de asimilación rápida."
+          ],
+          protein: "24g",
+          calories: "280"
+        };
+      } else {
+        fallbackRecipe = {
+          title: "Filete de Salmón del Pacifíco con Puré Rústico de Camote",
+          ingredients: [
+            "150g de filete de salmón fresco",
+            "1 camote mediano asado",
+            "1/2 taza de espárragos verdes salteados",
+            "1 cucharadita de aceite de oliva extra virgen",
+            "Sal de mar y pimienta negra al gusto",
+            "Gotas de jugo de limón fresco"
+          ],
+          instructions: [
+            "Sazonar el salmón con sal de mar, pimienta y unas gotas de jugo de limón.",
+            "Cocinar el camote al horno o microondas y machacarlo con un tenedor agregando media cucharadita de aceite de oliva para crear el puré rústico.",
+            "En una sartén bien caliente, dorar el salmón durante 3-4 minutos por el lado de la piel, voltear y cocinar por 2 minutos más.",
+            "Saltear los espárragos brevemente.",
+            "Emplatar de forma elegante y cenar al menos 2 horas antes de dormir para una digestión dócil."
+          ],
+          protein: "35g",
+          calories: "420"
+        };
+      }
+      setRecipe(fallbackRecipe);
     } finally {
       setLoading(false);
     }

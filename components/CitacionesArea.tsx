@@ -86,20 +86,38 @@ export default function CitacionesArea({
       category = p.category || Category.SUB_17;
     }
 
-    const clubIdFromObj = p.id_club || p.club_id;
-    // Buscamos el club en las props pasadas desde App.tsx
-    const clubObj = (propClubs || []).find((c: any) => 
-      Number(c.id_club) === Number(clubIdFromObj) || Number(c.id) === Number(clubIdFromObj)
-    );
-    
-    // Si tenemos el objeto del club, usamos su nombre. Si no, pero el nombre actual es genérico "Club #XX", 
-    // intentamos mantener el ID o usar lo que haya.
-    let resolvedClubName = clubObj?.nombre || p.club_name || p.club || 'SIN CLUB';
-    
-    // Si el nombre sigue siendo genérico y tenemos propClubs, intentamos una última vez
-    if (resolvedClubName.startsWith('Club #') && propClubs.length > 0) {
-      const match = propClubs.find(c => `Club #${c.id_club}` === resolvedClubName || `Club #${c.id}` === resolvedClubName);
-      if (match) resolvedClubName = match.nombre;
+    // Cargar mapeos de clubes personalizados locales para el player_id
+    let localPlayerClubs: Record<number, { id_club: number, nombre: string }> = {};
+    try {
+      const storedMapping = localStorage.getItem('lr-performance-custom-player-clubs');
+      if (storedMapping) {
+        localPlayerClubs = JSON.parse(storedMapping);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    let clubIdFromObj = p.id_club || p.club_id;
+    let resolvedClubName = 'SIN CLUB';
+
+    if (p.player_id && localPlayerClubs[p.player_id]) {
+      clubIdFromObj = localPlayerClubs[p.player_id].id_club;
+      resolvedClubName = localPlayerClubs[p.player_id].nombre;
+    } else {
+      // Buscamos el club en las props pasadas desde App.tsx
+      const clubObj = (propClubs || []).find((c: any) => 
+        Number(c.id_club) === Number(clubIdFromObj) || Number(c.id) === Number(clubIdFromObj)
+      );
+      
+      // Si tenemos el objeto del club, usamos su nombre. Si no, pero el nombre actual es genérico "Club #XX", 
+      // intentamos mantener el ID o usar lo que haya.
+      resolvedClubName = clubObj?.nombre || p.club_name || p.club || 'SIN CLUB';
+      
+      // Si el nombre sigue siendo genérico y tenemos propClubs, intentamos una última vez
+      if (resolvedClubName.startsWith('Club #') && propClubs.length > 0) {
+        const match = propClubs.find(c => `Club #${c.id_club}` === resolvedClubName || `Club #${c.id}` === resolvedClubName);
+        if (match) resolvedClubName = match.nombre;
+      }
     }
 
     return {
@@ -168,7 +186,7 @@ export default function CitacionesArea({
     if (propClubs.length > 0 && allPlayers.length > 0) {
       setAllPlayers(prev => prev.map(p => {
         const clubId = p.id_club;
-        if (!clubId) return p;
+        if (!clubId || clubId >= 15000) return p;
         
         const clubObj = propClubs.find(c => Number(c.id_club) === Number(clubId) || Number(c.id) === Number(clubId));
         
@@ -325,6 +343,17 @@ export default function CitacionesArea({
       
       if (error) throw error;
       
+      // Cargar mapeos de clubes personalizados locales
+      let localPlayerClubs: Record<number, { id_club: number, nombre: string }> = {};
+      try {
+        const storedMapping = localStorage.getItem('lr-performance-custom-player-clubs');
+        if (storedMapping) {
+          localPlayerClubs = JSON.parse(storedMapping);
+        }
+      } catch (e) {
+        console.error("CitacionesArea: Error parsing custom clubs:", e);
+      }
+
       if (data) {
         const mapped = data.map((p: any) => {
           // Inferir categoría si falta
@@ -347,20 +376,28 @@ export default function CitacionesArea({
 
           const fullName = `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${p.player_id}`;
 
-          const clubObjFromJoin = Array.isArray(p.clubes) ? p.clubes[0] : p.clubes;
-          const clubObjFromProp = (propClubs || []).find((c: any) => 
-            (c.id_club && Number(c.id_club) === Number(p.id_club)) || 
-            (c.id && Number(c.id) === Number(p.id_club))
-          );
-          
-          let resolvedClubName = clubObjFromJoin?.nombre || clubObjFromProp?.nombre || p.club_name || p.club;
-          
-          if (!resolvedClubName || resolvedClubName.startsWith('Club #') || resolvedClubName === 'SIN CLUB') {
-            const fallbackName = p.id_club ? FALLBACK_CLUB_NAMES[Number(p.id_club)] : null;
-            if (fallbackName) {
-              resolvedClubName = fallbackName;
-            } else if (!resolvedClubName) {
-              resolvedClubName = p.id_club ? `Club #${p.id_club}` : 'SIN CLUB';
+          let resolvedClubId = p.id_club;
+          let resolvedClubName = '';
+
+          if (p.player_id && localPlayerClubs[p.player_id]) {
+            resolvedClubId = localPlayerClubs[p.player_id].id_club;
+            resolvedClubName = localPlayerClubs[p.player_id].nombre;
+          } else {
+            const clubObjFromJoin = Array.isArray(p.clubes) ? p.clubes[0] : p.clubes;
+            const clubObjFromProp = (propClubs || []).find((c: any) => 
+              (c.id_club && Number(c.id_club) === Number(p.id_club)) || 
+              (c.id && Number(c.id) === Number(p.id_club))
+            );
+            
+            resolvedClubName = clubObjFromJoin?.nombre || clubObjFromProp?.nombre || p.club_name || p.club;
+            
+            if (!resolvedClubName || resolvedClubName.startsWith('Club #') || resolvedClubName === 'SIN CLUB') {
+              const fallbackName = p.id_club ? FALLBACK_CLUB_NAMES[Number(p.id_club)] : null;
+              if (fallbackName) {
+                resolvedClubName = fallbackName;
+              } else if (!resolvedClubName) {
+                resolvedClubName = p.id_club ? `Club #${p.id_club}` : 'SIN CLUB';
+              }
             }
           }
 
@@ -371,7 +408,7 @@ export default function CitacionesArea({
             role: UserRole.PLAYER, 
             anio: p.anio,
             club: resolvedClubName,
-            id_club: p.id_club,
+            id_club: resolvedClubId,
             position: p.posicion || 'N/A',
             category: category as Category
           };

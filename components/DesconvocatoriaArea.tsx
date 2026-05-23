@@ -184,6 +184,17 @@ export default function DesconvocatoriaArea({
 
       if (error) throw error
       if (data) {
+        // Cargar mapeos de clubes personalizados locales para jugadores
+        let localPlayerClubs: Record<number, { id_club: number, nombre: string }> = {};
+        try {
+          const storedMapping = localStorage.getItem('lr-performance-custom-player-clubs');
+          if (storedMapping) {
+            localPlayerClubs = JSON.parse(storedMapping);
+          }
+        } catch (e) {
+          console.error("DesconvocatoriaArea: Error parsing custom clubs:", e);
+        }
+
         const mapped: User[] = data.filter((d: any) => d.players).map((d: any) => {
           const p = d.players;
           // Inferir categoría si falta
@@ -204,17 +215,26 @@ export default function DesconvocatoriaArea({
             category = Category.SUB_17;
           }
 
-          const clubObj = (Array.isArray(p.clubes) ? p.clubes[0] : p.clubes)
-          const clubNameFromProps = (clubs || []).find(c => (c.id_club && Number(c.id_club) === Number(p.id_club)) || (c.id && Number(c.id) === Number(p.id_club)))?.nombre
-          const fallbackClubName = p.id_club ? FALLBACK_CLUB_NAMES[Number(p.id_club)] : null;
+          let resolvedClubId = p.id_club;
+          let resolvedClubName = '';
+
+          if (p.player_id && localPlayerClubs[p.player_id]) {
+            resolvedClubId = localPlayerClubs[p.player_id].id_club;
+            resolvedClubName = localPlayerClubs[p.player_id].nombre;
+          } else {
+            const clubObj = (Array.isArray(p.clubes) ? p.clubes[0] : p.clubes);
+            const clubNameFromProps = (clubs || []).find(c => (c.id_club && Number(c.id_club) === Number(p.id_club)) || (c.id && Number(c.id) === Number(p.id_club)))?.nombre;
+            const fallbackClubName = p.id_club ? FALLBACK_CLUB_NAMES[Number(p.id_club)] : null;
+            resolvedClubName = clubObj?.nombre || clubNameFromProps || fallbackClubName || 'SIN CLUB';
+          }
           
           return {
             id: `p-${p.player_id}`,
             player_id: p.player_id,
-            id_club: p.id_club,
+            id_club: resolvedClubId,
             name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || `Atleta #${p.player_id}`,
             role: UserRole.PLAYER,
-            club: clubObj?.nombre || clubNameFromProps || fallbackClubName || 'SIN CLUB',
+            club: resolvedClubName,
             position: p.posicion || 'N/A',
             category: category as Category,
             anio: p.anio

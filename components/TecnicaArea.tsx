@@ -1746,7 +1746,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                              <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
                              <span className="text-xs font-black text-slate-900 uppercase">LUGARES</span>
                              <div className="h-4 w-px bg-slate-300"></div>
-                             <span className="text-sm font-black text-red-600 truncate">
+                             <span className="text-sm font-black text-red-600 whitespace-nowrap overflow-visible leading-relaxed">
                                 {selectedMicro?.city || 'SANTIAGO'}
                              </span>
                           </div>

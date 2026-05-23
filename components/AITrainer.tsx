@@ -50,7 +50,7 @@ const AITrainer: React.FC = () => {
       Solo devuelve el JSON, sin texto adicional.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json"
@@ -60,8 +60,172 @@ const AITrainer: React.FC = () => {
       const data = JSON.parse(response.text || '{}');
       setRoutine(data);
     } catch (err) {
-      console.error("Error generating routine:", err);
-      setError("No pude contactar al Preparador Físico en este momento. Intenta de nuevo.");
+      console.warn("AI Trainer Error (fallback triggered):", err);
+      let fallbackRoutine: Routine;
+      const normalizedType = type.toLowerCase();
+      if (normalizedType.includes("upper")) {
+        fallbackRoutine = {
+          title: "Potencia Neuromuscular - Tren Superior",
+          objective: "Desarrollo de la fuerza explosiva en empujes y tracciones para duelos físicos hombro con hombro",
+          warmup: [
+            "Cardio ligero en remo - 5 minutos",
+            "Movilidad escapular y rotadores con banda elástica - 10 reps",
+            "Flexiones de brazos con control excéntrico - 2 series x 8 reps"
+          ],
+          exercises: [
+            {
+              name: "Press de Banca Semiapoyado con Mancuernas",
+              sets: "4",
+              reps: "6",
+              rest: "2 min",
+              notes: "Foco en la explosividad en fase concéntrica y 3 segundos de descenso controlado."
+            },
+            {
+              name: "Dominadas Lastradas Pronas (o con asistencia)",
+              sets: "3",
+              reps: "6",
+              rest: "2 min",
+              notes: "Alineación de hombros hacia abajo, evitar balanceo del tren inferior."
+            },
+            {
+              name: "Push Press con Barra Olímpica",
+              sets: "3",
+              reps: "5",
+              rest: "90 seg",
+              notes: "Usa un sutil dip de rodillas para propulsar la barra hacia el techo de forma vertical."
+            },
+            {
+              name: "Remo Unilateral con Mancuerna en Banco",
+              sets: "3",
+              reps: "8 por lado",
+              rest: "75 seg",
+              notes: "Mantener el abdomen contraído para bloquear la rotación lumbar."
+            }
+          ],
+          cooldown: [
+            "Estiramiento pasivo de pectoral y dorsal en espaldera",
+            "Liberación miofascial con Foam Roller en el tren superior - 3 minutos"
+          ]
+        };
+      } else if (normalizedType.includes("lower")) {
+        fallbackRoutine = {
+          title: "Fuerza Reactiva e Inestabilidad - Tren Inferior",
+          objective: "Desarrollo de fuerza excéntrica en cuádriceps e isquiotibiales para optimizar el frenado y cambio de dirección",
+          warmup: [
+            "Trotar suave o bicicleta estática - 5 minutos",
+            "Caminata del oso (Bear crawl) - 15 metros",
+            "Sentadillas libres con pausa de 2 segundos abajo - 10 reps"
+          ],
+          exercises: [
+            {
+              name: "Sentadilla Trasera con Barra (Safety Bar si hay disponible)",
+              sets: "4",
+              reps: "5",
+              rest: "2 min",
+              notes: "Profundidad rompiendo el paralelo bajo control técnico impecable."
+            },
+            {
+              name: "Peso Muerto Rumano Unilateral con Mancuerna",
+              sets: "3",
+              reps: "8 por lado",
+              rest: "90 seg",
+              notes: "Foco en la bisagra de cadera y alineación de la pelvis."
+            },
+            {
+              name: "Zancadas Búlgaras con Carga Simétrica",
+              sets: "3",
+              reps: "8 por pierna",
+              rest: "90 seg",
+              notes: "Rodilla delantera alineada con el segundo dedo del pie, evitar colapso en valgo."
+            },
+            {
+              name: "Saltos al Cajón (Box Jumps) con Caída Silenciosa",
+              sets: "3",
+              reps: "6",
+              rest: "75 seg",
+              notes: "Foco en amortiguar el aterrizaje en media sentadilla fluida."
+            }
+          ],
+          cooldown: [
+            "Estiramiento de isquiotibiales, flexores de cadera y glúteo",
+            "Masaje de descarga con Foam Roller en cuádriceps e ITB"
+          ]
+        };
+      } else if (normalizedType.includes("mobility")) {
+        fallbackRoutine = {
+          title: "Movilidad Multi-articular y Estabilidad Lumbopélvica",
+          objective: "Apertura de cadera, dorsiflexión de tobillo y disociación de cinturas para óptimo rango de movimiento táctico",
+          warmup: [
+            "Caminata suave - 3 minutos",
+            "Rotaciones de cadera de pie en círculos amplios - 8 por lado",
+            "Ankle Mobility (Movilización de tobillo contra pared) - 10 por pie"
+          ],
+          exercises: [
+            {
+              name: "World's Greatest Stretch (El mejor estiramiento del mundo)",
+              sets: "3",
+              reps: "5 por lado",
+              rest: "60 seg",
+              notes: "Movilizar la cadera y realizar rotación torácica siguiendo la mano con la mirada."
+            },
+            {
+              name: "90-90 Hip Switch (Transiciones de cadera sentado)",
+              sets: "3",
+              reps: "8 por lado",
+              rest: "45 seg",
+              notes: "Mantener el torso erguido sin despegar los talones del suelo."
+            },
+            {
+              name: "Sentadilla Profunda Activa Sosteniendo Barra",
+              sets: "3",
+              reps: "45 seg de mantención",
+              rest: "60 seg",
+              notes: "Mantener talones apoyados, pecho alto y empujar rodillas hacia afuera con los codos."
+            }
+          ],
+          cooldown: [
+            "Respiración diafragmática tumbado boca arriba con piernas elevadas - 3 minutos",
+            "Postura del niño (Child's Pose) estirando brazos al frente"
+          ]
+        };
+      } else {
+        fallbackRoutine = {
+          title: "Flexibilidad Activa y Descompresión Fascial",
+          objective: "Restaurar la longitud muscular en aductores, psoas y cadena posterior para acelerar la recuperación metabólica",
+          warmup: [
+            "Movilizaciones articulares ligeras - 3 minutos",
+            "Cat-Cow (Gato-Camello) para flexo-extensión de columna - 10 reps"
+          ],
+          exercises: [
+            {
+              name: "Estiramiento de Psoas en Proposición de Caballero (Lunge Stretch)",
+              sets: "3",
+              reps: "30 seg por lado",
+              rest: "30 seg",
+              notes: "Retroversión pélvica activa apretando el glúteo de la pierna trasera."
+            },
+            {
+              name: "Estiramiento de Aductores en Posición de Sapito (Frog Stretch)",
+              sets: "3",
+              reps: "40 seg",
+              rest: "30 seg",
+              notes: "Desplazar el peso sutilmente hacia atrás para buscar tensión aductora cómoda."
+            },
+            {
+              name: "Estiramiento Dinámico de Cadena Posterior (Belly to Thigh)",
+              sets: "3",
+              reps: "12 reps",
+              rest: "45 seg",
+              notes: "Flexionar rodillas ligeramente para priorizar la extensión de columna e isquiotibiales."
+            }
+          ],
+          cooldown: [
+            "Tumbado boca arriba sacudiendo piernas suavemente para relajar la musculatura activa",
+            "5 respiraciones profundas completas con los ojos cerrados"
+          ]
+        };
+      }
+      setRoutine(fallbackRoutine);
     } finally {
       setLoading(false);
     }

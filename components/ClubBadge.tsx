@@ -45,37 +45,49 @@ const ClubBadge: React.FC<ClubBadgeProps> = ({
   }
 
   const getClubLogo = (name?: string, id?: number | null) => {
+    let resolvedName = name;
+    let logoUrlFromDb = null;
+
     // 1. Buscar por ID (máxima fiabilidad)
     if (id) {
       const clubById = clubs.find(c => 
         Number(c.id_club) === Number(id) || Number(c.id) === Number(id)
       );
-      if (clubById?.logo_url) {
-        return { url: getDriveDirectLink(clubById.logo_url), name: clubById.nombre };
+      if (clubById) {
+        resolvedName = clubById.nombre || resolvedName;
+        if (clubById.logo_url) {
+          logoUrlFromDb = getDriveDirectLink(clubById.logo_url);
+        }
       }
-      if (clubById) return { url: null, name: clubById.nombre };
     }
 
-    // 2. Buscar por nombre
-    if (name) {
-      const normName = normalizeClub(name);
+    // 2. Si se resolvió un nombre genérico, intentamos mapearlo al nombre real desde constantes si se puede
+    if (resolvedName && (resolvedName.startsWith('Club #') || resolvedName === 'Sin Club')) {
+      const fb = id ? FALLBACK_CLUB_NAMES[Number(id)] : null;
+      if (fb) resolvedName = fb;
+    }
+
+    // 3. Obtener URL del logo: primero el de la base de datos si existe, si no, buscar en estáticos
+    let finalUrl = logoUrlFromDb;
+    if (!finalUrl && resolvedName) {
+      const normName = normalizeClub(resolvedName);
+      
+      // Buscar en listado de clubes por nombre si existe algún club con logo_url en la lista
       const clubByName = clubs.find(c => normalizeClub(c.nombre) === normName);
       if (clubByName?.logo_url) {
-        return { url: getDriveDirectLink(clubByName.logo_url), name: clubByName.nombre };
+        finalUrl = getDriveDirectLink(clubByName.logo_url);
       }
       
-      const staticLogo = CLUB_LOGOS[normName];
-      if (staticLogo) return { url: staticLogo, name: name };
+      // Si aún no hay logo, buscar en las constantes estáticas de logos
+      if (!finalUrl) {
+        const staticLogo = CLUB_LOGOS[normName];
+        if (staticLogo) {
+          finalUrl = getDriveDirectLink(staticLogo);
+        }
+      }
     }
 
-    // 3. Fallback a constantes si el nombre es genérico o nulo
-    let finalName = name || 'Sin Club';
-    if (finalName.startsWith('Club #') || finalName === 'Sin Club') {
-        const fb = id ? FALLBACK_CLUB_NAMES[Number(id)] : null;
-        if (fb) finalName = fb;
-    }
-
-    return { url: null, name: finalName };
+    return { url: finalUrl, name: resolvedName || 'Sin Club' };
   };
 
   const { url: logoUrl, name: displayName } = getClubLogo(clubName, idClub);

@@ -5,24 +5,24 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
-
+ 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
+ 
 let transporter: nodemailer.Transporter | null = null;
-
+ 
 function getTransporter() {
   if (!transporter) {
     const host = process.env.SMTP_HOST || 'smtp.hostinger.com';
     const port = parseInt(process.env.SMTP_PORT || '465');
     const user = process.env.SMTP_USER;
     const pass = process.env.SMTP_PASS;
-
+ 
     if (!user || !pass) {
       console.warn("[MAIL] SMTP_USER or SMTP_PASS not configured.");
       return null;
     }
-
+ 
     transporter = nodemailer.createTransport({
       host,
       port,
@@ -32,15 +32,15 @@ function getTransporter() {
   }
   return transporter;
 }
-
+ 
 async function startServer() {
   const app = express();
   const PORT = 3000;
-
+ 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
+ 
   // TEST CONNECTION
   app.get("/api/catapult/test", (req, res) => {
     res.json({ 
@@ -49,7 +49,7 @@ async function startServer() {
       endpoint: "bakestatus (CloudBaker API)"
     });
   });
-
+ 
   // ✅ ACTIVITIES ENDPOINT - bakestatus con filtros flexibles
   app.get("/api/catapult/activities", async (req, res) => {
     const token = process.env.CATAPULT_API_TOKEN?.trim();
@@ -59,35 +59,35 @@ async function startServer() {
         error: "CATAPULT_API_TOKEN not configured" 
       });
     }
-
+ 
     console.log("\n========================================");
     console.log("📡 CATAPULT BAKESTATUS REQUEST");
     console.log("========================================");
     console.log(`Token length: ${token.length}`);
     console.log(`Query params:`, JSON.stringify(req.query));
-
+ 
     try {
       // Calcular rango de fechas (default: 30 días hacia atrás)
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - (30 * 24 * 60 * 60 * 1000));
-
+ 
       // Permitir override desde query params
       let finalStartTime = startTime;
       let finalEndTime = endTime;
-
+ 
       // Intentar múltiples nombres de parámetros para flexibilidad
       const startParam = req.query.start_time_after 
         || req.query.startTime 
         || req.query.StartTime
         || req.query.from
         || req.query.since;
-
+ 
       const endParam = req.query.end_time_before 
         || req.query.endTime 
         || req.query.EndTime
         || req.query.to
         || req.query.until;
-
+ 
       if (startParam) {
         const parsed = new Date(String(startParam));
         if (!isNaN(parsed.getTime())) {
@@ -95,7 +95,7 @@ async function startServer() {
           console.log(`📅 Custom start time from params: ${finalStartTime.toISOString()}`);
         }
       }
-
+ 
       if (endParam) {
         const parsed = new Date(String(endParam));
         if (!isNaN(parsed.getTime())) {
@@ -103,9 +103,9 @@ async function startServer() {
           console.log(`📅 Custom end time from params: ${finalEndTime.toISOString()}`);
         }
       }
-
+ 
       console.log(`📊 Time range: ${finalStartTime.toISOString()} → ${finalEndTime.toISOString()}`);
-
+ 
       // CONSTRUIR URLS POSIBLES
       const baseUrl = 'https://of-prod-uw1-cloudbaker-api.openfield.catapultsports.com';
       
@@ -113,7 +113,7 @@ async function startServer() {
       const endpoints = ['/api/activity', '/api/activity/bakestatus'];
       let activities: any[] = [];
       let successEndpoint = '';
-
+ 
       for (const endpoint of endpoints) {
         try {
           const url = `${baseUrl}${endpoint}`;
@@ -123,7 +123,7 @@ async function startServer() {
             StartTime: finalStartTime.toISOString(),
             EndTime: finalEndTime.toISOString()
           };
-
+ 
           // Para bakestatus a veces no se necesitan params o son distintos
           const axiosRes = await axios.get(url, {
             headers: {
@@ -134,10 +134,10 @@ async function startServer() {
             params,
             timeout: 10000
           });
-
+ 
           let data = axiosRes.data;
           let currentActivities = [];
-
+ 
           if (Array.isArray(data)) {
             currentActivities = data;
           } else if (data.data && Array.isArray(data.data)) {
@@ -147,7 +147,7 @@ async function startServer() {
           } else if (data.results && Array.isArray(data.results)) {
             currentActivities = data.results;
           }
-
+ 
           if (currentActivities.length > 0) {
             activities = currentActivities;
             successEndpoint = url;
@@ -158,7 +158,7 @@ async function startServer() {
           console.log(`❌ Failed: ${endpoint} - ${e.message}`);
         }
       }
-
+ 
       console.log(`📈 Final total activities: ${activities.length}`);
       
       if (activities.length > 0) {
@@ -171,9 +171,9 @@ async function startServer() {
         
         console.log(`📋 Sample ID: ${sampleId}, Name: ${sampleName}, Status: ${sampleStatus}`);
       }
-
+ 
       console.log("========================================\n");
-
+ 
       return res.json({
         success: true,
         activities,
@@ -188,7 +188,7 @@ async function startServer() {
           timestamp: new Date().toISOString()
         }
       });
-
+ 
     } catch (error: any) {
       console.log(`\n❌ ERROR`);
       console.log(`Status: ${error.response?.status}`);
@@ -199,7 +199,7 @@ async function startServer() {
         console.log(`Response:`, JSON.stringify(errorData).substring(0, 500));
       }
       console.log("========================================\n");
-
+ 
       return res.status(error.response?.status || 500).json({
         success: false,
         error: "Error fetching from bakestatus endpoint",
@@ -212,7 +212,7 @@ async function startServer() {
       });
     }
   });
-
+ 
   // ACTIVITY DETAIL
   app.get("/api/catapult/activities/:id", async (req, res) => {
     const { id } = req.params;
@@ -221,7 +221,7 @@ async function startServer() {
     if (!token) {
       return res.status(500).json({ error: "Token not configured" });
     }
-
+ 
     try {
       console.log(`\n🔍 Fetching activity detail: ${id}`);
       
@@ -234,7 +234,7 @@ async function startServer() {
         },
         timeout: 5000
       });
-
+ 
       console.log(`✅ Activity detail fetched successfully`);
       return res.json(response.data);
     } catch (e: any) {
@@ -245,7 +245,7 @@ async function startServer() {
       });
     }
   });
-
+ 
   // ACTIVITY STATS
   app.get("/api/catapult/activities/:id/stats", async (req, res) => {
     const { id } = req.params;
@@ -254,7 +254,7 @@ async function startServer() {
     if (!token) {
       return res.status(500).json({ error: "Token not configured" });
     }
-
+ 
     try {
       console.log(`\n📊 [CATAPULT] Fetching stats for ID: ${id}`);
       
@@ -270,7 +270,7 @@ async function startServer() {
         },
         timeout: 10000
       });
-
+ 
       console.log(`✅ [CATAPULT] Stats fetched successfully for ${id}`);
       return res.json(response.data);
     } catch (e: any) {
@@ -288,7 +288,7 @@ async function startServer() {
       });
     }
   });
-
+ 
   // SEND NOMINA EMAIL
   app.post("/api/send-nomina", async (req, res) => {
     try {
@@ -297,23 +297,23 @@ async function startServer() {
       if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
         return res.status(400).json({ error: "No recipients provided" });
       }
-
+ 
       console.log(`\n📧 [EMAIL] Sending nomina to ${recipients.length} recipients for ${clubName}`);
       
       const mailTransporter = getTransporter();
       if (!mailTransporter) {
         return res.status(503).json({ error: "Email service not configured" });
       }
-
+ 
       const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
       const fromName = process.env.SMTP_FROM_NAME || "La Roja Performance";
-
+ 
       const sendPromises = recipients.map(async (recipient: any) => {
         try {
           const playerListHtml = players
             .map((p: any) => `<li><b>${p.name}</b> (${p.position})</li>`)
             .join("");
-
+ 
           const mailOptions: any = {
             from: `"${fromName}" <${fromEmail}>`,
             to: recipient.correo,
@@ -339,7 +339,7 @@ async function startServer() {
               </div>
             `
           };
-
+ 
           if (attachment && attachment.content) {
             mailOptions.attachments = [{
               filename: attachment.filename || 'Citacion.pdf',
@@ -347,7 +347,7 @@ async function startServer() {
               encoding: 'base64'
             }];
           }
-
+ 
           const info = await mailTransporter.sendMail(mailOptions);
           console.log(`   ✅ Sent to ${recipient.correo}`);
           return info;
@@ -356,7 +356,7 @@ async function startServer() {
           throw sendError;
         }
       });
-
+ 
       await Promise.all(sendPromises);
       
       console.log(`✅ All emails sent successfully\n`);
@@ -369,14 +369,20 @@ async function startServer() {
       return res.status(500).json({ error: error.message });
     }
   });
-
+ 
   // VITE MIDDLEWARE
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
-    app.use(vite.middlewares);
+    // ✅ IMPORTANTE: Excluir rutas /api del middleware de Vite
+    app.use((req, res, next) => {
+      if (req.url.startsWith('/api/')) {
+        return next(); // Saltar Vite para rutas /api
+      }
+      vite.middlewares(req, res, next);
+    });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
@@ -384,7 +390,7 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
-
+ 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`\n🚀 Server running on http://localhost:${PORT}`);
     console.log(`✅ Catapult Proxy ready`);
@@ -392,5 +398,5 @@ async function startServer() {
     console.log(`🔑 Token: ${process.env.CATAPULT_API_TOKEN ? '✅ Configured' : '❌ Missing'}\n`);
   });
 }
-
+ 
 startServer();

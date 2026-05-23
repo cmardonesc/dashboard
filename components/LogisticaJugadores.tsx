@@ -285,8 +285,7 @@ const LogisticaJugadores: React.FC = () => {
         apellido2: editingPlayer.apellido2,
         id_club: dbIdClub,
         posicion: editingPlayer.position,
-        fecha_nacimiento: editingPlayer.fecha_nacimiento,
-        anio: inferredAnio
+        fecha_nacimiento: editingPlayer.fecha_nacimiento
       };
 
       if (editingPlayer.player_id) {

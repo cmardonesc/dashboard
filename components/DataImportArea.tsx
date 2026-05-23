@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
 import { supabase } from '../lib/supabase';
@@ -856,7 +855,16 @@ export default function DataImportArea() {
 
     setSyncingToSupabase(true);
     try {
-      const sessionDate = selectedActivity.startTime ? selectedActivity.startTime.split('T')[0] : new Date().toISOString().split('T')[0];
+      // ✅ NUEVO: Extraer datos de sesión
+      const sessionDate = selectedActivity.startTime 
+        ? selectedActivity.startTime.split('T')[0] 
+        : new Date().toISOString().split('T')[0];
+      
+      const sessionName = selectedActivity.name || 'Sesión sin nombre';
+      const catapultId = selectedActivity.id || null;
+      
+      console.log(`📊 Sincronizando sesión: ${sessionName} (${sessionDate})`);
+      console.log(`🔗 Catapult ID: ${catapultId}`);
       
       let recordsToInsert = validMappings.map(ath => {
         const metrics = mapCatapultMetrics(ath.stats);
@@ -866,17 +874,22 @@ export default function DataImportArea() {
           player_id: ath.supabase_player_id,
           fecha: sessionDate,
           jugador: player ? `${player.nombre} ${player.apellido1}` : ath.catapult_name,
+          // ✅ NUEVO: Campos de sesión
+          nombre_sesion: sessionName,
+          catapult_sync_id: catapultId,
+          // Métricas GPS
           ...metrics
         };
       });
 
-      // NUEVO: Agregación para Catapult Sync (Opción A)
+      // NUEVO: Agregación para Catapult Sync
       const playerIds = Array.from(new Set(recordsToInsert.map(d => d.player_id)));
       const { data: existingDBRecords } = await supabase
         .from('gps_import')
         .select('*')
         .in('player_id', playerIds)
-        .eq('fecha', sessionDate);
+        .eq('fecha', sessionDate)
+        .eq('catapult_sync_id', catapultId || null);
 
       const aggregatedMap = new Map<number, any>();
       recordsToInsert.forEach(item => {
@@ -893,26 +906,32 @@ export default function DataImportArea() {
           if (existing.minutos > 0) {
             existing.m_por_min = existing.dist_total_m / existing.minutos;
           }
+          // ✅ Mantener datos de sesión
+          existing.nombre_sesion = sessionName;
+          existing.catapult_sync_id = catapultId;
         } else {
           aggregatedMap.set(item.player_id, { ...item });
         }
       });
 
-      // Sumar con lo que ya existe en la DB
+      // Sumar con DB (sesiones AM + PM)
       if (existingDBRecords) {
         existingDBRecords.forEach(dbRow => {
           if (aggregatedMap.has(dbRow.player_id)) {
             const current = aggregatedMap.get(dbRow.player_id);
-            current.minutos = (current.minutos || 0) + (dbRow.minutos || 0);
-            current.dist_total_m = (current.dist_total_m || 0) + (dbRow.dist_total_m || 0);
-            current.dist_ai_m_15_kmh = (current.dist_ai_m_15_kmh || 0) + (dbRow.dist_ai_m_15_kmh || 0);
-            current.dist_mai_m_20_kmh = (current.dist_mai_m_20_kmh || 0) + (dbRow.dist_mai_m_20_kmh || 0);
-            current.dist_sprint_m_25_kmh = (current.dist_sprint_m_25_kmh || 0) + (dbRow.dist_sprint_m_25_kmh || 0);
-            current.sprints_n = (current.sprints_n || 0) + (dbRow.sprints_n || 0);
-            current.acc_decc_ai_n = (current.acc_decc_ai_n || 0) + (dbRow.acc_decc_ai_n || 0);
-            current.vel_max_kmh = Math.max(current.vel_max_kmh || 0, dbRow.vel_max_kmh || 0);
-            if (current.minutos > 0) {
-              current.m_por_min = current.dist_total_m / current.minutos;
+            // Solo sumar si DISTINTO catapult_sync_id
+            if (dbRow.catapult_sync_id !== catapultId) {
+              current.minutos = (current.minutos || 0) + (dbRow.minutos || 0);
+              current.dist_total_m = (current.dist_total_m || 0) + (dbRow.dist_total_m || 0);
+              current.dist_ai_m_15_kmh = (current.dist_ai_m_15_kmh || 0) + (dbRow.dist_ai_m_15_kmh || 0);
+              current.dist_mai_m_20_kmh = (current.dist_mai_m_20_kmh || 0) + (dbRow.dist_mai_m_20_kmh || 0);
+              current.dist_sprint_m_25_kmh = (current.dist_sprint_m_25_kmh || 0) + (dbRow.dist_sprint_m_25_kmh || 0);
+              current.sprints_n = (current.sprints_n || 0) + (dbRow.sprints_n || 0);
+              current.acc_decc_ai_n = (current.acc_decc_ai_n || 0) + (dbRow.acc_decc_ai_n || 0);
+              current.vel_max_kmh = Math.max(current.vel_max_kmh || 0, dbRow.vel_max_kmh || 0);
+              if (current.minutos > 0) {
+                current.m_por_min = current.dist_total_m / current.minutos;
+              }
             }
           }
         });
@@ -924,15 +943,19 @@ export default function DataImportArea() {
         onConflict: 'player_id,fecha'
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("❌ Error en UPSERT:", error);
+        throw error;
+      }
 
-      setMessage({ type: 'success', text: `¡Sincronización Exitosa! Se han guardado ${recordsToInsert.length} registros en gps_import.` });
+      console.log(`✅ ${recordsToInsert.length} registros sincronizados`);
+      setMessage({ type: 'success', text: `✅ Sincronización Exitosa: ${recordsToInsert.length} registros. Sesión: "${sessionName}"` });
       setInspectingStats(false);
       setCatapultAthletes([]);
       setSelectedActivity(null);
     } catch (err: any) {
-      console.error("Error syncing to Supabase:", err);
-      alert("Error al sincronizar: " + err.message);
+      console.error("❌ Error sincronizando:", err);
+      setMessage({ type: 'error', text: `Error al sincronizar: ${err.message}` });
     } finally {
       setSyncingToSupabase(false);
     }
