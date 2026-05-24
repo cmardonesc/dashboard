@@ -57,6 +57,7 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'Almuerzo', emoji: '🍽️' },
   { label: 'Merienda', emoji: '🥐' },
   { label: 'Snack', emoji: '🥨' },
+  { label: 'Colación', emoji: '🍌' },
   { label: 'Cena', emoji: '🌙' },
   { label: 'Activación AM', emoji: '🏃‍♂️' },
   { label: 'Activación PM', emoji: '🧘‍♂️' },
@@ -1149,7 +1150,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                 hasSpecialColor = true;
             } else if (grupo === 'Concentrados') {
                 fillColor = [215, 215, 215]; // Gray for Concentrados
-            } else if (text.includes('DESAYUNO') || text.includes('ALMUERZO') || text.includes('MERIENDA') || text.includes('CENA') || text.includes('SNACK')) {
+            } else if (text.includes('DESAYUNO') || text.includes('ALMUERZO') || text.includes('MERIENDA') || text.includes('CENA') || text.includes('SNACK') || text.includes('COLACIÓN') || text.includes('COLACION')) {
                 // For meals of non-concentrados, keep white (default) or light gray
                 fillColor = [255, 255, 255];
             } else {

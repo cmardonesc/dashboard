@@ -133,7 +133,8 @@ export const CLUB_LOGOS: Record<string, string> = {
   'unionsanfelipe': 'https://drive.google.com/file/d/1HXJw-elYvwJG1yn3DUaJGFl1hKmGClqf/view?usp=sharing',
   'universidadcatolica': 'https://drive.google.com/file/d/1z5OO2cabtRy6qHigXumVJH_PCO7TMwTt/view?usp=sharing',
   'universidaddechile': 'https://drive.google.com/file/d/1Eqp8Cf4p--CcAZ43fFFnOfB06ztDPk_X/view?usp=sharing',
-  'universidaddeconcepcion': 'https://drive.google.com/file/d/1I5eQfDw0aaQysfZpbF_wmepx52BubEbm/view?usp=sharing'
+  'universidaddeconcepcion': 'https://drive.google.com/file/d/1I5eQfDw0aaQysfZpbF_wmepx52BubEbm/view?usp=sharing',
+  'rcdespanyol': 'https://upload.wikimedia.org/wikipedia/en/thumb/d/d6/R_C_D_Espanyol_Logo.svg/200px-R_C_D_Espanyol_Logo.svg.png'
 };
 
 /**

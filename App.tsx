@@ -11,6 +11,7 @@ import { AthletePerformanceRecord, User, UserRole, NutritionData, MenuId, Catego
 import { MOCK_PLAYERS } from './mockData'
 import { logActivity } from './lib/activityLogger'
 import { FEDERATION_LOGO, FALLBACK_CLUB_NAMES } from './constants'
+import { FALLBACK_CLUBS } from './lib/fallback_clubs'
 
 type Role = 'player' | 'staff' | 'admin' | 'club' | null
 
@@ -233,11 +234,8 @@ export default function App() {
       // Fallback: si 'clubes' viene vacío pero no hay error, quizá la tabla se llame 'clubs'
       let finalClubsData = clubsData || [];
       if (finalClubsData.length === 0) {
-        console.warn("App: 'clubes' regresó vacío. Usando FALLBACK_CLUB_NAMES de constantes.");
-        finalClubsData = Object.entries(FALLBACK_CLUB_NAMES).map(([id, nombre]) => ({
-          id_club: Number(id),
-          nombre: nombre
-        }));
+        console.warn("App: 'clubes' regresó vacío. Usando robust FALLBACK_CLUBS con columnas completas.");
+        finalClubsData = [...FALLBACK_CLUBS];
       }
 
       console.log("App: Final clubs count:", finalClubsData.length);

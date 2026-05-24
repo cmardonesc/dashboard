@@ -817,6 +817,142 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
     });
   }, [playerData, posAvg]);
 
+  const irpData = useMemo(() => {
+    if (!playerData) return null;
+    
+    const pos = playerData.posicion || '';
+    const dist = Number(playerData.dist_total_m) || 0;
+    const int = Number(playerData.m_por_min) || 0;
+    const hsr = Number(playerData.dist_mai_m_20_kmh) || 0;
+    const sprint = Number(playerData.dist_sprint_m_25_kmh) || 0;
+    const maxVel = Number(playerData.vel_max_kmh) || 0;
+    const accDec = Number(playerData.acc_decc_ai_n) || 0;
+
+    // Ideal high performance targets (U15 to U20 standards)
+    const targets = {
+      dist: 11000,
+      int: 120,
+      hsr: 800,
+      sprint: 300,
+      maxVel: 32,
+      accDec: 130
+    };
+
+    const ratio = (val: number, target: number) => Math.min(Math.max(val / target, 0), 1);
+    const rawPos = pos.toUpperCase();
+
+    let score = NaN;
+    let profile = '';
+    let focus = '';
+    let tradeoff = '';
+    let description = '';
+    let dimensions: any[] = [];
+
+    const isVolante = rawPos.includes('VOL') || rawPos.includes('MED');
+    const isLateral = rawPos.includes('LAT') || rawPos.includes('BAND') || rawPos.includes('CARRIL');
+    const isCentral = rawPos.includes('DEFENSA CENTRAL') || rawPos.includes('CENTRAL') || (rawPos.includes('DEFENSA') && !isLateral);
+    const isExtremo = rawPos.includes('EXTREMO') || rawPos.includes('WINGER') || rawPos.includes('EXT');
+
+    if (isVolante) {
+      profile = 'Volante (Rodillo Aeróbico)';
+      focus = 'Carga Total (45%) y Agilidad/Transición (30%)';
+      tradeoff = 'Maximiza la cobertura box-to-box y recuperación; sacrifica explosividad defensiva fija central.';
+      description = 'El motor del equipo. Su rol demanda un despliegue de cobertura total del campo de juego a ritmos sostenidos y constantes dirección/giro rápidos.';
+      dimensions = [
+        { name: 'Carga Semanal (Volumen)', weight: '45%', value: ratio(dist, targets.dist) * 100 },
+        { name: 'Agilidad (Frenos/Acel)', weight: '30%', value: ratio(accDec, targets.accDec) * 100 },
+        { name: 'Intensidad de Juego (m/min)', weight: '15%', value: ratio(int, targets.int) * 100 },
+        { name: 'Muy Alta Intensidad (HSR)', weight: '10%', value: ratio(hsr, targets.hsr) * 100 }
+      ];
+      score = Math.round(ratio(dist, targets.dist) * 45 + ratio(accDec, targets.accDec) * 30 + ratio(int, targets.int) * 15 + ratio(hsr, targets.hsr) * 10);
+    } else if (isLateral) {
+      profile = 'Defensa Lateral (Explosivo Defensivo)';
+      focus = 'Explosividad de Carrera (40%) e Intensidad de Ida/Vuelta (35%)';
+      tradeoff = 'Maximiza transiciones verticales intensas; sacrifica anclaje posicional y conservación estática.';
+      description = 'El velocista de banda. Exige capacidad para desdoblarse constantemente y sostener ritmos de juego y sprints de ida y vuelta lineales.';
+      dimensions = [
+        { name: 'Explosividad (Sprints m)', weight: '40%', value: ratio(sprint, targets.sprint) * 100 },
+        { name: 'Intensidad Relativa (m/min)', weight: '35%', value: ratio(int, targets.int) * 100 },
+        { name: 'Carga / Volumen de Apoyos', weight: '15%', value: ratio(dist, targets.dist) * 100 },
+        { name: 'Agilidad Reactiva (Acc)', weight: '10%', value: ratio(accDec, targets.accDec) * 100 }
+      ];
+      score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(int, targets.int) * 35 + ratio(dist, targets.dist) * 15 + ratio(accDec, targets.accDec) * 10);
+    } else if (isCentral) {
+      profile = 'Defensa Central (Guardián Reactivo)';
+      focus = 'Velocidad de Respuesta (35%) y Picos Acelerativos (30%)';
+      tradeoff = 'Maximiza respuesta de pánico a alta velocidad; sacrifica recorrido continuo de fondo (Carga de trote reducida).';
+      description = 'El protector de área. Privilegia la velocidad de retroceso absoluto y picos de fuerza/frenada de emergencia sobre la distancia recorrida total.';
+      dimensions = [
+        { name: 'Velocidad Máxima de Cierre', weight: '35%', value: ratio(maxVel, targets.maxVel) * 100 },
+        { name: 'Picos Reactivos (Acc/Dec)', weight: '30%', value: ratio(accDec, targets.accDec) * 100 },
+        { name: 'Alta Intensidad HSR Cobertura', weight: '20%', value: ratio(hsr, targets.hsr) * 100 },
+        { name: 'Carga de Resguardo Pasivo', weight: '15%', value: ratio(dist, targets.dist) * 100 }
+      ];
+      score = Math.round(ratio(maxVel, targets.maxVel) * 35 + ratio(accDec, targets.accDec) * 30 + ratio(hsr, targets.hsr) * 20 + ratio(dist, targets.dist) * 15);
+    } else if (isExtremo) {
+      profile = 'Delantero Extremo (Velocista)';
+      focus = 'Fuerza de Sprint (40%) y Agilidad Drill (35%)';
+      tradeoff = 'Maximiza desbordes reiterados en 1v1 con fatiga; sacrifica soporte táctico posicional replegado.';
+      description = 'El rompedor de líneas. Su desempeño se mide por la cantidad y distancia de sprints a máxima velocidad en duelos 1c1 y desmarques de ruptura.';
+      dimensions = [
+        { name: 'Sprints de Rompimiento (Sprint m)', weight: '40%', value: ratio(sprint, targets.sprint) * 100 },
+        { name: 'Agilidad / Cambios de Ritmo', weight: '35%', value: ratio(accDec, targets.accDec) * 100 },
+        { name: 'Intensidad en Repliegues', weight: '15%', value: ratio(int, targets.int) * 100 },
+        { name: 'Volumen Acumulado', weight: '10%', value: ratio(dist, targets.dist) * 100 }
+      ];
+      score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(accDec, targets.accDec) * 35 + ratio(int, targets.int) * 15 + ratio(dist, targets.dist) * 10);
+    } else {
+      // Default / Delantero Centro
+      profile = 'Delantero Centro (Finalizador Versátil)';
+      focus = 'Intensidad de Presión (35%) y Sprints en Área (25%)';
+      tradeoff = 'Maximiza explosión y remate en área chica; sacrifica distancias amplias y patrullaje defensivo.';
+      description = 'El definidor del bloque. Exige un equilibrio entre m/min (presión y apoyos cortos) y sprints específicos dentro de la zona de finalización.';
+      dimensions = [
+        { name: 'Intensidad de Trabajo (m/min)', weight: '35%', value: ratio(int, targets.int) * 100 },
+        { name: 'Sprints Cortos de Definición', weight: '25%', value: ratio(sprint, targets.sprint) * 100 },
+        { name: 'Agilidad/Acción Rápida Acc', weight: '20%', value: ratio(accDec, targets.accDec) * 100 },
+        { name: 'Carga de Desmarques de Apoyo', weight: '20%', value: ratio(dist, targets.dist) * 100 }
+      ];
+      score = Math.round(ratio(int, targets.int) * 35 + ratio(sprint, targets.sprint) * 25 + ratio(accDec, targets.accDec) * 20 + ratio(dist, targets.dist) * 20);
+    }
+
+    // Force exact benchmark value if mapped in database rows (like the CSV values provided)
+    if (playerData.irp_posicional !== undefined && playerData.irp_posicional !== null && !isNaN(Number(playerData.irp_posicional))) {
+      score = Math.round(Number(playerData.irp_posicional));
+    }
+
+    // Determine level rating
+    let level = 'S/D';
+    let levelColor = 'text-slate-400 bg-slate-50 border-slate-200';
+    let levelText = '';
+    
+    if (score >= 80) {
+      level = 'Rendimiento Élite';
+      levelColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+      levelText = 'El atleta se encuentra en el percentil superior del patrón del fútbol profesional. Cumple plenamente con la demanda fisiológica específica de su puesto.';
+    } else if (score >= 50) {
+      level = 'Rendimiento Competitivo';
+      levelColor = 'text-blue-700 bg-blue-50 border-blue-200';
+      levelText = 'Rendimiento aceptable y equilibrado. Se sugieren estímulos específicos en su dimensión de mayor ponderación para alcanzar el estándar de élite.';
+    } else {
+      level = 'Déficit Fisiológico';
+      levelColor = 'text-amber-700 bg-amber-50 border-amber-200';
+      levelText = 'Déficit de demanda posicional detectado en la sesión. Planifique microciclos de ajuste o acondicionamiento enfocado para elevar la capacidad adaptativa.';
+    }
+
+    return {
+      score,
+      profile,
+      focus,
+      tradeoff,
+      description,
+      dimensions,
+      level,
+      levelColor,
+      levelText
+    };
+  }, [playerData]);
+
   if (!playerId || !playerData) {
     return (
       <div className="bg-white rounded-[40px] p-20 border border-dashed border-slate-200 flex flex-col items-center justify-center text-center">
@@ -867,6 +1003,101 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
           </div>
         </div>
       </div>
+
+      {/* EVALUACIÓN POSICIONAL IRP (ÍNDICE REFERENCIAL POSICIONAL) */}
+      {irpData && (
+        <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm space-y-8">
+          <div>
+            <span className="bg-red-50 text-red-600 text-[9px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full border border-red-100">
+              Evaluación Posicional Avanzada
+            </span>
+            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic mt-3 flex items-center gap-3">
+              <i className="fa-solid fa-gauge-simple-high text-red-600"></i>
+              Índice Referencial Posicional (IRP)
+            </h3>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">
+              Desglose de demanda fisiológica y nivel adaptativo para {playerData.posicion}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* SCORE CIRCULAR CONTAINER */}
+            <div className="bg-slate-50 rounded-[32px] p-8 border border-slate-100 flex flex-col items-center justify-center text-center space-y-6">
+              <div className="relative flex items-center justify-center">
+                {/* Simulated circle with simple radial borders */}
+                <div className="w-32 h-32 rounded-full border-8 border-slate-200 flex items-center justify-center relative shadow-inner">
+                  <div className="absolute inset-0 rounded-full border-8 border-red-600 animate-pulse" style={{ clipPath: `polygon(50% 50%, -50% -50%, ${irpData.score * 3.6}% -50%)`, transform: 'rotate(-90deg)' }}></div>
+                  <span className="text-4xl font-black italic text-slate-900 tracking-tighter">
+                    {irpData.score}
+                    <span className="text-xs text-slate-400 not-italic ml-0.5">/100</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <span className={`inline-block text-[9px] font-black uppercase tracking-widest px-4 py-1 rounded-full border ${irpData.levelColor}`}>
+                  {irpData.level}
+                </span>
+                <p className="text-[10px] text-slate-500 font-bold leading-relaxed px-4 pt-2">
+                  {irpData.levelText}
+                </p>
+              </div>
+            </div>
+
+            {/* DIMENSIONS BARS PROGRESS */}
+            <div className="bg-slate-50 rounded-[32px] p-8 border border-slate-100 space-y-5">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">
+                Dimensiones Específicas del Perfil
+              </h4>
+              <div className="space-y-4">
+                {irpData.dimensions.map((dim: any, idx: number) => {
+                  let barColor = 'bg-slate-400';
+                  if (dim.value >= 80) barColor = 'bg-emerald-500';
+                  else if (dim.value >= 50) barColor = 'bg-blue-500';
+                  else barColor = 'bg-amber-500';
+
+                  return (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-black text-slate-700 uppercase">
+                        <span>{dim.name} <span className="text-[8px] text-slate-400">({dim.weight})</span></span>
+                        <span>{Math.round(dim.value)}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                        <div className={`h-full ${barColor} transition-all duration-1000`} style={{ width: `${dim.value}%` }}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* CLINICAL SUMMARY & TRADEOFF */}
+            <div className="bg-slate-50 rounded-[32px] p-8 border border-slate-100 flex flex-col justify-between space-y-6">
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                  Perfil de Demanda Posicional
+                </h4>
+                <p className="text-xs font-black text-slate-900 uppercase tracking-tighter italic">
+                  {irpData.profile}
+                </p>
+                <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
+                  {irpData.description}
+                </p>
+              </div>
+
+              <div className="border-t border-slate-200 pt-4 space-y-2">
+                <h4 className="text-[10px] font-black text-red-600 uppercase tracking-[0.2em] flex items-center gap-2">
+                  <i className="fa-solid fa-scale-unbalanced-flip"></i>
+                  Compromiso Fisiológico (Trade-off)
+                </h4>
+                <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
+                  {irpData.tradeoff}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* RADAR PROFILE CHART */}

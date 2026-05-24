@@ -777,7 +777,7 @@ export const FALLBACK_CLUBS: FallbackClub[] = [
     "region": "Cataluña",
     "id_pais": 55,
     "activo": false,
-    "logo_url": null,
+    "logo_url": "https://upload.wikimedia.org/wikipedia/en/thumb/d/d6/R_C_D_Espanyol_Logo.svg/200px-R_C_D_Espanyol_Logo.svg.png",
     "pais": "España"
   },
   {
