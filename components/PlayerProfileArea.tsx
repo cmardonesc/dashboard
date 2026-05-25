@@ -198,14 +198,43 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     };
   }, [citations, trainingData, matchData, gpsStats]);
 
+  const resolvedUserClubId = useMemo(() => {
+    if (userClubId) return userClubId;
+    if (userClub && clubs && clubs.length > 0) {
+      const normUserClub = normalizeClub(userClub);
+      const matchedClub = clubs.find(c => normalizeClub(c.nombre || c.nombre_corto || '') === normUserClub);
+      if (matchedClub) return matchedClub.id_club;
+    }
+    return null;
+  }, [userClubId, userClub, clubs]);
+
+  const normalizedUserClubName = useMemo(() => {
+    return userClub ? normalizeClub(userClub) : '';
+  }, [userClub]);
+
+  const clubPlayers = useMemo(() => {
+    if (userRole !== 'club') return players;
+    return players.filter(p => {
+      const pClubId = p.id_club || p.club_id;
+      if (resolvedUserClubId && pClubId) {
+        return Number(pClubId) === Number(resolvedUserClubId);
+      }
+      const pClubName = p.club || p.club_name || (p.clubes && !Array.isArray(p.clubes) ? (p.clubes as any).nombre : null);
+      if (normalizedUserClubName && pClubName) {
+        return normalizeClub(pClubName) === normalizedUserClubName;
+      }
+      return false;
+    });
+  }, [players, userRole, resolvedUserClubId, normalizedUserClubName]);
+
   const uniqueYears = useMemo(() => {
-    const years = players.map(p => p.anio || p.year).filter(Boolean);
+    const years = clubPlayers.map(p => p.anio || p.year).filter(Boolean);
     return Array.from(new Set(years)).sort((a, b) => Number(b) - Number(a));
-  }, [players]);
+  }, [clubPlayers]);
 
   const uniqueClubs = useMemo(() => {
     const clubsMap = new Map();
-    players.forEach(p => {
+    clubPlayers.forEach(p => {
       const clubId = p.id_club || p.club_id;
       // Support multiple possible field names for club name
       let clubName = p.club || p.club_name || (p.clubes && !Array.isArray(p.clubes) ? (p.clubes as any).nombre : null);
@@ -220,16 +249,16 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       }
     });
     return Array.from(clubsMap.entries()).map(([id, nombre]) => ({ id, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [players]);
+  }, [clubPlayers]);
 
   const uniquePositions = useMemo(() => {
     // Support both 'posicion' and 'position'
-    const pos = players.map(p => p.posicion || p.position).filter(Boolean);
+    const pos = clubPlayers.map(p => p.posicion || p.position).filter(Boolean);
     return Array.from(new Set(pos)).sort();
-  }, [players]);
+  }, [clubPlayers]);
 
   const filteredPlayers = useMemo(() => {
-    return players.filter(p => {
+    return clubPlayers.filter(p => {
       const playerYear = p.anio || p.year;
       const playerPos = p.posicion || p.position;
       const playerClubId = p.id_club || p.club_id;
@@ -240,7 +269,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       
       return matchYear && matchPosition && matchClub;
     });
-  }, [players, filterYear, filterPosition, filterClubId]);
+  }, [clubPlayers, filterYear, filterPosition, filterClubId]);
 
   const radarData = useMemo(() => {
     if (!profileData) return [];

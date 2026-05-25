@@ -183,6 +183,15 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
             }
           });
 
+          let resolvedUserClubId = userClubId;
+          if (!resolvedUserClubId && userClub && clubs && clubs.length > 0) {
+            const normUserClub = normalizeClub(userClub);
+            const matchedClub = clubs.find(c => normalizeClub(c.nombre) === normUserClub);
+            if (matchedClub) {
+              resolvedUserClubId = matchedClub.id_club;
+            }
+          }
+
           const mapped = finalGpsRecords.map(d => {
             const p = d.players as any;
             const rawPos = p?.posicion?.toUpperCase() || 'S/D';
@@ -206,8 +215,8 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
             // Anonymization logic for club profile
             if (userRole === 'club') {
               let isOwnClub = false;
-              if (userClubId) {
-                isOwnClub = Number(p?.id_club) === Number(userClubId);
+              if (resolvedUserClubId) {
+                isOwnClub = Number(p?.id_club) === Number(resolvedUserClubId);
               } else if (userClub) {
                 const clubObj = Array.isArray(p?.clubes) ? p?.clubes[0] : p?.clubes;
                 const pClub = clubObj?.nombre || p?.club || '';
@@ -394,11 +403,19 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
                 className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-12 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer min-w-[240px]"
               >
                 <option value="">ELIJA UN JUGADOR...</option>
-                {[...filteredSessionData].sort((a, b) => a.player.name.localeCompare(b.player.name)).map(d => (
-                  <option key={d.player_id} value={d.player_id}>
-                    {d.player.name.toUpperCase()}
-                  </option>
-                ))}
+                {[...filteredSessionData]
+                  .filter(d => {
+                    if (userRole === 'club') {
+                      return d.player && d.player.nombre !== 'JUGADOR X';
+                    }
+                    return true;
+                  })
+                  .sort((a, b) => a.player.name.localeCompare(b.player.name))
+                  .map(d => (
+                    <option key={d.player_id} value={d.player_id}>
+                      {d.player.name.toUpperCase()}
+                    </option>
+                  ))}
               </select>
               <i className="fa-solid fa-user-tag absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
             </div>
@@ -756,7 +773,9 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
       ) : (
         <IndividualPerformanceView 
           playerId={selectedPlayerId} 
-          sessionData={filteredSessionData} 
+          sessionData={userRole === 'club'
+            ? filteredSessionData.filter(d => d.player && d.player.nombre !== 'JUGADOR X')
+            : filteredSessionData} 
           positionalAverages={positionalData}
           referenceData={referenceData}
           clubs={clubs}
@@ -828,14 +847,28 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
     const maxVel = Number(playerData.vel_max_kmh) || 0;
     const accDec = Number(playerData.acc_decc_ai_n) || 0;
 
-    // Ideal high performance targets (U15 to U20 standards)
-    const targets = {
+    const mins = Number(playerData.minutos) || 90;
+    // Calculate a factor relative to a full 90-minute official match, capped at 1.0 (100%)
+    const timeFactor = Math.min(Math.max(mins, 1) / 90, 1.0);
+
+    // Ideal high performance targets (U15 to U20 standards for a full 90-minute match)
+    const baseTargets = {
       dist: 11000,
-      int: 120,
+      int: 120,    // already relative (m/min)
       hsr: 800,
       sprint: 300,
-      maxVel: 32,
+      maxVel: 32,  // peak velocity in km/h is not time-dependent
       accDec: 130
+    };
+
+    // Adjusted targets based on session duration
+    const targets = {
+      dist: baseTargets.dist * timeFactor,
+      int: baseTargets.int,
+      hsr: baseTargets.hsr * timeFactor,
+      sprint: baseTargets.sprint * timeFactor,
+      maxVel: baseTargets.maxVel,
+      accDec: baseTargets.accDec * timeFactor
     };
 
     const ratio = (val: number, target: number) => Math.min(Math.max(val / target, 0), 1);
@@ -949,7 +982,9 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
       dimensions,
       level,
       levelColor,
-      levelText
+      levelText,
+      mins,
+      timeFactor
     };
   }, [playerData]);
 
@@ -1015,8 +1050,12 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
               <i className="fa-solid fa-gauge-simple-high text-red-600"></i>
               Índice Referencial Posicional (IRP)
             </h3>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">
-              Desglose de demanda fisiológica y nivel adaptativo para {playerData.posicion}
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>Desglose de demanda fisiológica y nivel adaptativo para {playerData.posicion}</span>
+              <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-700 text-[9px] px-2.5 py-0.5 rounded-full border border-sky-200 font-extrabold tracking-wide">
+                <i className="fa-regular fa-clock text-[10px]"></i>
+                AJUSTADO PROPORCIONALMENTE A LA SESIÓN ({irpData.mins} MINS / {Math.round(irpData.timeFactor * 100)}% VOL. PARTIDO)
+              </span>
             </p>
           </div>
 
