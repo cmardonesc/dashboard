@@ -6,7 +6,11 @@ import { useClubs } from '../lib/useClubs';
 import { FALLBACK_CLUB_NAMES } from '../constants';
 import ClubBadge from './ClubBadge';
 
-const LogisticaJugadores: React.FC = () => {
+interface LogisticaJugadoresProps {
+  onRefresh?: () => void;
+}
+
+const LogisticaJugadores: React.FC<LogisticaJugadoresProps> = ({ onRefresh }) => {
   const [players, setPlayers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -377,7 +381,10 @@ const LogisticaJugadores: React.FC = () => {
 
       setIsModalOpen(false);
       setEditingPlayer(null);
-      fetchPlayers();
+      await fetchPlayers();
+      if (onRefresh) {
+        onRefresh();
+      }
     } catch (err) {
       console.error('Error saving player:', err);
       alert('Error al guardar el jugador. Revisa la consola.');
@@ -421,6 +428,9 @@ const LogisticaJugadores: React.FC = () => {
 
       setPlayerToDelete(null);
       await fetchPlayers();
+      if (onRefresh) {
+        onRefresh();
+      }
     } catch (err: any) {
       console.error('Error deleting player:', err);
       setDeleteErrorMsg('No se pudo eliminar el jugador. Probablemente tiene datos vinculados en otras áreas de registro (por ejemplo: GPS, Médico, o Física) que deben eliminarse primero.');

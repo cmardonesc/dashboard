@@ -9,6 +9,7 @@ import ClubBadge from './ClubBadge';
 
 interface MedicaAreaProps {
   performanceRecords: AthletePerformanceRecord[];
+  players?: any[];
   onMenuChange?: (id: any) => void;
   userRole?: string;
   userClub?: string;
@@ -79,7 +80,7 @@ interface MedicalExam {
   description: string;
 }
 
-const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChange, userRole, userClub, userClubId, clubs = [] }) => {
+const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, onMenuChange, userRole, userClub, userClubId, clubs = [] }) => {
   const [view, setView] = useState<MedicaView>('medical_attention');
   const [reportingPlayer, setReportingPlayer] = useState<User | null>(null);
   const [editingInjuryId, setEditingInjuryId] = useState<string | null>(null);
@@ -164,9 +165,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
       const term = searchTerm.toLowerCase();
       const parts = term.split(' ').filter(p => p.length > 0);
       
-      const filtered = performanceRecords
-        .map(r => r.player)
+      const sourceList = (players && players.length > 0) 
+        ? players 
+        : performanceRecords.map(r => r.player);
+
+      const filtered = sourceList
         .filter(p => {
+          if (!p) return false;
           if (userRole === 'club') {
             if (userClubId) {
               if (p.id_club !== userClubId) return false;
@@ -176,18 +181,30 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
               if (normalizeClub(pClub) !== uClubNorm) return false;
             }
           }
-          const fullName = p.name.toLowerCase();
+          const fullName = `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''} ${p.name || ''}`.toLowerCase();
           return parts.every(part => fullName.includes(part));
+        })
+        .map(p => {
+          return {
+            id: `p-${p.player_id}`,
+            player_id: p.player_id,
+            name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || p.name || 'Jugador',
+            role: 'player',
+            club: p.club || p.club_name || (p.clubes && (Array.isArray(p.clubes) ? p.clubes[0]?.nombre : p.clubes?.nombre)) || '',
+            id_club: p.id_club,
+            position: p.posicion || p.position || '',
+            anio: p.anio || 0
+          };
         })
         .slice(0, 8);
 
-      setFoundPlayers(filtered);
+      setFoundPlayers(filtered as any);
       setHasSearched(true);
     } else {
       setFoundPlayers([]);
       setHasSearched(false);
     }
-  }, [searchTerm, performanceRecords]);
+  }, [searchTerm, performanceRecords, players, userRole, userClub, userClubId]);
 
   const fetchInjuredPlayers = async () => {
     const possibleSchemas = [
@@ -1538,12 +1555,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
               <table className="w-full text-[10px] text-center border-collapse min-w-[600px]">
                 <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest">
                   <tr>
+                    <th className="px-4 py-4">Gravedad</th>
                     <th className="px-6 py-4 text-left">Atleta</th>
                     <th className="px-4 py-4 text-left">Club</th>
                     <th className="px-4 py-4">Año</th>
                     <th className="px-4 py-4">Categoría</th>
                     <th className="px-4 py-4">Fecha</th>
-                    <th className="px-4 py-4">Gravedad</th>
                     <th className="px-6 py-4 text-left">Diagnóstico</th>
                     <th className="px-6 py-4 text-left">Observación</th>
                     <th className="px-6 py-4">Tratamiento</th>
@@ -1553,11 +1570,16 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                 <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
                   {dailyReports.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay reportes registrados</td>
+                      <td colSpan={10} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay reportes registrados</td>
                     </tr>
                   ) : (
                     dailyReports.map(report => (
                       <tr key={report.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-4">
+                          <div className="flex justify-center">
+                            <div className={`w-3 h-3 rounded-full shadow-sm ${report.severity === 'low' ? 'bg-emerald-500' : report.severity === 'medium' ? 'bg-amber-500' : report.severity === 'high' ? 'bg-red-500' : 'bg-purple-500'}`}></div>
+                          </div>
+                        </td>
                         <td className="px-6 py-4 text-left">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center font-black italic text-[10px] text-slate-900">
@@ -1590,11 +1612,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, onMenuChang
                           </span>
                         </td>
                         <td className="px-4 py-4 text-slate-400">{formatDate(report.report_date)}</td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-center">
-                            <div className={`w-3 h-3 rounded-full shadow-sm ${report.severity === 'low' ? 'bg-emerald-500' : report.severity === 'medium' ? 'bg-amber-500' : report.severity === 'high' ? 'bg-red-500' : 'bg-purple-500'}`}></div>
-                          </div>
-                        </td>
                         <td className="px-6 py-4 text-left font-black text-slate-900 uppercase italic truncate max-w-[150px]">{report.diagnostico_medico || '-'}</td>
                         <td className="px-6 py-4 text-left italic text-slate-500 max-w-md truncate">"{report.observation}"</td>
                         <td className="px-6 py-4">

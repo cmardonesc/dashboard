@@ -16,17 +16,22 @@ BEGIN
     'record', row_to_json(NEW)
   );
 
-  -- Llamar a la Edge Function de Supabase
-  -- Reemplaza 'TU_URL_DE_PROYECTO' por la URL real de tu proyecto de Supabase
-  PERFORM
-    net.http_post(
-      url := 'https://TU_URL_DE_PROYECTO.supabase.co/functions/v1/send-notification',
-      headers := jsonb_build_object(
-        'Content-Type', 'application/json',
-        'Authorization', 'Bearer ' || 'TU_SERVICE_ROLE_KEY' -- ¡ESTO DEBE SER SECRETO!
-      ),
-      body := payload
-    );
+  -- Llamar a la Edge Function de Supabase de manera segura
+  -- Envolvemos en un bloque de excepción para que errores de DNS/Red/Configuración no bloqueen ni cancelen la transacción
+  BEGIN
+    PERFORM
+      net.http_post(
+        url := 'https://TU_URL_DE_PROYECTO.supabase.co/functions/v1/send-notification',
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'Authorization', 'Bearer ' || 'TU_SERVICE_ROLE_KEY' -- ¡ESTO DEBE SER SECRETO!
+        ),
+        body := payload
+      );
+  EXCEPTION WHEN OTHERS THEN
+    -- Mantenemos la transacción viva ignorando errores de red externos
+    RAISE WARNING 'Fallo de red en disparar notificación remota: %', SQLERRM;
+  END;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

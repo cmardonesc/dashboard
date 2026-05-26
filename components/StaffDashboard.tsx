@@ -31,6 +31,7 @@ import { Reorder } from 'framer-motion'
 
 interface StaffDashboardProps {
   performanceRecords: AthletePerformanceRecord[];
+  players?: any[];
   activeMenu: MenuId;
   onMenuChange: (id: MenuId) => void;
   onRefresh?: () => void;
@@ -43,6 +44,7 @@ interface StaffDashboardProps {
 
 const StaffDashboard: React.FC<StaffDashboardProps> = ({ 
   performanceRecords, 
+  players,
   activeMenu, 
   onMenuChange, 
   onRefresh,
@@ -1210,15 +1212,15 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       case 'nutricion_resumen_grupal':
         return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'nutricion_comparativo':
-        return <NutricionArea performanceRecords={performanceRecords} players={performanceRecords.map(r => r.player)} initialTab="general" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
+        return <NutricionArea performanceRecords={performanceRecords} players={players || performanceRecords.map(r => r.player)} initialTab="general" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'nutricion_individual':
-        return <NutricionArea performanceRecords={performanceRecords} players={performanceRecords.map(r => r.player)} initialTab="individual" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
+        return <NutricionArea performanceRecords={performanceRecords} players={players || performanceRecords.map(r => r.player)} initialTab="individual" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'nutricion_top10':
-        return <NutricionArea performanceRecords={performanceRecords} players={performanceRecords.map(r => r.player)} initialTab="top10" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
+        return <NutricionArea performanceRecords={performanceRecords} players={players || performanceRecords.map(r => r.player)} initialTab="top10" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'nutricion_maduracion':
-        return <NutricionArea performanceRecords={performanceRecords} players={performanceRecords.map(r => r.player)} initialTab="crecimiento" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
+        return <NutricionArea performanceRecords={performanceRecords} players={players || performanceRecords.map(r => r.player)} initialTab="crecimiento" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'logistica_jugadores':
-        return <LogisticaJugadores />;
+        return <LogisticaJugadores onRefresh={handleRefresh} />;
       case 'contactos_clubes':
         return <ContactosClubesArea />;
       case 'planificacion_anual':
@@ -1237,7 +1239,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
           performanceRecords={performanceRecords} 
           onMenuChange={onMenuChange} 
           clubs={clubs} 
-          players={performanceRecords
+          players={players || performanceRecords
             .filter(r => r.player.player_id)
             .map(r => ({
               ...r.player,
@@ -1251,7 +1253,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
           userClub={userClub} 
           userClubId={userClubId}
           clubs={clubs} 
-          players={performanceRecords
+          players={players || performanceRecords
             .filter(r => r.player.player_id)
             .map(r => ({
               ...r.player,
@@ -1278,6 +1280,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         return ContentComponent ? (
           <ContentComponent 
             performanceRecords={performanceRecords} 
+            players={players}
             onMenuChange={onMenuChange} 
             onRefresh={handleRefresh}
             clubs={clubs}

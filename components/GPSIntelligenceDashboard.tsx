@@ -892,10 +892,58 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
       tradeoff = 'Maximiza la cobertura box-to-box y recuperación; sacrifica explosividad defensiva fija central.';
       description = 'El motor del equipo. Su rol demanda un despliegue de cobertura total del campo de juego a ritmos sostenidos y constantes dirección/giro rápidos.';
       dimensions = [
-        { name: 'Carga Semanal (Volumen)', weight: '45%', value: ratio(dist, targets.dist) * 100 },
-        { name: 'Agilidad (Frenos/Acel)', weight: '30%', value: ratio(accDec, targets.accDec) * 100 },
-        { name: 'Intensidad de Juego (m/min)', weight: '15%', value: ratio(int, targets.int) * 100 },
-        { name: 'Muy Alta Intensidad (HSR)', weight: '10%', value: ratio(hsr, targets.hsr) * 100 }
+        { 
+          name: 'Carga Semanal (Volumen)', 
+          weight: '45%', 
+          weightVal: 45,
+          value: ratio(dist, targets.dist) * 100,
+          metricLabel: 'Distancia Total',
+          metricVal: dist,
+          unit: 'm',
+          baseTarget: baseTargets.dist,
+          adjustedTarget: targets.dist,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(dist, targets.dist) * 45
+        },
+        { 
+          name: 'Agilidad (Frenos/Acel)', 
+          weight: '30%', 
+          weightVal: 30,
+          value: ratio(accDec, targets.accDec) * 100,
+          metricLabel: 'Aceleraciones y Desaceleraciones AI (>3 m/s²)',
+          metricVal: accDec,
+          unit: 'acc/dec',
+          baseTarget: baseTargets.accDec,
+          adjustedTarget: targets.accDec,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(accDec, targets.accDec) * 30
+        },
+        { 
+          name: 'Intensidad de Juego (m/min)', 
+          weight: '15%', 
+          weightVal: 15,
+          value: ratio(int, targets.int) * 100,
+          metricLabel: 'Metros recorridos por Minuto',
+          metricVal: int,
+          unit: 'm/min',
+          baseTarget: baseTargets.int,
+          adjustedTarget: targets.int,
+          isTimeAdjusted: false,
+          scoreContribution: ratio(int, targets.int) * 15
+        },
+        { 
+          name: 'Muy Alta Intensidad (HSR)', 
+          weight: '10%', 
+          weightVal: 10,
+          value: ratio(hsr, targets.hsr) * 100,
+          metricLabel: 'Carrera a Alta Velocidad (20-25 km/h)',
+          metricVal: hsr,
+          unit: 'm',
+          baseTarget: baseTargets.hsr,
+          adjustedTarget: targets.hsr,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(hsr, targets.hsr) * 10
+        }
       ];
       score = Math.round(ratio(dist, targets.dist) * 45 + ratio(accDec, targets.accDec) * 30 + ratio(int, targets.int) * 15 + ratio(hsr, targets.hsr) * 10);
     } else if (isLateral) {
@@ -904,10 +952,58 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
       tradeoff = 'Maximiza transiciones verticales intensas; sacrifica anclaje posicional y conservación estática.';
       description = 'El velocista de banda. Exige capacidad para desdoblarse constantemente y sostener ritmos de juego y sprints de ida y vuelta lineales.';
       dimensions = [
-        { name: 'Explosividad (Sprints m)', weight: '40%', value: ratio(sprint, targets.sprint) * 100 },
-        { name: 'Intensidad Relativa (m/min)', weight: '35%', value: ratio(int, targets.int) * 100 },
-        { name: 'Carga / Volumen de Apoyos', weight: '15%', value: ratio(dist, targets.dist) * 100 },
-        { name: 'Agilidad Reactiva (Acc)', weight: '10%', value: ratio(accDec, targets.accDec) * 100 }
+        { 
+          name: 'Explosividad (Sprints m)', 
+          weight: '40%', 
+          weightVal: 40,
+          value: ratio(sprint, targets.sprint) * 100,
+          metricLabel: 'Sprints de Alta Intensidad (>25 km/h)',
+          metricVal: sprint,
+          unit: 'm',
+          baseTarget: baseTargets.sprint,
+          adjustedTarget: targets.sprint,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(sprint, targets.sprint) * 40
+        },
+        { 
+          name: 'Intensidad Relativa (m/min)', 
+          weight: '35%', 
+          weightVal: 35,
+          value: ratio(int, targets.int) * 100,
+          metricLabel: 'Metros recorridos por Minuto',
+          metricVal: int,
+          unit: 'm/min',
+          baseTarget: baseTargets.int,
+          adjustedTarget: targets.int,
+          isTimeAdjusted: false,
+          scoreContribution: ratio(int, targets.int) * 35
+        },
+        { 
+          name: 'Carga / Volumen de Apoyos', 
+          weight: '15%', 
+          weightVal: 15,
+          value: ratio(dist, targets.dist) * 100,
+          metricLabel: 'Distancia Total',
+          metricVal: dist,
+          unit: 'm',
+          baseTarget: baseTargets.dist,
+          adjustedTarget: targets.dist,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(dist, targets.dist) * 15
+        },
+        { 
+          name: 'Agilidad Reactiva (Acc)', 
+          weight: '10%', 
+          weightVal: 10,
+          value: ratio(accDec, targets.accDec) * 100,
+          metricLabel: 'Aceleraciones y Desaceleraciones AI (>3 m/s²)',
+          metricVal: accDec,
+          unit: 'acc/dec',
+          baseTarget: baseTargets.accDec,
+          adjustedTarget: targets.accDec,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(accDec, targets.accDec) * 10
+        }
       ];
       score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(int, targets.int) * 35 + ratio(dist, targets.dist) * 15 + ratio(accDec, targets.accDec) * 10);
     } else if (isCentral) {
@@ -916,10 +1012,58 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
       tradeoff = 'Maximiza respuesta de pánico a alta velocidad; sacrifica recorrido continuo de fondo (Carga de trote reducida).';
       description = 'El protector de área. Privilegia la velocidad de retroceso absoluto y picos de fuerza/frenada de emergencia sobre la distancia recorrida total.';
       dimensions = [
-        { name: 'Velocidad Máxima de Cierre', weight: '35%', value: ratio(maxVel, targets.maxVel) * 100 },
-        { name: 'Picos Reactivos (Acc/Dec)', weight: '30%', value: ratio(accDec, targets.accDec) * 100 },
-        { name: 'Alta Intensidad HSR Cobertura', weight: '20%', value: ratio(hsr, targets.hsr) * 100 },
-        { name: 'Carga de Resguardo Pasivo', weight: '15%', value: ratio(dist, targets.dist) * 100 }
+        { 
+          name: 'Velocidad Máxima de Cierre', 
+          weight: '35%', 
+          weightVal: 35,
+          value: ratio(maxVel, targets.maxVel) * 100,
+          metricLabel: 'Velocidad Máxima Alcanzada',
+          metricVal: maxVel,
+          unit: 'km/h',
+          baseTarget: baseTargets.maxVel,
+          adjustedTarget: targets.maxVel,
+          isTimeAdjusted: false,
+          scoreContribution: ratio(maxVel, targets.maxVel) * 35
+        },
+        { 
+          name: 'Picos Reactivos (Acc/Dec)', 
+          weight: '30%', 
+          weightVal: 30,
+          value: ratio(accDec, targets.accDec) * 100,
+          metricLabel: 'Aceleraciones y Desaceleraciones AI (>3 m/s²)',
+          metricVal: accDec,
+          unit: 'acc/dec',
+          baseTarget: baseTargets.accDec,
+          adjustedTarget: targets.accDec,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(accDec, targets.accDec) * 30
+        },
+        { 
+          name: 'Alta Intensidad HSR Cobertura', 
+          weight: '20%', 
+          weightVal: 20,
+          value: ratio(hsr, targets.hsr) * 100,
+          metricLabel: 'Carrera a Alta Velocidad (20-25 km/h)',
+          metricVal: hsr,
+          unit: 'm',
+          baseTarget: baseTargets.hsr,
+          adjustedTarget: targets.hsr,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(hsr, targets.hsr) * 20
+        },
+        { 
+          name: 'Carga de Resguardo Pasivo', 
+          weight: '15%', 
+          weightVal: 15,
+          value: ratio(dist, targets.dist) * 100,
+          metricLabel: 'Distancia Total',
+          metricVal: dist,
+          unit: 'm',
+          baseTarget: baseTargets.dist,
+          adjustedTarget: targets.dist,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(dist, targets.dist) * 15
+        }
       ];
       score = Math.round(ratio(maxVel, targets.maxVel) * 35 + ratio(accDec, targets.accDec) * 30 + ratio(hsr, targets.hsr) * 20 + ratio(dist, targets.dist) * 15);
     } else if (isExtremo) {
@@ -928,10 +1072,58 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
       tradeoff = 'Maximiza desbordes reiterados en 1v1 con fatiga; sacrifica soporte táctico posicional replegado.';
       description = 'El rompedor de líneas. Su desempeño se mide por la cantidad y distancia de sprints a máxima velocidad en duelos 1c1 y desmarques de ruptura.';
       dimensions = [
-        { name: 'Sprints de Rompimiento (Sprint m)', weight: '40%', value: ratio(sprint, targets.sprint) * 100 },
-        { name: 'Agilidad / Cambios de Ritmo', weight: '35%', value: ratio(accDec, targets.accDec) * 100 },
-        { name: 'Intensidad en Repliegues', weight: '15%', value: ratio(int, targets.int) * 100 },
-        { name: 'Volumen Acumulado', weight: '10%', value: ratio(dist, targets.dist) * 100 }
+        { 
+          name: 'Sprints de Rompimiento (Sprint m)', 
+          weight: '40%', 
+          weightVal: 40,
+          value: ratio(sprint, targets.sprint) * 100,
+          metricLabel: 'Sprints de Alta Intensidad (>25 km/h)',
+          metricVal: sprint,
+          unit: 'm',
+          baseTarget: baseTargets.sprint,
+          adjustedTarget: targets.sprint,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(sprint, targets.sprint) * 40
+        },
+        { 
+          name: 'Agilidad / Cambios de Ritmo', 
+          weight: '35%', 
+          weightVal: 35,
+          value: ratio(accDec, targets.accDec) * 100,
+          metricLabel: 'Aceleraciones y Desaceleraciones AI (>3 m/s²)',
+          metricVal: accDec,
+          unit: 'acc/dec',
+          baseTarget: baseTargets.accDec,
+          adjustedTarget: targets.accDec,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(accDec, targets.accDec) * 35
+        },
+        { 
+          name: 'Intensidad en Repliegues', 
+          weight: '15%', 
+          weightVal: 15,
+          value: ratio(int, targets.int) * 100,
+          metricLabel: 'Metros recorridos por Minuto',
+          metricVal: int,
+          unit: 'm/min',
+          baseTarget: baseTargets.int,
+          adjustedTarget: targets.int,
+          isTimeAdjusted: false,
+          scoreContribution: ratio(int, targets.int) * 15
+        },
+        { 
+          name: 'Volumen Acumulado', 
+          weight: '10%', 
+          weightVal: 10,
+          value: ratio(dist, targets.dist) * 100,
+          metricLabel: 'Distancia Total',
+          metricVal: dist,
+          unit: 'm',
+          baseTarget: baseTargets.dist,
+          adjustedTarget: targets.dist,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(dist, targets.dist) * 10
+        }
       ];
       score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(accDec, targets.accDec) * 35 + ratio(int, targets.int) * 15 + ratio(dist, targets.dist) * 10);
     } else {
@@ -941,10 +1133,58 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
       tradeoff = 'Maximiza explosión y remate en área chica; sacrifica distancias amplias y patrullaje defensivo.';
       description = 'El definidor del bloque. Exige un equilibrio entre m/min (presión y apoyos cortos) y sprints específicos dentro de la zona de finalización.';
       dimensions = [
-        { name: 'Intensidad de Trabajo (m/min)', weight: '35%', value: ratio(int, targets.int) * 100 },
-        { name: 'Sprints Cortos de Definición', weight: '25%', value: ratio(sprint, targets.sprint) * 100 },
-        { name: 'Agilidad/Acción Rápida Acc', weight: '20%', value: ratio(accDec, targets.accDec) * 100 },
-        { name: 'Carga de Desmarques de Apoyo', weight: '20%', value: ratio(dist, targets.dist) * 100 }
+        { 
+          name: 'Intensidad de Trabajo (m/min)', 
+          weight: '35%', 
+          weightVal: 35,
+          value: ratio(int, targets.int) * 100,
+          metricLabel: 'Metros recorridos por Minuto',
+          metricVal: int,
+          unit: 'm/min',
+          baseTarget: baseTargets.int,
+          adjustedTarget: targets.int,
+          isTimeAdjusted: false,
+          scoreContribution: ratio(int, targets.int) * 35
+        },
+        { 
+          name: 'Sprints Cortos de Definición', 
+          weight: '25%', 
+          weightVal: 25,
+          value: ratio(sprint, targets.sprint) * 100,
+          metricLabel: 'Sprints de Alta Intensidad (>21 km/h)',
+          metricVal: sprint,
+          unit: 'm',
+          baseTarget: baseTargets.sprint,
+          adjustedTarget: targets.sprint,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(sprint, targets.sprint) * 25
+        },
+        { 
+          name: 'Agilidad/Acción Rápida Acc', 
+          weight: '20%', 
+          weightVal: 20,
+          value: ratio(accDec, targets.accDec) * 100,
+          metricLabel: 'Aceleraciones y Desaceleraciones AI (>3 m/s²)',
+          metricVal: accDec,
+          unit: 'acc/dec',
+          baseTarget: baseTargets.accDec,
+          adjustedTarget: targets.accDec,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(accDec, targets.accDec) * 20
+        },
+        { 
+          name: 'Carga de Desmarques de Apoyo', 
+          weight: '20%', 
+          weightVal: 20,
+          value: ratio(dist, targets.dist) * 100,
+          metricLabel: 'Distancia Total',
+          metricVal: dist,
+          unit: 'm',
+          baseTarget: baseTargets.dist,
+          adjustedTarget: targets.dist,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(dist, targets.dist) * 20
+        }
       ];
       score = Math.round(ratio(int, targets.int) * 35 + ratio(sprint, targets.sprint) * 25 + ratio(accDec, targets.accDec) * 20 + ratio(dist, targets.dist) * 20);
     }
@@ -1133,6 +1373,88 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
                   {irpData.tradeoff}
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* SECCIÓN DETALLADA DE DESGLOSE MATEMÁTICO DEL IRP */}
+          <div className="border-t border-slate-100 pt-8 space-y-6">
+            <div>
+              <span className="bg-sky-50 text-sky-700 text-[9px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full border border-sky-100">
+                Transparencia Algorítmica
+              </span>
+              <h4 className="text-sm font-black text-slate-900 uppercase tracking-tighter italic mt-3 flex items-center gap-2">
+                <i className="fa-solid fa-calculator text-sky-600"></i>
+                Desglose Matemático y Parámetros del IRP
+              </h4>
+              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-1">
+                Fórmula general: <span className="text-slate-700 font-extrabold">IRP = Σ ( Dimensión Ratio × Peso )</span>. Máximo 100 puntos. Las metas volumétricas se reducen proporcionalmente si el tiempo de juego es menor a 90 minutos.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              {irpData.dimensions.map((dim: any, idx: number) => {
+                const isSatisfied = dim.metricVal >= dim.adjustedTarget;
+                return (
+                  <div key={idx} className="bg-slate-50 rounded-2xl p-5 border border-slate-100 flex flex-col justify-between space-y-4">
+                    <div>
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="text-[9px] font-black bg-slate-200/60 text-slate-700 px-2.5 py-0.5 rounded-md uppercase tracking-wide">
+                          Dim {idx + 1} ({dim.weight})
+                        </span>
+                        <div className="text-right">
+                          <span className="text-xs font-black text-slate-800">
+                            +{Math.round(dim.scoreContribution * 10) / 10} pts
+                          </span>
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-black text-slate-800 uppercase tracking-tighter italic mt-2.5 leading-tight">
+                        {dim.name}
+                      </h5>
+                      <p className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
+                        {dim.metricLabel}
+                      </p>
+                    </div>
+
+                    <div className="border-t border-slate-200/50 pt-3 space-y-1.5">
+                      <div className="flex justify-between text-[10px] text-slate-500">
+                        <span className="font-medium">Estándar (90 Mins):</span>
+                        <span className="font-bold text-slate-700">{Math.round(dim.baseTarget * 10) / 10} {dim.unit}</span>
+                      </div>
+                      
+                      <div className="flex justify-between text-[10px] text-slate-500">
+                        <span className="font-medium">Ajuste de Tiempo:</span>
+                        <span className="font-bold text-slate-700">
+                          {dim.isTimeAdjusted ? `× ${Math.round(irpData.timeFactor * 100)}% (Proporcional)` : 'Sin ajuste (Fisiológico)'}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between text-[10px] text-slate-500 bg-sky-50/50 px-2 py-1 rounded">
+                        <span className="font-bold text-sky-800">Meta Ajustada:</span>
+                        <span className="font-black text-sky-900">{Math.round(dim.adjustedTarget * 10) / 10} {dim.unit}</span>
+                      </div>
+
+                      <div className="flex justify-between text-[10px] text-slate-500">
+                        <span className="font-medium">Valor Jugador:</span>
+                        <span className={`font-black ${isSatisfied ? 'text-emerald-700 font-extrabold' : 'text-slate-800'}`}>
+                          {Math.round(dim.metricVal * 10) / 10} {dim.unit}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl p-2.5 border border-slate-200/60 space-y-1">
+                      <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest leading-none">CÁLCULO DEL RATIO</p>
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-[9px] font-mono text-slate-400">
+                          Min( {Math.round(dim.metricVal)} / {Math.round(dim.adjustedTarget)} , 1.0 )
+                        </span>
+                        <span className="text-[10px] font-black font-mono text-slate-800">
+                          = {Math.round(dim.value)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

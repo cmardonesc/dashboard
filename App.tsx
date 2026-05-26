@@ -1053,6 +1053,7 @@ export default function App() {
             ) : (
               <StaffDashboard 
                 performanceRecords={performanceRecords} 
+                players={dbPlayers}
                 activeMenu={activeMenu} 
                 onMenuChange={setActiveMenu} 
                 onRefresh={handleManualRefresh}
