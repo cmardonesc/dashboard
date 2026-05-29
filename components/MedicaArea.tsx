@@ -29,6 +29,7 @@ interface DailyReport {
   treatments_applied?: string[];
   severity: 'low' | 'medium' | 'high' | 'sick';
   displayCategory?: string;
+  staffName?: string;
   players?: {
     player_id?: number;
     nombre: string;
@@ -141,14 +142,107 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
 
   const [selectedGpsPlayer, setSelectedGpsPlayer] = useState<DBInjury | null>(null);
 
+  const [currentStaffEmail, setCurrentStaffEmail] = useState<string>('');
+  const [loggedStaffName, setLoggedStaffName] = useState<string>('');
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+
+  const formatStaffEmail = (email: string): string => {
+    if (!email) return 'Staff';
+    const namePart = email.split('@')[0];
+    if (namePart.includes('.')) {
+      const parts = namePart.split('.');
+      const capParts = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1));
+      if (email.toLowerCase().startsWith('mardones.camilo')) {
+        return 'Camilo Mardones';
+      }
+      return capParts.join(' ');
+    }
+    return namePart.charAt(0).toUpperCase() + namePart.slice(1);
+  };
+
   const filteredInjuries = useMemo(() => {
     if (!selectedCategoryId) return dbInjuries;
     return dbInjuries.filter(i => i.category_id === selectedCategoryId);
   }, [dbInjuries, selectedCategoryId]);
 
+  const handleToggleDate = (date: string) => {
+    setSelectedDates(prev =>
+      prev.includes(date) ? prev.filter(d => d !== date) : [...prev, date]
+    );
+  };
+
+  const filteredDailyReports = useMemo(() => {
+    if (selectedDates.length === 0) return dailyReports;
+    return dailyReports.filter(report => selectedDates.includes(report.report_date));
+  }, [dailyReports, selectedDates]);
+
+  const availableDates = useMemo(() => {
+    const dates = dailyReports.map(r => r.report_date).filter(Boolean);
+    return Array.from(new Set(dates)).sort((a, b) => b.localeCompare(a));
+  }, [dailyReports]);
+
   useEffect(() => {
     fetchInjuredPlayers();
     fetchDailyReports();
+
+    const fetchSessionUser = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const email = session.user.email || '';
+          setCurrentStaffEmail(email);
+          
+          // Fallback 1: Initial email formatting
+          let resolvedDesc = formatStaffEmail(email);
+          
+          // Fallback 2: user metadata from Google / OAuth login
+          const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name;
+          if (metaName) {
+            resolvedDesc = metaName;
+          }
+
+          // Fallback 3: Query profiles for club name or specialized roles
+          try {
+            const { data: profileData } = await supabase
+              .from('profiles')
+              .select('role, club_name')
+              .eq('id', session.user.id)
+              .maybeSingle();
+
+            if (profileData) {
+              if (profileData.role === 'club' && profileData.club_name) {
+                resolvedDesc = `Club: ${profileData.club_name}`;
+              }
+            }
+          } catch (pe) {
+            console.warn("Could not query profiles for role mapping:", pe);
+          }
+
+          // Fallback 4: Query staff table display_name
+          try {
+            const { data, error } = await supabase
+              .from('staff')
+              .select('display_name, first_name, last_name')
+              .eq('profile_id', session.user.id)
+              .maybeSingle();
+              
+            if (!error && data) {
+              const name = data.display_name || `${data.first_name || ''} ${data.last_name || ''}`.trim();
+              if (name) {
+                resolvedDesc = name;
+              }
+            }
+          } catch (se) {
+            console.warn("Could not query staff table:", se);
+          }
+
+          setLoggedStaffName(resolvedDesc);
+        }
+      } catch (e) {
+        console.warn("Error fetching auth email and staff display_name in MedicaArea:", e);
+      }
+    };
+    fetchSessionUser();
     
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -185,13 +279,17 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
           return parts.every(part => fullName.includes(part));
         })
         .map(p => {
+          const pIdClub = p.id_club;
+          const dbClub = clubs?.find(c => Number(c.id_club) === Number(pIdClub) || Number(c.id) === Number(pIdClub));
+          const clubName = dbClub?.nombre || p.club || p.club_name || (p.clubes && (Array.isArray(p.clubes) ? p.clubes[0]?.nombre : p.clubes?.nombre)) || '';
+
           return {
             id: `p-${p.player_id}`,
             player_id: p.player_id,
             name: `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim() || p.name || 'Jugador',
             role: 'player',
-            club: p.club || p.club_name || (p.clubes && (Array.isArray(p.clubes) ? p.clubes[0]?.nombre : p.clubes?.nombre)) || '',
-            id_club: p.id_club,
+            club: clubName,
+            id_club: pIdClub,
             position: p.posicion || p.position || '',
             anio: p.anio || 0
           };
@@ -437,8 +535,19 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
           categoryStr = categoryStr.replace('sub_', 'SUB ').toUpperCase();
         }
 
+        // Parse staff name from observation if present
+        let parsedObs = report.observation || '';
+        let staffName = 'Staff';
+        if (parsedObs.includes('\n\n[[ADDED_BY]]: ')) {
+          const parts = parsedObs.split('\n\n[[ADDED_BY]]: ');
+          parsedObs = parts[0];
+          staffName = parts[1] || 'Staff';
+        }
+
         return {
           ...report,
+          observation: parsedObs,
+          staffName: staffName,
           displayCategory: categoryStr
         };
       });
@@ -489,10 +598,18 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       // Preferimos el campo anio directamente si existe en el objeto User
       const playerYear = reportingPlayer.anio || 0;
 
+      // Stamp staff name onto the observation field securely
+      let finalObservation = dailyReportForm.observation;
+      const staffNameToUse = loggedStaffName || formatStaffEmail(currentStaffEmail);
+      if (finalObservation.includes('\n\n[[ADDED_BY]]: ')) {
+        finalObservation = finalObservation.split('\n\n[[ADDED_BY]]: ')[0];
+      }
+      finalObservation = `${finalObservation}\n\n[[ADDED_BY]]: ${staffNameToUse}`;
+
       const payload = {
         player_id: reportingPlayer.player_id,
         anio: playerYear,
-        observation: dailyReportForm.observation,
+        observation: finalObservation,
         diagnostico_medico: dailyReportForm.diagnostico_medico,
         severity: dailyReportForm.severity,
         treatments_applied: selectedTreatments
@@ -541,17 +658,29 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   };
 
   const handleEditDailyReport = (report: DailyReport | any) => {
+    const reportIdClub = report.players?.id_club;
+    const dbClub = clubs?.find(c => Number(c.id_club) === Number(reportIdClub) || Number(c.id) === Number(reportIdClub));
+    const resolvedClubName = dbClub?.nombre || (Array.isArray(report.players?.clubes) ? report.players?.clubes[0]?.nombre : report.players?.clubes?.nombre) || report.players?.club || '';
+
     setReportingPlayer({
       id: `p-${report.player_id}`,
       player_id: report.player_id,
       name: `${report.players?.nombre} ${report.players?.apellido1} ${report.players?.apellido2 || ''}`.trim(),
       role: UserRole.PLAYER,
-      club: (Array.isArray(report.players?.clubes) ? report.players?.clubes[0]?.nombre : report.players?.clubes?.nombre) || report.players?.club || '', 
+      club: resolvedClubName,
+      id_club: reportIdClub,
       position: report.players?.posicion || ''
     });
     setEditingDailyReportId(report.id);
+
+    // Clean observation for edit representation
+    let editObservation = report.observation || '';
+    if (editObservation.includes('\n\n[[ADDED_BY]]: ')) {
+      editObservation = editObservation.split('\n\n[[ADDED_BY]]: ')[0];
+    }
+
     setDailyReportForm({
-      observation: report.observation,
+      observation: editObservation,
       diagnostico_medico: report.diagnostico_medico || '',
       severity: report.severity
     });
@@ -613,12 +742,17 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   };
 
   const handleEditClick = (injury: DBInjury) => {
+    const injuryIdClub = injury.players?.id_club;
+    const dbClub = clubs?.find(c => Number(c.id_club) === Number(injuryIdClub) || Number(c.id) === Number(injuryIdClub));
+    const resolvedClubName = dbClub?.nombre || (Array.isArray(injury.players?.clubes) ? injury.players?.clubes[0]?.nombre : injury.players?.clubes?.nombre) || injury.players?.club || '';
+
     setReportingPlayer({
       id: `p-${injury.player_id}`,
       player_id: injury.player_id,
       name: `${injury.players?.nombre} ${injury.players?.apellido1} ${injury.players?.apellido2 || ''}`.trim(),
       role: UserRole.PLAYER,
-      club: (Array.isArray(injury.players?.clubes) ? injury.players?.clubes[0]?.nombre : injury.players?.clubes?.nombre) || injury.players?.club || '',
+      club: resolvedClubName,
+      id_club: injuryIdClub,
       position: injury.players?.posicion || ''
     });
     setEditingInjuryId(injury.id);
@@ -1435,6 +1569,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                 </div>
 
                 <form onSubmit={handleSaveDailyReport} className="space-y-6">
+
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Gravedad del Caso</label>
                     <div className="flex gap-3">
@@ -1550,6 +1685,70 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                 Historial de Atenciones
               </h3>
             </div>
+
+            {/* DYNAMIC DATE FILTERS WITH MULTI-SELECT CHECKBOX KEY-VALUE PILLS (CAJA DE LISTADO) */}
+            {availableDates.length > 0 && (
+              <div className="flex flex-col md:flex-row gap-6 bg-slate-50 p-6 rounded-[24px] border border-slate-100 animate-in fade-in duration-300">
+                {/* Left column: Controls & Title */}
+                <div className="md:w-1/3 flex flex-col justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <i className="fa-solid fa-calendar-days text-[#0b1220] text-sm"></i>
+                      <p className="text-[10px] font-black uppercase text-[#0b1220] tracking-wider">Filtrar por Fechas:</p>
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                      Selecciona una o más fechas en la caja de listado para filtrar el historial de atenciones.
+                    </p>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setSelectedDates(availableDates)}
+                      className="flex-1 px-3 py-2 bg-white hover:bg-[#0b1220] hover:text-white text-slate-700 border border-slate-200 rounded-xl text-[8px] font-black uppercase tracking-wider transition-all shadow-sm"
+                    >
+                      Todas
+                    </button>
+                    <button 
+                      onClick={() => setSelectedDates([])}
+                      className="flex-1 px-3 py-2 bg-white hover:bg-red-600 hover:text-white text-slate-700 border border-slate-200 rounded-xl text-[8px] font-black uppercase tracking-wider transition-all shadow-sm"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Right column: Vertical Scrollable Listbox ("Caja de listado") */}
+                <div className="flex-1 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-inner">
+                  <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 custom-scrollbar">
+                    {availableDates.map(date => {
+                      const isChecked = selectedDates.includes(date);
+                      const count = dailyReports.filter(r => r.report_date === date).length;
+                      return (
+                        <label
+                          key={date}
+                          className={`flex items-center justify-between px-4 py-2 cursor-pointer transition-all hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
+                            isChecked ? 'bg-blue-50/40 text-blue-900 border-l-4 border-blue-600' : 'pl-[18px]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleToggleDate(date)}
+                              className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                            />
+                            <span className="uppercase tracking-wider font-extrabold">{formatDate(date)}</span>
+                          </div>
+                          <span className="text-[8px] font-black uppercase bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                            {count} {count === 1 ? 'Atención' : 'Atenciones'}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
             
             <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl overflow-hidden overflow-x-auto">
               <table className="w-full text-[10px] text-center border-collapse min-w-[600px]">
@@ -1561,6 +1760,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                     <th className="px-4 py-4">Año</th>
                     <th className="px-4 py-4">Categoría</th>
                     <th className="px-4 py-4">Fecha</th>
+                    <th className="px-4 py-4 text-left">Profesional</th>
                     <th className="px-6 py-4 text-left">Diagnóstico</th>
                     <th className="px-6 py-4 text-left">Observación</th>
                     <th className="px-6 py-4">Tratamiento</th>
@@ -1568,12 +1768,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-                  {dailyReports.length === 0 ? (
+                  {filteredDailyReports.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay reportes registrados</td>
+                      <td colSpan={11} className="py-12 text-slate-300 font-black uppercase tracking-widest italic opacity-50">No hay reportes registrados</td>
                     </tr>
                   ) : (
-                    dailyReports.map(report => (
+                    filteredDailyReports.map(report => (
                       <tr key={report.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-4">
                           <div className="flex justify-center">
@@ -1612,8 +1812,22 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                           </span>
                         </td>
                         <td className="px-4 py-4 text-slate-400">{formatDate(report.report_date)}</td>
+                        <td className="px-4 py-4 text-left">
+                          <span className="text-slate-900 font-bold uppercase text-[9px] bg-slate-50 border border-slate-100 rounded-md px-2 py-1 flex items-center gap-1.5 w-fit">
+                            <i className="fa-solid fa-user-doctor text-blue-500"></i>
+                            {report.staffName || 'Staff'}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-left font-black text-slate-900 uppercase italic truncate max-w-[150px]">{report.diagnostico_medico || '-'}</td>
-                        <td className="px-6 py-4 text-left italic text-slate-500 max-w-md truncate">"{report.observation}"</td>
+                        <td className="px-6 py-4 text-left max-w-md">
+                          <p className="italic text-slate-500 truncate">"{report.observation}"</p>
+                          {report.staffName && report.staffName !== 'Staff' && (
+                            <p className="text-[8px] font-black text-blue-600 uppercase tracking-widest mt-1 mr-auto flex items-center gap-1">
+                              <i className="fa-solid fa-user-pen"></i>
+                              Ingresado por: {report.staffName}
+                            </p>
+                          )}
+                        </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
                             {report.treatments_applied && report.treatments_applied.length > 0 ? (

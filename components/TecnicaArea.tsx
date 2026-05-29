@@ -1006,201 +1006,221 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
 
-      // Decorative Lines - Top
-      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.setLineWidth(1.5);
-      doc.line(margin, 10, pageWidth - margin, 10);
-      
-      doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-      doc.setLineWidth(0.5);
-      doc.line(margin, 11.5, pageWidth - margin, 11.5);
+      // Split currentWeekDays into chunks of max 7 days to prevent squishing
+      const chunks: Date[][] = [];
+      const chunkSize = 7;
+      for (let i = 0; i < currentWeekDays.length; i += chunkSize) {
+        chunks.push(currentWeekDays.slice(i, i + chunkSize));
+      }
 
-      // Logo (Upper Left)
       const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
-      try {
-        doc.addImage(logoUrl, 'PNG', margin, 15, 25, 25);
-      } catch (e) {
-        console.warn("Could not add logo to PDF", e);
-      }
 
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(28);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      
-      const startDate = new Date(selectedMicro.start_date + 'T12:00:00');
-      const endDate = new Date(selectedMicro.end_date + 'T12:00:00');
-      const weekNum = selectedMicro.micro_number || selectedMicro.id || '';
-      
-      const title = `MICROCICLO ${weekNum}`;
-      const dateRange = `${startDate.getDate().toString().padStart(2, '0')} AL ${endDate.getDate().toString().padStart(2, '0')} DE ${startDate.toLocaleDateString('es-ES', { month: 'long' }).toUpperCase()}`;
-      
-      // Simulating the condensed font with horizontalScale if supported, otherwise generic bold
-      const textOptions = { align: 'center' } as any;
-      try {
-        textOptions.horizontalScale = 0.75;
-      } catch(e) {}
-
-      doc.text(title, pageWidth / 2, 25, textOptions);
-      doc.setFontSize(20);
-      doc.text(dateRange, pageWidth / 2, 34, textOptions);
-
-      doc.setFontSize(22);
-      doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-      doc.text(formatCategoryLabel(selectedMicro.category_id).replace(' ', '.'), pageWidth / 2, 45, textOptions);
-
-      const dayNames = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO'];
-      const headers = currentWeekDays.map((date, i) => {
-          const dStr = `${date.getDate()}/${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-          return `${dayNames[i]} ${dStr}`;
-      });
-
-      let maxRows = 0;
-      currentWeekDays.forEach(date => {
-          const dateKey = formatDateKey(date);
-          const schedule = weeklySchedule[dateKey] || [];
-          if (schedule.length > maxRows) maxRows = schedule.length;
-      });
-
-      const body = [];
-      for (let r = 0; r < maxRows; r++) {
-          const row = currentWeekDays.map(date => {
-              const dateKey = formatDateKey(date);
-              const schedule = weeklySchedule[dateKey] || [];
-              const act = schedule[r];
-              if (!act) return '';
-              return { 
-                content: `${act.time}   ${act.type.toUpperCase()}`,
-                grupo: act.grupo 
-              };
-          });
-          body.push(row);
-      }
-
-      // Calculate centering for the table
-      const numCols = headers.length;
-      const totalUsableWidth = pageWidth - 2 * margin;
-      const colWidth = totalUsableWidth / 7;
-      const tableWidth = numCols * colWidth;
-      const tableLeftMargin = (pageWidth - tableWidth) / 2;
-
-      autoTable(doc, {
-        startY: 55,
-        head: [headers],
-        body: body,
-        theme: 'plain',
-        tableWidth: tableWidth,
-        margin: { left: tableLeftMargin },
-        headStyles: {
-          fillColor: [2, 66, 140],
-          textColor: [255, 255, 255],
-          fontSize: 8,
-          fontStyle: 'bold',
-          halign: 'center',
-          cellPadding: 2,
-        },
-        bodyStyles: {
-          fontSize: 6.5,
-          fontStyle: 'bold',
-          textColor: [0, 0, 0],
-          cellPadding: 1,
-          minCellHeight: 6,
-          valign: 'middle',
-          halign: 'center'
-        },
-        didParseCell: (data) => {
-          // Transparent by default to let us draw custom backgrounds
-          if (data.section === 'body') {
-            data.cell.styles.fillColor = undefined;
-          }
-        },
-        willDrawCell: (data) => {
-          if (data.section === 'head') {
-            doc.saveGraphicsState();
-            doc.setFillColor(2, 66, 140);
-            // Draw a rounded rectangle for the entire header if it's the first or last cell specifically
-            // But simpler: just draw rounded rect for each header cell with small gap
-            doc.roundedRect(data.cell.x + 0.5, data.cell.y + 0.5, data.cell.width - 1, data.cell.height - 1, 2, 2, 'F');
-            doc.restoreGraphicsState();
-          }
-        },
-        didDrawCell: (data) => {
-          if (data.section === 'body' && data.cell.raw) {
-            const raw = data.cell.raw as any;
-            const text = (raw.content || '').toUpperCase();
-            const grupo = raw.grupo;
-            
-            let fillColor: [number, number, number] = [255, 255, 255];
-            let textColor: [number, number, number] = [60, 60, 60];
-            let hasSpecialColor = false;
-
-            if (text.includes('ENTRENAMIENTO') || text.includes('PARTIDO')) {
-                fillColor = [226, 35, 26];
-                textColor = [255, 255, 255];
-                hasSpecialColor = true;
-            } else if (text.includes('GYM') || text.includes('GIMNASIO')) {
-                fillColor = [11, 18, 32];
-                textColor = [255, 255, 255];
-                hasSpecialColor = true;
-            } else if (text.includes('ACTIVACIÓN') || text.includes('ACTIVACION')) {
-                fillColor = [100, 180, 255];
-                textColor = [255, 255, 255];
-                hasSpecialColor = true;
-            } else if (text.includes('PSICOLÓGICA') || text.includes('CHARLA')) {
-                fillColor = [163, 217, 119];
-                hasSpecialColor = true;
-            } else if (grupo === 'Concentrados') {
-                fillColor = [215, 215, 215]; // Gray for Concentrados
-            } else if (text.includes('DESAYUNO') || text.includes('ALMUERZO') || text.includes('MERIENDA') || text.includes('CENA') || text.includes('SNACK') || text.includes('COLACIÓN') || text.includes('COLACION')) {
-                // For meals of non-concentrados, keep white (default) or light gray
-                fillColor = [255, 255, 255];
-            } else {
-                fillColor = [255, 255, 255];
-            }
-
-            doc.saveGraphicsState();
-            doc.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
-            // Draw rounded "pill" or "card" for the activity
-            doc.roundedRect(data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, data.cell.height - 2, 1.5, 1.5, 'F');
-            
-            // Re-draw text because we cleared the cell earlier
-            doc.setFontSize(hasSpecialColor ? 7 : 6.5);
-            doc.setTextColor(textColor[0], textColor[1], textColor[2]);
-            doc.setFont('helvetica', 'bold');
-            
-            const lines = doc.splitTextToSize(text, data.cell.width - 4);
-            doc.text(lines, data.cell.x + data.cell.width / 2, data.cell.y + data.cell.height / 2 + (lines.length > 1 ? -1 : 1), { align: 'center' });
-            
-            doc.restoreGraphicsState();
-          }
+      chunks.forEach((chunk, chunkIndex) => {
+        if (chunkIndex > 0) {
+          doc.addPage();
         }
+
+        // Decorative Lines - Top
+        doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.setLineWidth(1.5);
+        doc.line(margin, 10, pageWidth - margin, 10);
+        
+        doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+        doc.setLineWidth(0.5);
+        doc.line(margin, 11.5, pageWidth - margin, 11.5);
+
+        // Logo (Upper Left)
+        try {
+          doc.addImage(logoUrl, 'PNG', margin, 15, 25, 25);
+        } catch (e) {
+          console.warn("Could not add logo to PDF", e);
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(28);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        
+        const chunkStart = chunk[0];
+        const chunkEnd = chunk[chunk.length - 1];
+        const weekNum = selectedMicro.micro_number || selectedMicro.id || '';
+        
+        const title = chunks.length > 1 
+          ? `MICROCICLO ${weekNum} (PARTE ${chunkIndex + 1})` 
+          : `MICROCICLO ${weekNum}`;
+        
+        const m1 = chunkStart.toLocaleDateString('es-ES', { month: 'long' }).toUpperCase();
+        const m2 = chunkEnd.toLocaleDateString('es-ES', { month: 'long' }).toUpperCase();
+        const d1 = chunkStart.getDate().toString().padStart(2, '0');
+        const d2 = chunkEnd.getDate().toString().padStart(2, '0');
+        
+        const dateRange = m1 === m2
+          ? `${d1} AL ${d2} DE ${m1}`
+          : `${d1} DE ${m1} AL ${d2} DE ${m2}`;
+        
+        // Simulating the condensed font with horizontalScale if supported, otherwise generic bold
+        const textOptions = { align: 'center' } as any;
+        try {
+          textOptions.horizontalScale = 0.75;
+        } catch(e) {}
+
+        doc.text(title, pageWidth / 2, 25, textOptions);
+        doc.setFontSize(20);
+        doc.text(dateRange, pageWidth / 2, 34, textOptions);
+
+        doc.setFontSize(22);
+        doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+        doc.text(formatCategoryLabel(selectedMicro.category_id).replace(' ', '.'), pageWidth / 2, 45, textOptions);
+
+        const dayNames = ['DOMINGO', 'LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'];
+        const headers = chunk.map((date) => {
+            const dStr = `${date.getDate()}/${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+            const dayIndex = date.getDay(); // Robust, maps correctly to Monday-Sunday regardless of start
+            return `${dayNames[dayIndex]} ${dStr}`;
+        });
+
+        let maxRows = 0;
+        chunk.forEach(date => {
+            const dateKey = formatDateKey(date);
+            const schedule = weeklySchedule[dateKey] || [];
+            if (schedule.length > maxRows) maxRows = schedule.length;
+        });
+
+        const body = [];
+        for (let r = 0; r < maxRows; r++) {
+            const row = chunk.map(date => {
+                const dateKey = formatDateKey(date);
+                const schedule = weeklySchedule[dateKey] || [];
+                const act = schedule[r];
+                if (!act) return '';
+                return { 
+                  content: `${act.time}   ${act.type.toUpperCase()}`,
+                  grupo: act.grupo 
+                };
+            });
+            body.push(row);
+        }
+
+        // Calculate centering for the table
+        const numCols = headers.length;
+        const totalUsableWidth = pageWidth - 2 * margin;
+        const colWidth = totalUsableWidth / 7; // Fixed colWidth based on 7 columns so spacing is consistent
+        const tableWidth = numCols * colWidth;
+        const tableLeftMargin = (pageWidth - tableWidth) / 2;
+
+        autoTable(doc, {
+          startY: 55,
+          head: [headers],
+          body: body,
+          theme: 'plain',
+          tableWidth: tableWidth,
+          margin: { left: tableLeftMargin },
+          headStyles: {
+            fillColor: [2, 66, 140],
+            textColor: [255, 255, 255],
+            fontSize: 8,
+            fontStyle: 'bold',
+            halign: 'center',
+            cellPadding: 2,
+          },
+          bodyStyles: {
+            fontSize: 6.5,
+            fontStyle: 'bold',
+            textColor: [0, 0, 0],
+            cellPadding: 1,
+            minCellHeight: 6,
+            valign: 'middle',
+            halign: 'center'
+          },
+          didParseCell: (data) => {
+            // Transparent by default to let us draw custom backgrounds
+            if (data.section === 'body') {
+              data.cell.styles.fillColor = undefined;
+            }
+          },
+          willDrawCell: (data) => {
+            if (data.section === 'head') {
+              doc.saveGraphicsState();
+              doc.setFillColor(2, 66, 140);
+              doc.roundedRect(data.cell.x + 0.5, data.cell.y + 0.5, data.cell.width - 1, data.cell.height - 1, 2, 2, 'F');
+              doc.restoreGraphicsState();
+            }
+          },
+          didDrawCell: (data) => {
+            if (data.section === 'body' && data.cell.raw) {
+              const raw = data.cell.raw as any;
+              const text = (raw.content || '').toUpperCase();
+              const grupo = raw.grupo;
+              
+              let fillColor: [number, number, number] = [255, 255, 255];
+              let textColor: [number, number, number] = [60, 60, 60];
+              let hasSpecialColor = false;
+
+              if (text.includes('ENTRENAMIENTO') || text.includes('PARTIDO')) {
+                  fillColor = [226, 35, 26];
+                  textColor = [255, 255, 255];
+                  hasSpecialColor = true;
+              } else if (text.includes('GYM') || text.includes('GIMNASIO')) {
+                  fillColor = [11, 18, 32];
+                  textColor = [255, 255, 255];
+                  hasSpecialColor = true;
+              } else if (text.includes('ACTIVACIÓN') || text.includes('ACTIVACION')) {
+                  fillColor = [100, 180, 255];
+                  textColor = [255, 255, 255];
+                  hasSpecialColor = true;
+              } else if (text.includes('PSICOLÓGICA') || text.includes('CHARLA')) {
+                  fillColor = [163, 217, 119];
+                  hasSpecialColor = true;
+              } else if (grupo === 'Concentrados') {
+                  fillColor = [215, 215, 215]; // Gray for Concentrados
+              } else if (text.includes('DESAYUNO') || text.includes('ALMUERZO') || text.includes('MERIENDA') || text.includes('CENA') || text.includes('SNACK') || text.includes('COLACIÓN') || text.includes('COLACION')) {
+                  fillColor = [255, 255, 255];
+              } else {
+                  fillColor = [255, 255, 255];
+              }
+
+              doc.saveGraphicsState();
+              doc.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
+              doc.roundedRect(data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, data.cell.height - 2, 1.5, 1.5, 'F');
+              
+              doc.setFontSize(hasSpecialColor ? 7 : 6.5);
+              doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+              doc.setFont('helvetica', 'bold');
+              
+              const lines = doc.splitTextToSize(text, data.cell.width - 4);
+              doc.text(lines, data.cell.x + data.cell.width / 2, data.cell.y + data.cell.height / 2 + (lines.length > 1 ? -1 : 1), { align: 'center' });
+              
+              doc.restoreGraphicsState();
+            }
+          }
+        });
+
+        // Watermark CMSPORTECH - Small bottom right
+        doc.saveGraphicsState();
+        doc.setTextColor(240, 240, 240);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text("CMSPORTECH", pageWidth - margin, pageHeight - 5, { align: 'right' });
+        doc.restoreGraphicsState();
+
+        // Footer Note - Lowered
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.setFont('helvetica', 'italic');
+        doc.text("* LAS ACTIVIDADES RESALTADAS EN GRIS CORRESPONDEN A BLOQUES PARA JUGADORES EN RÉGIMEN DE CONCENTRACIÓN.", margin, pageHeight - 15);
+
+        // Decorative Lines - Bottom
+        doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.setLineWidth(1.5);
+        doc.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
+        
+        doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+        doc.setLineWidth(0.5);
+        doc.line(margin, pageHeight - 8.5, pageWidth - margin, pageHeight - 8.5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.text("FFCH - DEPARTAMENTO DE SELECCIONES NACIONALES", pageWidth / 2, pageHeight - 5, { align: 'center' });
       });
-
-      // Watermark CMSPORTECH - Small bottom right
-      doc.saveGraphicsState();
-      doc.setTextColor(240, 240, 240);
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'bold');
-      doc.text("CMSPORTECH", pageWidth - margin, pageHeight - 5, { align: 'right' });
-      doc.restoreGraphicsState();
-
-      // Footer Note - Lowered
-      doc.setFontSize(7);
-      doc.setTextColor(150, 150, 150);
-      doc.setFont('helvetica', 'italic');
-      doc.text("* LAS ACTIVIDADES RESALTADAS EN GRIS CORRESPONDEN A BLOQUES PARA JUGADORES EN RÉGIMEN DE CONCENTRACIÓN.", margin, pageHeight - 15);
-
-      // Decorative Lines - Bottom
-      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.setLineWidth(1.5);
-      doc.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
-      
-      doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-      doc.setLineWidth(0.5);
-      doc.line(margin, pageHeight - 8.5, pageWidth - margin, pageHeight - 8.5);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.text("FFCH - DEPARTAMENTO DE SELECCIONES NACIONALES", pageWidth / 2, pageHeight - 5, { align: 'center' });
 
       const fileName = `Cronograma_Semanal_${formatCategoryLabel(selectedMicro.category_id)}_${selectedMicro.start_date}.pdf`;
       doc.save(fileName);
@@ -1729,9 +1749,26 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                                    const dayActivities = weeklySchedule[formatDateKey(currentWeekDays[selectedDayIndex])] || [];
                                    if (dayActivities.length === 0) return 'AM';
                                    
-                                   const hours = dayActivities.map(a => {
-                                     const h = parseInt(a.time.split(':')[0]);
-                                     return isNaN(h) ? 0 : h;
+                                   // Filtrar a sesiones de entrenamiento, tácticas, gimnasio o partidos reales para determinar tipo de sesión
+                                   const sessionActivities = dayActivities.filter(a => {
+                                      const t = (a.type || '').toUpperCase();
+                                      return t.includes('ENTRENAMIENTO') || 
+                                             t.includes('PARTIDO') || 
+                                             t.includes('GIMNASIO') || 
+                                             t.includes('GYM') || 
+                                             t.includes('CHARLA') || 
+                                             t.includes('VIDEO') || 
+                                             t.includes('TÁCTICA') || 
+                                             t.includes('CAMPO') || 
+                                             t.includes('TEST') || 
+                                             t.includes('MEDICIÓN');
+                                   });
+
+                                   const targetList = sessionActivities.length > 0 ? sessionActivities : dayActivities;
+                                   
+                                   const hours = targetList.map(a => {
+                                      const h = parseInt(a.time.split(':')[0]);
+                                      return isNaN(h) ? 0 : h;
                                    });
                                    
                                    const hasAM = hours.some(h => h < 12);

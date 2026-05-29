@@ -66,6 +66,18 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   const [loadingAi, setLoadingAi] = useState(false);
   const [selectedJornada, setSelectedJornada] = useState<'AM' | 'PM'>('AM');
   
+  const [visitedMenus, setVisitedMenus] = useState<Record<string, boolean>>({
+    inicio: true,
+    [activeMenu]: true,
+  });
+
+  useEffect(() => {
+    setVisitedMenus(prev => {
+      if (prev[activeMenu]) return prev;
+      return { ...prev, [activeMenu]: true };
+    });
+  }, [activeMenu]);
+  
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
@@ -406,9 +418,9 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
     return performanceRecords;
   }, [performanceRecords, selectedCategoryId, playerToCategory]);
 
-  const renderContent = () => {
+  const renderComponentById = (menuId: string) => {
     console.log("StaffDashboard: rendering content", {
-      activeMenu,
+      menuId,
       performanceRecords: performanceRecords.length
     });
     const todayStr = new Date().toISOString().split('T')[0];
@@ -921,7 +933,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       ),
     };
 
-    switch (activeMenu) {
+    switch (menuId) {
       case 'inicio':
         return (
           <div className="space-y-6 md:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 transform-gpu">
@@ -1275,7 +1287,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
           citaciones: CitacionesArea,
           desconvocatoria: DesconvocatoriaArea,
           usuarios: UserManagementArea
-        }[activeMenu as any] as any;
+        }[menuId as any] as any;
         
         return ContentComponent ? (
           <ContentComponent 
@@ -1292,7 +1304,21 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
     }
   };
 
-  return <div className="max-w-7xl mx-auto">{renderContent()}</div>
+  return (
+    <div className="max-w-7xl mx-auto relative">
+      {Object.keys(visitedMenus).map((menuId) => {
+        const isVisible = activeMenu === menuId;
+        return (
+          <div
+            key={menuId}
+            style={{ display: isVisible ? 'block' : 'none' }}
+          >
+            {renderComponentById(menuId)}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function HeaderStat({ label, value, icon }: { label: string, value: string | number, icon: string }) {

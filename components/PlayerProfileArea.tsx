@@ -21,6 +21,11 @@ interface PlayerProfileAreaProps {
 }
 
 const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClub, userClubId, clubs = [], initialPlayerId, players: initialPlayers }) => {
+  const safeMax = (arr: number[]) => {
+    const valid = arr.filter(v => typeof v === 'number' && !isNaN(v) && isFinite(v));
+    return valid.length > 0 ? Math.max(...valid) : 0;
+  };
+
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(initialPlayerId || null);
   const [players, setPlayers] = useState<any[]>(initialPlayers || []);
   const [loading, setLoading] = useState(false);
@@ -188,7 +193,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     return {
       citaciones: totalCitations,
       citByCategory,
-      entrenamientos: totalTrainings,
+      entrenamientos: gpsStats.length > 0 ? gpsStats.length : totalTrainings,
       partidos: totalMatches,
       minutosGps: totalMinGps,
       distanciaGps: totalDistGps,
@@ -485,7 +490,14 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                        {citations.length > 0 ? (
                          <div className="flex justify-between items-center bg-white/5 p-4 rounded-3xl">
                             <span className="text-xs font-bold text-white/90 truncate mr-2">
-                              {citations[0].microcycles?.city || 'S/D'} • {citations[0].microcycles?.type || 'S/D'}
+                              {(() => {
+                                 const catId = citations[0].microcycles?.category_id;
+                                 const catName = catId 
+                                   ? REVERSE_CATEGORY_ID_MAP[catId]?.replace('sub_', 'SUB ').toUpperCase() 
+                                   : 'S/D';
+                                 const microNum = citations[0].microcycles?.micro_number || citations[0].microcycle_id || 'S/D';
+                                 return `${catName} MICROCICLO ${microNum}`;
+                               })()}
                             </span>
                             <span className="text-[10px] font-black text-red-500 shrink-0">{citations[0].fecha_citacion}</span>
                          </div>
@@ -602,32 +614,89 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
                  {/* GPS Detailed List */}
                  <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Detalle GPS (Últimos 10)</h3>
-                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                       {gpsStats.slice(0, 10).map((gps, i) => (
-                         <div key={i} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 hover:border-emerald-200 transition-all">
-                            <div className="flex justify-between items-center mb-2">
-                               <span className="text-[9px] font-black uppercase text-slate-900">{gps.fecha}</span>
-                               <span className="text-[11px] font-black text-emerald-600 italic">{Math.round(gps.dist_total_m)}m</span>
+                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">MÁXIMOS HISTÓRICOS GPS</h3>
+                     {gpsStats.length > 0 ? (
+                         <div className="grid grid-cols-2 gap-4">
+                            {/* 1. DISTANCE */}
+                            <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/10 transition-all flex flex-col justify-between">
+                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. DISTANCIA</span>
+                               <div>
+                                  <span className="text-2xl font-black text-slate-900 tracking-tight italic font-mono">
+                                     {safeMax(gpsStats.map(g => Number(g.dist_total_m) || 0)).toLocaleString('es-cl', { maximumFractionDigits: 0 })}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-400 ml-1">m</span>
+                                </div>
                             </div>
-                            <div className="flex gap-4">
-                               <div className="flex flex-col">
-                                  <span className="text-[7px] font-black text-slate-400 uppercase leading-none">V. MAX</span>
-                                  <span className="text-[10px] font-bold text-slate-600">{gps.vel_max_kmh} <span className="text-[7px]">km/h</span></span>
+
+                            {/* 2. VELOCIDAD */}
+                            <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-rose-200 hover:bg-rose-50/10 transition-all flex flex-col justify-between">
+                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. VELOCIDAD</span>
+                               <div>
+                                  <span className="text-2xl font-black text-slate-900 tracking-tight italic font-mono">
+                                     {safeMax(gpsStats.map(g => Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0)).toFixed(1)}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-400 ml-1">km/h</span>
                                </div>
-                               <div className="flex flex-col">
-                                  <span className="text-[7px] font-black text-slate-400 uppercase leading-none">MAI {">"}20</span>
-                                  <span className="text-[10px] font-bold text-slate-600">{gps.dist_mai_m_20_kmh}m</span>
+                            </div>
+
+                            {/* 3. METROS POR MINUTO */}
+                            <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/10 transition-all flex flex-col justify-between">
+                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. METROS / MIN</span>
+                               <div>
+                                  <span className="text-2xl font-black text-slate-900 tracking-tight italic font-mono">
+                                     {safeMax(gpsStats.map(g => Number(g.m_por_min) || (Number(g.minutos) > 0 ? (Number(g.dist_total_m) / Number(g.minutos)) : 0))).toFixed(1)}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-400 ml-1">m/min</span>
                                </div>
-                               <div className="flex flex-col">
-                                  <span className="text-[7px] font-black text-slate-400 uppercase leading-none">AC+DC</span>
-                                  <span className="text-[10px] font-bold text-slate-600">{gps.acc_decc_ai_n}</span>
+                            </div>
+
+                            {/* 4. HSR */}
+                            <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-amber-200 hover:bg-amber-50/10 transition-all flex flex-col justify-between">
+                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. HSR ({">"}20 km/h)</span>
+                               <div>
+                                  <span className="text-2xl font-black text-slate-900 tracking-tight italic font-mono">
+                                     {safeMax(gpsStats.map(g => Number(g.dist_mai_m_20_kmh) || 0)).toLocaleString('es-cl', { maximumFractionDigits: 0 })}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-400 ml-1">m</span>
+                               </div>
+                            </div>
+
+                            {/* 5. SPRINT DISTANCE */}
+                            <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50/10 transition-all flex flex-col justify-between">
+                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. DIST. SPRINT ({">"}25 km/h)</span>
+                               <div>
+                                  <span className="text-2xl font-black text-slate-900 tracking-tight italic font-mono">
+                                     {safeMax(gpsStats.map(g => Number(g.dist_sprint_m_25_kmh) || 0)).toLocaleString('es-cl', { maximumFractionDigits: 0 })}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-400 ml-1">m</span>
+                               </div>
+                            </div>
+
+                            {/* 6. SPRINTS COUNT */}
+                            <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-fuchsia-200 hover:bg-fuchsia-50/10 transition-all flex flex-col justify-between">
+                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. CANT. SPRINTS</span>
+                               <div>
+                                  <span className="text-2xl font-black text-slate-900 tracking-tight italic font-mono">
+                                     {safeMax(gpsStats.map(g => Number(g.sprints_n) || 0))}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-400 ml-1">sprints</span>
+                               </div>
+                            </div>
+
+                            {/* 7. ACC + DEC */}
+                            <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-sky-200 hover:bg-sky-50/10 transition-all flex flex-col justify-between col-span-2">
+                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. ACC + DEC</span>
+                               <div>
+                                  <span className="text-2xl font-black text-slate-900 tracking-tight italic font-mono">
+                                     {safeMax(gpsStats.map(g => Number(g.acc_decc_ai_n) || 0))}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-400 ml-1">acc/dec</span>
                                </div>
                             </div>
                          </div>
-                       ))}
-                       {gpsStats.length === 0 && <p className="text-center text-[10px] text-slate-400 uppercase font-black py-10">Sin datos GPS registrados</p>}
-                    </div>
+                      ) : (
+                         <p className="text-center text-[10px] text-slate-400 uppercase font-black py-10">Sin datos GPS registrados</p>
+                      )}
                  </div>
               </div>
 

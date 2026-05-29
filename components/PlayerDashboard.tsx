@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { User, WellnessData, TrainingLoadData, GPSData } from '../types'
 import { supabase } from '../lib/supabase'
 import { logActivity } from '../lib/activityLogger'
@@ -51,6 +51,17 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   refreshing
 }) => {
   const [activeMenu, setActiveMenu] = useState<PlayerMenuId>('inicio')
+  const [visitedMenus, setVisitedMenus] = useState<Record<string, boolean>>({
+    inicio: true,
+    [activeMenu]: true,
+  })
+
+  useEffect(() => {
+    setVisitedMenus(prev => {
+      if (prev[activeMenu]) return prev;
+      return { ...prev, [activeMenu]: true };
+    });
+  }, [activeMenu])
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -540,8 +551,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     });
   }, [wellness, loads]);
 
-  const renderContent = () => {
-    switch (activeMenu) {
+  const renderComponentById = (menuId: PlayerMenuId) => {
+    switch (menuId) {
       case 'inicio':
         return (
           <div className="space-y-6 md:space-y-10 animate-in fade-in duration-500">
@@ -1100,7 +1111,17 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         </div>
 
         <div className="p-4 md:p-8">
-          {renderContent()}
+          {Object.keys(visitedMenus).map((menuId) => {
+            const isVisible = activeMenu === menuId;
+            return (
+              <div
+                key={menuId}
+                style={{ display: isVisible ? 'block' : 'none' }}
+              >
+                {renderComponentById(menuId as PlayerMenuId)}
+              </div>
+            );
+          })}
         </div>
       </main>
 
