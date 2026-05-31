@@ -364,62 +364,137 @@ export default function DataImportArea() {
     return d.toISOString().split('T')[0];
   };
 
+  const parseCsvFloat = (val: any) => {
+    if (val === undefined || val === null || val === '') return null;
+    const cleanStr = val.toString().replace(/,/g, '.').replace(/\s/g, '');
+    const numVal = Number(cleanStr);
+    return isNaN(numVal) ? null : numVal;
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: 'greedy',
-        delimiter: "", // auto-detect
-        complete: (results) => {
-          const data = results.data;
-          setCsvData(data);
-          if (results.meta.fields) {
-            setHeaders(results.meta.fields);
-            
-            const newMapping: Record<string, string> = {};
+      if (selectedType === 'antropometria') {
+        Papa.parse(file, {
+          header: false,
+          skipEmptyLines: 'greedy',
+          delimiter: "", // auto-detect
+          complete: (results) => {
+            const rawRows = results.data as string[][];
+            // Find header row containing "PACIENTES"
+            let headerIndex = rawRows.findIndex(row => 
+              row && row[0] && normalizeString(row[0]).includes('paciente')
+            );
+            if (headerIndex === -1) {
+              headerIndex = rawRows.findIndex(row => 
+                row && row.some(cell => cell && normalizeString(cell).includes('paciente'))
+              );
+            }
+            if (headerIndex === -1) {
+              setMessage({ type: 'error', text: 'No se encontró la cabecera "PACIENTES" en el archivo CSV.' });
+              return;
+            }
+
+            const rawHeaders = rawRows[headerIndex];
+            const dataRows = rawRows.slice(headerIndex + 1).filter(row => 
+              row && row[0] && row[0].trim() !== '' && row[1] && row[1].trim() !== ''
+            );
+
+            // Create unique header names to prevent duplication issues
+            const headersList = rawHeaders.map((h, idx) => {
+              const trimmed = (h || '').trim();
+              return trimmed ? `${trimmed} (col ${idx})` : `Columna ${idx}`;
+            });
+
+            const formattedData = dataRows.map((row, rIdx) => {
+              const obj: Record<string, string> = { _rowIndex: String(rIdx) };
+              headersList.forEach((h, idx) => {
+                obj[h] = row[idx] || '';
+              });
+              obj._rawRow = JSON.stringify(row);
+              return obj;
+            });
+
+            setCsvData(formattedData);
+            setHeaders(headersList);
+
             const unmatched: any[] = [];
             const initialResolved: Record<number, number> = {};
 
-            if (selectedType) {
-              const config = IMPORT_CONFIGS[selectedType];
-              const detectedNameHeader = results.meta.fields.find(h => {
-                const low = h.toLowerCase();
-                return low === 'name' || low === 'jugador' || low === 'nombre' || low === 'atleta' || low.includes('jugador');
-              });
-              setNameHeader(detectedNameHeader || null);
+            // Set name header
+            setNameHeader(headersList[0]); // PACIENTES column
 
-              config.fields.forEach(field => {
-                const match = results.meta.fields?.find(h => 
-                  h.toLowerCase().includes(field.key.toLowerCase()) || 
-                  h.toLowerCase().includes(field.label.toLowerCase())
-                );
-                if (match) newMapping[field.key] = match;
-              });
-
-              // Special logic for name matching
-              const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
-              
-              if (needsNameMatching && detectedNameHeader) {
-                const seenNames = new Set<string>();
-                data.forEach((row: any, index: number) => {
-                  const cleanName = getRowName(row);
-                  const player = findPlayerByName(cleanName);
-                  if (player) {
-                    initialResolved[index] = player.player_id;
-                  } else if (cleanName && !seenNames.has(normalizeString(cleanName))) {
-                    unmatched.push({ ...row, _rowIndex: index, _cleanName: cleanName });
-                    seenNames.add(normalizeString(cleanName));
-                  }
-                });
+            formattedData.forEach((rowObj: any, index: number) => {
+              const rawRow = JSON.parse(rowObj._rawRow);
+              const cleanName = (rawRow[0] || '').trim();
+              const player = findPlayerByName(cleanName);
+              if (player) {
+                initialResolved[index] = player.player_id;
+              } else if (cleanName) {
+                unmatched.push({ ...rowObj, _rowIndex: index, _cleanName: cleanName });
               }
-            }
-            setMapping(newMapping);
+            });
+
+            setMapping({});
             setUnmatchedRows(unmatched);
             setResolvedIds(initialResolved);
           }
-        }
-      });
+        });
+      } else {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: 'greedy',
+          delimiter: "", // auto-detect
+          complete: (results) => {
+            const data = results.data;
+            setCsvData(data);
+            if (results.meta.fields) {
+              setHeaders(results.meta.fields);
+              
+              const newMapping: Record<string, string> = {};
+              const unmatched: any[] = [];
+              const initialResolved: Record<number, number> = {};
+
+              if (selectedType) {
+                const config = IMPORT_CONFIGS[selectedType];
+                const detectedNameHeader = results.meta.fields.find(h => {
+                  const low = h.toLowerCase();
+                  return low === 'name' || low === 'jugador' || low === 'nombre' || low === 'atleta' || low.includes('jugador');
+                });
+                setNameHeader(detectedNameHeader || null);
+
+                config.fields.forEach(field => {
+                  const match = results.meta.fields?.find(h => 
+                    h.toLowerCase().includes(field.key.toLowerCase()) || 
+                    h.toLowerCase().includes(field.label.toLowerCase())
+                  );
+                  if (match) newMapping[field.key] = match;
+                });
+
+                // Special logic for name matching
+                const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
+                
+                if (needsNameMatching && detectedNameHeader) {
+                  const seenNames = new Set<string>();
+                  data.forEach((row: any, index: number) => {
+                    const cleanName = getRowName(row);
+                    const player = findPlayerByName(cleanName);
+                    if (player) {
+                      initialResolved[index] = player.player_id;
+                    } else if (cleanName && !seenNames.has(normalizeString(cleanName))) {
+                      unmatched.push({ ...row, _rowIndex: index, _cleanName: cleanName });
+                      seenNames.add(normalizeString(cleanName));
+                    }
+                  });
+                }
+              }
+              setMapping(newMapping);
+              setUnmatchedRows(unmatched);
+              setResolvedIds(initialResolved);
+            }
+          }
+        });
+      }
     }
   };
 
@@ -430,7 +505,7 @@ export default function DataImportArea() {
     const requiredFields = config.fields.filter(f => f.required && f.key !== 'player_id');
     const missingFields = requiredFields.filter(f => !mapping[f.key]);
 
-    if (missingFields.length > 0) {
+    if (selectedType !== 'antropometria' && missingFields.length > 0) {
       setMessage({ type: 'error', text: `Faltan campos obligatorios: ${missingFields.map(f => f.label).join(', ')}` });
       return;
     }
@@ -444,50 +519,102 @@ export default function DataImportArea() {
         const item: any = {};
         const cleanName = getRowName(row);
 
-        // Special logic for GPS Tareas
-        if (selectedType === 'gps_tareas') {
-          const nameVal = row[nameHeader || 'Name'] || row['Name'] || '';
-          if (nameVal && String(nameVal).includes(' - ')) {
-            const parts = String(nameVal).split(' - ');
-            const playerName = parts.pop()?.trim();
-            const taskName = parts.join(' - ').trim();
-            item.tarea = taskName;
-            if (config.fields.some(f => f.key === 'jugador_nombre')) {
-              item.jugador_nombre = playerName;
-            }
-          }
-        }
-
-        config.fields.forEach(field => {
-          const csvHeader = mapping[field.key];
-          if (csvHeader && row[csvHeader] !== undefined && row[csvHeader] !== '') {
-            let val = row[csvHeader];
+        if (selectedType === 'antropometria') {
+          if (row._rawRow) {
+            const rawRow = JSON.parse(row._rawRow);
+            item.nombre_raw = (rawRow[0] || '').trim();
             
-            // Cleanup for Tarea
-            if (selectedType === 'gps_tareas' && field.key === 'tarea' && typeof val === 'string' && val.includes(' - ')) {
-              val = val.split(' - ')[0].trim();
-            }
-
-            if (field.type === 'number') {
-              const numVal = Number(val.toString().replace(',', '.'));
-              val = isNaN(numVal) ? null : numVal;
-            }
-            if (field.type === 'date') {
-              if (val.includes('/') || val.includes('-')) {
-                const separator = val.includes('/') ? '/' : '-';
-                const parts = val.split(separator);
+            let rawDate = (rawRow[1] || '').trim();
+            if (rawDate) {
+              if (rawDate.includes('/') || rawDate.includes('-')) {
+                const separator = rawDate.includes('/') ? '/' : '-';
+                const parts = rawDate.split(separator);
                 if (parts.length === 3) {
                   const [d, m, y] = parts;
                   const fullYear = y.length === 2 ? `20${y}` : y;
-                  val = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                  item.fecha_medicion = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
                 }
-              } else if (!isNaN(Number(val)) && Number(val) > 30000) {
-                val = excelDateToJSDate(Number(val));
               }
             }
-            item[field.key] = val;
+
+            item.edad_cronologica = parseCsvFloat(rawRow[2]);
+            item.masa_corporal_kg = parseCsvFloat(rawRow[3]);
+            item.talla_cm = parseCsvFloat(rawRow[4]);
+            item.talla_sentada_cm = parseCsvFloat(rawRow[5]);
+            item.masa_muscular_kg = parseCsvFloat(rawRow[30]);
+            item.masa_muscular_pct = parseCsvFloat(rawRow[31]);
+            item.masa_adiposa_kg = parseCsvFloat(rawRow[33]);
+            item.masa_adiposa_pct = parseCsvFloat(rawRow[34]);
+            item.masa_osea_kg = parseCsvFloat(rawRow[43]);
+            item.masa_osea_pct = parseCsvFloat(rawRow[44]);
+            item.somatotipo_endo = parseCsvFloat(rawRow[45]);
+            item.somatotipo_meso = parseCsvFloat(rawRow[46]);
+            item.somatotipo_ecto = parseCsvFloat(rawRow[47]);
+            item.somatotipo_eje_x = parseCsvFloat(rawRow[48]);
+            item.somatotipo_eje_y = parseCsvFloat(rawRow[49]);
+            item.indice_imo = parseCsvFloat(rawRow[62]);
+            item.indice_imc = parseCsvFloat(rawRow[63]);
+            item.sum_pliegues_6_mm = parseCsvFloat(rawRow[66]);
+            item.sum_pliegues_8_mm = parseCsvFloat(rawRow[67]);
+            item.maduracion_mirwald = parseCsvFloat(rawRow[68]);
+            item.maduracion_moore = parseCsvFloat(rawRow[69]);
+            item.maduracion_media = parseCsvFloat(rawRow[70]);
+            item.phv_mirwald = parseCsvFloat(rawRow[71]);
+            item.phv_moore = parseCsvFloat(rawRow[72]);
+            item.phv_media = parseCsvFloat(rawRow[73]);
+            item.cm_por_crecer_mirwald = parseCsvFloat(rawRow[74]);
+            item.cm_por_crecer_moore = parseCsvFloat(rawRow[75]);
+            item.cm_por_crecer_media = parseCsvFloat(rawRow[76]);
+            item.estatura_proy_mirwald_cm = parseCsvFloat(rawRow[77]);
+            item.estatura_proy_moore_cm = parseCsvFloat(rawRow[78]);
+            item.estatura_proy_media_cm = parseCsvFloat(rawRow[79]);
           }
-        });
+        } else {
+          // Special logic for GPS Tareas
+          if (selectedType === 'gps_tareas') {
+            const nameVal = row[nameHeader || 'Name'] || row['Name'] || '';
+            if (nameVal && String(nameVal).includes(' - ')) {
+              const parts = String(nameVal).split(' - ');
+              const playerName = parts.pop()?.trim();
+              const taskName = parts.join(' - ').trim();
+              item.tarea = taskName;
+              if (config.fields.some(f => f.key === 'jugador_nombre')) {
+                item.jugador_nombre = playerName;
+              }
+            }
+          }
+
+          config.fields.forEach(field => {
+            const csvHeader = mapping[field.key];
+            if (csvHeader && row[csvHeader] !== undefined && row[csvHeader] !== '') {
+              let val = row[csvHeader];
+              
+              // Cleanup for Tarea
+              if (selectedType === 'gps_tareas' && field.key === 'tarea' && typeof val === 'string' && val.includes(' - ')) {
+                val = val.split(' - ')[0].trim();
+              }
+
+              if (field.type === 'number') {
+                const numVal = Number(val.toString().replace(',', '.'));
+                val = isNaN(numVal) ? null : numVal;
+              }
+              if (field.type === 'date') {
+                if (val.includes('/') || val.includes('-')) {
+                  const separator = val.includes('/') ? '/' : '-';
+                  const parts = val.split(separator);
+                  if (parts.length === 3) {
+                    const [d, m, y] = parts;
+                    const fullYear = y.length === 2 ? `20${y}` : y;
+                    val = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                  }
+                } else if (!isNaN(Number(val)) && Number(val) > 30000) {
+                  val = excelDateToJSDate(Number(val));
+                }
+              }
+              item[field.key] = val;
+            }
+          });
+        }
 
         // Use resolved IDs
         const manualId = resolvedIds[index];
@@ -522,6 +649,15 @@ export default function DataImportArea() {
         setMessage({ type: 'error', text: 'No se encontraron datos válidos.' });
         setImporting(false);
         return;
+      }
+
+      if (selectedType === 'antropometria') {
+        const uniqueMap = new Map<string, any>();
+        dataToInsert.forEach(item => {
+          const key = `${item.player_id}-${item.fecha_medicion}`;
+          uniqueMap.set(key, item);
+        });
+        dataToInsert = Array.from(uniqueMap.values());
       }
 
       // NUEVO: Agregación de Sesiones para GPS Totales (Opción A)
@@ -611,7 +747,11 @@ export default function DataImportArea() {
     
     csvData.forEach((r, idx) => {
       if (normalizeString(getRowName(r)) === normalizedCleanName) {
-        newResolved[idx] = playerId;
+        if (!playerId || isNaN(playerId) || playerId <= 0) {
+          delete newResolved[idx];
+        } else {
+          newResolved[idx] = playerId;
+        }
       }
     });
 
@@ -1389,24 +1529,48 @@ export default function DataImportArea() {
                           <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Nombre en CSV</span>
                           <span className="text-[11px] font-black text-slate-900 truncate">{row._cleanName}</span>
                         </div>
-                        <div className="space-y-2">
-                          <select
-                            value={resolvedId || ''}
-                            onChange={(e) => updateResolvedId(row._rowIndex, Number(e.target.value))}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-black text-slate-900 outline-none focus:border-amber-500 transition-all appearance-none cursor-pointer"
-                          >
-                            <option value="">Seleccionar Jugador...</option>
-                            {players.map(p => (
-                              <option key={p.player_id} value={p.player_id}>
-                                {p.nombre} {p.apellido1} (ID: {p.player_id})
-                              </option>
-                            ))}
-                          </select>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Buscar en la lista</label>
+                            <select
+                              value={resolvedId || ''}
+                              onChange={(e) => updateResolvedId(row._rowIndex, Number(e.target.value))}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-black text-slate-950 outline-none focus:border-amber-500 transition-all appearance-none cursor-pointer"
+                            >
+                              <option value="">Seleccionar Jugador...</option>
+                              {players.map(p => (
+                                <option key={p.player_id} value={p.player_id}>
+                                  {p.nombre} {p.apellido1} (ID: {p.player_id})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <div className="h-px bg-slate-100 flex-1"></div>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">O</span>
+                            <div className="h-px bg-slate-100 flex-1"></div>
+                          </div>
+
+                          <div>
+                            <label className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Manual ID Jugador</label>
+                            <input
+                              type="number"
+                              placeholder="Escribe ID aquí (ej: 527)"
+                              value={resolvedId || ''}
+                              onChange={(e) => {
+                                const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                updateResolvedId(row._rowIndex, val);
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-black text-slate-950 outline-none focus:border-amber-500 transition-all"
+                            />
+                          </div>
+
                           {matchedPlayer && (
-                            <div className="flex items-center gap-2 px-2 py-1 bg-emerald-50 rounded-lg border border-emerald-100 animate-in fade-in duration-300">
+                            <div className="flex items-center gap-2 px-2.5 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100 animate-in fade-in duration-300">
                               <i className="fa-solid fa-check text-emerald-500 text-[8px]"></i>
                               <span className="text-[9px] font-black text-emerald-700 uppercase truncate">
-                                {matchedPlayer.nombre} {matchedPlayer.apellido1}
+                                Confirmado: {matchedPlayer.nombre} {matchedPlayer.apellido1}
                               </span>
                             </div>
                           )}

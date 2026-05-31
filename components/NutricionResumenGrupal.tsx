@@ -52,7 +52,13 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     }
   }, [performanceRecords]);
 
-  const getCellColor = (value: number, type: 'muscular' | 'adiposa' | 'pliegues', birthYear: number) => {
+  const getCellColor = (value: number, type: 'muscular' | 'adiposa' | 'pliegues' | 'imo', birthYear: number) => {
+    if (type === 'imo') {
+      if (value > 4.4) return 'bg-emerald-100 text-emerald-700';
+      if (value >= 4.0) return 'bg-amber-100 text-amber-700';
+      return 'bg-red-100 text-red-700';
+    }
+
     // Lógica para nacidos ANTES de 2008 (Mayores)
     if (birthYear < 2008 && birthYear > 0) {
       if (type === 'muscular') {
@@ -327,13 +333,14 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Masa Muscular %</th>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Masa Grasa %</th>
+                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">IMO</th>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">6 Pliegues (mm)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-8 py-20 text-center text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">No se encontraron registros para los filtros seleccionados</td>
+                  <td colSpan={7} className="px-8 py-20 text-center text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">No se encontraron registros para los filtros seleccionados</td>
                 </tr>
               ) : (
                 filteredData.map((item, i) => {
@@ -366,6 +373,20 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                       <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_adiposa_pct || 0, 'adiposa', item.player.anio || 0)}`}>
                         {item.data.masa_adiposa_pct?.toFixed(1)}%
                       </span>
+                    </td>
+                    <td className="px-8 py-4 text-center">
+                      {(() => {
+                        const imoVal = (item.data.indice_imo && Number(item.data.indice_imo) > 0)
+                          ? Number(item.data.indice_imo)
+                          : (item.data.masa_muscular_kg && item.data.masa_osea_kg && Number(item.data.masa_osea_kg) > 0)
+                            ? (Number(item.data.masa_muscular_kg) / Number(item.data.masa_osea_kg))
+                            : 0;
+                        return (
+                          <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(imoVal, 'imo', item.player.anio || 0)}`}>
+                            {imoVal > 0 ? imoVal.toFixed(2) : 'N/A'}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-8 py-4 text-center">
                       <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.sum_pliegues_6_mm || 0, 'pliegues', item.player.anio || 0)}`}>

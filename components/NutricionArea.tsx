@@ -123,7 +123,7 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
     cm_por_crecer_mirwald: 0,
     cm_por_crecer_moore: 0,
     cm_por_crecer_media: 0,
-    estatura_proy_mirwald: 0,
+    estatura_proy_mirwald_cm: 0,
     estatura_proy_moore_cm: 0,
     estatura_proy_media_cm: 0
   });

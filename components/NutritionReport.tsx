@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { NutritionData, User } from '../types';
 import ClubBadge from './ClubBadge';
 import {
@@ -131,13 +131,39 @@ export default function NutritionReport({ data, history, player, onClose, clubs 
       }));
   }, [sortedHistory]);
 
+  const [selectedMethod, setSelectedMethod] = useState<'mirwald' | 'moore' | 'media'>('media');
+
+  const currentMaduracion = useMemo(() => {
+    if (selectedMethod === 'mirwald') return data.estatura_proy_mirwald_cm !== undefined ? data.maduracion_mirwald : data.maduracion_media;
+    if (selectedMethod === 'moore') return data.estatura_proy_moore_cm !== undefined ? data.maduracion_moore : data.maduracion_media;
+    return data.maduracion_media;
+  }, [selectedMethod, data]);
+
+  const currentPHV = useMemo(() => {
+    if (selectedMethod === 'mirwald') return data.estatura_proy_mirwald_cm !== undefined ? data.phv_mirwald : data.phv_media;
+    if (selectedMethod === 'moore') return data.estatura_proy_moore_cm !== undefined ? data.phv_moore : data.phv_media;
+    return data.phv_media;
+  }, [selectedMethod, data]);
+
+  const currentEstaturaProy = useMemo(() => {
+    if (selectedMethod === 'mirwald') return data.estatura_proy_mirwald_cm !== undefined ? data.estatura_proy_mirwald_cm : data.estatura_proy_media_cm;
+    if (selectedMethod === 'moore') return data.estatura_proy_moore_cm !== undefined ? data.estatura_proy_moore_cm : data.estatura_proy_media_cm;
+    return data.estatura_proy_media_cm;
+  }, [selectedMethod, data]);
+
+  const currentCmPorCrecer = useMemo(() => {
+    if (selectedMethod === 'mirwald') return data.estatura_proy_mirwald_cm !== undefined ? data.cm_por_crecer_mirwald : data.cm_por_crecer_media;
+    if (selectedMethod === 'moore') return data.estatura_proy_moore_cm !== undefined ? data.cm_por_crecer_moore : data.cm_por_crecer_media;
+    return data.cm_por_crecer_media;
+  }, [selectedMethod, data]);
+
   const maturationStatus = useMemo(() => {
-    if (!data.maduracion_media) return { label: 'N/A', color: 'text-slate-400', bg: 'bg-slate-50' };
-    const val = data.maduracion_media;
+    if (currentMaduracion === undefined || currentMaduracion === null) return { label: 'N/A', color: 'text-slate-400', bg: 'bg-slate-50', desc: 'Sin datos madurativos' };
+    const val = currentMaduracion;
     if (val < -0.5) return { label: 'PRE-PHV', color: 'text-blue-600', bg: 'bg-blue-50', desc: 'Fase de crecimiento lento pre-estirón.' };
     if (val <= 0.5) return { label: 'CIRCA-PHV', color: 'text-amber-600', bg: 'bg-amber-50', desc: 'Pico de crecimiento. Riesgo de lesiones.' };
     return { label: 'POST-PHV', color: 'text-emerald-600', bg: 'bg-emerald-50', desc: 'Crecimiento finalizado. Apto para fuerza.' };
-  }, [data]);
+  }, [currentMaduracion]);
 
   const nutritionActionStatus = useMemo(() => {
     const imo = (data.masa_muscular_kg && data.masa_osea_kg && Number(data.masa_osea_kg) > 0) 
@@ -429,9 +455,37 @@ export default function NutritionReport({ data, history, player, onClose, clubs 
                   </h3>
                   <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Análisis de Edad Biológica vs Cronológica</p>
                 </div>
-                <div className="flex gap-2">
-                  <span className="px-2 md:px-3 py-1 bg-white rounded-full text-[8px] md:text-[9px] font-black text-slate-500 border border-slate-200 uppercase tracking-widest">Mirwald</span>
-                  <span className="px-2 md:px-3 py-1 bg-white rounded-full text-[8px] md:text-[9px] font-black text-slate-500 border border-slate-200 uppercase tracking-widest">Moore</span>
+                <div className="flex bg-[#0b1220]/5 p-1 rounded-xl gap-1">
+                  <button
+                    onClick={() => setSelectedMethod('mirwald')}
+                    className={`px-2.5 py-1 rounded-lg text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${
+                      selectedMethod === 'mirwald'
+                        ? 'bg-[#0b1220] text-amber-500 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900 font-bold'
+                    }`}
+                  >
+                    Mirwald
+                  </button>
+                  <button
+                    onClick={() => setSelectedMethod('moore')}
+                    className={`px-2.5 py-1 rounded-lg text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${
+                      selectedMethod === 'moore'
+                        ? 'bg-[#0b1220] text-amber-500 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900 font-bold'
+                    }`}
+                  >
+                    Moore
+                  </button>
+                  <button
+                    onClick={() => setSelectedMethod('media')}
+                    className={`px-2.5 py-1 rounded-lg text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${
+                      selectedMethod === 'media'
+                        ? 'bg-[#0b1220] text-amber-500 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900 font-bold'
+                    }`}
+                  >
+                    Promedio
+                  </button>
                 </div>
               </div>
 
@@ -449,11 +503,11 @@ export default function NutritionReport({ data, history, player, onClose, clubs 
                 <div className="bg-white rounded-2xl md:rounded-[32px] p-5 md:p-6 border border-slate-100 shadow-sm space-y-4">
                   <div className="flex justify-between items-center">
                     <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase">Años para PHV</span>
-                    <span className="text-base md:text-lg font-black text-slate-900 italic">{data.maduracion_media?.toFixed(2) || '0.00'}</span>
+                    <span className="text-base md:text-lg font-black text-slate-900 italic">{currentMaduracion?.toFixed(2) || '0.00'}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase">Edad PHV (Pico)</span>
-                    <span className="text-base md:text-lg font-black text-slate-900 italic">{data.phv_media?.toFixed(1) || '0.0'} <span className="text-[9px] md:text-[10px] opacity-30">años</span></span>
+                    <span className="text-base md:text-lg font-black text-slate-900 italic">{currentPHV?.toFixed(1) || '0.0'} <span className="text-[9px] md:text-[10px] opacity-30">años</span></span>
                   </div>
                 </div>
 
@@ -461,18 +515,18 @@ export default function NutritionReport({ data, history, player, onClose, clubs 
                 <div className="bg-[#0b1220] rounded-2xl md:rounded-[32px] p-5 md:p-6 text-white relative overflow-hidden sm:col-span-2 md:col-span-1">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
                   <div className="relative z-10">
-                    <p className="text-[8px] md:text-[9px] font-black text-red-500 uppercase tracking-widest mb-1">Proyección Estatura Final</p>
-                    <h4 className="text-2xl md:text-3xl font-black italic">{data.estatura_proy_media_cm?.toFixed(1) || '0.0'} <span className="text-[10px] md:text-xs opacity-50">cm</span></h4>
+                    <p className="text-[8px] md:text-[9px] font-black text-red-500 uppercase tracking-widest mb-1">Proyección Estatura Final ({selectedMethod === 'media' ? 'Promedio' : selectedMethod === 'mirwald' ? 'Mirwald' : 'Moore'})</p>
+                    <h4 className="text-2xl md:text-3xl font-black italic">{currentEstaturaProy?.toFixed(1) || '0.0'} <span className="text-[10px] md:text-xs opacity-50">cm</span></h4>
                     
                     <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-white/10">
                       <div className="flex justify-between items-end">
                         <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase">Por crecer</span>
-                        <span className="text-lg md:text-xl font-black text-emerald-400 italic">+{data.cm_por_crecer_media?.toFixed(1) || '0.0'} <span className="text-[9px] md:text-[10px] opacity-50">cm</span></span>
+                        <span className="text-lg md:text-xl font-black text-emerald-400 italic">+{currentCmPorCrecer?.toFixed(1) || '0.0'} <span className="text-[9px] md:text-[10px] opacity-50">cm</span></span>
                       </div>
                       <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
                         <div 
                           className="bg-emerald-400 h-full rounded-full transition-all duration-1000" 
-                          style={{ width: `${(data.talla_cm / (data.estatura_proy_media_cm || 1)) * 100}%` }}
+                          style={{ width: `${(data.talla_cm / (currentEstaturaProy || 1)) * 100}%` }}
                         ></div>
                       </div>
                     </div>
