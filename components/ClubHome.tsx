@@ -153,7 +153,13 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
               return (
                 <div 
                   key={player.player_id}
-                  className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-transparent hover:border-slate-200 transition-all group"
+                  onClick={() => {
+                    if (player.player_id) {
+                      sessionStorage.setItem('selectedPlayerIdForProfile', String(player.player_id));
+                      window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: player.player_id } }));
+                    }
+                  }}
+                  className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-transparent hover:border-slate-200 hover:bg-slate-100 transition-all group cursor-pointer"
                 >
                   <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-slate-400 font-black text-xs shadow-sm group-hover:bg-red-600 group-hover:text-white transition-all overflow-hidden p-1">
                     {pLogo ? (

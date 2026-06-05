@@ -26,6 +26,18 @@ export default function App() {
   const [activeMenu, setActiveMenu] = useState<MenuId>('inicio')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
+  useEffect(() => {
+    const handleGlobalNavigation = (e: any) => {
+      if (e.detail?.playerId) {
+        setActiveMenu('perfil_jugador');
+      }
+    };
+    window.addEventListener('navigate-to-profile', handleGlobalNavigation);
+    return () => {
+      window.removeEventListener('navigate-to-profile', handleGlobalNavigation);
+    };
+  }, []);
+
   const [dbPlayers, setDbPlayers] = useState<User[]>([])
   const [dbClubs, setDbClubs] = useState<any[]>([])
   const [allData, setAllData] = useState<{

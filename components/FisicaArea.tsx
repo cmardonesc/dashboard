@@ -1273,7 +1273,23 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                          backgroundColor: ifrColor ? `${ifrColor}25` : undefined 
                        }}
                      >
-                       <td className={`px-4 md:px-8 py-4 md:py-5 text-left sticky left-0 group-hover:bg-slate-50 border-r border-slate-50 ${isHighlighted ? 'bg-blue-50' : isOwnPlayer ? 'bg-slate-100/80' : 'bg-white'}`} style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>{playerName}</td>
+                       <td className={`px-4 md:px-8 py-4 md:py-5 text-left sticky left-0 group-hover:bg-slate-50 border-r border-slate-50 ${isHighlighted ? 'bg-blue-50' : isOwnPlayer ? 'bg-slate-100/80' : 'bg-white'}`} style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>
+                          {player?.player_id ? (
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                sessionStorage.setItem('selectedPlayerIdForProfile', String(player.player_id));
+                                window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: player.player_id } }));
+                              }}
+                              className="hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200 block font-black uppercase text-slate-900"
+                              title={`Ver perfil de ${playerName}`}
+                            >
+                              {playerName}
+                            </span>
+                          ) : (
+                            playerName
+                          )}
+                        </td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.minutos?.toFixed(1) || '0.0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.dist_total_m?.toFixed(0) || '0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">
@@ -1659,7 +1675,21 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}
                               >
                                 <td className="px-4 py-0.5 text-left font-sans" style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>
-                                   <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{playerName}</span>
+                                   {player?.player_id ? (
+                                      <span 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          sessionStorage.setItem('selectedPlayerIdForProfile', String(player.player_id));
+                                          window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: player.player_id } }));
+                                        }}
+                                        className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220] hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200"
+                                        title={`Ver perfil de ${playerName}`}
+                                      >
+                                        {playerName}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{playerName}</span>
+                                    )}
                                    <ClubBadge 
                                      clubName={player?.club_name || player?.club} 
                                      idClub={player?.id_club}

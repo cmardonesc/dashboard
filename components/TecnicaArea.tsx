@@ -1939,7 +1939,18 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                               {report.players?.nombre?.charAt(0)}
                             </div>
                             <div>
-                              <p className="text-[11px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1}</p>
+                              <p 
+                                className="text-[11px] font-black text-slate-900 uppercase italic leading-none hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (report.players?.player_id) {
+                                    sessionStorage.setItem('selectedPlayerIdForProfile', String(report.players.player_id));
+                                    window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: report.players.player_id } }));
+                                  }
+                                }}
+                              >
+                                {report.players?.nombre} {report.players?.apellido1}
+                              </p>
                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                                 {(Array.isArray(report.players?.clubes) ? report.players?.clubes[0]?.nombre : report.players?.clubes?.nombre) || report.players?.club || 'SIN CLUB'}
                               </p>

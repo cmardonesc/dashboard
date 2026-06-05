@@ -181,6 +181,23 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     return Array.from(new Set(dates)).sort((a, b) => b.localeCompare(a));
   }, [dailyReports]);
 
+  const previousReports = useMemo(() => {
+    if (!reportingPlayer || !reportingPlayer.player_id) return [];
+    return dailyReports
+      .filter(r => r.player_id === reportingPlayer.player_id)
+      .sort((a, b) => b.report_date.localeCompare(a.report_date));
+  }, [dailyReports, reportingPlayer]);
+
+  const handleUseReportAsTemplate = (report: DailyReport) => {
+    const treatments = report.treatments_applied || [];
+    setDailyReportForm({
+      observation: report.observation || '',
+      diagnostico_medico: report.diagnostico_medico || '',
+      severity: report.severity || 'low'
+    });
+    setSelectedTreatments(treatments);
+  };
+
   useEffect(() => {
     fetchInjuredPlayers();
     fetchDailyReports();
@@ -1065,7 +1082,16 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                       return (
                         <tr key={injury.id} className="hover:bg-slate-50 transition-colors group">
                           <td className="px-6 md:px-10 py-4 md:py-6 text-left">
-                            <p className="font-black text-slate-900 uppercase italic text-[11px] md:text-xs leading-none group-hover:text-red-600 transition-colors">
+                            <p 
+                              className="font-black text-slate-900 uppercase italic text-[11px] md:text-xs leading-none hover:text-emerald-600 hover:underline cursor-pointer transition-all duration-200"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (injury.player_id) {
+                                  sessionStorage.setItem('selectedPlayerIdForProfile', String(injury.player_id));
+                                  window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: injury.player_id } }));
+                                }
+                              }}
+                            >
                               {athleteName}
                             </p>
                             <p className="text-[7px] md:text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">{injury.players?.posicion}</p>
@@ -1568,6 +1594,117 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                   </button>
                 </div>
 
+                {/* HISTORIAL COMPACTO DE ATENCIONES ANTERIORES PARA EL RESPALDO DEL MÉDICO / KINESIÓLOGO */}
+                <div className="mb-8 bg-white rounded-3xl p-6 border border-slate-200/60 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-[10px] md:text-[11px] font-black uppercase text-slate-800 tracking-wider flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-ping"></span>
+                      <i className="fa-solid fa-clock-rotate-left text-blue-500 text-xs"></i>
+                      Historial de Atenciones Anteriores ({reportingPlayer.name})
+                    </h5>
+                    <span className="text-[8px] md:text-[9.5px] font-black uppercase bg-blue-50 text-blue-600 px-3 py-1 rounded-full border border-blue-100/50">
+                      {previousReports.length} {previousReports.length === 1 ? 'Registro' : 'Registros'}
+                    </span>
+                  </div>
+
+                  {previousReports.length === 0 ? (
+                    <div className="text-center py-8 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                      <i className="fa-solid fa-folder-open text-slate-300 text-2xl mb-2 inline-block"></i>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sin registros de atenciones médicas previas para este atleta</p>
+                      <p className="text-[8.5px] text-slate-400 font-bold uppercase tracking-wider mt-1">Las nuevas visitas que guardes aparecerán listadas aquí</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-hidden overflow-x-auto rounded-2xl border border-slate-100 shadow-sm">
+                      <table className="w-full text-[9px] text-center border-collapse min-w-[650px]">
+                        <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest text-[8.5px]">
+                          <tr>
+                            <th className="px-3 py-3.5 w-12 text-center">Gravedad</th>
+                            <th className="px-4 py-3.5 w-24 text-center">Fecha</th>
+                            <th className="px-4 py-3.5 text-left">Profesional</th>
+                            <th className="px-4 py-3.5 text-left">Diagnóstico</th>
+                            <th className="px-4 py-3.5 text-left">Observación</th>
+                            <th className="px-4 py-3.5 text-center">Tratamiento</th>
+                            <th className="px-4 py-3.5 text-right w-24">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-bold text-slate-600 bg-white">
+                          {previousReports.map(report => (
+                            <tr key={report.id} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="px-3 py-3">
+                                <div className="flex justify-center">
+                                  <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${
+                                    report.severity === 'low' ? 'bg-emerald-500' : 
+                                    report.severity === 'medium' ? 'bg-amber-500' : 
+                                    report.severity === 'high' ? 'bg-red-500' : 
+                                    'bg-purple-500'
+                                  }`}></div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-500 text-center font-extrabold">{formatDate(report.report_date)}</td>
+                              <td className="px-4 py-3 text-left">
+                                <span className="text-slate-800 font-bold uppercase text-[8px] bg-slate-50 border border-slate-100 rounded px-2 py-0.5 inline-flex items-center gap-1">
+                                  <i className="fa-solid fa-user-doctor text-blue-500 scale-90"></i>
+                                  {report.staffName || 'Staff'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-left font-black text-slate-900 uppercase italic truncate max-w-[140px]">{report.diagnostico_medico || '-'}</td>
+                              <td className="px-4 py-3 text-left max-w-[200px]">
+                                <p className="italic text-slate-500 truncate" title={report.observation}>"{report.observation}"</p>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center justify-center gap-1 flex-wrap">
+                                  {report.treatments_applied && report.treatments_applied.length > 0 ? (
+                                    report.treatments_applied.slice(0, 3).map((t, i) => (
+                                      <div key={i} className="inline-block h-4.5 px-2 rounded-md bg-blue-50 text-blue-600 border border-blue-100 text-[6.5px] font-black uppercase flex items-center justify-center">
+                                        {t}
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <span className="text-slate-300 italic text-[7px]">Sin tratamiento</span>
+                                  )}
+                                  {report.treatments_applied && report.treatments_applied.length > 3 && (
+                                    <span className="text-[6.5px] font-black text-slate-400 bg-slate-50 px-1 hover:text-slate-600 rounded border border-slate-100">
+                                      +{report.treatments_applied.length - 3}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUseReportAsTemplate(report)}
+                                    className="w-6 h-6 bg-slate-50 text-slate-500 rounded flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                                    title="Cargar como Plantilla en Formulario"
+                                  >
+                                    <i className="fa-solid fa-copy text-[8px]"></i>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditDailyReport(report)}
+                                    className="w-6 h-6 bg-slate-50 text-slate-400 rounded flex items-center justify-center hover:bg-[#0b1220] hover:text-white transition-all shadow-sm"
+                                    title="Editar Reporte"
+                                  >
+                                    <i className="fa-solid fa-pen text-[8px]"></i>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowConfirmDeleteReport({ id: report.id, name: `${reportingPlayer.name}` })}
+                                    className="w-6 h-6 bg-slate-50 text-slate-400 rounded flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                                    title="Eliminar Reporte"
+                                  >
+                                    <i className="fa-solid fa-trash-can text-[8px]"></i>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
                 <form onSubmit={handleSaveDailyReport} className="space-y-6">
 
                   <div className="space-y-2">
@@ -1786,7 +1923,18 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                               {report.players?.nombre?.charAt(0)}
                             </div>
                             <div>
-                              <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">{report.players?.nombre} {report.players?.apellido1} {report.players?.apellido2 || ''}</p>
+                              <p 
+                                className="text-[10px] font-black text-slate-900 uppercase italic leading-none hover:text-emerald-600 hover:underline cursor-pointer transition-all duration-200"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (report.players?.player_id) {
+                                    sessionStorage.setItem('selectedPlayerIdForProfile', String(report.players.player_id));
+                                    window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: report.players.player_id } }));
+                                  }
+                                }}
+                              >
+                                {report.players?.nombre} {report.players?.apellido1} {report.players?.apellido2 || ''}
+                              </p>
                             </div>
                           </div>
                         </td>

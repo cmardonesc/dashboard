@@ -26,12 +26,28 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     return valid.length > 0 ? Math.max(...valid) : 0;
   };
 
-  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(initialPlayerId || null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(() => {
+    const saved = sessionStorage.getItem('selectedPlayerIdForProfile');
+    return saved ? Number(saved) : (initialPlayerId || null);
+  });
   const [players, setPlayers] = useState<any[]>(initialPlayers || []);
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<string>('evolucion'); 
   const [gpsChartMetric, setGpsChartMetric] = useState<'dist_total_m' | 'dist_mai_m_20_kmh' | 'm_por_min' | 'acc_decc_ai_n'>('dist_total_m');
+
+  useEffect(() => {
+    const handleSelect = (e: any) => {
+      if (e.detail?.playerId) {
+        setSelectedPlayerId(Number(e.detail.playerId));
+        setActiveTab('evolucion');
+      }
+    };
+    window.addEventListener('navigate-to-profile', handleSelect);
+    return () => {
+      window.removeEventListener('navigate-to-profile', handleSelect);
+    };
+  }, []);
   
   // Filter States
   const [filterYear, setFilterYear] = useState<string>('');
@@ -43,6 +59,22 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const [trainingData, setTrainingData] = useState<any[]>([]);
   const [matchData, setMatchData] = useState<any[]>([]);
   const [gpsStats, setGpsStats] = useState<any[]>([]);
+  const [wellnessData, setWellnessData] = useState<any[]>([]);
+  
+  // Slider & Dual Chart States
+  const [sliderStart, setSliderStart] = useState<string>('');
+  const [sliderEnd, setSliderEnd] = useState<string>('');
+  const [leftMetric, setLeftMetric] = useState<string>('checkIn');
+  const [rightMetric, setRightMetric] = useState<string>('checkOutRPE');
+  const [draggingThumb, setDraggingThumb] = useState<'start' | 'end' | null>(null);
+  
+  const trackRef = React.useRef<HTMLDivElement>(null);
+
+  // GPS Slider States
+  const [gpsSliderStart, setGpsSliderStart] = useState<string>('');
+  const [gpsSliderEnd, setGpsSliderEnd] = useState<string>('');
+  const [gpsDraggingThumb, setGpsDraggingThumb] = useState<'start' | 'end' | null>(null);
+  const gpsTrackRef = React.useRef<HTMLDivElement>(null);
   const [physicalData, setPhysicalData] = useState<{
     anthro: any[],
     vo2: any[],
@@ -158,12 +190,240 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         speed: speed.data || []
       });
 
+      // 6. Wellness Check-in data with fallback column name parsing
+      let wellnessList: any[] = [];
+      try {
+        const { data: wellnessRaw } = await supabase
+          .from('wellness_checkin')
+          .select('*')
+          .eq('player_id', playerId);
+        
+        if (wellnessRaw) {
+          wellnessList = wellnessRaw.map(w => {
+            const dateStr = w.checkin_date || w.checkin_dat || w.fecha || (w.created_at ? w.created_at.split('T')[0] : '');
+            return {
+              ...w,
+              date: dateStr,
+              fatiga: Number(w.fatigue) || Number(w.fatiga) || 0,
+              sueno: Number(w.sleep_quality) || Number(w.sleep) || Number(w.sueno) || 0,
+              dolor: Number(w.soreness) || Number(w.dolor) || 0,
+              estres: Number(w.stress) || Number(w.estres) || 0,
+              animo: Number(w.mood) || Number(w.animo) || 0
+            };
+          }).filter(w => w.date);
+          
+          wellnessList.sort((a, b) => a.date.localeCompare(b.date));
+        }
+      } catch (err) {
+        console.error("Error loading wellness_checkin:", err);
+      }
+      setWellnessData(wellnessList);
+
     } catch (err) {
       console.error("Error fetching full profile:", err);
     } finally {
       setLoading(false);
     }
   };
+
+  // Combine wellness and load data by date
+  const combinedChartData = useMemo(() => {
+    const datesSet = new Set<string>();
+    wellnessData.forEach(w => { if (w.date) datesSet.add(w.date); });
+    trainingData.forEach(l => { if (l.session_date) datesSet.add(l.session_date); });
+    matchData.forEach(l => { if (l.session_date) datesSet.add(l.session_date); });
+
+    const sortedDates = Array.from(datesSet).sort((a, b) => a.localeCompare(b));
+
+    return sortedDates.map(d => {
+      const wellnessDay = wellnessData.find(w => w.date === d);
+      const dayLoads = [...trainingData, ...matchData].filter(l => l.session_date === d);
+      
+      const fatigaVal = wellnessDay ? wellnessDay.fatiga : 0;
+      const suenoVal = wellnessDay ? wellnessDay.sueno : 0;
+      const dolorVal = wellnessDay ? wellnessDay.dolor : 0;
+      const estresVal = wellnessDay ? wellnessDay.estres : 0;
+      const animoVal = wellnessDay ? wellnessDay.animo : 0;
+      
+      const values = [fatigaVal, suenoVal, dolorVal, estresVal, animoVal].filter(v => v > 0);
+      const checkInScore = values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
+
+      const rpeDay = dayLoads.length > 0 ? Math.max(...dayLoads.map(l => Number(l.rpe) || 0)) : 0;
+      const srpeDay = dayLoads.length > 0 ? Math.max(...dayLoads.map(l => Number(l.srpe) || Number((l.rpe || 0) * (l.duration_min || 0)) || 0)) : 0;
+      const durationDay = dayLoads.length > 0 ? dayLoads.reduce((sum, l) => sum + (Number(l.duration_min) || 0), 0) : 0;
+
+      return {
+        date: d,
+        checkIn: checkInScore > 0 ? Number(checkInScore.toFixed(1)) : 0,
+        fatiga: fatigaVal || 0,
+        sueno: suenoVal || 0,
+        dolor: dolorVal || 0,
+        estres: estresVal || 0,
+        animo: animoVal || 0,
+        checkOutRPE: rpeDay || 0,
+        checkOutSRPE: srpeDay || 0,
+        checkOutDuration: durationDay || 0,
+      };
+    }).filter(item => item.checkIn > 0 || item.checkOutRPE > 0);
+  }, [wellnessData, trainingData, matchData]);
+
+  // All unique sorted dates with data for the slider values
+  const availableDates = useMemo(() => {
+    return combinedChartData.map(item => item.date);
+  }, [combinedChartData]);
+
+  // Sync range slider bounds when database data switches/refreshes
+  useEffect(() => {
+    if (availableDates.length > 0) {
+      setSliderStart(availableDates[0]);
+      setSliderEnd(availableDates[availableDates.length - 1]);
+    } else {
+      setSliderStart('');
+      setSliderEnd('');
+    }
+  }, [availableDates]);
+
+  // Handler for track clicking and dragging calculations
+  const handleTrackInteraction = (clientX: number) => {
+    if (!trackRef.current || availableDates.length < 2) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const percent = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    const rawVal = (percent / 100) * (availableDates.length - 1);
+    const index = Math.round(rawVal);
+    
+    if (draggingThumb === 'start') {
+      const maxIdx = availableDates.indexOf(sliderEnd) - 1;
+      const finalIdx = Math.min(index, maxIdx >= 0 ? maxIdx : 0);
+      setSliderStart(availableDates[finalIdx]);
+    } else if (draggingThumb === 'end') {
+      const minIdx = availableDates.indexOf(sliderStart) + 1;
+      const finalIdx = Math.max(index, minIdx < availableDates.length ? minIdx : availableDates.length - 1);
+      setSliderEnd(availableDates[finalIdx]);
+    }
+  };
+
+  // Wire dragging listeners
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (draggingThumb) handleTrackInteraction(e.clientX);
+    };
+    const handleTouchMove = (e: TouchEvent) => {
+      if (draggingThumb && e.touches.length > 0) handleTrackInteraction(e.touches[0].clientX);
+    };
+    const handleMouseUp = () => setDraggingThumb(null);
+
+    if (draggingThumb) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('touchmove', handleTouchMove);
+      window.addEventListener('touchend', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [draggingThumb, sliderStart, sliderEnd, availableDates]);
+
+  // Filter combinedChartData by selected range
+  const filteredCombinedData = useMemo(() => {
+    if (!sliderStart || !sliderEnd) return combinedChartData;
+    return combinedChartData.filter(item => item.date >= sliderStart && item.date <= sliderEnd);
+  }, [combinedChartData, sliderStart, sliderEnd]);
+
+  // Values calculation for the slider track
+  const startIdx = useMemo(() => availableDates.indexOf(sliderStart), [availableDates, sliderStart]);
+  const endIdx = useMemo(() => availableDates.indexOf(sliderEnd), [availableDates, sliderEnd]);
+
+  const startPercent = useMemo(() => {
+    if (availableDates.length <= 1 || startIdx < 0) return 0;
+    return (startIdx / (availableDates.length - 1)) * 100;
+  }, [availableDates, startIdx]);
+
+  const endPercent = useMemo(() => {
+    if (availableDates.length <= 1 || endIdx < 0) return 100;
+    return (endIdx / (availableDates.length - 1)) * 100;
+  }, [availableDates, endIdx]);
+
+  // GPS filter and calculation logic
+  const gpsAvailableDates = useMemo(() => {
+    const dates = gpsStats.map(g => g.fecha).filter(Boolean);
+    return Array.from(new Set(dates)).sort((a, b) => a.localeCompare(b));
+  }, [gpsStats]);
+
+  useEffect(() => {
+    if (gpsAvailableDates.length > 0) {
+      setGpsSliderStart(gpsAvailableDates[0]);
+      setGpsSliderEnd(gpsAvailableDates[gpsAvailableDates.length - 1]);
+    } else {
+      setGpsSliderStart('');
+      setGpsSliderEnd('');
+    }
+  }, [gpsAvailableDates]);
+
+  const handleGpsTrackInteraction = (clientX: number) => {
+    if (!gpsTrackRef.current || gpsAvailableDates.length < 2) return;
+    const rect = gpsTrackRef.current.getBoundingClientRect();
+    const percent = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    const rawVal = (percent / 100) * (gpsAvailableDates.length - 1);
+    const index = Math.round(rawVal);
+    
+    if (gpsDraggingThumb === 'start') {
+      const maxIdx = gpsAvailableDates.indexOf(gpsSliderEnd) - 1;
+      const finalIdx = Math.min(index, maxIdx >= 0 ? maxIdx : 0);
+      setGpsSliderStart(gpsAvailableDates[finalIdx]);
+    } else if (gpsDraggingThumb === 'end') {
+      const minIdx = gpsAvailableDates.indexOf(gpsSliderStart) + 1;
+      const finalIdx = Math.max(index, minIdx < gpsAvailableDates.length ? minIdx : gpsAvailableDates.length - 1);
+      setGpsSliderEnd(gpsAvailableDates[finalIdx]);
+    }
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (gpsDraggingThumb) handleGpsTrackInteraction(e.clientX);
+    };
+    const handleTouchMove = (e: TouchEvent) => {
+      if (gpsDraggingThumb && e.touches.length > 0) handleGpsTrackInteraction(e.touches[0].clientX);
+    };
+    const handleMouseUp = () => setGpsDraggingThumb(null);
+
+    if (gpsDraggingThumb) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('touchmove', handleTouchMove);
+      window.addEventListener('touchend', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [gpsDraggingThumb, gpsSliderStart, gpsSliderEnd, gpsAvailableDates]);
+
+  const filteredGpsStats = useMemo(() => {
+    if (!gpsSliderStart || !gpsSliderEnd) {
+      return [...gpsStats].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+    }
+    return gpsStats
+      .filter(item => item.fecha >= gpsSliderStart && item.fecha <= gpsSliderEnd)
+      .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+  }, [gpsStats, gpsSliderStart, gpsSliderEnd]);
+
+  const gpsStartIdx = useMemo(() => gpsAvailableDates.indexOf(gpsSliderStart), [gpsAvailableDates, gpsSliderStart]);
+  const gpsEndIdx = useMemo(() => gpsAvailableDates.indexOf(gpsSliderEnd), [gpsAvailableDates, gpsSliderEnd]);
+
+  const gpsStartPercent = useMemo(() => {
+    if (gpsAvailableDates.length <= 1 || gpsStartIdx < 0) return 0;
+    return (gpsStartIdx / (gpsAvailableDates.length - 1)) * 100;
+  }, [gpsAvailableDates, gpsStartIdx]);
+
+  const gpsEndPercent = useMemo(() => {
+    if (gpsAvailableDates.length <= 1 || gpsEndIdx < 0) return 100;
+    return (gpsEndIdx / (gpsAvailableDates.length - 1)) * 100;
+  }, [gpsAvailableDates, gpsEndIdx]);
 
   const latestAnthro = useMemo(() => physicalData.anthro.length > 0 ? physicalData.anthro[physicalData.anthro.length - 1] : null, [physicalData.anthro]);
   const latestVo2 = useMemo(() => physicalData.vo2.length > 0 ? physicalData.vo2[physicalData.vo2.length - 1] : null, [physicalData.vo2]);
@@ -511,80 +771,430 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                 </div>
               </div>
 
-              {/* Physical History Charts */}
+              {/* GRÁFICO DUAL CHECK-IN vs CHECK-OUT CON FILTRO SLIDER */}
               <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
-                   <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
-                   Evolución Antropométrica
+                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] mb-8 flex items-center gap-3">
+                    <span className="w-2 h-6 bg-indigo-600 rounded-full"></span>
+                    Relación Diario: Check-In vs Check-Out (Carga Interna)
                  </h3>
-                 <div className="h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                       <LineChart data={physicalData.anthro}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="fecha_medicion" tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
-                          <YAxis tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
-                          <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                          <Legend verticalAlign="top" align="right" />
-                          <Line name="% Adiposo" type="monotone" dataKey="masa_adiposa_pct" stroke="#CF1B2B" strokeWidth={4} dot={{r: 6}} activeDot={{r: 8}} />
-                          <Line name="% Muscular" type="monotone" dataKey="masa_muscular_pct" stroke="#0b1220" strokeWidth={4} dot={{r: 6}} activeDot={{r: 8}} />
-                       </LineChart>
-                    </ResponsiveContainer>
+                 
+                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                    {/* Left: Range Slider Controls */}
+                    <div className="xl:col-span-1 border-r border-slate-100 pr-0 xl:pr-6">
+                       <div className="bg-slate-50 border border-slate-100 rounded-3xl p-5 flex flex-col justify-between h-auto gap-4">
+                          <div className="flex justify-between items-center">
+                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date / Rangos de Control</span>
+                             {((sliderStart && sliderStart !== (availableDates[0] || '')) || (sliderEnd && sliderEnd !== (availableDates[availableDates.length - 1] || ''))) && (
+                                <button 
+                                   onClick={() => {
+                                      if (availableDates.length > 0) {
+                                         setSliderStart(availableDates[0]);
+                                         setSliderEnd(availableDates[availableDates.length - 1]);
+                                      }
+                                   }}
+                                   className="w-7 h-7 rounded-full bg-slate-200/55 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-all shadow-sm"
+                                   title="Restaurar filtro"
+                                >
+                                   <i className="fa-solid fa-eraser text-xs"></i>
+                                </button>
+                             )}
+                          </div>
+
+                          {/* Raw display bounds */}
+                          <div className="flex flex-col gap-3">
+                             <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-2 rounded-2xl shadow-sm text-xs font-bold text-slate-700 w-full justify-between">
+                                <div className="flex items-center gap-1">
+                                   <i className="fa-solid fa-clock-rotate-left text-slate-400 scale-75"></i>
+                                   <span className="text-[8.5px] font-black text-slate-400 uppercase">Inicio</span>
+                                </div>
+                                <input 
+                                   type="date" 
+                                   value={sliderStart}
+                                   max={sliderEnd || undefined}
+                                   onChange={(e) => {
+                                      if (e.target.value) setSliderStart(e.target.value);
+                                   }}
+                                   className="bg-transparent border-none p-0 outline-none w-24 text-right font-bold text-slate-800 text-[11px]"
+                                />
+                             </div>
+
+                             <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-2 rounded-2xl shadow-sm text-xs font-bold text-slate-700 w-full justify-between">
+                                <div className="flex items-center gap-1">
+                                   <i className="fa-solid fa-hourglass-end text-slate-400 scale-75"></i>
+                                   <span className="text-[8.5px] font-black text-slate-400 uppercase">Fin</span>
+                                </div>
+                                <input 
+                                   type="date" 
+                                   value={sliderEnd}
+                                   min={sliderStart || undefined}
+                                   onChange={(e) => {
+                                      if (e.target.value) setSliderEnd(e.target.value);
+                                   }}
+                                   className="bg-transparent border-none p-0 outline-none w-24 text-right font-bold text-slate-800 text-[11px]"
+                                />
+                             </div>
+                          </div>
+
+                          {/* Interactive Range Track */}
+                          {availableDates.length > 1 ? (
+                             <div className="relative py-4 px-2 select-none">
+                                <div 
+                                   ref={trackRef}
+                                   className="h-1 bg-slate-200 rounded-full w-full relative cursor-pointer"
+                                   onClick={(e) => {
+                                      if (!trackRef.current) return;
+                                      const rect = trackRef.current.getBoundingClientRect();
+                                      const clickX = e.clientX;
+                                      const clickPercent = ((clickX - rect.left) / rect.width) * 100;
+                                      
+                                      const sIdx = availableDates.indexOf(sliderStart);
+                                      const eIdx = availableDates.indexOf(sliderEnd);
+                                      const pctS = (sIdx / (availableDates.length - 1)) * 100;
+                                      const pctE = (eIdx / (availableDates.length - 1)) * 100;
+                                      
+                                      if (Math.abs(clickPercent - pctS) < Math.abs(clickPercent - pctE)) {
+                                         const rIdx = (clickPercent / 100) * (availableDates.length - 1);
+                                         setSliderStart(availableDates[Math.max(0, Math.min(Math.round(rIdx), eIdx - 1))]);
+                                      } else {
+                                         const rIdx = (clickPercent / 100) * (availableDates.length - 1);
+                                         setSliderEnd(availableDates[Math.max(sIdx + 1, Math.min(availableDates.length - 1, Math.round(rIdx)))]);
+                                      }
+                                   }}
+                                >
+                                   <div 
+                                      className="absolute h-1 bg-slate-900 rounded-full transition-all"
+                                      style={{
+                                         left: `${startPercent}%`,
+                                         width: `${endPercent - startPercent}%`
+                                      }}
+                                   />
+                                   <div 
+                                      onMouseDown={(e) => { e.stopPropagation(); setDraggingThumb('start'); }}
+                                      onTouchStart={(e) => { e.stopPropagation(); setDraggingThumb('start'); }}
+                                      className={`absolute w-5 h-5 -top-2 bg-white border-[3px] border-slate-900 rounded-full shadow-lg -translate-x-1/2 cursor-grab active:cursor-grabbing hover:scale-110 active:scale-95 transition-all ${draggingThumb === 'start' ? 'scale-110 ring-4 ring-slate-900/10' : ''}`}
+                                      style={{ left: `${startPercent}%` }}
+                                   />
+                                   <div 
+                                      onMouseDown={(e) => { e.stopPropagation(); setDraggingThumb('end'); }}
+                                      onTouchStart={(e) => { e.stopPropagation(); setDraggingThumb('end'); }}
+                                      className={`absolute w-5 h-5 -top-2 bg-white border-[3px] border-slate-900 rounded-full shadow-lg -translate-x-1/2 cursor-grab active:cursor-grabbing hover:scale-110 active:scale-95 transition-all ${draggingThumb === 'end' ? 'scale-110 ring-4 ring-slate-900/10' : ''}`}
+                                      style={{ left: `${endPercent}%` }}
+                                   />
+                                </div>
+                                <div className="flex justify-between items-center mt-3 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                   <span>{sliderStart}</span>
+                                   <span>{sliderEnd}</span>
+                                </div>
+                             </div>
+                          ) : (
+                             <div className="text-center py-4 text-[9px] font-black text-slate-300 uppercase tracking-widest">
+                                Rango de Slider Deshabilitado
+                             </div>
+                          )}
+
+                          {/* Metric Selectors */}
+                          <div className="grid grid-cols-2 gap-4 mt-2 pt-4 border-t border-slate-100">
+                             <div className="space-y-1.5">
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                   <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full inline-block"></span>
+                                   Check-In (Izquierdo)
+                                </label>
+                                <select
+                                   value={leftMetric}
+                                   onChange={(e) => setLeftMetric(e.target.value)}
+                                   className="w-full bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-[9px] font-black text-slate-700 outline-none shadow-sm cursor-pointer"
+                                >
+                                   <option value="checkIn">Promedio Wellness</option>
+                                   <option value="fatiga">Fatiga</option>
+                                   <option value="sueno">Calidad Sueño</option>
+                                   <option value="dolor">Nivel Dolor</option>
+                                   <option value="estres">Estrés</option>
+                                   <option value="animo">Ánimo</option>
+                                </select>
+                             </div>
+
+                             <div className="space-y-1.5">
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                   <span className="w-1.5 h-1.5 bg-red-600 rounded-full inline-block"></span>
+                                   Check-Out (Derecho)
+                                </label>
+                                <select
+                                   value={rightMetric}
+                                   onChange={(e) => setRightMetric(e.target.value)}
+                                   className="w-full bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-[9px] font-black text-slate-700 outline-none shadow-sm cursor-pointer"
+                                >
+                                   <option value="checkOutRPE">Esfuerzo RPE (1-10)</option>
+                                   <option value="checkOutSRPE">Carga sRPE</option>
+                                   <option value="checkOutDuration">Duración (min)</option>
+                                </select>
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+
+                    {/* Right: Dual Axis LineChart */}
+                    <div className="xl:col-span-2 h-[320px] w-full self-center flex items-center justify-center">
+                       {filteredCombinedData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                             <LineChart data={filteredCombinedData} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis 
+                                   dataKey="date" 
+                                   tickFormatter={(val) => {
+                                      const parts = val.split('-');
+                                      return parts.length === 3 ? `${parts[2]}/${parts[1]}` : val;
+                                   }}
+                                   tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} 
+                                   axisLine={false} 
+                                   tickLine={false} 
+                                />
+                                <YAxis 
+                                   yAxisId="left"
+                                   tick={{fontSize: 9, fontWeight: 900, fill: '#4f46e5'}} 
+                                   axisLine={false} 
+                                   tickLine={false} 
+                                   domain={[0, 10]}
+                                />
+                                <YAxis 
+                                   yAxisId="right"
+                                   orientation="right"
+                                   tick={{fontSize: 9, fontWeight: 900, fill: '#CF1B2B'}} 
+                                   axisLine={false} 
+                                   tickLine={false} 
+                                   domain={rightMetric === 'checkOutRPE' ? [0, 10] : ['auto', 'auto']}
+                                />
+                                <Tooltip 
+                                   contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                   labelFormatter={(label) => `Fecha: ${label}`}
+                                />
+                                <Legend verticalAlign="top" align="right" iconType="circle" iconSize={8} wrapperStyle={{ paddingBottom: '20px', fontSize: '9px', fontWeight: '955', textTransform: 'uppercase' }} />
+                                <Line 
+                                   yAxisId="left"
+                                   name={leftMetric === 'checkIn' ? 'Promedio Wellness' : leftMetric === 'fatiga' ? 'Fatiga' : leftMetric === 'sueno' ? 'Sueño' : leftMetric === 'dolor' ? 'Dolor' : leftMetric === 'estres' ? 'Estrés' : 'Ánimo'}
+                                   type="monotone" 
+                                   dataKey={leftMetric} 
+                                   stroke="#4f46e5" 
+                                   strokeWidth={4} 
+                                   dot={{ r: 5, fill: '#4f46e5', strokeWidth: 0 }} 
+                                   activeDot={{ r: 7 }} 
+                                />
+                                <Line 
+                                   yAxisId="right"
+                                   name={rightMetric === 'checkOutRPE' ? 'Carga RPE' : rightMetric === 'checkOutSRPE' ? 'Carga sRPE' : 'Duración Sesión'}
+                                   type="monotone" 
+                                   dataKey={rightMetric} 
+                                   stroke="#CF1B2B" 
+                                   strokeWidth={4} 
+                                   dot={{ r: 5, fill: '#CF1B2B', strokeWidth: 0 }} 
+                                   activeDot={{ r: 7 }} 
+                                />
+                             </LineChart>
+                          </ResponsiveContainer>
+                       ) : (
+                          <div className="h-full w-full flex flex-col items-center justify-center p-8 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                             <i className="fa-solid fa-chart-line text-slate-300 text-3xl mb-3 animate-pulse"></i>
+                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Filtro de fechas sin registros diarios coincidiendo</p>
+                             <p className="text-[8px] text-slate-400 text-center mt-1">Intente reajustar el rango del slider o seleccionar otro atleta.</p>
+                          </div>
+                       )}
+                    </div>
                  </div>
               </div>
 
               {/* GPS History */}
               <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                 <div className="flex flex-wrap items-center justify-between gap-4 mb-10">
-                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
-                      <span className="w-2 h-6 bg-emerald-600 rounded-full"></span>
-                      Desempeño Físico (GPS)
-                    </h3>
-                    <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100">
-                       <button 
-                         onClick={() => setGpsChartMetric('dist_total_m')}
-                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${gpsChartMetric === 'dist_total_m' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
-                       >
-                         Distancia
-                       </button>
-                       <button 
-                         onClick={() => setGpsChartMetric('dist_mai_m_20_kmh')}
-                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${gpsChartMetric === 'dist_mai_m_20_kmh' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
-                       >
-                         HSR ({'>'}20)
-                       </button>
-                       <button 
-                         onClick={() => setGpsChartMetric('m_por_min')}
-                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${gpsChartMetric === 'm_por_min' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
-                       >
-                         Relativa
-                       </button>
-                       <button 
-                         onClick={() => setGpsChartMetric('acc_decc_ai_n')}
-                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${gpsChartMetric === 'acc_decc_ai_n' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
-                       >
-                         A/D
-                       </button>
+                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] mb-8 flex items-center gap-3">
+                    <span className="w-2 h-6 bg-emerald-600 rounded-full"></span>
+                    Desempeño Físico (GPS)
+                 </h3>
+                 
+                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                    {/* Left: Range Slider Controls */}
+                    <div className="xl:col-span-1 border-r border-slate-100 pr-0 xl:pr-6">
+                       <div className="bg-slate-50 border border-slate-100 rounded-3xl p-5 flex flex-col justify-between h-auto gap-4">
+                          <div className="flex justify-between items-center">
+                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date / Rangos de Control</span>
+                             {((gpsSliderStart && gpsSliderStart !== (gpsAvailableDates[0] || '')) || (gpsSliderEnd && gpsSliderEnd !== (gpsAvailableDates[gpsAvailableDates.length - 1] || ''))) && (
+                                <button 
+                                   onClick={() => {
+                                      if (gpsAvailableDates.length > 0) {
+                                         setGpsSliderStart(gpsAvailableDates[0]);
+                                         setGpsSliderEnd(gpsAvailableDates[gpsAvailableDates.length - 1]);
+                                      }
+                                   }}
+                                   className="w-7 h-7 rounded-full bg-slate-200/55 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-all shadow-sm"
+                                   title="Restaurar filtro"
+                                >
+                                   <i className="fa-solid fa-eraser text-xs"></i>
+                                </button>
+                             )}
+                          </div>
+
+                          {/* Raw display bounds */}
+                          <div className="flex flex-col gap-3">
+                             <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-2 rounded-2xl shadow-sm text-xs font-bold text-slate-700 w-full justify-between">
+                                <div className="flex items-center gap-1">
+                                   <i className="fa-solid fa-clock-rotate-left text-slate-400 scale-75"></i>
+                                   <span className="text-[8.5px] font-black text-slate-400 uppercase">Inicio</span>
+                                </div>
+                                <input 
+                                   type="date" 
+                                   value={gpsSliderStart}
+                                   max={gpsSliderEnd || undefined}
+                                   onChange={(e) => {
+                                      if (e.target.value) setGpsSliderStart(e.target.value);
+                                   }}
+                                   className="bg-transparent border-none p-0 outline-none w-24 text-right font-bold text-slate-800 text-[11px]"
+                                />
+                             </div>
+
+                             <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-2 rounded-2xl shadow-sm text-xs font-bold text-slate-700 w-full justify-between">
+                                <div className="flex items-center gap-1">
+                                   <i className="fa-solid fa-hourglass-end text-slate-400 scale-75"></i>
+                                   <span className="text-[8.5px] font-black text-slate-400 uppercase">Fin</span>
+                                </div>
+                                <input 
+                                   type="date" 
+                                   value={gpsSliderEnd}
+                                   min={gpsSliderStart || undefined}
+                                   onChange={(e) => {
+                                      if (e.target.value) setGpsSliderEnd(e.target.value);
+                                   }}
+                                   className="bg-transparent border-none p-0 outline-none w-24 text-right font-bold text-slate-800 text-[11px]"
+                                />
+                             </div>
+                          </div>
+
+                          {/* Interactive Range Track */}
+                          {gpsAvailableDates.length > 1 ? (
+                             <div className="relative py-4 px-2 select-none">
+                                <div 
+                                   ref={gpsTrackRef}
+                                   className="h-1 bg-slate-200 rounded-full w-full relative cursor-pointer"
+                                   onClick={(e) => {
+                                      if (!gpsTrackRef.current) return;
+                                      const rect = gpsTrackRef.current.getBoundingClientRect();
+                                      const clickX = e.clientX;
+                                      const clickPercent = ((clickX - rect.left) / rect.width) * 100;
+                                      
+                                      const sIdx = gpsAvailableDates.indexOf(gpsSliderStart);
+                                      const eIdx = gpsAvailableDates.indexOf(gpsSliderEnd);
+                                      const pctS = (sIdx / (gpsAvailableDates.length - 1)) * 100;
+                                      const pctE = (eIdx / (gpsAvailableDates.length - 1)) * 100;
+                                      
+                                      if (Math.abs(clickPercent - pctS) < Math.abs(clickPercent - pctE)) {
+                                         const rIdx = (clickPercent / 100) * (gpsAvailableDates.length - 1);
+                                         setGpsSliderStart(gpsAvailableDates[Math.max(0, Math.min(Math.round(rIdx), eIdx - 1))]);
+                                      } else {
+                                         const rIdx = (clickPercent / 100) * (gpsAvailableDates.length - 1);
+                                         setGpsSliderEnd(gpsAvailableDates[Math.max(sIdx + 1, Math.min(gpsAvailableDates.length - 1, Math.round(rIdx)))]);
+                                      }
+                                   }}
+                                >
+                                   <div 
+                                      className="absolute h-1 bg-emerald-600 rounded-full transition-all"
+                                      style={{
+                                         left: `${gpsStartPercent}%`,
+                                         width: `${gpsEndPercent - gpsStartPercent}%`
+                                      }}
+                                   />
+                                   <div 
+                                      onMouseDown={(e) => { e.stopPropagation(); setGpsDraggingThumb('start'); }}
+                                      onTouchStart={(e) => { e.stopPropagation(); setGpsDraggingThumb('start'); }}
+                                      className={`absolute w-5 h-5 -top-2 bg-white border-[3px] border-emerald-600 rounded-full shadow-lg -translate-x-1/2 cursor-grab active:cursor-grabbing hover:scale-110 active:scale-95 transition-all ${gpsDraggingThumb === 'start' ? 'scale-110 ring-4 ring-emerald-600/10' : ''}`}
+                                      style={{ left: `${gpsStartPercent}%` }}
+                                   />
+                                   <div 
+                                      onMouseDown={(e) => { e.stopPropagation(); setGpsDraggingThumb('end'); }}
+                                      onTouchStart={(e) => { e.stopPropagation(); setGpsDraggingThumb('end'); }}
+                                      className={`absolute w-5 h-5 -top-2 bg-white border-[3px] border-emerald-600 rounded-full shadow-lg -translate-x-1/2 cursor-grab active:cursor-grabbing hover:scale-110 active:scale-95 transition-all ${gpsDraggingThumb === 'end' ? 'scale-110 ring-4 ring-emerald-600/10' : ''}`}
+                                      style={{ left: `${gpsEndPercent}%` }}
+                                   />
+                                </div>
+                                <div className="flex justify-between items-center mt-3 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                   <span>{gpsSliderStart}</span>
+                                   <span>{gpsSliderEnd}</span>
+                                </div>
+                             </div>
+                          ) : (
+                             <div className="text-center py-4 text-[9px] font-black text-slate-300 uppercase tracking-widest">
+                                Rango de Slider Deshabilitado
+                             </div>
+                          )}
+
+                          {/* Metric Selector inside same card */}
+                          <div className="grid grid-cols-1 gap-4 mt-2 pt-4 border-t border-slate-100">
+                             <div className="space-y-1.5 flex flex-col justify-end">
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                   <span className="w-1.5 h-1.5 bg-emerald-600 rounded-full inline-block"></span>
+                                   Métrica Desempeño (GPS)
+                                </label>
+                                <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100 w-full justify-between gap-1">
+                                   <button 
+                                     type="button"
+                                     onClick={() => setGpsChartMetric('dist_total_m')}
+                                     className={`flex-1 py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'dist_total_m' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                   >
+                                     Distancia
+                                   </button>
+                                   <button 
+                                     type="button"
+                                     onClick={() => setGpsChartMetric('dist_mai_m_20_kmh')}
+                                     className={`flex-1 py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'dist_mai_m_20_kmh' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                   >
+                                     HSR ({'>'}20)
+                                   </button>
+                                   <button 
+                                     type="button"
+                                     onClick={() => setGpsChartMetric('m_por_min')}
+                                     className={`flex-1 py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'm_por_min' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                   >
+                                     Relativa
+                                   </button>
+                                   <button 
+                                     type="button"
+                                     onClick={() => setGpsChartMetric('acc_decc_ai_n')}
+                                     className={`flex-1 py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'acc_decc_ai_n' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                   >
+                                     A/D
+                                   </button>
+                                </div>
+                             </div>
+                          </div>
+                       </div>
                     </div>
-                 </div>
-                 <div className="h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                       <BarChart data={gpsStats.slice(0, 15).reverse()}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="fecha" tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
-                          <YAxis tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
-                          <Tooltip 
-                            contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                            cursor={{fill: '#f8fafc'}}
-                          />
-                          <Bar 
-                            name={gpsChartMetric === 'dist_total_m' ? 'Distancia (m)' : gpsChartMetric === 'dist_mai_m_20_kmh' ? 'HSR >20km/h (m)' : gpsChartMetric === 'm_por_min' ? 'M/min' : 'Acc/Decc (n)'} 
-                            dataKey={gpsChartMetric} 
-                            fill="#10b981" 
-                            radius={[8, 8, 0, 0]} 
-                            barSize={32} 
-                          />
-                       </BarChart>
-                    </ResponsiveContainer>
+
+                    {/* Right: BarChart Canvas */}
+                    <div className="xl:col-span-2">
+                       <div className="h-[250px]">
+                          {filteredGpsStats.length > 0 ? (
+                             <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={filteredGpsStats}>
+                                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                   <XAxis dataKey="fecha" tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+                                   <YAxis tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+                                   <Tooltip 
+                                     contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                     cursor={{fill: '#f8fafc'}}
+                                   />
+                                   <Bar 
+                                     name={gpsChartMetric === 'dist_total_m' ? 'Distancia (m)' : gpsChartMetric === 'dist_mai_m_20_kmh' ? 'HSR >20km/h (m)' : gpsChartMetric === 'm_por_min' ? 'M/min' : 'Acc/Decc (n)'} 
+                                     dataKey={gpsChartMetric} 
+                                     fill="#10b981" 
+                                     radius={[8, 8, 0, 0]} 
+                                     barSize={32} 
+                                   />
+                                </BarChart>
+                             </ResponsiveContainer>
+                          ) : (
+                             <div className="h-full w-full flex flex-col items-center justify-center p-8 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                                <i className="fa-solid fa-chart-simple text-slate-300 text-3xl mb-3 animate-pulse"></i>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Filtro de fechas sin registros GPS coincidiendo</p>
+                                <p className="text-[8px] text-slate-400 text-center mt-1">Intente reajustar el rango del slider o seleccionar otro atleta.</p>
+                             </div>
+                          )}
+                       </div>
+                    </div>
                  </div>
               </div>
 

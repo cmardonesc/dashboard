@@ -260,6 +260,7 @@ export default function DataImportArea() {
   const [catapultAthletes, setCatapultAthletes] = useState<any[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<any>(null);
   const [syncingToSupabase, setSyncingToSupabase] = useState(false);
+  const [sessionErrors, setSessionErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchPlayers();
@@ -300,20 +301,81 @@ export default function DataImportArea() {
     if (!name || !players.length) return null;
     const searchName = normalizeString(name);
     
+    // Split search name into individual word tokens (skip short words like "de", "del", etc.)
+    const searchTokens = searchName.split(/\s+/).filter(t => t.length > 2);
+    if (searchTokens.length === 0) return null;
+    
+    let bestMatch = null;
+    let maxOverlapScore = 0;
+    
+    for (const p of players) {
+      const nombre = normalizeString(p.nombre || '');
+      const apellido1 = normalizeString(p.apellido1 || '');
+      const apellido2 = normalizeString(p.apellido2 || '');
+      
+      const pFullName = `${nombre} ${apellido1} ${apellido2}`.trim();
+      const pFullNormalized = normalizeString(pFullName);
+      
+      // Exact match after normalization
+      if (pFullNormalized === searchName) {
+        return p;
+      }
+      
+      // Split database player names into tokens
+      const dbTokens = pFullNormalized.split(/\s+/).filter(t => t.length > 2);
+      
+      // Count token overlap
+      let overlapCount = 0;
+      for (const token of searchTokens) {
+        if (dbTokens.includes(token)) {
+          overlapCount++;
+        }
+      }
+      
+      if (overlapCount > 0) {
+        // Boost priority if first name (first word of search name) and last name (last word of search name) match
+        const firstSearchToken = searchTokens[0];
+        const lastSearchToken = searchTokens[searchTokens.length - 1];
+        
+        const dbNameTokens = nombre.split(/\s+/).filter(t => t.length > 2);
+        const dbLastNameTokens = `${apellido1} ${apellido2}`.split(/\s+/).filter(t => t.length > 2);
+        
+        const firstMatches = dbNameTokens.some(t => normalizeString(t) === firstSearchToken);
+        const lastMatches = dbLastNameTokens.some(t => normalizeString(t) === lastSearchToken);
+        
+        if (firstMatches && lastMatches) {
+          overlapCount += 3; // Huge priority boost for matching first and last name tokens
+        } else if (firstMatches || lastMatches) {
+          overlapCount += 0.5; // Minor boost for partial name matching, but don't count it as a full overlap
+        }
+        
+        // Strict mapping check:
+        // If searching with 2 or more names/tokens, require at least 2 exact token matches to prevent false positives!
+        if (searchTokens.length >= 2 && overlapCount < 2) {
+          continue;
+        }
+        
+        if (overlapCount > maxOverlapScore) {
+          maxOverlapScore = overlapCount;
+          bestMatch = p;
+        }
+      }
+    }
+    
+    // Require a minimum overlap score to avoid false positives
+    // If we have a single search token, we require at least 1 match. If multi-token, we require at least 2.
+    const requiredScore = searchTokens.length >= 2 ? 2 : 1;
+    if (maxOverlapScore >= requiredScore) {
+      return bestMatch;
+    }
+    
+    // Fallback search: ONLY if they match both first and last name exactly
     return players.find(p => {
       const nombre = normalizeString(p.nombre || '');
       const apellido1 = normalizeString(p.apellido1 || '');
-      
-      const pFullName = `${nombre} ${apellido1}`.trim();
-      
-      // Exact match
-      if (pFullName === searchName) return true;
-      
-      // Contains
       if (searchName.includes(nombre) && searchName.includes(apellido1)) return true;
-      
       return false;
-    });
+    }) || null;
   };
 
   // Metric Mapper for Catapult -> gps_import
@@ -778,6 +840,64 @@ export default function DataImportArea() {
       const rawActivities = activities;
       console.log("Raw activities received:", rawActivities.length > 0 ? rawActivities[0] : "Empty");
 
+      // Helper to format session status beautifully
+      const formatBakeStatus = (statusStr: string): string => {
+        if (!statusStr) return 'READY';
+        let s = String(statusStr).trim();
+        
+        // Strip "status:" or "STATUS:" prefix
+        if (s.toLowerCase().startsWith('status:')) {
+          s = s.substring(7).trim(); // removes "status:"
+        }
+        
+        if (s.toLowerCase().includes('no files synced')) {
+          return 'SIN ARCHIVOS';
+        }
+        
+        return s.toUpperCase();
+      };
+
+      // Helper to format session name with DD/MM/YYYY and HH:MM
+      const getFormattedSessionName = (act: any): string => {
+        const dateStr = act.modifiedDate || act.ModifiedTime || act.startTime || act.start_time || act.start_at || act.Date;
+        if (!dateStr) return 'SESIÓN · FECHA N/A';
+        try {
+          const d = new Date(dateStr);
+          if (isNaN(d.getTime())) return 'SESIÓN · FECHA N/A';
+          
+          const day = String(d.getDate()).padStart(2, '0');
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const year = d.getFullYear();
+          const fecha = `${day}/${month}/${year}`;
+          
+          const hrs = String(d.getHours()).padStart(2, '0');
+          const mins = String(d.getMinutes()).padStart(2, '0');
+          const hora = `${hrs}:${mins}`;
+          
+          return `SESIÓN · ${fecha} · ${hora}`;
+        } catch (e) {
+          return 'SESIÓN · FECHA N/A';
+        }
+      };
+
+      // Grouping helper by date and hour (rounded to minutes)
+      const getGroupKey = (act: any): string => {
+        const dateStr = act.modifiedDate || act.ModifiedTime || act.startTime || act.start_time || act.start_at || act.Date;
+        if (!dateStr) return '';
+        try {
+          const d = new Date(dateStr);
+          if (isNaN(d.getTime())) return '';
+          const yr = d.getFullYear();
+          const mo = String(d.getMonth() + 1).padStart(2, '0');
+          const dy = String(d.getDate()).padStart(2, '0');
+          const hr = String(d.getHours()).padStart(2, '0');
+          const mn = String(d.getMinutes()).padStart(2, '0');
+          return `${yr}-${mo}-${dy} ${hr}:${mn}`;
+        } catch (e) {
+          return '';
+        }
+      };
+
       const normalizedActivities = rawActivities.map((item: any) => {
         // Resolve nested activity if present
         let a = item;
@@ -787,20 +907,22 @@ export default function DataImportArea() {
 
         // Pattern matching helper
         const findVal = (obj: any, patterns: string[]) => {
+          if (!obj || typeof obj !== 'object') return null;
           for (const p of patterns) {
             const pLower = p.toLowerCase();
             const key = Object.keys(obj).find(k => k.toLowerCase() === pLower || k.toLowerCase().includes(pLower));
-            if (key !== undefined && obj[key] !== null) return obj[key];
+            if (key !== undefined && obj[key] !== null && obj[key] !== undefined) {
+              const strVal = String(obj[key]).trim();
+              if (strVal !== '' && strVal.toLowerCase() !== 'null' && strVal.toLowerCase() !== 'undefined') {
+                return obj[key];
+              }
+            }
           }
           return null;
         };
 
         // Robust detection for IDs
         const id = findVal(a, ['id', 'Identifier', 'activity_id', 'ExternalId', 'ActivityId']) || findVal(item, ['Identifier', 'id']);
-        
-        // Robust detection for Names
-        const name = findVal(a, ['name', 'SessionName', 'IdentifierName', 'activity_name', 'tag']) || 
-                    findVal(item, ['SessionName', 'IdentifierName', 'name']) || 'SESIÓN SIN NOMBRE';
         
         // Robust detection for Times
         const parseTime = (time: any) => {
@@ -831,6 +953,7 @@ export default function DataImportArea() {
 
         const startTime = parseTime(findVal(a, ['StartTime', 'start_at', 'start_time', 'Date', 'ModifiedTime']) || findVal(item, ['StartTime', 'startTime', 'Date']));
         const endTime = parseTime(findVal(a, ['EndTime', 'end_at', 'end_time', 'FinishTime']) || findVal(item, ['EndTime', 'endTime']));
+        const mDate = findVal(a, ['modifiedDate', 'ModifiedDate', 'ModifiedTime', 'modified_date']) || item.modifiedDate || item.ModifiedDate;
         
         // Robust athlete count detection
         const athleteCount = findVal(a, ['AthleteCount', 'athlete_count', 'athletes']) || 
@@ -854,28 +977,115 @@ export default function DataImportArea() {
           } catch (e) {}
         }
 
+        const rawStatus = findVal(a, ['Bakestatus', 'status', 'Status', 'baking_status']) || findVal(item, ['Bakestatus', 'status', 'Status']) || 'Ready';
+
         return {
           ...item,
           ...a,
           id,
-          name,
+          name: '', // Will be set nicely
+          modifiedDate: mDate,
           startTime,
           endTime,
           athleteCount: Number(athleteCount) || 0,
           duration: Number(durationMin) || 0,
-          bakestatus: findVal(a, ['Bakestatus', 'Status']) || findVal(item, ['Bakestatus', 'Status']) || 'Ready'
+          bakestatus: formatBakeStatus(rawStatus)
         };
       });
 
-      setCatapultActivities(normalizedActivities);
+      // Paso de deduplicación / agrupación por ventana de ±10 minutos el mismo día
+      const timeActivities: { act: any; ts: number }[] = [];
+      const noTimeActivities: any[] = [];
+
+      normalizedActivities.forEach((act: any) => {
+        const dateStr = act.modifiedDate || act.ModifiedTime || act.startTime || act.start_time || act.start_at || act.Date;
+        if (!dateStr) {
+          noTimeActivities.push(act);
+          return;
+        }
+        const d = new Date(dateStr);
+        const ts = d.getTime();
+        if (isNaN(ts)) {
+          noTimeActivities.push(act);
+        } else {
+          timeActivities.push({ act, ts });
+        }
+      });
+
+      // Ordenar cronológicamente
+      timeActivities.sort((a, b) => a.ts - b.ts);
+
+      const groups: any[][] = [];
+
+      timeActivities.forEach((item) => {
+        // Encontrar algún grupo existente donde la diferencia de tiempo con el primer elemento del grupo sea < 10 mins (y en el mismo día)
+        const matchedGroup = groups.find((group) => {
+          const firstAct = group[0];
+          const firstDateStr = firstAct.modifiedDate || firstAct.ModifiedTime || firstAct.startTime || firstAct.start_time || firstAct.start_at || firstAct.Date;
+          const firstTs = new Date(firstDateStr).getTime();
+          
+          const diffMs = Math.abs(item.ts - firstTs);
+          const LIMIT_MS = 10 * 60 * 1000; // 10 minutos
+          
+          if (diffMs < LIMIT_MS) {
+            const d1 = new Date(item.ts);
+            const d2 = new Date(firstTs);
+            return d1.getFullYear() === d2.getFullYear() &&
+                   d1.getMonth() === d2.getMonth() &&
+                   d1.getDate() === d2.getDate();
+          }
+          return false;
+        });
+
+        if (matchedGroup) {
+          matchedGroup.push(item.act);
+        } else {
+          groups.push([item.act]);
+        }
+      });
+
+      const deduplicatedActivities: any[] = [];
+
+      groups.forEach((group) => {
+        if (group.length > 0) {
+          const first = group[0];
+          
+          // De cada grupo, conserva solo una tarjeta representativa y muestra en ella el conteo total de entradas del grupo como número de atletas
+          const totalAthleteCount = group.length;
+
+          // Usar el campo Identifier del primer item del grupo como ID representativo
+          const reprId = first.Identifier || first.id || first.activity_id || first.activityId || 'unknown-session';
+
+          deduplicatedActivities.push({
+            ...first,
+            id: reprId,
+            Identifier: reprId,
+            activity_id: reprId,
+            activityId: reprId,
+            athleteCount: totalAthleteCount,
+            name: getFormattedSessionName(first),
+            _originalGroup: group
+          });
+        }
+      });
+
+      // Incluir las actividades que no tienen startTime
+      noTimeActivities.forEach((act: any) => {
+        deduplicatedActivities.push({
+          ...act,
+          name: getFormattedSessionName(act)
+        });
+      });
+
+      setCatapultActivities(deduplicatedActivities);
       
-      if (normalizedActivities.length === 0) {
+      if (deduplicatedActivities.length === 0) {
         setMessage({ 
           type: 'success', 
           text: `Conexión establecida con éxito${regionInfo}. No se encontraron sesiones recientes.` 
         });
       } else {
-        setMessage({ type: 'success', text: `¡Conexión Exitosa${regionInfo}! Se encontraron ${activities.length} sesiones recientes.` });
+        setMessage({ type: 'success', text: `¡Conexión Exitosa${regionInfo}! Se encontraron ${deduplicatedActivities.length} sesiones recientes.` });
       }
     } catch (err: any) {
       console.error("Sync Error:", err);
@@ -903,21 +1113,65 @@ export default function DataImportArea() {
 
   const handleInspectActivity = async (activity: any) => {
     setSyncingCatapult(true);
+    // Clear previous error for this specific session when user tries again
+    const activityId = activity?.id || activity?.Identifier || activity?.activity_id;
+    if (activityId) {
+      setSessionErrors(prev => {
+        const copy = { ...prev };
+        delete copy[activityId];
+        return copy;
+      });
+    }
     setMessage(null);
+    
+    // Set initial activity object
     setSelectedActivity(activity);
     console.log("Inspecting Activity:", activity);
     
     try {
-      if (selectedActivity?.bakestatus === 'Baking') {
+      if (activity?.bakestatus === 'SIN ARCHIVOS') {
+        throw new Error("Esta sesión no tiene archivos sincronizados en Catapult Cloud.");
+      }
+      if (activity?.bakestatus === 'Baking' || activity?.status === 'Baking') {
         throw new Error("La sesión aún se está procesando (Baking). Espera unos minutos y vuelve a intentar.");
       }
 
       // Prioritize identifying the best ID for the stats call
       const bestId = activity.id || activity.Identifier || activity.identifier || activity.activity_id;
       console.log(`Fetching stats for ID: ${bestId}`);
+
+      // Try to fetch real session details to resolve the actual registered name
+      let realSessionName = activity.name || activity.Name || '';
+      try {
+        console.log(`Fetching detail for activity: ${bestId}`);
+        const detail = await fetchCatapultActivityDetail(bestId);
+        if (detail) {
+          const fetchedName = detail.name || detail.Name || detail.tag || detail.activity_name || detail.SessionName;
+          if (fetchedName && fetchedName !== 'Sesión sin nombre' && fetchedName !== 'SESIÓN SIN NOMBRE' && String(fetchedName).toLowerCase() !== 'null' && fetchedName !== 'Sesión Registrada Catapult') {
+            realSessionName = fetchedName;
+            activity.name = fetchedName;
+            activity.Name = fetchedName;
+          }
+        }
+      } catch (detailErr) {
+        console.log("Failed to fetch activity detail on inspect:", detailErr);
+      }
+      
+      // Resolve name - fallback to bestId if empty or generic
+      let finalResolvedName = realSessionName;
+      if (finalResolvedName) {
+        const lowerName = finalResolvedName.trim().toLowerCase();
+        if (lowerName === 'sesión registrada catapult' || lowerName === 'sesión sin nombre' || lowerName === 'null' || lowerName === 'undefined') {
+          finalResolvedName = bestId || 'Sesión sin ID';
+        }
+      } else {
+        finalResolvedName = bestId || 'Sesión sin ID';
+      }
+      
+      // Update selected activity with resolved real name
+      setSelectedActivity({ ...activity, name: finalResolvedName });
       
       let statsResponse;
-      let hasCustomAviso = false;
       try {
         statsResponse = await fetchCatapultActivityStats(bestId);
       } catch (statsErr: any) {
@@ -952,40 +1206,7 @@ export default function DataImportArea() {
         }
         
         if (!fallbackSucceeded) {
-          // Fallback 3: Handle graceful fallback to high-fidelity mock metrics
-          // This ensures that the user can map parameters and successfully test synchronization even if the specific API session is empty
-          console.log("Generating high-fidelity mock stats utilizing players present in the database as fallback...");
-          hasCustomAviso = true;
-          
-          const samplePlayers = players.length > 0 ? players.slice(0, 10) : [
-            { player_id: 1, nombre: 'PABLO', apellido1: 'LASNIBAT LATUZ', position: 'PORTERO' },
-            { player_id: 2, nombre: 'RODRIGO', apellido1: 'CATALAN', position: 'VOLANTE' },
-            { player_id: 3, nombre: 'MARTIN', apellido1: 'NAVARRETE GUERRA', position: 'DEFENSA CENTRAL' },
-          ];
-
-          statsResponse = samplePlayers.map(p => {
-            const name = `${p.nombre} ${p.apellido1 || p.apellido2 || ''}`.trim().toUpperCase();
-            return {
-              athlete_name: name,
-              name: name,
-              duration: (activity.duration || 90) * 60,
-              minutes: activity.duration || 90,
-              total_distance: 9000 + Math.floor(Math.random() * 3000),
-              meters_per_minute: 95 + Math.floor(Math.random() * 25),
-              high_intensity_distance: 1000 + Math.floor(Math.random() * 800),
-              very_high_intensity_distance: 300 + Math.floor(Math.random() * 400),
-              sprint_distance: 100 + Math.floor(Math.random() * 200),
-              sprint_count: 3 + Math.floor(Math.random() * 10),
-              max_velocity: 27.0 + (Math.random() * 6.5),
-              accelerations_count: 10 + Math.floor(Math.random() * 12),
-              decelerations_count: 8 + Math.floor(Math.random() * 12)
-            };
-          });
-
-          setMessage({
-            type: 'success',
-            text: `Aviso: El servidor reportó que esta sesión no tiene atletas vinculados ("Stats not found"). Se han generado métricas reales simuladas con tus jugadores del sistema para demostración.`
-          });
+          throw new Error("Esta sesión no tiene archivos sincronizados en Catapult Cloud.");
         }
       }
 
@@ -1002,7 +1223,7 @@ export default function DataImportArea() {
       }
 
       if (athletesData.length === 0) {
-        console.warn("Stats response returned no athletes data.");
+        throw new Error("Esta sesión no tiene archivos sincronizados en Catapult Cloud.");
       }
 
       // Initial auto-mapping
@@ -1022,7 +1243,14 @@ export default function DataImportArea() {
       setInspectingStats(true);
     } catch (err: any) {
       console.error("Critical error in handleInspectActivity:", err);
-      setMessage({ type: 'error', text: `Error obteniendo métricas: ${err.message}. ID usado: ${activity.id || 'N/A'}` });
+      if (activityId) {
+        setSessionErrors(prev => ({
+          ...prev,
+          [activityId]: err.message || "Esta sesión no tiene archivos sincronizados en Catapult Cloud."
+        }));
+      }
+      setInspectingStats(false);
+      setSelectedActivity(null);
     } finally {
       setSyncingCatapult(false);
     }
@@ -1277,20 +1505,28 @@ export default function DataImportArea() {
                     </div>
                     <h5 className="text-slate-900 font-black uppercase tracking-tight text-sm mb-1">{session.name || 'Sesión sin nombre'}</h5>
                     <div className="flex items-center justify-between mb-4">
-                      <p className="text-slate-400 text-[10px] font-bold uppercase">{session.athleteCount || 0} Atletas • {session.duration || 0} min</p>
+                      <p className="text-slate-400 text-[10px] font-bold uppercase">{session.athleteCount || 1} {Number(session.athleteCount) === 1 ? 'ATLETA' : 'ATLETAS'} • {session.duration || 0} min</p>
                       {session.bakestatus && (
                         <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter ${
-                          session.bakestatus === 'Ready' ? 'bg-emerald-50 text-emerald-600' : 
-                          session.bakestatus === 'Baking' ? 'bg-amber-50 text-amber-600 animate-pulse' : 
+                          session.bakestatus.toUpperCase().includes('READY') || session.bakestatus.toUpperCase().includes('BAKED') ? 'bg-emerald-50 text-emerald-600' : 
+                          session.bakestatus.toUpperCase().includes('BAKING') || session.bakestatus.toUpperCase().includes('BAKE') ? 'bg-amber-50 text-amber-600 animate-pulse' : 
+                          session.bakestatus.toUpperCase().includes('SIN ARCHIVOS') ? 'bg-red-50 text-red-600' :
                           'bg-slate-50 text-slate-400'
                         }`}>
                           {session.bakestatus}
                         </span>
                       )}
                     </div>
+                    {/* Render inline error message if present */}
+                    {(sessionErrors[session.id] || session.bakestatus === 'SIN ARCHIVOS') && (
+                      <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-2xl text-red-700 text-[10px] font-bold flex items-start gap-2">
+                        <i className="fa-solid fa-circle-exclamation mt-0.5"></i>
+                        <span>{sessionErrors[session.id] || "Esta sesión no tiene archivos sincronizados en Catapult Cloud."}</span>
+                      </div>
+                    )}
                     <button 
-                      className="w-full bg-slate-50 text-slate-900 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 hover:text-white transition-all disabled:opacity-50"
-                      disabled={syncingCatapult}
+                      className="w-full bg-slate-50 text-slate-900 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 hover:text-white transition-all disabled:opacity-50 disabled:hover:bg-slate-50 disabled:hover:text-slate-900"
+                      disabled={syncingCatapult || session.bakestatus === 'SIN ARCHIVOS' || !!sessionErrors[session.id]}
                       onClick={() => handleInspectActivity(session)}
                     >
                       {syncingCatapult && selectedActivity?.id === session.id ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : null}

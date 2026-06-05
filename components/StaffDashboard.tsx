@@ -77,6 +77,18 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       return { ...prev, [activeMenu]: true };
     });
   }, [activeMenu]);
+
+  useEffect(() => {
+    const handleNavigate = (e: any) => {
+      if (e.detail?.playerId) {
+        onMenuChange('perfil_jugador');
+      }
+    };
+    window.addEventListener('navigate-to-profile', handleNavigate);
+    return () => {
+      window.removeEventListener('navigate-to-profile', handleNavigate);
+    };
+  }, [onMenuChange]);
   
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -427,23 +439,46 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
     const activeMicrocycles = realMicrocycles.filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
 
   const renderPlayerName = (p: any, id?: number) => {
-    if (!p) return `Atleta #${id || '???'}`;
-    
-    // 1. Preferimos nombre y apellido reales de la DB si no son genéricos
-    const nombre = p.nombre || '';
-    const hasRealNombre = nombre && !nombre.toLowerCase().includes('atleta') && !nombre.toLowerCase().includes('jugador');
-    if (hasRealNombre) {
-      return `${nombre} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim();
-    }
-    
-    // 2. Si no, usamos el campo 'nombre_completo' o 'name' que suele tener el nombre completo de los logs
-    const fullName = p.nombre_completo || p.name || '';
-    if (fullName && !fullName.toLowerCase().includes('atleta') && !fullName.toLowerCase().includes('jugador')) {
-      return fullName.trim();
+    let displayName = '';
+    const playerId = p?.player_id || id;
+
+    if (!p) {
+      displayName = `Atleta #${id || '???'}`;
+    } else {
+      // 1. Preferimos nombre y apellido reales de la DB si no son genéricos
+      const nombre = p.nombre || '';
+      const hasRealNombre = nombre && !nombre.toLowerCase().includes('atleta') && !nombre.toLowerCase().includes('jugador');
+      if (hasRealNombre) {
+        displayName = `${nombre} ${p.apellido1 || ''} ${p.apellido2 || ''}`.trim();
+      } else {
+        // 2. Si no, usamos el campo 'nombre_completo' o 'name' que suele tener el nombre completo de los logs
+        const fullName = p.nombre_completo || p.name || '';
+        if (fullName && !fullName.toLowerCase().includes('atleta') && !fullName.toLowerCase().includes('jugador')) {
+          displayName = fullName.trim();
+        } else {
+          // 3. Fallback final
+          displayName = `Atleta #${p.player_id || id || '???'}`;
+        }
+      }
     }
 
-    // 3. Fallback final
-    return `Atleta #${p.player_id || id || '???'}`;
+    if (playerId) {
+      return (
+        <span 
+          onClick={(e) => {
+            e.stopPropagation();
+            sessionStorage.setItem('selectedPlayerIdForProfile', String(playerId));
+            window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId } }));
+          }}
+          className="hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200 inline-block font-black uppercase"
+          title={`Ver perfil de ${displayName}`}
+        >
+          {displayName}
+        </span>
+      );
+    }
+
+    return displayName;
   };
 
   const widgetMap: Record<string, React.ReactNode> = {
