@@ -5,12 +5,38 @@
  */
 export const normalizeClub = (name: string) => {
   if (!name) return "";
-  return name
+  const norm = name
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]/g, "")
     .trim();
+
+  // Mapeo robusto de sinónimos y abreviaciones comunes a su forma estándar normalizada
+  const synonyms: Record<string, string> = {
+    "udechile": "universidaddechile",
+    "udech": "universidaddechile",
+    "udevichile": "universidaddechile",
+    "udechileperfildeclub": "universidaddechile",
+    "ucatolica": "universidadcatolica",
+    "uc": "universidadcatolica",
+    "colocolo": "colocolo",
+    "cc": "colocolo",
+    "unionespanola": "unionespanola",
+    "ue": "unionespanola",
+    "santiagowanderers": "santiagowanderers",
+    "wanderers": "santiagowanderers",
+    "ohiggins": "ohiggins",
+    "oh": "ohiggins",
+    "huachipato": "huachipato",
+    "huach": "huachipato",
+    "audaxitaliano": "audaxitaliano",
+    "audax": "audaxitaliano",
+    "coquimbounido": "coquimbounido",
+    "coquimbo": "coquimbounido",
+  };
+
+  return synonyms[norm] || norm;
 };
 
 /**

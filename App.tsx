@@ -54,6 +54,24 @@ export default function App() {
 
   const [refreshing, setRefreshing] = useState(false)
 
+  // Resolutor automático de userClubId cuando cambia userClub y no tenemos un ID configurado
+  useEffect(() => {
+    if (userClub && !userClubId) {
+      const normClub = normalizeClub(userClub);
+      const matched = dbClubs.find(c => normalizeClub(c.nombre || '') === normClub || normalizeClub(c.nombre_corto || '') === normClub);
+      if (matched) {
+        setUserClubId(matched.id_club || matched.id);
+      } else {
+        const fbEntry = Object.entries(FALLBACK_CLUB_NAMES).find(([id, name]) => normalizeClub(name) === normClub);
+        if (fbEntry) {
+          setUserClubId(Number(fbEntry[0]));
+        }
+      }
+    } else if (!userClub) {
+      setUserClubId(null);
+    }
+  }, [userClub, dbClubs, userClubId]);
+
   const fetchPerformanceData = useCallback(async (userRole: Role, pId: number | null) => {
     try {
       let wellnessQuery = supabase.from('wellness_checkin').select('*');
@@ -307,6 +325,25 @@ export default function App() {
               clubName = fallbackName;
             } else if (!clubName) {
               clubName = clubId ? `Club #${clubId}` : 'Sin Club';
+            }
+          }
+        }
+
+        // Intento de recuperación del id_club si no viene de la BD pero tenemos el nombre del club
+        if (!clubId && clubName) {
+          const normClubName = normalizeClub(clubName);
+          const matchedClubItem = (clubsData || []).find((c: any) => 
+            normalizeClub(c.nombre || '') === normClubName || 
+            normalizeClub(c.nombre_corto || '') === normClubName
+          );
+          if (matchedClubItem) {
+            clubId = matchedClubItem.id_club || matchedClubItem.id;
+          } else {
+            const fallbackEntry = Object.entries(FALLBACK_CLUB_NAMES).find(([id, name]) => 
+              normalizeClub(name) === normClubName
+            );
+            if (fallbackEntry) {
+              clubId = Number(fallbackEntry[0]);
             }
           }
         }
@@ -896,9 +933,10 @@ export default function App() {
       let finalPlayer = { ...player };
       if (role === 'club') {
         let isOwnClub = false;
-        if (userClubId) {
-          isOwnClub = player.id_club === userClubId;
-        } else if (userClub) {
+        if (userClubId && player.id_club) {
+          isOwnClub = Number(player.id_club) === Number(userClubId);
+        }
+        if (!isOwnClub && userClub) {
           const pClub = player.club || player.club_name || '';
           const uClubNorm = normalizeClub(userClub);
           const pClubNorm = normalizeClub(pClub);
@@ -935,7 +973,7 @@ export default function App() {
         })
       };
     });
-  }, [allData, dbPlayers, role, userClub, playersLoading, dbClubs]);
+  }, [allData, dbPlayers, role, userClub, userClubId, playersLoading, dbClubs]);
 
   // Tracking performanceRecords population
   useEffect(() => {

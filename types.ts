@@ -111,7 +111,8 @@ export type MenuId =
   | 'logs'
   | 'importar_datos'
   | 'perfil_jugador'
-  | 'sports_science';
+  | 'sports_science'
+  | 'telegram_notifications';
 
 export interface CitacionDB {
   id: string;

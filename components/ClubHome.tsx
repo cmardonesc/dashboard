@@ -33,16 +33,15 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
     performanceRecords.forEach(record => {
       const player = record.player;
       
-      // Filter by club logic
-      let isMyPlayer = true;
-      if (userClubId) {
-        isMyPlayer = player.id_club === userClubId;
-      } else if (userClub) {
+      // Filter by club logic: robust matches with both ID and text Name comparison
+      let isMyPlayer = false;
+      if (userClubId && player.id_club) {
+        isMyPlayer = Number(player.id_club) === Number(userClubId);
+      }
+      if (!isMyPlayer && userClub) {
         const uClubNorm = normalizeClub(userClub);
         const pClub = player.club_name || player.club || '';
         isMyPlayer = normalizeClub(pClub) === uClubNorm;
-      } else {
-        isMyPlayer = false; // No club specified
       }
 
       if (!isMyPlayer) return;
@@ -59,15 +58,25 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
       }
     });
     return groups;
-  }, [performanceRecords, userClub]);
+  }, [performanceRecords, userClub, userClubId]);
 
   const clubPlayers = useMemo(() => {
     if (!userClub) return [];
     const uClubNorm = normalizeClub(userClub);
     return performanceRecords
       .map(r => r.player)
-      .filter(p => normalizeClub(p.club_name || p.club || '') === uClubNorm);
-  }, [performanceRecords, userClub]);
+      .filter(p => {
+        let isMyPlayer = false;
+        if (userClubId && p.id_club) {
+          isMyPlayer = Number(p.id_club) === Number(userClubId);
+        }
+        if (!isMyPlayer) {
+          const pClub = p.club_name || p.club || '';
+          isMyPlayer = normalizeClub(pClub) === uClubNorm;
+        }
+        return isMyPlayer;
+      });
+  }, [performanceRecords, userClub, userClubId]);
 
   const sortedYears = useMemo(() => {
     return Object.keys(playersByYear).map(Number).sort((a, b) => b - a);

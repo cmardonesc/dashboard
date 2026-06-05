@@ -481,13 +481,18 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     if (userRole !== 'club') return players;
     return players.filter(p => {
       const pClubId = p.id_club || p.club_id;
-      if (resolvedUserClubId && pClubId) {
-        return Number(pClubId) === Number(resolvedUserClubId);
+      
+      // Look up by ID
+      if (resolvedUserClubId && pClubId && Number(pClubId) === Number(resolvedUserClubId)) {
+        return true;
       }
+      
+      // Fallback lookup by Name normalization
       const pClubName = p.club || p.club_name || (p.clubes && !Array.isArray(p.clubes) ? (p.clubes as any).nombre : null);
       if (normalizedUserClubName && pClubName) {
         return normalizeClub(pClubName) === normalizedUserClubName;
       }
+      
       return false;
     });
   }, [players, userRole, resolvedUserClubId, normalizedUserClubName]);

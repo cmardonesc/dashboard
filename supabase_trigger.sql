@@ -21,12 +21,14 @@ BEGIN
   BEGIN
     PERFORM
       net.http_post(
-        url := 'https://TU_URL_DE_PROYECTO.supabase.co/functions/v1/send-notification',
-        headers := jsonb_build_object(
+        'https://TU_URL_DE_PROYECTO.supabase.co/functions/v1/send-notification'::text,
+        payload::jsonb,
+        '{}'::jsonb,
+        jsonb_build_object(
           'Content-Type', 'application/json',
-          'Authorization', 'Bearer ' || 'TU_SERVICE_ROLE_KEY' -- ¡ESTO DEBE SER SECRETO!
-        ),
-        body := payload
+          'Authorization', 'Bearer ' || 'TU_SERVICE_ROLE_KEY'
+        )::jsonb,
+        5000::integer
       );
   EXCEPTION WHEN OTHERS THEN
     -- Mantenemos la transacción viva ignorando errores de red externos

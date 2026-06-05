@@ -597,6 +597,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           </button>
         )}
 
+        {(userRole === 'admin' || userRole === 'staff') && (
+          <button
+            onClick={() => handleMenuClick('telegram_notifications')}
+            title={isCollapsed ? 'Notificaciones Telegram' : ''}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 group ${
+              activeMenu === 'telegram_notifications' ? 'bg-red-900/20 text-[#CF1B2B]' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <i className={`fa-brands fa-telegram text-xl ${isCollapsed ? '' : 'w-6'} ${activeMenu === 'telegram_notifications' ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
+            {!isCollapsed && <span className="font-bold text-sm tracking-tight text-left">Alertas Telegram</span>}
+          </button>
+        )}
+
         {userRole === 'admin' && (
           <button
             onClick={() => handleMenuClick('usuarios')}

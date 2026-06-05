@@ -712,6 +712,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       const { error } = await supabase.from('medical_daily_reports').delete().eq('id', id);
       if (error) throw error;
       setSuccessMessage("REPORTE ELIMINADO.");
+      
+      if (editingDailyReportId === id) {
+        setEditingDailyReportId(null);
+        setDailyReportForm({ observation: '', diagnostico_medico: '', severity: 'low' });
+        setSelectedTreatments([]);
+      }
+      
       fetchDailyReports();
       
       setTimeout(() => {
@@ -728,6 +735,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   const handleSelectPlayerForReport = (player: User) => {
     setReportingPlayer(player);
     setEditingInjuryId(null);
+    setEditingDailyReportId(null);
     setExams([]);
     setNewExam({
       id: '',
@@ -753,6 +761,20 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       observaciones: ''
     });
     setView('report_injury');
+    setSearchTerm('');
+    setFoundPlayers([]);
+    setHasSearched(false);
+  };
+
+  const handleSelectPlayerForAttention = (player: User) => {
+    setReportingPlayer(player);
+    setEditingDailyReportId(null);
+    setDailyReportForm({
+      observation: '',
+      diagnostico_medico: '',
+      severity: 'low'
+    });
+    setSelectedTreatments([]);
     setSearchTerm('');
     setFoundPlayers([]);
     setHasSearched(false);
@@ -1552,7 +1574,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                         {foundPlayers.map(p => (
                           <button 
                             key={p.id}
-                            onClick={() => setReportingPlayer(p)}
+                            onClick={() => handleSelectPlayerForAttention(p)}
                             className="w-full flex items-center gap-4 p-4 hover:bg-red-50 rounded-2xl transition-all text-left group"
                           >
                             <div className="w-10 h-10 bg-[#0b1220] text-white rounded-xl flex items-center justify-center font-black italic text-xs group-hover:bg-red-600 transition-colors">
@@ -1589,7 +1611,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => { setReportingPlayer(null); setEditingDailyReportId(null); }} className="text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest">
+                  <button onClick={() => { 
+                    setReportingPlayer(null); 
+                    setEditingDailyReportId(null); 
+                    setDailyReportForm({ observation: '', diagnostico_medico: '', severity: 'low' });
+                    setSelectedTreatments([]);
+                  }} className="text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest">
                     {editingDailyReportId ? 'Cancelar Edición' : 'Cambiar Jugador'}
                   </button>
                 </div>

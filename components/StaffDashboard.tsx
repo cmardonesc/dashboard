@@ -18,6 +18,7 @@ import LogisticaJugadores from './LogisticaJugadores'
 import ContactosClubesArea from './ContactosClubesArea'
 import ActivityLogArea from './ActivityLogArea'
 import DataImportArea from './DataImportArea'
+import { TelegramNotificationsArea } from './TelegramNotificationsArea'
 import VO2MaxArea from './VO2MaxArea'
 import SportsScienceArea from './SportsScienceArea'
 import GPSIntelligenceDashboard from './GPSIntelligenceDashboard'
@@ -65,6 +66,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
   const [selectedJornada, setSelectedJornada] = useState<'AM' | 'PM'>('AM');
+  const [selectedScheduleDate, setSelectedScheduleDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   
   const [visitedMenus, setVisitedMenus] = useState<Record<string, boolean>>({
     inicio: true,
@@ -402,6 +404,39 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
     }
     return dailyActivities;
   }, [dailyActivities, selectedCategoryId, realMicrocycles]);
+
+  const activeWeekDays = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const activeMc = realMicrocycles.find(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
+    
+    let baseStartDate = new Date();
+    if (activeMc) {
+      baseStartDate = new Date(activeMc.start_date + 'T12:00:00');
+    }
+    
+    const currentDay = baseStartDate.getDay();
+    const distanceToMon = currentDay === 0 ? -6 : 1 - currentDay;
+    const monday = new Date(baseStartDate);
+    monday.setDate(baseStartDate.getDate() + distanceToMon);
+
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayLabels = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
+      days.push({
+        dateStr,
+        label: dayLabels[i],
+        dayNum: d.getDate(),
+      });
+    }
+    return days;
+  }, [realMicrocycles]);
+
+  const activitiesOfSelectedDay = useMemo(() => {
+    return filteredActivities.filter(a => a.fecha === selectedScheduleDate);
+  }, [filteredActivities, selectedScheduleDate]);
 
   const filteredMedical = useMemo(() => {
     if (selectedCategoryId) {
@@ -830,40 +865,87 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       schedule: (
         <div className="bg-white rounded-[32px] md:rounded-[48px] p-6 md:p-10 border border-slate-100 shadow-sm flex flex-col h-full relative overflow-hidden animate-in fade-in zoom-in-95 duration-500">
           <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-          <div className="flex items-center justify-between mb-6 md:mb-8 relative z-10">
+          <div className="flex items-center justify-between mb-4 md:mb-5 relative z-10">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-red-600/20 flex items-center justify-center text-red-500">
                 <i className="fa-solid fa-calendar-day text-xs"></i>
               </div>
-              <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] italic">Cronograma Semanal</h3>
+              <div>
+                <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] italic">Cronograma del Día</h3>
+                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                  {selectedScheduleDate === new Date().toISOString().split('T')[0] ? 'Hoy' : new Date(selectedScheduleDate + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
+                </p>
+              </div>
             </div>
-            <button 
-              onClick={(e) => { e.stopPropagation(); onMenuChange('planificacion_anual'); }}
-              className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:text-slate-900 transition-colors flex items-center gap-1"
-            >
-              Ver Todo <i className="fa-solid fa-chevron-right text-[7px]"></i>
-            </button>
+            <div className="flex items-center gap-2">
+              {selectedScheduleDate !== new Date().toISOString().split('T')[0] && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setSelectedScheduleDate(new Date().toISOString().split('T')[0]); }} 
+                  className="text-[8.5px] font-black uppercase tracking-wider text-red-500 bg-red-50 px-2.5 py-1 rounded-full hover:bg-red-100 transition-all border border-red-100/50 flex items-center gap-1"
+                >
+                  <i className="fa-solid fa-reply text-[7px]" /> Hoy
+                </button>
+              )}
+              <button 
+                onClick={(e) => { e.stopPropagation(); onMenuChange('planificacion_anual'); }}
+                className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:text-slate-900 transition-colors flex items-center gap-1"
+              >
+                Ver Todo <i className="fa-solid fa-chevron-right text-[7px]"></i>
+              </button>
+            </div>
           </div>
-          <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar relative z-10">
-            {filteredActivities.length === 0 ? (
-              <div className="text-center py-10">
-                <p className="text-slate-400 text-[10px] font-black uppercase">Sin actividades programadas</p>
+
+          {/* Calendario horizontal interactivo para los 7 días de la semana */}
+          <div className="grid grid-cols-7 gap-1 bg-slate-50 p-1 rounded-2xl border border-slate-100/80 mb-5 relative z-10 shadow-inner">
+            {activeWeekDays.map((day) => {
+              const isSelected = day.dateStr === selectedScheduleDate;
+              const isToday = day.dateStr === new Date().toISOString().split('T')[0];
+              return (
+                <button
+                  key={day.dateStr}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedScheduleDate(day.dateStr);
+                  }}
+                  className={`flex flex-col items-center justify-center py-2 rounded-xl transition-all relative ${
+                    isSelected 
+                      ? 'bg-[#0b1220] text-white shadow-md font-black border-b-2 border-red-500' 
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-white/80'
+                  }`}
+                >
+                  <span className={`text-[7px] tracking-tight font-black uppercase ${isSelected ? 'text-white/85' : 'text-slate-400'}`}>
+                    {day.label}
+                  </span>
+                  <span className={`text-[11px] font-extrabold mt-0.5 ${isSelected ? 'text-white font-black' : 'text-slate-800'}`}>
+                    {day.dayNum}
+                  </span>
+                  {isToday && (
+                    <span className={`absolute bottom-0.5 w-1 h-1 rounded-full ${isSelected ? 'bg-red-400' : 'bg-red-500'}`} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[220px] pr-1.5 custom-scrollbar relative z-10">
+            {activitiesOfSelectedDay.length === 0 ? (
+              <div className="text-center py-10 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                <i className="fa-solid fa-calendar-xmark text-slate-300 text-xl mb-2 inline-block animate-pulse"></i>
+                <p className="text-slate-400 text-[8.5px] font-black uppercase tracking-widest leading-none">Sin actividades programadas</p>
+                <p className="text-slate-400 text-[7px] font-bold uppercase tracking-wider mt-1">Para este día de la semana</p>
               </div>
             ) : (
-              filteredActivities.map((act, i) => {
-                const actDate = new Date(act.fecha + 'T12:00:00');
+              activitiesOfSelectedDay.map((act, i) => {
                 const isToday = act.fecha === new Date().toISOString().split('T')[0];
-                
                 return (
-                  <div key={i} className={`flex items-center gap-4 p-3 rounded-2xl border transition-all group ${isToday ? 'bg-red-50 border-red-100 shadow-sm' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
+                  <div key={i} className={`flex items-center gap-4 p-3 rounded-2xl border transition-all duration-200 group ${isToday ? 'bg-red-50/60 border-red-100 shadow-sm' : 'bg-slate-50 border-slate-100/60 hover:bg-slate-100'}`}>
                     <div className={`flex flex-col items-center justify-center min-w-[50px] py-1 border-r ${isToday ? 'border-red-200' : 'border-slate-200'}`}>
                       <p className={`text-[10px] font-black leading-none ${isToday ? 'text-red-600' : 'text-slate-900'}`}>{act.hora?.substring(0, 5)}</p>
-                      <p className="text-[7px] font-bold text-slate-400 uppercase mt-1">
-                        {actDate.toLocaleDateString('es-ES', { weekday: 'short' })}
-                      </p>
+                      <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest mt-1">HORA</p>
                     </div>
                     <div className="flex-1">
-                      <p className={`text-[10px] font-black uppercase italic tracking-tight leading-none mb-1 ${isToday ? 'text-red-700' : 'text-slate-900'}`}>{act.actividad}</p>
+                      <p className={`text-[11px] font-black uppercase italic tracking-tight leading-none mb-1 ${isToday ? 'text-red-700' : 'text-slate-900'}`}>{act.actividad}</p>
                       <div className="flex items-center gap-2">
                         <i className={`fa-solid fa-location-dot text-[8px] ${isToday ? 'text-red-500' : 'text-slate-400'}`}></i>
                         <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest truncate">{act.lugar || 'Juan Pinto Durán'}</p>
@@ -1314,6 +1396,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         return <DataImportArea />;
       case 'sports_science':
         return <SportsScienceArea userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
+      case 'telegram_notifications':
+        return <TelegramNotificationsArea performanceRecords={performanceRecords} />;
       default:
         const ContentComponent = {
           planificacion_anual: PlanificacionAnual,
