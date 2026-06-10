@@ -621,6 +621,27 @@ begin
 end;
 $$;
 
+-- Tabla para registrar partidos del equipo (calendario oficial)
+create table if not exists public.matches (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  date date not null,
+  time text,
+  opponent text not null,
+  competition_type text default 'Amistoso Nacional',
+  location text,
+  city text,
+  category_id int,
+  microcycle_id uuid references public.microcycles(id) on delete set null,
+  result text,
+  observations text,
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- RLS para matches
+alter table public.matches enable row level security;
+create policy "Enable all access for matches" on public.matches for all using (true) with check (true);
+
 -- Tabla para reportes de competencia/partido
 create table if not exists public.match_reports (
   id uuid default gen_random_uuid() primary key,

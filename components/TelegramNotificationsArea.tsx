@@ -293,24 +293,28 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Evento 1: Check-in Wellness (wellness_checkin)
 DROP TRIGGER IF EXISTS trg_telegram_wellness ON public.wellness_checkin;
+DROP TRIGGER IF EXISTS on_wellness_inserted ON public.wellness_checkin;
 CREATE TRIGGER trg_telegram_wellness
 AFTER INSERT ON public.wellness_checkin
 FOR EACH ROW EXECUTE FUNCTION public.notify_telegram();
 
 -- Evento 2: Carga Interna (internal_load)
 DROP TRIGGER IF EXISTS trg_telegram_internal_load ON public.internal_load;
+DROP TRIGGER IF EXISTS on_load_inserted ON public.internal_load;
 CREATE TRIGGER trg_telegram_internal_load
 AFTER INSERT ON public.internal_load
 FOR EACH ROW EXECUTE FUNCTION public.notify_telegram();
 
 -- Evento 3: Lesiones (lesionados)
 DROP TRIGGER IF EXISTS trg_telegram_lesionADOS ON public.lesionados;
+DROP TRIGGER IF EXISTS trg_telegram_lesionados ON public.lesionados;
 CREATE TRIGGER trg_telegram_lesionADOS
 AFTER INSERT OR UPDATE ON public.lesionados
 FOR EACH ROW EXECUTE FUNCTION public.notify_telegram();
 
 -- Evento 4: Atención Médica (medical_daily_reports)
 DROP TRIGGER IF EXISTS trg_telegram_medical ON public.medical_daily_reports;
+DROP TRIGGER IF EXISTS on_medical_report_inserted ON public.medical_daily_reports;
 CREATE TRIGGER trg_telegram_medical
 AFTER INSERT ON public.medical_daily_reports
 FOR EACH ROW EXECUTE FUNCTION public.notify_telegram();

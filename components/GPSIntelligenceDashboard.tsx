@@ -35,6 +35,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [sessionData, setSessionData] = useState<any[]>([]);
   const [referenceData, setReferenceData] = useState<any[]>([]);
+  const [dayMatches, setDayMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
   
@@ -101,6 +102,18 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
     const fetchSessionData = async () => {
       setLoading(true);
       try {
+        // Fetch matches for the date
+        const { data: matchesForDay, error: matchesErr } = await supabase
+          .from('matches')
+          .select('*')
+          .eq('date', selectedDate);
+        
+        if (matchesErr) {
+          console.error("Error fetching matches for date:", matchesErr);
+        } else {
+          setDayMatches(matchesForDay || []);
+        }
+
         // Fetch GPS records for the date
         const { data: gpsRecordsRaw, error: gpsError } = await supabase
           .from('gps_import')
@@ -370,86 +383,137 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* HEADER & FILTERS */}
-      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-wrap items-center justify-between gap-8">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic flex items-center gap-3">
-            <i className="fa-solid fa-microchip text-red-600"></i>
-            Inteligencia GPS {categoryName && <span className="text-red-600 ml-2">— {categoryName}</span>}
-          </h2>
-          <div className="flex items-center gap-4 mt-2">
-            <button 
-              onClick={() => setActiveTab('TEAM')}
-              className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl transition-all ${activeTab === 'TEAM' ? 'bg-red-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-            >
-              Análisis de Equipo
-            </button>
-            <button 
-              onClick={() => setActiveTab('INDIVIDUAL')}
-              className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl transition-all ${activeTab === 'INDIVIDUAL' ? 'bg-red-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-            >
-              Visión Individual
-            </button>
-          </div>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-4">
-          {/* PLAYER SELECTOR (Only in Individual Tab) */}
-          {activeTab === 'INDIVIDUAL' && (
-            <div className="relative animate-in slide-in-from-right duration-300">
-              <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest z-10">Seleccionar Atleta</label>
-              <select 
-                value={selectedPlayerId || ''}
-                onChange={(e) => setSelectedPlayerId(e.target.value)}
-                className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-12 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer min-w-[240px]"
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col gap-6">
+        <div className="flex flex-wrap items-center justify-between gap-8">
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic flex items-center gap-3">
+              <i className="fa-solid fa-microchip text-red-600"></i>
+              Inteligencia GPS {categoryName && <span className="text-red-600 ml-2">— {categoryName}</span>}
+            </h2>
+            <div className="flex items-center gap-4 mt-2">
+              <button 
+                onClick={() => setActiveTab('TEAM')}
+                className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl transition-all ${activeTab === 'TEAM' ? 'bg-red-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
               >
-                <option value="">ELIJA UN JUGADOR...</option>
-                {[...filteredSessionData]
-                  .filter(d => {
-                    if (userRole === 'club') {
-                      return d.player && d.player.nombre !== 'JUGADOR X';
-                    }
-                    return true;
-                  })
-                  .sort((a, b) => a.player.name.localeCompare(b.player.name))
-                  .map(d => (
-                    <option key={d.player_id} value={d.player_id}>
-                      {d.player.name.toUpperCase()}
-                    </option>
+                Análisis de Equipo
+              </button>
+              <button 
+                onClick={() => setActiveTab('INDIVIDUAL')}
+                className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl transition-all ${activeTab === 'INDIVIDUAL' ? 'bg-red-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
+              >
+                Visión Individual
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-4">
+            {/* PLAYER SELECTOR (Only in Individual Tab) */}
+            {activeTab === 'INDIVIDUAL' && (
+              <div className="relative animate-in slide-in-from-right duration-300">
+                <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest z-10">Seleccionar Atleta</label>
+                <select 
+                  value={selectedPlayerId || ''}
+                  onChange={(e) => setSelectedPlayerId(e.target.value)}
+                  className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-12 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer min-w-[240px]"
+                >
+                  <option value="">ELIJA UN JUGADOR...</option>
+                  {[...filteredSessionData]
+                    .filter(d => {
+                      if (userRole === 'club') {
+                        return d.player && d.player.nombre !== 'JUGADOR X';
+                      }
+                      return true;
+                    })
+                    .sort((a, b) => a.player.name.localeCompare(b.player.name))
+                    .map(d => (
+                      <option key={d.player_id} value={d.player_id}>
+                        {d.player.name.toUpperCase()}
+                      </option>
+                    ))}
+                </select>
+                <i className="fa-solid fa-user-tag absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
+              </div>
+            )}
+
+            {/* CATEGORY FILTER - Only show if more than one category exists */}
+            {detectedCategories.length > 1 && (
+              <div className="relative">
+                <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest z-10">Categoría</label>
+                <select 
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-12 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer"
+                >
+                  <option value="TODAS">TODAS LAS SERIES</option>
+                  {detectedCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
                   ))}
-              </select>
-              <i className="fa-solid fa-user-tag absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
-            </div>
-          )}
+                </select>
+                <i className="fa-solid fa-filter absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
+              </div>
+            )}
 
-          {/* CATEGORY FILTER - Only show if more than one category exists */}
-          {detectedCategories.length > 1 && (
             <div className="relative">
-              <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest z-10">Categoría</label>
-              <select 
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-12 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer"
-              >
-                <option value="TODAS">TODAS LAS SERIES</option>
-                {detectedCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-              <i className="fa-solid fa-filter absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
+              <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest z-10">Fecha de Sesión</label>
+              <input 
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-10 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer appearance-none min-w-[200px]"
+              />
+              <i className="fa-solid fa-calendar-days absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
             </div>
-          )}
-
-          <div className="relative">
-            <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest z-10">Fecha de Sesión</label>
-            <input 
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none pr-10 shadow-inner focus:ring-2 focus:ring-red-500 transition-all cursor-pointer appearance-none min-w-[200px]"
-            />
-            <i className="fa-solid fa-calendar-days absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
           </div>
         </div>
+
+        {/* Dynamic Match Information Banner */}
+        {dayMatches.length > 0 && (
+          <div className="border-t border-slate-100 pt-5 flex flex-col gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 rounded-full border border-red-100 shadow-sm shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                <span className="text-[8.5px] font-black uppercase tracking-widest">Día de Partido</span>
+              </div>
+              <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider">
+                COINCIDE CON {dayMatches.length === 1 ? '1 PARTIDO PROGRAMADO' : `${dayMatches.length} PARTIDOS PROGRAMADOS`}
+              </span>
+            </div>
+            
+            <div className="flex flex-wrap gap-3">
+              {dayMatches.map((m, idx) => {
+                const catLabel = m.category_id && REVERSE_CATEGORY_ID_MAP[m.category_id]
+                  ? REVERSE_CATEGORY_ID_MAP[m.category_id].toUpperCase().replace('SUB_', 'SUB ')
+                  : null;
+                return (
+                  <div key={m.id || idx} className="flex items-center gap-3.5 bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3 shadow-inner hover:border-red-100 hover:bg-red-50/5 transition-all">
+                    {catLabel && (
+                      <span className="text-[8.5px] font-black text-red-600 bg-red-50 border border-red-100 rounded-md px-2 py-0.5 shadow-sm uppercase shrink-0">
+                        {catLabel}
+                      </span>
+                    )}
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wide">
+                      {m.competition_type || 'Partido'}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-300">vs</span>
+                    <ClubBadge 
+                      clubName={m.opponent} 
+                      clubs={clubs} 
+                      showName={true} 
+                      logoSize="w-5 h-5" 
+                      className="text-xs font-black text-slate-900 uppercase tracking-wider" 
+                    />
+                    {m.result && (
+                      <div className="flex items-center gap-1 bg-slate-900 border border-slate-900 text-white rounded-lg px-2.5 py-1 shadow-inner shrink-0">
+                        <span className="text-[7.5px] font-black uppercase tracking-widest text-slate-400">RES:</span>
+                        <span className="font-mono text-xs font-black leading-none">{m.result}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {activeTab === 'TEAM' ? (

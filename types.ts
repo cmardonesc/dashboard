@@ -255,7 +255,7 @@ export interface MatchDB {
   location?: string;
   city?: string;
   category_id: number;
-  microcycle_id?: number;
+  microcycle_id?: number | string;
   result?: string;
   observations?: string;
   created_at?: string;

@@ -5,10 +5,10 @@ import { normalizeClub, getDriveDirectLink } from '../lib/utils';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, BarChart, Bar, Legend, RadarChart, PolarGrid, 
-  PolarAngleAxis, PolarRadiusAxis, Radar 
+  PolarAngleAxis, PolarRadiusAxis, Radar, Cell 
 } from 'recharts';
 import ClubBadge from './ClubBadge';
-import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS } from '../types';
+import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS, MatchDB } from '../types';
 import { FALLBACK_CLUB_NAMES } from '../constants';
 
 interface PlayerProfileAreaProps {
@@ -60,6 +60,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const [matchData, setMatchData] = useState<any[]>([]);
   const [gpsStats, setGpsStats] = useState<any[]>([]);
   const [wellnessData, setWellnessData] = useState<any[]>([]);
+  const [categoryMatches, setCategoryMatches] = useState<MatchDB[]>([]);
   
   // Slider & Dual Chart States
   const [sliderStart, setSliderStart] = useState<string>('');
@@ -218,6 +219,17 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         console.error("Error loading wellness_checkin:", err);
       }
       setWellnessData(wellnessList);
+
+      // 7. Matches from calendar for cross-referencing
+      try {
+        const { data: mData } = await supabase
+          .from('matches')
+          .select('*')
+          .order('date', { ascending: false });
+        setCategoryMatches(mData || []);
+      } catch (err) {
+        console.error("Error loading matches for cross-referencing:", err);
+      }
 
     } catch (err) {
       console.error("Error fetching full profile:", err);
@@ -430,10 +442,60 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const latestImtp = useMemo(() => physicalData.imtp.length > 0 ? physicalData.imtp[physicalData.imtp.length - 1] : null, [physicalData.imtp]);
   const latestSpeed = useMemo(() => physicalData.speed.length > 0 ? physicalData.speed[physicalData.speed.length - 1] : null, [physicalData.speed]);
 
+  const matchedParticipation = useMemo(() => {
+    return categoryMatches
+      .map(match => {
+        const gpsRecord = gpsStats.find(g => g.fecha === match.date);
+        const internalMatchRecord = matchData.find(m => m.session_date === match.date);
+        
+        // Match by microcycle citation or category citation covering the date
+        const isCitedForThisMicrocycle = match.microcycle_id 
+          ? citations.some(cit => cit.microcycles?.id === match.microcycle_id)
+          : false;
+
+        const isCitedForThisCategoryOnDate = citations.some(cit => {
+          const mc = cit.microcycles;
+          if (!mc) return false;
+          if (Number(mc.category_id) !== Number(match.category_id)) return false;
+          if (mc.start_date && mc.end_date) {
+            return match.date >= mc.start_date && match.date <= mc.end_date;
+          }
+          return true;
+        });
+
+        const hasActivity = !!gpsRecord || !!internalMatchRecord;
+        
+        // Check if player has *any* citation for this match's category
+        const possessesCitationForThisCategory = citations.some(cit => {
+          const catId = cit.microcycles?.category_id;
+          return catId !== undefined && catId !== null && Number(catId) === Number(match.category_id);
+        });
+
+        const belongsToThisCategory = 
+          isCitedForThisMicrocycle || 
+          isCitedForThisCategoryOnDate || 
+          (hasActivity && possessesCitationForThisCategory);
+
+        const participated = hasActivity && belongsToThisCategory;
+
+        return {
+          match,
+          participated,
+          gpsRecord,
+          internalMatchRecord
+        };
+      })
+      .filter(item => item.participated);
+  }, [categoryMatches, gpsStats, matchData, citations]);
+
+  const matchDatesSet = useMemo(() => {
+    return new Set(matchedParticipation.map(item => item.match.date));
+  }, [matchedParticipation]);
+
   const stats = useMemo(() => {
     const totalCitations = citations.length;
     const totalTrainings = trainingData.length;
-    const totalMatches = matchData.length;
+    const totalMatches = matchedParticipation.length;
     const totalMinGps = gpsStats.reduce((acc, curr) => acc + (Number(curr.minutos) || 0), 0);
     const totalDistGps = gpsStats.reduce((acc, curr) => acc + (Number(curr.dist_total_m) || 0), 0);
     const totalHsrGps = gpsStats.reduce((acc, curr) => acc + (Number(curr.dist_mai_m_20_kmh) || 0), 0);
@@ -461,7 +523,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       velocidadMax: maxVel,
       hsr: totalHsrGps
     };
-  }, [citations, trainingData, matchData, gpsStats]);
+  }, [citations, trainingData, matchData, gpsStats, matchedParticipation]);
 
   const resolvedUserClubId = useMemo(() => {
     if (userClubId) return userClubId;
@@ -714,6 +776,131 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                     </div>
                   }
                 />
+              </div>
+
+              {/* MÁXIMOS HISTÓRICOS GPS */}
+              <div className="bg-white rounded-[40px] p-6 shadow-sm border border-slate-100">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>
+                  MÁXIMOS HISTÓRICOS GPS
+                </h3>
+                {gpsStats.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5">
+                    {/* 1. DISTANCIA */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-emerald-200/60 hover:bg-emerald-50/10 transition-all">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-emerald-100/60 text-emerald-600 ring-2 ring-emerald-500/5 shadow-inner shrink-0">
+                          <i className="fa-solid fa-route text-xs"></i>
+                        </div>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider truncate">Distancia</span>
+                      </div>
+                      <div className="text-right shrink-0 pl-2">
+                        <span className="text-xs font-black text-slate-900 font-mono italic">
+                          {safeMax(gpsStats.map(g => Number(g.dist_total_m) || 0)).toLocaleString('es-cl', { maximumFractionDigits: 0 })}
+                        </span>
+                        <span className="text-[7.5px] font-bold text-slate-400 ml-0.5 uppercase">m</span>
+                      </div>
+                    </div>
+
+                    {/* 2. VELOCIDAD */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-rose-200/60 hover:bg-rose-50/10 transition-all">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-rose-100/60 text-rose-600 ring-2 ring-rose-500/5 shadow-inner shrink-0">
+                          <i className="fa-solid fa-gauge-high text-xs"></i>
+                        </div>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider truncate">Velocidad</span>
+                      </div>
+                      <div className="text-right shrink-0 pl-2">
+                        <span className="text-xs font-black text-slate-900 font-mono italic">
+                          {safeMax(gpsStats.map(g => Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0)).toFixed(1)}
+                        </span>
+                        <span className="text-[7.5px] font-bold text-slate-400 ml-0.5 uppercase">km/h</span>
+                      </div>
+                    </div>
+
+                    {/* 3. METROS / MIN */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-blue-200/60 hover:bg-blue-50/10 transition-all">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-blue-100/60 text-blue-600 ring-2 ring-blue-500/5 shadow-inner shrink-0">
+                          <i className="fa-solid fa-bolt-lightning text-xs"></i>
+                        </div>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider truncate">Relativa</span>
+                      </div>
+                      <div className="text-right shrink-0 pl-2">
+                        <span className="text-xs font-black text-slate-900 font-mono italic">
+                          {safeMax(gpsStats.map(g => Number(g.m_por_min) || (Number(g.minutos) > 0 ? (Number(g.dist_total_m) / Number(g.minutos)) : 0))).toFixed(1)}
+                        </span>
+                        <span className="text-[7.5px] font-bold text-slate-400 ml-0.5 uppercase">m/min</span>
+                      </div>
+                    </div>
+
+                    {/* 4. HSR */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-amber-200/60 hover:bg-amber-50/10 transition-all">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-amber-100/60 text-amber-600 ring-2 ring-amber-500/5 shadow-inner shrink-0">
+                          <i className="fa-solid fa-wind text-xs"></i>
+                        </div>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider truncate">HSR ({">"}20)</span>
+                      </div>
+                      <div className="text-right shrink-0 pl-2">
+                        <span className="text-xs font-black text-slate-900 font-mono italic">
+                          {safeMax(gpsStats.map(g => Number(g.dist_mai_m_20_kmh) || 0)).toLocaleString('es-cl', { maximumFractionDigits: 0 })}
+                        </span>
+                        <span className="text-[7.5px] font-bold text-slate-400 ml-0.5 uppercase">m</span>
+                      </div>
+                    </div>
+
+                    {/* 5. DIST. SPRINT */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-violet-200/60 hover:bg-violet-50/10 transition-all">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-violet-100/60 text-violet-600 ring-2 ring-violet-500/5 shadow-inner shrink-0">
+                          <i className="fa-solid fa-rocket text-xs"></i>
+                        </div>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider truncate">Dist. Sprint</span>
+                      </div>
+                      <div className="text-right shrink-0 pl-2">
+                        <span className="text-xs font-black text-slate-900 font-mono italic">
+                          {safeMax(gpsStats.map(g => Number(g.dist_sprint_m_25_kmh) || 0)).toLocaleString('es-cl', { maximumFractionDigits: 0 })}
+                        </span>
+                        <span className="text-[7.5px] font-bold text-slate-400 ml-0.5 uppercase">m</span>
+                      </div>
+                    </div>
+
+                    {/* 6. SPRINTS */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-fuchsia-200/60 hover:bg-fuchsia-50/10 transition-all">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-fuchsia-100/60 text-fuchsia-600 ring-2 ring-fuchsia-500/5 shadow-inner shrink-0">
+                          <i className="fa-solid fa-fire text-xs"></i>
+                        </div>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider truncate">Sprints</span>
+                      </div>
+                      <div className="text-right shrink-0 pl-2">
+                        <span className="text-xs font-black text-slate-900 font-mono italic">
+                          {safeMax(gpsStats.map(g => Number(g.sprints_n) || 0))}
+                        </span>
+                        <span className="text-[7.5px] font-bold text-slate-400 ml-0.5 uppercase">n</span>
+                      </div>
+                    </div>
+
+                    {/* 7. ACC/DEC */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-sky-200/60 hover:bg-sky-50/10 transition-all">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-sky-100/60 text-sky-600 ring-2 ring-sky-500/5 shadow-inner shrink-0">
+                          <i className="fa-solid fa-arrows-left-right text-xs"></i>
+                        </div>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider truncate font-sans">A/D</span>
+                      </div>
+                      <div className="text-right shrink-0 pl-2">
+                        <span className="text-xs font-black text-slate-900 font-mono italic">
+                          {safeMax(gpsStats.map(g => Number(g.acc_decc_ai_n) || 0))}
+                        </span>
+                        <span className="text-[7.5px] font-bold text-slate-400 ml-0.5 uppercase font-sans">n</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-center text-[10px] text-slate-400 uppercase font-black py-4">Sin datos GPS registrados</p>
+                )}
               </div>
             </div>
 
@@ -1164,6 +1351,16 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                                      A/D
                                    </button>
                                 </div>
+                                <div className="flex items-center gap-3 mt-1.5 px-1 justify-start">
+                                   <div className="flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 bg-[#10b981] rounded-full inline-block"></span>
+                                      <span className="text-[7.5px] font-black uppercase text-slate-400 tracking-wider">Entrenamiento</span>
+                                   </div>
+                                   <div className="flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 bg-[#ef4444] rounded-full inline-block"></span>
+                                      <span className="text-[7.5px] font-black uppercase text-slate-400 tracking-wider">Partido</span>
+                                   </div>
+                                </div>
                              </div>
                           </div>
                        </div>
@@ -1185,10 +1382,19 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                                    <Bar 
                                      name={gpsChartMetric === 'dist_total_m' ? 'Distancia (m)' : gpsChartMetric === 'dist_mai_m_20_kmh' ? 'HSR >20km/h (m)' : gpsChartMetric === 'm_por_min' ? 'M/min' : 'Acc/Decc (n)'} 
                                      dataKey={gpsChartMetric} 
-                                     fill="#10b981" 
                                      radius={[8, 8, 0, 0]} 
                                      barSize={32} 
-                                   />
+                                   >
+                                      {filteredGpsStats.map((entry, index) => {
+                                         const isMatchDay = matchDatesSet.has(entry.fecha);
+                                         return (
+                                            <Cell 
+                                               key={`cell-${index}`} 
+                                               fill={isMatchDay ? '#ef4444' : '#10b981'} 
+                                            />
+                                         );
+                                      })}
+                                   </Bar>
                                 </BarChart>
                              </ResponsiveContainer>
                           ) : (
@@ -1203,8 +1409,119 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                  </div>
               </div>
 
+              {/* MÁXIMOS HISTÓRICOS GPS - FULL WIDTH ON ITS OWN ROW */}
+              <div className="hidden bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 mb-8 w-full col-span-1 md:col-span-2">
+                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>
+                    MÁXIMOS HISTÓRICOS GPS
+                 </h3>
+                 {gpsStats.length > 0 ? (
+                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
+                        {/* 1. DISTANCE */}
+                        <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/10 transition-all flex flex-col items-center text-center justify-between min-h-[170px]">
+                           <div className="w-12 h-12 rounded-full flex items-center justify-center bg-emerald-100/60 text-emerald-600 ring-4 ring-emerald-500/10 mb-3 shadow-inner">
+                              <i className="fa-solid fa-route text-base"></i>
+                           </div>
+                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. DISTANCIA</span>
+                           <div>
+                              <span className="text-xl font-black text-slate-900 tracking-tight italic font-mono">
+                                 {safeMax(gpsStats.map(g => Number(g.dist_total_m) || 0)).toLocaleString('es-cl', { maximumFractionDigits: 0 })}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">m</span>
+                           </div>
+                        </div>
+
+                        {/* 2. VELOCIDAD */}
+                        <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-rose-200 hover:bg-rose-50/10 transition-all flex flex-col items-center text-center justify-between min-h-[170px]">
+                           <div className="w-12 h-12 rounded-full flex items-center justify-center bg-rose-100/60 text-rose-600 ring-4 ring-rose-500/10 mb-3 shadow-inner">
+                              <i className="fa-solid fa-gauge-high text-base"></i>
+                           </div>
+                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. VELOCIDAD</span>
+                           <div>
+                              <span className="text-xl font-black text-slate-900 tracking-tight italic font-mono">
+                                 {safeMax(gpsStats.map(g => Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0)).toFixed(1)}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">km/h</span>
+                           </div>
+                        </div>
+
+                        {/* 3. METROS POR MINUTO */}
+                        <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/10 transition-all flex flex-col items-center text-center justify-between min-h-[170px]">
+                           <div className="w-12 h-12 rounded-full flex items-center justify-center bg-blue-100/60 text-blue-600 ring-4 ring-blue-500/10 mb-3 shadow-inner">
+                              <i className="fa-solid fa-bolt-lightning text-base"></i>
+                           </div>
+                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. METROS / MIN</span>
+                           <div>
+                              <span className="text-xl font-black text-slate-900 tracking-tight italic font-mono">
+                                 {safeMax(gpsStats.map(g => Number(g.m_por_min) || (Number(g.minutos) > 0 ? (Number(g.dist_total_m) / Number(g.minutos)) : 0))).toFixed(1)}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">m/min</span>
+                           </div>
+                        </div>
+
+                        {/* 4. HSR */}
+                        <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-amber-200 hover:bg-amber-50/10 transition-all flex flex-col items-center text-center justify-between min-h-[170px]">
+                           <div className="w-12 h-12 rounded-full flex items-center justify-center bg-amber-100/60 text-amber-600 ring-4 ring-amber-500/10 mb-3 shadow-inner">
+                              <i className="fa-solid fa-wind text-base"></i>
+                           </div>
+                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. HSR ({">"}20 km/h)</span>
+                           <div>
+                              <span className="text-xl font-black text-slate-900 tracking-tight italic font-mono">
+                                 {safeMax(gpsStats.map(g => Number(g.dist_mai_m_20_kmh) || 0)).toLocaleString('es-cl', { maximumFractionDigits: 0 })}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">m</span>
+                           </div>
+                        </div>
+
+                        {/* 5. SPRINT DISTANCE */}
+                        <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-violet-200 hover:bg-violet-50/10 transition-all flex flex-col items-center text-center justify-between min-h-[170px]">
+                           <div className="w-12 h-12 rounded-full flex items-center justify-center bg-violet-100/60 text-violet-600 ring-4 ring-violet-500/10 mb-3 shadow-inner">
+                              <i className="fa-solid fa-rocket text-base"></i>
+                           </div>
+                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. DIST. SPRINT</span>
+                           <div>
+                              <span className="text-xl font-black text-slate-900 tracking-tight italic font-mono">
+                                 {safeMax(gpsStats.map(g => Number(g.dist_sprint_m_25_kmh) || 0)).toLocaleString('es-cl', { maximumFractionDigits: 0 })}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">m</span>
+                           </div>
+                        </div>
+
+                        {/* 6. SPRINTS COUNT */}
+                        <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-fuchsia-200 hover:bg-fuchsia-50/10 transition-all flex flex-col items-center text-center justify-between min-h-[170px]">
+                           <div className="w-12 h-12 rounded-full flex items-center justify-center bg-fuchsia-100/60 text-fuchsia-600 ring-4 ring-fuchsia-500/10 mb-3 shadow-inner">
+                              <i className="fa-solid fa-fire text-base"></i>
+                           </div>
+                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. SPRINTS</span>
+                           <div>
+                              <span className="text-xl font-black text-slate-900 tracking-tight italic font-mono">
+                                 {safeMax(gpsStats.map(g => Number(g.sprints_n) || 0))}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">sprints</span>
+                           </div>
+                        </div>
+
+                        {/* 7. ACC + DEC */}
+                        <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 hover:border-sky-200 hover:bg-sky-50/10 transition-all flex flex-col items-center text-center justify-between min-h-[170px]">
+                           <div className="w-12 h-12 rounded-full flex items-center justify-center bg-sky-100/60 text-sky-600 ring-4 ring-sky-500/10 mb-3 shadow-inner">
+                              <i className="fa-solid fa-arrows-left-right text-base"></i>
+                           </div>
+                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-2">MÁX. ACC + DEC</span>
+                           <div>
+                              <span className="text-xl font-black text-slate-900 tracking-tight italic font-mono">
+                                 {safeMax(gpsStats.map(g => Number(g.acc_decc_ai_n) || 0))}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">acc/dec</span>
+                           </div>
+                        </div>
+                     </div>
+                 ) : (
+                     <p className="text-center text-[10px] text-slate-400 uppercase font-black py-10">Sin datos GPS registrados</p>
+                 )}
+              </div>
+
               {/* Lists Section */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 gap-8">
                  {/* Citaciones List */}
                  <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Historial de Citaciones</h3>
@@ -1227,8 +1544,134 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                     </div>
                  </div>
 
+                  {/* Historial de Competencia y Participación Real */}
+                  <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                        <div>
+                           <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
+                              <span className="w-2 h-6 bg-red-600 rounded-full"></span>
+                              Participación en Partidos (Sincronización GPS Calendario)
+                           </h3>
+                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">
+                              Cruza del calendario oficial ("matches") con telemetría GPS e informes de carga física ("gps_import")
+                           </p>
+                        </div>
+                        <div className="flex gap-2 text-[9px] font-black uppercase text-slate-500 bg-slate-50 border border-slate-100 p-2 rounded-2xl shrink-0">
+                           <div>Partidos Disputados: <span className="text-red-500 font-mono font-black">{matchedParticipation.length}</span></div>
+                        </div>
+                     </div>
+
+                     <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                        {matchedParticipation.map(({ match, participated, gpsRecord, internalMatchRecord }) => {
+                           const catName = match.category_id 
+                             ? REVERSE_CATEGORY_ID_MAP[match.category_id]?.replace('sub_', 'SUB ').toUpperCase() 
+                             : 'S/D';
+                           
+                           return (
+                             <div key={match.id} className="p-6 rounded-3xl border border-slate-100 bg-slate-50 hover:border-red-200 shadow-sm transition-all flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                {/* Match Details */}
+                                <div className="space-y-1.5 flex-1">
+                                   <div className="flex flex-wrap items-center gap-2">
+                                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md text-[8.5px] font-black uppercase tracking-wider">
+                                         {catName}
+                                      </span>
+                                      <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest leading-none">
+                                         {match.competition_type}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 font-black font-mono leading-none">
+                                         {match.date}
+                                      </span>
+                                   </div>
+                                   <h4 className="text-sm font-black text-slate-900 uppercase">
+                                      VS. {match.opponent}
+                                   </h4>
+                                   {match.location && (
+                                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                                         📍 {match.location} {match.city ? `• ${match.city}` : ''}
+                                      </p>
+                                   )}
+                                   {match.result && (
+                                      <p className="text-[10px] font-black text-slate-600 uppercase">
+                                         Resultado: <span className="text-red-600">{match.result}</span>
+                                      </p>
+                                   )}
+                                   {match.observations && (
+                                      <p className="text-[9px] text-slate-400 italic">
+                                         {match.observations}
+                                      </p>
+                                   )}
+                                </div>
+
+                                {/* Participation Status & GPS Metrics */}
+                                <div className="flex flex-col md:items-end justify-between gap-3 min-w-[240px]">
+                                   {/* Status Badge */}
+                                   <div>
+                                      {participated ? (
+                                         gpsRecord ? (
+                                            <span className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 w-fit">
+                                               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                               Participó • GPS Activo
+                                            </span>
+                                         ) : (
+                                            <span className="bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 w-fit">
+                                               <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                                               Participó • Carga Física Manual
+                                            </span>
+                                         )
+                                      ) : (
+                                         <span className="bg-slate-100 text-slate-400 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 w-fit">
+                                            <span className="w-2 h-2 rounded-full bg-slate-300"></span>
+                                            No Participó
+                                         </span>
+                                      )}
+                                   </div>
+
+                                   {/* GPS Metrics if Participated with GPS */}
+                                   {participated && gpsRecord && (
+                                      <div className="grid grid-cols-4 gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-full divide-x divide-slate-100 text-center">
+                                         <div className="px-1.5">
+                                            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">MINUTOS</p>
+                                            <p className="text-xs font-black text-slate-900 font-mono">{Number(gpsRecord.minutos || gpsRecord.duration_mins || 0).toFixed(0)}'</p>
+                                         </div>
+                                         <div className="px-1.5">
+                                            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">DIST. (M)</p>
+                                            <p className="text-xs font-black text-slate-900 font-mono">{(Number(gpsRecord.dist_total_m) || 0).toLocaleString('es-cl', { maximumFractionDigits: 0 })}m</p>
+                                         </div>
+                                         <div className="px-1.5">
+                                            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">HSR (M)</p>
+                                            <p className="text-xs font-black text-slate-900 font-mono">{(Number(gpsRecord.dist_mai_m_20_kmh) || 0).toFixed(0)}m</p>
+                                         </div>
+                                         <div className="px-1.5">
+                                            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">VEL. MÁX</p>
+                                            <p className="text-xs font-black text-red-600 font-mono">{(Number(gpsRecord.vel_max_kmh) || Number(gpsRecord.velocidad_max) || 0).toFixed(1)} <span className="text-[6.5px] font-bold text-slate-400">km/h</span></p>
+                                         </div>
+                                      </div>
+                                   )}
+
+                                   {/* Internal load details if no GPS */}
+                                   {participated && !gpsRecord && internalMatchRecord && (
+                                      <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-full text-left">
+                                         <p className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest leading-none">RPE (Esfuerzo Percibido)</p>
+                                         <p className="text-xs font-black text-slate-800 mt-1">Escala: <span className="text-red-500 font-mono">{internalMatchRecord.rpe_esfuerzo || 'S/D'}</span> / 10</p>
+                                      </div>
+                                   )}
+                                </div>
+                             </div>
+                           );
+                        })}
+
+                        {matchedParticipation.length === 0 && (
+                           <div className="text-center py-12 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200">
+                              <i className="fa-solid fa-circle-info text-slate-300 text-2xl mb-2"></i>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No hay partidos registrados para esta categoría aún</p>
+                              <p className="text-[8px] text-slate-400 mt-1">Crea partidos de competencia desde el área técnica.</p>
+                           </div>
+                        )}
+                     </div>
+                  </div>
+
                  {/* GPS Detailed List */}
-                 <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+                 <div className="hidden bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">MÁXIMOS HISTÓRICOS GPS</h3>
                      {gpsStats.length > 0 ? (
                          <div className="grid grid-cols-2 gap-4">
