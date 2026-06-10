@@ -705,90 +705,43 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
-              <div className="lg:col-span-4 flex flex-col gap-6">
-                <div className="bg-white rounded-[32px] md:rounded-[40px] p-6 md:p-8 shadow-sm border border-slate-100 flex-1">
-                  <h3 className="text-[10px] md:text-sm font-black text-slate-900 uppercase tracking-[0.2em] mb-6 md:mb-8 flex items-center gap-3">
-                    <span className="w-1.5 md:w-2 h-5 md:h-6 bg-red-600 rounded-full"></span>
-                    Agenda de Hoy
-                  </h3>
-                  <div className="space-y-4 md:space-y-6">
-                    {loadingActivities ? (
-                      <div className="py-10 text-center">
-                        <i className="fa-solid fa-spinner fa-spin text-slate-300"></i>
-                      </div>
-                    ) : realActivities.length > 0 ? (
-                      realActivities.map((item, i) => (
-                        <div key={i} className="flex gap-3 md:gap-4 group">
-                          <div className="flex-1 bg-slate-50 p-3 md:p-4 rounded-xl md:rounded-2xl border border-transparent group-hover:border-slate-200 transition-all">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-sm md:text-base">
-                                {item.actividad.toLowerCase().includes('entrenamiento') ? '⚽' : 
-                                 item.actividad.toLowerCase().includes('almuerzo') ? '🍽️' :
-                                 item.actividad.toLowerCase().includes('video') ? '📹' :
-                                 item.actividad.toLowerCase().includes('wellness') ? '☀️' : '📋'}
-                              </span>
-                              <span className="text-[9px] md:text-[11px] font-black text-slate-900 uppercase italic tracking-tight">
-                                {item.actividad}
-                              </span>
-                            </div>
-                            <p className="text-[7px] md:text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                              {item.observacion || 'Sin observaciones'}
-                            </p>
+            <div className="max-w-xl mx-auto w-full flex flex-col gap-6">
+              <div className="bg-white rounded-[32px] md:rounded-[40px] p-6 md:p-8 shadow-sm border border-slate-100 flex-1">
+                <h3 className="text-[10px] md:text-sm font-black text-slate-900 uppercase tracking-[0.2em] mb-6 md:mb-8 flex items-center gap-3">
+                  <span className="w-1.5 md:w-2 h-5 md:h-6 bg-red-600 rounded-full"></span>
+                  Agenda de Hoy
+                </h3>
+                <div className="space-y-4 md:space-y-6">
+                  {loadingActivities ? (
+                    <div className="py-10 text-center">
+                      <i className="fa-solid fa-spinner fa-spin text-slate-300"></i>
+                    </div>
+                  ) : realActivities.length > 0 ? (
+                    realActivities.map((item, i) => (
+                      <div key={i} className="flex gap-3 md:gap-4 group">
+                        <div className="flex-1 bg-slate-50 p-3 md:p-4 rounded-xl md:rounded-2xl border border-transparent group-hover:border-slate-200 transition-all">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm md:text-base">
+                              {item.actividad.toLowerCase().includes('entrenamiento') ? '⚽' : 
+                               item.actividad.toLowerCase().includes('almuerzo') ? '🍽️' :
+                               item.actividad.toLowerCase().includes('video') ? '📹' :
+                               item.actividad.toLowerCase().includes('wellness') ? '☀️' : '📋'}
+                            </span>
+                            <span className="text-[9px] md:text-[11px] font-black text-slate-900 uppercase italic tracking-tight">
+                              {item.actividad}
+                            </span>
                           </div>
+                          <p className="text-[7px] md:text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
+                            {item.observacion || 'Sin observaciones'}
+                          </p>
                         </div>
-                      ))
-                    ) : (
-                      <div className="py-10 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">No hay actividades programadas</p>
                       </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="lg:col-span-8 space-y-6 md:space-y-8">
-                <div className="bg-white rounded-[32px] md:rounded-[40px] p-6 md:p-8 shadow-sm border border-slate-100 min-h-[240px] md:min-h-[320px] flex flex-col">
-                  <h3 className="text-[10px] md:text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 mb-6 md:mb-8">
-                    <span className="w-1.5 md:w-2 h-5 md:h-6 bg-blue-500 rounded-full"></span> Tendencia
-                  </h3>
-                  <div className="flex-1 w-full" style={{ height: 180 }}>
-                    {performanceData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={performanceData}>
-                          <defs>
-                            <linearGradient id="colorWellness" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
-                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                            </linearGradient>
-                          </defs>
-                          <XAxis dataKey="date" stroke="#94a3b8" fontSize={8} fontWeight={900} axisLine={false} tickLine={false} />
-                          <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '9px' }} />
-                          <Area type="monotone" dataKey="wellness" stroke="#3b82f6" fillOpacity={1} fill="url(#colorWellness)" strokeWidth={3} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="h-full flex items-center justify-center text-slate-300 font-bold uppercase text-[9px] italic">Sin datos históricos</div>
-                    )}
-                  </div>
-                </div>
-                <div className="bg-[#0b1220] rounded-[32px] md:rounded-[40px] p-6 md:p-8 shadow-2xl border border-white/5 min-h-[240px] md:min-h-[320px] flex flex-col">
-                  <h3 className="text-[10px] md:text-sm font-black text-white uppercase tracking-[0.2em] flex items-center gap-3 mb-6 md:mb-8">
-                    <span className="w-1.5 md:w-2 h-5 md:h-6 bg-red-600 rounded-full"></span> Carga Acumulada
-                  </h3>
-                  <div className="flex-1 w-full" style={{ height: 180 }}>
-                    {performanceData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={performanceData}>
-                          <XAxis dataKey="date" stroke="#475569" fontSize={8} fontWeight={900} axisLine={false} tickLine={false} />
-                          <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '9px' }} />
-                          <Bar dataKey="load" fill="#ef4444" radius={[8, 8, 8, 8]} barSize={16} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="h-full flex items-center justify-center text-slate-700 font-bold uppercase text-[9px] italic">Esperando primer registro</div>
-                    )}
-                  </div>
+                    ))
+                  ) : (
+                    <div className="py-10 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">No hay actividades programadas</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

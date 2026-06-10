@@ -8,7 +8,7 @@ import {
   PolarAngleAxis, PolarRadiusAxis, Radar, Cell 
 } from 'recharts';
 import ClubBadge from './ClubBadge';
-import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS, MatchDB } from '../types';
+import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS, MatchDB, CATEGORY_ID_MAP } from '../types';
 import { FALLBACK_CLUB_NAMES } from '../constants';
 
 interface PlayerProfileAreaProps {
@@ -27,14 +27,23 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   };
 
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(() => {
+    if (userRole === 'player') {
+      return initialPlayerId || null;
+    }
     const saved = sessionStorage.getItem('selectedPlayerIdForProfile');
     return saved ? Number(saved) : (initialPlayerId || null);
   });
+
+  useEffect(() => {
+    if (userRole === 'player' && initialPlayerId) {
+      setSelectedPlayerId(initialPlayerId);
+    }
+  }, [initialPlayerId, userRole]);
   const [players, setPlayers] = useState<any[]>(initialPlayers || []);
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<string>('evolucion'); 
-  const [gpsChartMetric, setGpsChartMetric] = useState<'dist_total_m' | 'dist_mai_m_20_kmh' | 'm_por_min' | 'acc_decc_ai_n'>('dist_total_m');
+  const [gpsChartMetric, setGpsChartMetric] = useState<'dist_total_m' | 'dist_mai_m_20_kmh' | 'm_por_min' | 'acc_decc_ai_n' | 'sprints_n' | 'dist_sprint_m_25_kmh'>('dist_total_m');
 
   useEffect(() => {
     const handleSelect = (e: any) => {
@@ -61,6 +70,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const [gpsStats, setGpsStats] = useState<any[]>([]);
   const [wellnessData, setWellnessData] = useState<any[]>([]);
   const [categoryMatches, setCategoryMatches] = useState<MatchDB[]>([]);
+  const [matchReports, setMatchReports] = useState<any[]>([]);
   
   // Slider & Dual Chart States
   const [sliderStart, setSliderStart] = useState<string>('');
@@ -82,6 +92,12 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     imtp: any[],
     speed: any[]
   }>({ anthro: [], vo2: [], imtp: [], speed: [] });
+
+  const [medicalHistory, setMedicalHistory] = useState<{
+    reports: any[];
+    treatments: any[];
+    injuries: any[];
+  }>({ reports: [], treatments: [], injuries: [] });
 
   useEffect(() => {
     console.log("PlayerProfileArea: initialPlayers received:", initialPlayers?.length);
@@ -229,6 +245,35 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         setCategoryMatches(mData || []);
       } catch (err) {
         console.error("Error loading matches for cross-referencing:", err);
+      }
+
+      // 7b. Match reports specifically for this player
+      try {
+        const { data: mrData } = await supabase
+          .from('match_reports')
+          .select('*')
+          .eq('player_id', playerId)
+          .order('fecha', { ascending: false });
+        setMatchReports(mrData || []);
+      } catch (err) {
+        console.error("Error loading match_reports for player:", err);
+      }
+
+      // 8. Medical History (reports, treatments, injuries)
+      try {
+        const [repRes, treatRes, injRes] = await Promise.all([
+          supabase.from('medical_daily_reports').select('*').eq('player_id', playerId).order('report_date', { ascending: false }),
+          supabase.from('medical_treatments').select('*').eq('player_id', playerId).order('treatment_date', { ascending: false }),
+          supabase.from('lesionados').select('*').eq('player_id', playerId).order('fecha_inicio', { ascending: false })
+        ]);
+
+        setMedicalHistory({
+          reports: repRes.data || [],
+          treatments: treatRes.data || [],
+          injuries: injRes.data || []
+        });
+      } catch (err) {
+        console.error("Error loading medical history for athlete:", err);
       }
 
     } catch (err) {
@@ -442,7 +487,22 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const latestImtp = useMemo(() => physicalData.imtp.length > 0 ? physicalData.imtp[physicalData.imtp.length - 1] : null, [physicalData.imtp]);
   const latestSpeed = useMemo(() => physicalData.speed.length > 0 ? physicalData.speed[physicalData.speed.length - 1] : null, [physicalData.speed]);
 
+  const inferredCategory = useMemo(() => {
+    if (!profileData) return 'S/D';
+    if (profileData.categoria) return profileData.categoria;
+    if (profileData.anio) {
+      const year = Number(profileData.anio);
+      if (year === 2011) return 'sub_15';
+      if (year === 2009 || year === 2010) return 'sub_16';
+      if (year === 2007 || year === 2008) return 'sub_17';
+      if (year >= 2012) return 'sub_13';
+    }
+    return 'SUB 17'; // Default fallback
+  }, [profileData]);
+
   const matchedParticipation = useMemo(() => {
+    const playerCategoryId = inferredCategory ? CATEGORY_ID_MAP[inferredCategory.toLowerCase().replace(' ', '_')] : null;
+
     return categoryMatches
       .map(match => {
         const gpsRecord = gpsStats.find(g => g.fecha === match.date);
@@ -471,10 +531,20 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
           return catId !== undefined && catId !== null && Number(catId) === Number(match.category_id);
         });
 
+        const matchesPlayerCategory = playerCategoryId !== null && playerCategoryId !== undefined && Number(match.category_id) === Number(playerCategoryId);
+
         const belongsToThisCategory = 
           isCitedForThisMicrocycle || 
           isCitedForThisCategoryOnDate || 
-          (hasActivity && possessesCitationForThisCategory);
+          (hasActivity && possessesCitationForThisCategory) ||
+          (hasActivity && matchesPlayerCategory) ||
+          (hasActivity && (
+            citations.length === 0 || 
+            !citations.some(cit => {
+              const catId = cit.microcycles?.category_id;
+              return catId && Number(catId) === Number(match.category_id);
+            })
+          ));
 
         const participated = hasActivity && belongsToThisCategory;
 
@@ -486,16 +556,40 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         };
       })
       .filter(item => item.participated);
-  }, [categoryMatches, gpsStats, matchData, citations]);
+  }, [categoryMatches, gpsStats, matchData, citations, inferredCategory]);
 
   const matchDatesSet = useMemo(() => {
-    return new Set(matchedParticipation.map(item => item.match.date));
-  }, [matchedParticipation]);
+    const dates = new Set<string>();
+    
+    // 1. Scheduled matches with active participation
+    matchedParticipation.forEach(item => {
+      if (item.match && item.match.date) {
+        dates.add(item.match.date);
+      }
+    });
+
+    // 2. Internal load sessions marked as MATCH
+    matchData.forEach(item => {
+      if (item.session_date) {
+        dates.add(item.session_date);
+      }
+    });
+
+    // 3. Match reports specifically registered for this player
+    matchReports.forEach(item => {
+      const d = item.fecha || item.date;
+      if (d) {
+        dates.add(d);
+      }
+    });
+
+    return dates;
+  }, [matchedParticipation, matchData, matchReports]);
 
   const stats = useMemo(() => {
     const totalCitations = citations.length;
     const totalTrainings = trainingData.length;
-    const totalMatches = matchedParticipation.length;
+    const totalMatches = matchDatesSet.size;
     const totalMinGps = gpsStats.reduce((acc, curr) => acc + (Number(curr.minutos) || 0), 0);
     const totalDistGps = gpsStats.reduce((acc, curr) => acc + (Number(curr.dist_total_m) || 0), 0);
     const totalHsrGps = gpsStats.reduce((acc, curr) => acc + (Number(curr.dist_mai_m_20_kmh) || 0), 0);
@@ -515,7 +609,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     return {
       citaciones: totalCitations,
       citByCategory,
-      entrenamientos: gpsStats.length > 0 ? gpsStats.length : totalTrainings,
+      entrenamientos: gpsStats.length > 0 ? gpsStats.filter(g => !matchDatesSet.has(g.fecha)).length : totalTrainings,
       partidos: totalMatches,
       minutosGps: totalMinGps,
       distanciaGps: totalDistGps,
@@ -523,7 +617,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       velocidadMax: maxVel,
       hsr: totalHsrGps
     };
-  }, [citations, trainingData, matchData, gpsStats, matchedParticipation]);
+  }, [citations, trainingData, matchData, gpsStats, matchDatesSet]);
 
   const resolvedUserClubId = useMemo(() => {
     if (userClubId) return userClubId;
@@ -558,6 +652,15 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       return false;
     });
   }, [players, userRole, resolvedUserClubId, normalizedUserClubName]);
+
+  useEffect(() => {
+    if (userRole === 'club' && clubPlayers.length > 0) {
+      const isValid = selectedPlayerId && clubPlayers.some(p => Number(p.player_id) === Number(selectedPlayerId));
+      if (!isValid) {
+        setSelectedPlayerId(Number(clubPlayers[0].player_id));
+      }
+    }
+  }, [clubPlayers, selectedPlayerId, userRole]);
 
   const uniqueYears = useMemo(() => {
     const years = clubPlayers.map(p => p.anio || p.year).filter(Boolean);
@@ -621,19 +724,6 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       { subject: 'Perfil Graso', A: fatBonus, fullMark: 100 },
     ];
   }, [profileData, latestImtp, latestSpeed, latestVo2, latestAnthro]);
-
-  const inferredCategory = useMemo(() => {
-    if (!profileData) return 'S/D';
-    if (profileData.categoria) return profileData.categoria;
-    if (profileData.anio) {
-      const year = Number(profileData.anio);
-      if (year === 2011) return 'sub_15';
-      if (year === 2009 || year === 2010) return 'sub_16';
-      if (year === 2007 || year === 2008) return 'sub_17';
-      if (year >= 2012) return 'sub_13';
-    }
-    return 'SUB 17'; // Default fallback
-  }, [profileData]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -901,6 +991,128 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                 ) : (
                   <p className="text-center text-[10px] text-slate-400 uppercase font-black py-4">Sin datos GPS registrados</p>
                 )}
+              </div>
+
+              {/* HISTORIAL DE ÁREA MÉDICA */}
+              <div className="bg-white rounded-[40px] p-6 shadow-sm border border-slate-100 mt-6">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <span className="w-1.5 h-4 bg-red-600 rounded-full"></span>
+                  HISTORIAL ÁREA MÉDICA
+                </h3>
+
+                {/* Micro Stat Grid */}
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 text-center">
+                    <span className="block text-xs font-black text-slate-800 font-mono italic">
+                      {medicalHistory.injuries.length}
+                    </span>
+                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-wider block">Lesiones</span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 text-center">
+                    <span className="block text-xs font-black text-slate-800 font-mono italic">
+                      {medicalHistory.reports.length}
+                    </span>
+                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-wider block">Partes</span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 text-center">
+                    <span className="block text-xs font-black text-slate-800 font-mono italic">
+                      {medicalHistory.treatments.length}
+                    </span>
+                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-wider block">Kinesio</span>
+                  </div>
+                </div>
+
+                {/* Combined list of medical events */}
+                <div className="space-y-2">
+                  {(() => {
+                    const events: { date: string; type: 'lesion' | 'report' | 'treatment'; title: string; subtitle: string; severity?: string; status?: string }[] = [];
+
+                    medicalHistory.injuries.forEach(i => {
+                      events.push({
+                        date: i.fecha_inicio || '',
+                        type: 'lesion',
+                        title: i.tipo_lesion || i.diagnostico_clinico || 'Lesión',
+                        subtitle: `${i.localizacion || ''} ${i.lado ? `(${i.lado})` : ''}`.trim(),
+                        status: i.estado || 'Finalizado'
+                      });
+                    });
+
+                    medicalHistory.reports.forEach(r => {
+                      events.push({
+                        date: r.report_date || '',
+                        type: 'report',
+                        title: r.diagnostico_medico || 'Evaluación médica',
+                        subtitle: r.observation || '',
+                        severity: r.severity
+                      });
+                    });
+
+                    medicalHistory.treatments.forEach(t => {
+                      events.push({
+                        date: t.treatment_date || '',
+                        type: 'treatment',
+                        title: 'Atención Kinésica',
+                        subtitle: t.description || ''
+                      });
+                    });
+
+                    // Sort by date descending
+                    const sortedEvents = events
+                      .filter(e => e.date)
+                      .sort((a, b) => b.date.localeCompare(a.date))
+                      .slice(0, 3);
+
+                    if (sortedEvents.length === 0) {
+                      return (
+                        <p className="text-center text-[9px] text-slate-400 uppercase font-black py-4">Sin registros médicos</p>
+                      );
+                    }
+
+                    return sortedEvents.map((evt, idx) => {
+                      let typeLabel = '';
+                      let typeColor = '';
+                      let icon = '';
+
+                      if (evt.type === 'lesion') {
+                        typeLabel = evt.status === 'Activo' ? 'LESIONADO' : 'ALTA';
+                        typeColor = evt.status === 'Activo' ? 'bg-red-50 text-red-500 border border-red-100' : 'bg-slate-50 text-slate-400 border border-slate-100';
+                        icon = 'fa-user-injured';
+                      } else if (evt.type === 'report') {
+                        typeLabel = evt.severity === 'high' ? 'P. CRÍTICO' : evt.severity === 'medium' ? 'P. MEDIO' : 'P. DIARIO';
+                        typeColor = evt.severity === 'high' ? 'bg-rose-50 text-rose-500 border border-rose-100' : 'bg-amber-50 text-amber-500 border border-amber-100';
+                        icon = 'fa-file-medical';
+                      } else {
+                        typeLabel = 'KINESIO';
+                        typeColor = 'bg-emerald-50 text-emerald-500 border border-emerald-100';
+                        icon = 'fa-hand-holding-medical';
+                      }
+
+                      return (
+                        <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between hover:border-slate-200 transition-all">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[7.5px] font-bold text-slate-400 font-mono">{evt.date}</span>
+                            <span className={`px-2 py-0.5 rounded-md text-[6.5px] font-black uppercase tracking-wider ${typeColor}`}>
+                              {typeLabel}
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-2 mt-1">
+                            <i className={`fa-solid ${icon} text-[10px] text-slate-400 mt-0.5`}></i>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[9px] font-black text-slate-800 uppercase tracking-tight truncate">
+                                {evt.title}
+                              </p>
+                              {evt.subtitle && (
+                                <p className="text-[8px] font-medium text-slate-400 uppercase tracking-wide truncate mt-0.5">
+                                  {evt.subtitle}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
               </div>
             </div>
 
@@ -1321,34 +1533,48 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                                    <span className="w-1.5 h-1.5 bg-emerald-600 rounded-full inline-block"></span>
                                    Métrica Desempeño (GPS)
                                 </label>
-                                <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100 w-full justify-between gap-1">
+                                <div className="grid grid-cols-3 bg-slate-50 p-1 rounded-2xl border border-slate-100 w-full gap-1">
                                    <button 
                                      type="button"
                                      onClick={() => setGpsChartMetric('dist_total_m')}
-                                     className={`flex-1 py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'dist_total_m' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                     className={`py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'dist_total_m' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                    >
                                      Distancia
                                    </button>
                                    <button 
                                      type="button"
                                      onClick={() => setGpsChartMetric('dist_mai_m_20_kmh')}
-                                     className={`flex-1 py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'dist_mai_m_20_kmh' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                     className={`py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'dist_mai_m_20_kmh' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                    >
                                      HSR ({'>'}20)
                                    </button>
                                    <button 
                                      type="button"
                                      onClick={() => setGpsChartMetric('m_por_min')}
-                                     className={`flex-1 py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'm_por_min' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                     className={`py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'm_por_min' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                    >
                                      Relativa
                                    </button>
                                    <button 
                                      type="button"
                                      onClick={() => setGpsChartMetric('acc_decc_ai_n')}
-                                     className={`flex-1 py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'acc_decc_ai_n' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                     className={`py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'acc_decc_ai_n' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                    >
                                      A/D
+                                   </button>
+                                   <button 
+                                     type="button"
+                                     onClick={() => setGpsChartMetric('sprints_n')}
+                                     className={`py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'sprints_n' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                   >
+                                     Sprints
+                                   </button>
+                                   <button 
+                                     type="button"
+                                     onClick={() => setGpsChartMetric('dist_sprint_m_25_kmh')}
+                                     className={`py-1.5 rounded-xl text-[8.5px] font-black uppercase transition-all text-center ${gpsChartMetric === 'dist_sprint_m_25_kmh' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                   >
+                                     Dist. Spt
                                    </button>
                                 </div>
                                 <div className="flex items-center gap-3 mt-1.5 px-1 justify-start">
@@ -1380,7 +1606,14 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                                      cursor={{fill: '#f8fafc'}}
                                    />
                                    <Bar 
-                                     name={gpsChartMetric === 'dist_total_m' ? 'Distancia (m)' : gpsChartMetric === 'dist_mai_m_20_kmh' ? 'HSR >20km/h (m)' : gpsChartMetric === 'm_por_min' ? 'M/min' : 'Acc/Decc (n)'} 
+                                     name={
+                                       gpsChartMetric === 'dist_total_m' ? 'Distancia (m)' : 
+                                       gpsChartMetric === 'dist_mai_m_20_kmh' ? 'HSR >20km/h (m)' : 
+                                       gpsChartMetric === 'm_por_min' ? 'M/min' : 
+                                       gpsChartMetric === 'acc_decc_ai_n' ? 'Acc/Decc (n)' :
+                                       gpsChartMetric === 'sprints_n' ? 'Sprints (n)' :
+                                       'Dist. Sprint >25km/h (m)'
+                                     } 
                                      dataKey={gpsChartMetric} 
                                      radius={[8, 8, 0, 0]} 
                                      barSize={32} 

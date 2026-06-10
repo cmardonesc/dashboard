@@ -466,15 +466,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
             {tecnicaOpen && !isCollapsed && (
               <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
                 <button
-                  onClick={() => onMenuChange('planificacion_semanal')}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                    activeMenu === 'planificacion_semanal' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_semanal' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
-                  <span className="text-[10px] font-bold">Cronograma Semanal</span>
-                </button>
-                <button
                   onClick={() => onMenuChange('tecnica_biblioteca')}
                   className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
                     activeMenu === 'tecnica_biblioteca' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
@@ -483,15 +474,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                   <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_biblioteca' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
                   <span className="text-[10px] font-bold">Base de Tareas</span>
                 </button>
-                <button
-                  onClick={() => onMenuChange('tecnica_convocatoria')}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                    activeMenu === 'tecnica_convocatoria' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_convocatoria' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
-                  <span className="text-[10px] font-bold">Convocatoria Táctica</span>
-                </button>
+
                 <button
                   onClick={() => onMenuChange('tecnica_partidos')}
                   className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${

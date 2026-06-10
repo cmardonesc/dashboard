@@ -211,7 +211,7 @@ const MatchesArea: React.FC<MatchesAreaProps> = ({ selectedCategoryId }) => {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
           <span className="w-2 h-6 bg-red-600 rounded-full"></span>
-          Registro de Partidos
+          Informes de Partido
         </h3>
         <button 
           onClick={() => {

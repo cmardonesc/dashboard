@@ -216,7 +216,16 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {clubPlayers.map(player => (
-                    <tr key={player.player_id} className="hover:bg-slate-50/50 transition-colors group">
+                    <tr 
+                      key={player.player_id} 
+                      onClick={() => {
+                        if (player.player_id) {
+                          sessionStorage.setItem('selectedPlayerIdForProfile', String(player.player_id));
+                          window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: player.player_id } }));
+                        }
+                      }}
+                      className="hover:bg-slate-50/50 transition-colors group cursor-pointer"
+                    >
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-black text-[10px] group-hover:bg-blue-600 group-hover:text-white transition-all overflow-hidden p-1">

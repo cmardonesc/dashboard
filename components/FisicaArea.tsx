@@ -32,7 +32,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     const localDate = new Date(d.getTime() - (offset * 60 * 1000));
     return localDate.toISOString().split('T')[0];
   });
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([Category.SUB_17]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(Object.values(Category));
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [athleteSearch, setAthleteSearch] = useState(''); 
 
@@ -1417,7 +1417,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 <div key={`well-${chunkIdx}`} className="print-page-section">
                   <PrintHeader 
                     selectedDate={selectedDate} 
-                    selectedCategory={selectedCategories[0]} 
+                    selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                     activeMicrocycle={activeMicrocycle} 
                     page={currentPageNum} 
                     total={totalPages} 
@@ -1531,7 +1531,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 <div key={`load-${chunkIdx}`} className="print-page-section">
                   <PrintHeader 
                     selectedDate={selectedDate} 
-                    selectedCategory={selectedCategories[0]} 
+                    selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                     activeMicrocycle={activeMicrocycle} 
                     page={currentPageNum} 
                     total={totalPages} 
@@ -1633,7 +1633,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 <div key={`gps-${chunkIdx}`} className="print-page-section">
                   <PrintHeader 
                     selectedDate={selectedDate} 
-                    selectedCategory={selectedCategories[0]} 
+                    selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                     activeMicrocycle={activeMicrocycle} 
                     page={currentPageNum} 
                     total={totalPages} 
@@ -1754,7 +1754,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               {(() => { currentPageNum++; return null; })()}
               <PrintHeader 
                 selectedDate={selectedDate} 
-                selectedCategory={selectedCategories[0]} 
+                selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                 activeMicrocycle={activeMicrocycle} 
                 page={currentPageNum} 
                 total={totalPages} 

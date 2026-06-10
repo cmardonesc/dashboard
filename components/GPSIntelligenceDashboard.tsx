@@ -171,28 +171,58 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
             return gps;
           });
 
-          // Fetch citations for these players on this date to get microcycle and category
+          // Fetch citations for these players to get microcycle and category
           const playerIds = finalGpsRecords.map(r => r.player_id);
           
-          const { data: citations, error: citError } = await supabase
-            .from('citaciones')
-            .select(`
-              player_id,
-              microcycles (
-                category_id
-              )
-            `)
-            .in('player_id', playerIds)
-            .eq('fecha', selectedDate);
+          let citations: any[] | null = null;
+          let citError: any = null;
+          try {
+            const { data, error } = await supabase
+              .from('citaciones')
+              .select(`
+                player_id,
+                microcycles!fk_citaciones_microcycles (
+                  category_id,
+                  start_date,
+                  end_date
+                )
+              `)
+              .in('player_id', playerIds);
+              
+            if (!error) {
+              citations = data;
+            } else {
+              citError = error;
+              // Fallback without explicit fk hint
+              const { data: fallbackData } = await supabase
+                .from('citaciones')
+                .select(`
+                  player_id,
+                  microcycles (
+                    category_id,
+                    start_date,
+                    end_date
+                  )
+                `)
+                .in('player_id', playerIds);
+              citations = fallbackData;
+            }
+          } catch (e) {
+            console.error("Exception fetching citations:", e);
+          }
 
           if (citError) console.error("Error fetching citations for categories:", citError);
 
           // Create a map for quick lookup: playerId -> categoryId
           const playerCategoryIdMap = new Map();
           citations?.forEach((cit: any) => {
-            const catId = cit.microcycles?.category_id;
-            if (catId) {
-              playerCategoryIdMap.set(cit.player_id, catId);
+            const mcObj = cit.microcycles || cit['microcycles!fk_citaciones_microcycles'] || cit.microcycles_fk_citaciones_microcycles;
+            const mc = Array.isArray(mcObj) ? mcObj[0] : mcObj;
+            if (mc) {
+              const { start_date, end_date, category_id } = mc;
+              if (start_date && end_date && selectedDate >= start_date && selectedDate <= end_date) {
+                playerCategoryIdMap.set(cit.player_id, category_id);
+              }
             }
           });
 
@@ -213,10 +243,16 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
             const citationCatId = playerCategoryIdMap.get(d.player_id);
             let catName = 'SIN CATEGORÍA';
             
+            // Try to find default player category in performanceRecords
+            const defaultPlayerRecord = performanceRecords.find(r => r.player?.player_id === d.player_id);
+            const defaultCategory = defaultPlayerRecord?.player?.category;
+            
             if (citationCatId && REVERSE_CATEGORY_ID_MAP[citationCatId]) {
               catName = REVERSE_CATEGORY_ID_MAP[citationCatId].toUpperCase().replace('_', ' ');
             } else if (p?.categoria) {
               catName = p.categoria.toUpperCase().replace('_', ' ');
+            } else if (defaultCategory) {
+              catName = defaultCategory.toUpperCase().replace('_', ' ');
             }
             
             let finalPlayer = {
@@ -1328,11 +1364,6 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">POSICIÓN GRUPAL</p>
               <p className="text-lg font-black text-slate-900">{playerData.posGroup}</p>
-            </div>
-            <div className="w-px h-8 bg-slate-100 hidden sm:block"></div>
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">DORSAL</p>
-              <p className="text-lg font-black text-slate-900">#—</p>
             </div>
             <div className="w-px h-8 bg-slate-100 hidden sm:block"></div>
             <div>
