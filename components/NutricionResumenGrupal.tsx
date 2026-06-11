@@ -127,7 +127,9 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
           
           // If user is a club, we show ALL players for comparison (anonymized later)
           // If user is admin, we respect the selectedClub filter
-          const matchesClub = selectedClub === 'TODOS' || record.player.club === selectedClub;
+          const matchesClub = selectedClub === 'TODOS' || 
+            (record.player.club && normalizeClub(record.player.club) === normalizeClub(selectedClub)) ||
+            (record.player.club_name && normalizeClub(record.player.club_name) === normalizeClub(selectedClub));
           
           const matchesCategory = selectedCategory === 'TODAS' || record.player.anio?.toString() === selectedCategory;
           return matchesDate && matchesClub && matchesCategory;

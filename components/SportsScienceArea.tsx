@@ -178,6 +178,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   const [medicalReports, setMedicalReports] = useState<MedicalReport[]>([]);
   const [internalLoads, setInternalLoads] = useState<InternalLoadData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [clubFilterMode, setClubFilterMode] = useState<'all' | 'club'>('all');
 
   useEffect(() => {
     fetchAllData();
@@ -290,6 +291,22 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
     }
     return players;
   }, [players, userRole, userClub, userClubId]);
+
+  const filteredByClubScopePlayers = useMemo(() => {
+    if (userRole !== 'club' || clubFilterMode === 'all') {
+      return anonymizedPlayers;
+    }
+    return anonymizedPlayers.filter(p => {
+      if (userClubId) {
+        return p.id_club === userClubId;
+      } else if (userClub) {
+        const uClubNorm = normalizeClub(userClub);
+        const pClub = (p as any).club || (p as any).club_name || '';
+        return pClub && normalizeClub(pClub) === uClubNorm;
+      }
+      return false;
+    });
+  }, [anonymizedPlayers, userRole, clubFilterMode, userClub, userClubId]);
 
   const selectedPlayer = useMemo(() => 
     anonymizedPlayers.find(p => p.player_id === selectedPlayerId), 
@@ -426,6 +443,36 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
           </div>
         </div>
         
+        {userRole === 'club' && (activeTab === 'grupal' || activeTab === 'laboratorio' || activeTab === 'tabla') && (
+          <div className="flex items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ámbito:</label>
+            <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-100">
+              <button
+                type="button"
+                onClick={() => setClubFilterMode('all')}
+                className={`px-3 py-1.5 text-[10px] uppercase tracking-wider rounded-lg transition-all ${
+                  clubFilterMode === 'all'
+                    ? 'bg-red-600 text-white shadow-sm font-black'
+                    : 'text-slate-400 hover:text-slate-600 font-bold'
+                }`}
+              >
+                Todos los Clubes
+              </button>
+              <button
+                type="button"
+                onClick={() => setClubFilterMode('club')}
+                className={`px-3 py-1.5 text-[10px] uppercase tracking-wider rounded-lg transition-all ${
+                  clubFilterMode === 'club'
+                    ? 'bg-red-600 text-white shadow-sm font-black'
+                    : 'text-slate-400 hover:text-slate-600 font-bold'
+                }`}
+              >
+                Solo mi Club
+              </button>
+            </div>
+          </div>
+        )}
+        
         {(activeTab === 'individual' || activeTab === 'huella') && (
           <div className="flex items-center gap-3">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador:</label>
@@ -494,7 +541,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
           <SquadAnalytics 
             anios={selectedAnios} 
             posiciones={selectedPosiciones}
-            players={anonymizedPlayers}
+            players={filteredByClubScopePlayers}
             gps={gpsData}
             speed={speedData}
             imtp={imtpData}
@@ -504,7 +551,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         )}
         {activeTab === 'laboratorio' && (
           <Laboratorio 
-            players={anonymizedPlayers}
+            players={filteredByClubScopePlayers}
             imtp={imtpData}
             speed={speedData}
             vo2max={vo2maxData}
@@ -549,7 +596,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             speed={speedData} 
             vo2max={vo2maxData} 
             antropometria={antropometria}
-            players={anonymizedPlayers} 
+            players={filteredByClubScopePlayers} 
           />
         )}
       </div>
@@ -2887,9 +2934,12 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
     else if (tableType === 'vo2max') data = vo2max;
     else if (tableType === 'antropometria') data = antropometria;
 
-    if (!searchTerm) return data;
+    // Solo conservar registros cuyos jugadores estén presentes en la lista de jugadores actual (según el ámbito seleccionado)
+    const validData = data.filter(d => !!playerMap[d.player_id]);
 
-    return data.filter(d => {
+    if (!searchTerm) return validData;
+
+    return validData.filter(d => {
       const player = playerMap[d.player_id];
       const name = player ? `${player.nombre} ${player.apellido1}`.toLowerCase() : '';
       return name.includes(searchTerm.toLowerCase());
