@@ -5,7 +5,7 @@ import { User } from '../types';
 
 import { fetchCatapultActivities, fetchCatapultActivityStats, fetchCatapultActivityDetail, testCatapultConnection } from '../services/catapultService';
 
-type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api';
+type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'cmj' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api';
 
 interface ImportConfig {
   label: string;
@@ -95,7 +95,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
   },
   imtp: {
     label: 'IMTP (Fuerza)',
-    table: 'evaluaciones_imtp_salto',
+    table: 'evaluaciones_imtp',
     icon: 'fa-solid fa-dumbbell',
     description: 'Isometric Mid-Thigh Pull - Test de fuerza máxima.',
     conflictColumns: ['player_id', 'fecha_test'],
@@ -105,15 +105,29 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'fecha_test', label: 'FECHA TEST', required: true, type: 'date' },
       { key: 'peso', label: 'PESO (kg)', required: false, type: 'number' },
       { key: 'imtp_fuerza_n', label: 'IMTP FUERZA (N)', required: true, type: 'number' },
-      { key: 'imtp_f_relativa_n_kg', label: 'IMTP F. RELATIVA', required: false, type: 'number' },
-      { key: 'imtp_asimetria', label: 'IMTP ASIMETRIA', required: false, type: 'number' },
+      { key: 'imtp_f_relativa_n_kg', label: 'IMTP F. RELATIVA (N/kg)', required: false, type: 'number' },
+      { key: 'imtp_asimetria', label: 'IMTP ASIMETRIA (%)', required: false, type: 'number' },
       { key: 'imtp_debil', label: 'IMTP DEBIL', required: false, type: 'string' },
+      { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
+    ]
+  },
+  cmj: {
+    label: 'CMJ (Saltos)',
+    table: 'evaluaciones_cmj',
+    icon: 'fa-solid fa-arrows-up-down',
+    description: 'Countermovement Jump - Tests de saltos y asimetrías.',
+    conflictColumns: ['player_id', 'fecha_test'],
+    fields: [
+      { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
+      { key: 'player_id', label: 'ID JUGADOR', required: true, type: 'number' },
+      { key: 'fecha_test', label: 'FECHA TEST', required: true, type: 'date' },
+      { key: 'peso', label: 'PESO (kg)', required: false, type: 'number' },
       { key: 'fuerza_cmj', label: 'FUERZA CMJ', required: false, type: 'number' },
       { key: 'cmj_rsi_mod', label: 'CMJ RSI MOD', required: false, type: 'number' },
       { key: 'cmj_altura_salto_im', label: 'CMJ ALTURA IM (cm)', required: false, type: 'number' },
       { key: 'cmj_salto_tv', label: 'CMJ SALTO TV', required: false, type: 'number' },
       { key: 'cmj_peak_pot_relativa', label: 'CMJ POT. RELATIVA', required: false, type: 'number' },
-      { key: 'cmj_asimetria_aterrizaje', label: 'CMJ ASIM. ATERRIZAJE', required: false, type: 'number' },
+      { key: 'cmj_asimetria_aterrizaje', label: 'CMJ ASIM. ATERRIZAJE (%)', required: false, type: 'number' },
       { key: 'landing_n', label: 'LANDING (N)', required: false, type: 'number' },
       { key: 'landing_relativo', label: 'LANDING RELATIVO', required: false, type: 'number' },
       { key: 'cmj_pierna_debil', label: 'CMJ PIERNA DEBIL', required: false, type: 'string' },
@@ -123,7 +137,6 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'avk_x_tv', label: 'AVK X TV', required: false, type: 'number' },
       { key: 'avk_x_im', label: 'AVK X IM', required: false, type: 'number' },
       { key: 'avk_indice_uso_brazos_im', label: 'AVK INDICE BRAZOS IM', required: false, type: 'number' },
-      { key: 'avk_indice_brazos_im', label: 'AVK INDICE BRAZOS IM (Alt)', required: false, type: 'number' },
       { key: 'slcmj_izq_altura_im', label: 'SLCJ IZQ ALTURA IM', required: false, type: 'number' },
       { key: 'slcmj_izq_altura_tv', label: 'SLCJ IZQ ALTURA TV', required: false, type: 'number' },
       { key: 'slcmj_der_altura_im', label: 'SLCJ DER ALTURA IM', required: false, type: 'number' },
@@ -132,6 +145,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'slcmj_diferencia_pct_tv', label: 'SLCJ DIFERENCIA % TV', required: false, type: 'number' },
       { key: 'deficit_bilateral', label: 'DEFICIT BILATERAL', required: false, type: 'number' },
       { key: 'altura_x_rsi_mod', label: 'ALTURA X RSI MOD', required: false, type: 'number' },
+      { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
     ]
   },
   velocidad: {
@@ -534,7 +548,7 @@ export default function DataImportArea() {
                 });
 
                 // Special logic for name matching
-                const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
+                const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'cmj', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
                 
                 if (needsNameMatching && detectedNameHeader) {
                   const seenNames = new Set<string>();
@@ -722,6 +736,15 @@ export default function DataImportArea() {
         dataToInsert = Array.from(uniqueMap.values());
       }
 
+      if (selectedType === 'imtp' || selectedType === 'cmj') {
+        const uniqueMap = new Map<string, any>();
+        dataToInsert.forEach(item => {
+          const key = `${item.player_id}-${item.fecha_test}`;
+          uniqueMap.set(key, item);
+        });
+        dataToInsert = Array.from(uniqueMap.values());
+      }
+
       // NUEVO: Agregación de Sesiones para GPS Totales (Opción A)
       // Si el archivo contiene múltiples filas por jugador/fecha, las sumamos antes de upsert
       if (selectedType === 'gps_totales') {
@@ -781,7 +804,33 @@ export default function DataImportArea() {
         dataToInsert = Array.from(aggregatedMap.values());
       }
 
-      const { error } = await supabase.from(config.table).upsert(dataToInsert, {
+      // Clean data to insert to prevent non-existant column errors (like virtual field 'jugador')
+      const sanitizedData = dataToInsert.map(item => {
+        const cleanItem: any = {};
+        
+        // Only include fields that are defined in config.fields (except the virtual names)
+        config.fields.forEach(f => {
+          if (f.key !== 'jugador' && f.key !== 'jugador_nombre' && item[f.key] !== undefined && item[f.key] !== null) {
+            cleanItem[f.key] = item[f.key];
+          }
+        });
+
+        // Ensure physical_tests has test_type
+        if (config.table === 'physical_tests') {
+          cleanItem.test_type = selectedType.toUpperCase();
+        }
+
+        // Include any extra explicit conflictColumns just in case
+        config.conflictColumns.forEach(cc => {
+          if (item[cc] !== undefined && item[cc] !== null) {
+            cleanItem[cc] = item[cc];
+          }
+        });
+
+        return cleanItem;
+      });
+
+      const { error } = await supabase.from(config.table).upsert(sanitizedData, {
         onConflict: config.conflictColumns.join(',')
       });
 

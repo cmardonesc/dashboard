@@ -305,9 +305,10 @@ export const getAthleteFootprintSummary = async (player: any, metrics: any) => {
 
       Por favor proporciona un "Perfil Ejecutivo del Jugador" que incluya:
       1. **Resumen de Capacidades**: Breve descripción de su perfil físico (ej: "Jugador explosivo con alta capacidad de aceleración pero resistencia aeróbica moderada").
-      2. **Estado de Salud y Disponibilidad**: Basado en su historial reciente.
-      3. **Puntos de Mejora**: 1-2 aspectos específicos a trabajar en el próximo microciclo.
-      4. **Conclusión Técnica**: Una frase final sobre su proyección o estado actual para la competición.
+      2. **Puntos de Mejora**: 1-2 aspectos específicos a trabajar en el próximo microciclo (ej: Fuerza máxima, velocidad, dosificación neuromuscular).
+      3. **Conclusión Técnica**: Una frase final sobre su proyección o estado actual para la competición.
+
+      IMPORTANTE: NO incluyas ninguna sección o comentario sobre Historial Médico, Lesiones, Salud o Disponibilidad de juego, ya que dichos datos han sido omitidos de esta pestaña por confidencialidad.
 
       Formatea la respuesta en Markdown elegante. Sé muy profesional, directo y utiliza terminología de alto rendimiento. RESPONDE SIEMPRE EN ESPAÑOL.
     `;
@@ -329,14 +330,44 @@ export const getAthleteFootprintSummary = async (player: any, metrics: any) => {
 #### 1. Resumen de Capacidades
 El jugador **${player.nombre} ${player.apellido1}** presenta un perfil físico e histológico óptimo para las demandas de la posición **${pos}** en la categoría **${cat}**. Exhibe un excelente rendimiento neuromuscular reactivo, reflejado en elevados ratios de aceleración y desaceleración controlada.
 
-#### 2. Estado de Salud y Disponibilidad
-Los índices acumulados de bienestar fisiológico en las últimas sesiones evidencian una rápida velocidad de recuperación (homeostasis). Se destaca un balance positivo de sueño, lo que minimiza el riesgo agudo de lesiones articulares y tendinosas.
-
-#### 3. Puntos de Mejora
+#### 2. Puntos de Mejora
 - **Factor de Resistencia**: Estimular el umbral anaeróbico láctico mediante bloques intermitentes específicos de carrera.
-- **Nutrición Compensatoria**: Implementar una carga estratégica de hidratos de carbono complejos en la ventana regenerativa post-esfuerzo.
+- **Optimización Física**: Fomentar sesiones preventivas complementarias y desarrollo coordinado de perfiles de velocidad.
 
-#### 4. Conclusión Técnica
-Futbolista de alto valor antropométrico y neuromuscular. Se encuentra con el apto físico correspondiente para competir con el máximo rigor e intensidad táctica internacional.`;
+#### 3. Conclusión Técnica
+Futbolista de alto valor antropométrico y neuromuscular, proyectando un nivel óptimo para competir con el máximo rigor e intensidad táctica internacional.`;
   }
 };
+
+export const askAthleteAiAssistant = async (player: any, metrics: any, query: string, chatHistory: { role: 'user' | 'model', text: string }[] = []) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  try {
+    const formattedHistory = chatHistory.map(h => `${h.role === 'user' ? 'Entrenador' : 'Científico'}: ${h.text}`).join("\n");
+    const prompt = `
+      Eres el Director de Ciencias del Deporte de la Selección Nacional.
+      Estás en una sesión de consulta interactiva con el Cuerpo Técnico sobre el jugador ${player.nombre} ${player.apellido1} (${player.posicion}).
+
+      Métricas de rendimiento recientes del atleta para contexto de decisiones de campo:
+      ${JSON.stringify(metrics)}
+
+      Historial de conversación reciente:
+      ${formattedHistory}
+
+      Pregunta del Entrenador: "${query}"
+
+      Por favor responde de manera directa, empática pero rigurosa, muy práctica y corta (máximo 4-5 líneas por párrafo), guiando al entrenador con ejercicios de campo concretos, volumen/intensidad de carga, o dosificación biométrica aplicable para el microciclo del jugador. 
+      Responde siempre en español. No inventes datos que no existan, mantente fiel a la fisiología deportiva y al contexto técnico. Enfatiza consejos prácticos.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+    });
+
+    return response.text || "Lo siento, no pude procesar la consulta en este momento.";
+  } catch (error) {
+    console.error("Error consulting athlete assistant:", error);
+    return `**Ejemplo de Orientación Práctica - ${player.nombre || 'Atleta'}**:\n\nPara optimizar su perfil de ${player.posicion || 'Atleta'}, te recomiendo:\n1. **Estímulos Neuromusculares**: Trabajos de aceleración pura (0-15 metros) con recuperaciones completas de 90 segundos entre repeticiones.\n2. **Plan aeróbico adaptativo**: Fraccionamientos cortos en cinta o campo (ej: 15s alta intensidad / 15s trote regenerativo).\n\nConsúltame nuevamente si necesitas dosificaciones específicas del volumen de carga.`;
+  }
+};
+

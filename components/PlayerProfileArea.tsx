@@ -193,17 +193,35 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       setGpsStats(gps || []);
 
       // 5. Physical Evaluations
-      const [anthro, vo2, imtp, speed] = await Promise.all([
+      const [anthro, vo2, imtpRes, cmjRes, speed] = await Promise.all([
         supabase.from('antropometria').select('*').eq('player_id', playerId).order('fecha_medicion', { ascending: true }),
         supabase.from('vo2max_tests').select('*').eq('player_id', playerId).order('fecha', { ascending: true }),
-        supabase.from('evaluaciones_imtp_salto').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true }),
+        supabase.from('evaluaciones_imtp').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true }),
+        supabase.from('evaluaciones_cmj').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true }),
         supabase.from('velocidad_tests').select('*').eq('player_id', playerId).order('fecha', { ascending: true })
       ]);
+
+      // Combine IMTP and CMJ data by date
+      const mergedMap = new Map<string, any>();
+      (imtpRes.data || []).forEach((item: any) => {
+        mergedMap.set(item.fecha_test, { ...item });
+      });
+      (cmjRes.data || []).forEach((item: any) => {
+        const existing = mergedMap.get(item.fecha_test);
+        if (existing) {
+          mergedMap.set(item.fecha_test, { ...existing, ...item });
+        } else {
+          mergedMap.set(item.fecha_test, { ...item });
+        }
+      });
+      const combinedImtp = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(a.fecha_test).getTime() - new Date(b.fecha_test).getTime()
+      );
 
       setPhysicalData({
         anthro: anthro.data || [],
         vo2: vo2.data || [],
-        imtp: imtp.data || [],
+        imtp: combinedImtp,
         speed: speed.data || []
       });
 
@@ -1118,62 +1136,6 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
             {/* Right Column: charts & tables */}
             <div className="lg:col-span-3 space-y-8">
-              
-              {/* Radar & Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col items-center">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8 text-center self-start">Perfil de Capacidades</h3>
-                  <div className="w-full h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
-                        <PolarGrid stroke="#f1f5f9" />
-                        <PolarAngleAxis dataKey="subject" tick={{fontSize: 9, fontWeight: 900, fill: '#64748b'}} />
-                        <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                        <Radar name={profileData.nombre} dataKey="A" stroke="#CF1B2B" fill="#CF1B2B" fillOpacity={0.6} />
-                      </RadarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="space-y-6">
-                  <div className="bg-[#0b1220] rounded-[40px] p-8 text-white shadow-2xl h-full flex flex-col justify-between">
-                    <div>
-                      <h3 className="text-xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-3">
-                        <span className="w-2 h-6 bg-red-600 rounded-full"></span>
-                        Estado de Evaluación
-                      </h3>
-                      <div className="grid grid-cols-2 gap-6">
-                        <LastEvalItem label="Antropometría" date={latestAnthro?.fecha_medicion} value={latestAnthro ? `${latestAnthro.masa_adiposa_pct}% grasa` : 'Pendiente'} />
-                        <LastEvalItem label="VO2 Max" date={latestVo2?.fecha} value={latestVo2 ? `${latestVo2.vo2_max} ml/kg/min` : 'Pendiente'} />
-                        <LastEvalItem label="IMTP (Fuerza)" date={latestImtp?.fecha_test} value={latestImtp ? `${latestImtp.imtp_fuerza_n} N` : 'Pendiente'} />
-                        <LastEvalItem label="Vel. Max GPS" date={gpsStats[0]?.fecha} value={stats.velocidadMax > 0 ? `${stats.velocidadMax.toFixed(1)} km/h` : 'Pendiente'} />
-                      </div>
-                    </div>
-                    <div className="mt-8 pt-8 border-t border-white/5">
-                       <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-4">Última Citación</p>
-                       {citations.length > 0 ? (
-                         <div className="flex justify-between items-center bg-white/5 p-4 rounded-3xl">
-                            <span className="text-xs font-bold text-white/90 truncate mr-2">
-                              {(() => {
-                                 const catId = citations[0].microcycles?.category_id;
-                                 const catName = catId 
-                                   ? REVERSE_CATEGORY_ID_MAP[catId]?.replace('sub_', 'SUB ').toUpperCase() 
-                                   : 'S/D';
-                                 const microNum = citations[0].microcycles?.micro_number || citations[0].microcycle_id || 'S/D';
-                                 return `${catName} MICROCICLO ${microNum}`;
-                               })()}
-                            </span>
-                            <span className="text-[10px] font-black text-red-500 shrink-0">{citations[0].fecha_citacion}</span>
-                         </div>
-                       ) : (
-                         <div className="bg-white/5 p-4 rounded-3xl text-center">
-                            <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Sin registros de citación</span>
-                         </div>
-                       )}
-                    </div>
-                  </div>
-                </div>
-              </div>
 
               {/* GRÁFICO DUAL CHECK-IN vs CHECK-OUT CON FILTRO SLIDER */}
               <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">

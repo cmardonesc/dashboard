@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeClub } from '../lib/utils';
-import { getChartSummary, getAthleteFootprintSummary } from '../services/geminiService';
+import { getChartSummary, getAthleteFootprintSummary, askAthleteAiAssistant } from '../services/geminiService';
 import { motion, AnimatePresence } from 'motion/react';
 import ClubBadge from './ClubBadge';
 import Markdown from 'react-markdown';
@@ -13,7 +13,7 @@ import {
   ReferenceLine, ErrorBar, AreaChart
 } from 'recharts';
 
-type TabId = 'huella' | 'individual' | 'grupal' | 'laboratorio' | 'salud' | 'tabla' | 'categorias' | 'insights';
+type TabId = 'huella' | 'individual' | 'grupal' | 'laboratorio' | 'salud' | 'tabla' | 'categorias' | 'insights' | 'top10';
 
 interface PlayerData {
   player_id: number;
@@ -166,8 +166,17 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedAnios, setSelectedAnios] = useState<number[]>([]);
   const [selectedPosiciones, setSelectedPosiciones] = useState<string[]>([]);
+  const [selectedClubId, setSelectedClubId] = useState<number | null>(null);
   const [showYearDropdown, setShowYearDropdown] = useState(false);
   const [showPosDropdown, setShowPosDropdown] = useState(false);
+  const [showClubDropdown, setShowClubDropdown] = useState(false);
+  const [highlightPlayerId, setHighlightPlayerId] = useState<number | null>(null);
+
+  const [box1Metric, setBox1Metric] = useState<string>('imtp_fuerza_n');
+  const [box2Metric, setBox2Metric] = useState<string>('imtp_f_relativa_n_kg');
+  const [box3Metric, setBox3Metric] = useState<string>('tiempo_total');
+  const [box4Metric, setBox4Metric] = useState<string>('vo2_max');
+
   const [players, setPlayers] = useState<PlayerData[]>([]);
   const [imtpData, setImtpData] = useState<IMTPData[]>([]);
   const [speedData, setSpeedData] = useState<SpeedTestData[]>([]);
@@ -184,29 +193,62 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
     fetchAllData();
   }, []);
 
+  const fetchFullTable = async (tableName: string, selectQuery: string = '*') => {
+    let allData: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let keepFetching = true;
+
+    while (keepFetching) {
+      const { data, error } = await supabase
+        .from(tableName)
+        .select(selectQuery)
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) {
+        console.error(`Error fetching from ${tableName}:`, error);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allData = [...allData, ...data];
+        if (data.length < pageSize) {
+          keepFetching = false;
+        } else {
+          page++;
+        }
+      } else {
+        keepFetching = false;
+      }
+    }
+    return allData;
+  };
+
   const fetchAllData = async () => {
     setLoading(true);
     try {
       const [
-        { data: pData },
-        { data: iData },
-        { data: sData },
-        { data: aData },
-        { data: vData },
-        { data: injData },
-        { data: gData },
-        { data: mData },
-        { data: lData }
+        pData,
+        imtpRes,
+        cmjRes,
+        sData,
+        aData,
+        vData,
+        injData,
+        gData,
+        mData,
+        lData
       ] = await Promise.all([
-        supabase.from('players').select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion'),
-        supabase.from('evaluaciones_imtp_salto').select('*'),
-        supabase.from('velocidad_tests').select('*'),
-        supabase.from('antropometria').select('*'),
-        supabase.from('vo2max_tests').select('*'),
-        supabase.from('lesionados').select('*'),
-        supabase.from('gps_import').select('*'),
-        supabase.from('medical_daily_reports').select('*'),
-        supabase.from('internal_load').select('*')
+        fetchFullTable('players', 'player_id, nombre, apellido1, apellido2, anio, id_club, posicion'),
+        fetchFullTable('evaluaciones_imtp'),
+        fetchFullTable('evaluaciones_cmj'),
+        fetchFullTable('velocidad_tests'),
+        fetchFullTable('antropometria'),
+        fetchFullTable('vo2max_tests'),
+        fetchFullTable('lesionados'),
+        fetchFullTable('gps_import'),
+        fetchFullTable('medical_daily_reports'),
+        fetchFullTable('internal_load')
       ]);
 
       if (pData) {
@@ -228,7 +270,26 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         });
         setPlayers(mapped);
       }
-      if (iData) setImtpData(iData);
+      if (imtpRes || cmjRes) {
+        const mergedMap = new Map<string, any>();
+        (imtpRes || []).forEach((item: any) => {
+          const key = `${item.player_id}_${item.fecha_test}`;
+          mergedMap.set(key, { ...item });
+        });
+        (cmjRes || []).forEach((item: any) => {
+          const key = `${item.player_id}_${item.fecha_test}`;
+          const existing = mergedMap.get(key);
+          if (existing) {
+            mergedMap.set(key, { ...existing, ...item });
+          } else {
+            mergedMap.set(key, { ...item });
+          }
+        });
+        const combinedImtp = Array.from(mergedMap.values()).sort(
+          (a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime()
+        );
+        setImtpData(combinedImtp);
+      }
       if (sData) setSpeedData(sData);
       if (aData) setAntropometria(aData);
       if (vData) setVo2maxData(vData);
@@ -293,20 +354,26 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   }, [players, userRole, userClub, userClubId]);
 
   const filteredByClubScopePlayers = useMemo(() => {
-    if (userRole !== 'club' || clubFilterMode === 'all') {
-      return anonymizedPlayers;
+    let result = anonymizedPlayers;
+    if (userRole === 'club' && clubFilterMode !== 'all') {
+      result = anonymizedPlayers.filter(p => {
+        if (userClubId) {
+          return p.id_club === userClubId;
+        } else if (userClub) {
+          const uClubNorm = normalizeClub(userClub);
+          const pClub = (p as any).club || (p as any).club_name || '';
+          return pClub && normalizeClub(pClub) === uClubNorm;
+        }
+        return false;
+      });
     }
-    return anonymizedPlayers.filter(p => {
-      if (userClubId) {
-        return p.id_club === userClubId;
-      } else if (userClub) {
-        const uClubNorm = normalizeClub(userClub);
-        const pClub = (p as any).club || (p as any).club_name || '';
-        return pClub && normalizeClub(pClub) === uClubNorm;
-      }
-      return false;
-    });
-  }, [anonymizedPlayers, userRole, clubFilterMode, userClub, userClubId]);
+
+    if (selectedClubId !== null) {
+      result = result.filter(p => Number(p.id_club) === Number(selectedClubId));
+    }
+
+    return result;
+  }, [anonymizedPlayers, userRole, clubFilterMode, userClub, userClubId, selectedClubId]);
 
   const selectedPlayer = useMemo(() => 
     anonymizedPlayers.find(p => p.player_id === selectedPlayerId), 
@@ -344,6 +411,10 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
               </>
             )}
             <TabButton active={activeTab === 'tabla'} label="Tabla de Datos" icon="fa-table" onClick={() => setActiveTab('tabla')} />
+            <TabButton active={activeTab === 'top10'} label="Top Ten" icon="fa-ranking-star" onClick={() => {
+              setActiveTab('top10');
+              setSelectedPlayerId(null);
+            }} />
           </div>
         </div>
       </div>
@@ -442,6 +513,56 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             )}
           </div>
         </div>
+
+        <div className="flex items-center gap-3 relative">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Club:</label>
+          <div className="relative">
+            <button 
+              onClick={() => setShowClubDropdown(!showClubDropdown)}
+              className="bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-red-500 flex items-center gap-2 min-w-[150px] justify-between"
+            >
+              {selectedClubId === null 
+                ? 'Todos' 
+                : (clubs.find(c => Number(c.id_club) === Number(selectedClubId) || Number(c.id) === Number(selectedClubId))?.nombre || 'Seleccionado')}
+              <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${showClubDropdown ? 'rotate-180' : ''}`}></i>
+            </button>
+            
+            {showClubDropdown && (
+              <div className="absolute top-full left-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 p-2 max-h-60 overflow-y-auto">
+                <button 
+                  onClick={() => {
+                    setSelectedClubId(null);
+                    setShowClubDropdown(false);
+                  }}
+                  className="w-full text-left px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:bg-slate-50 rounded-lg"
+                >
+                  Limpiar Selección
+                </button>
+                <div className="h-px bg-slate-100 my-2"></div>
+                {clubs.map(c => {
+                  const cId = c.id_club || c.id;
+                  const isSelected = selectedClubId === Number(cId);
+                  return (
+                    <button
+                      key={cId}
+                      onClick={() => {
+                        setSelectedClubId(Number(cId));
+                        setShowClubDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-xs rounded-lg transition-all ${
+                        isSelected 
+                          ? 'bg-red-50 text-red-600 font-bold' 
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {c.nombre}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
         
         {userRole === 'club' && (activeTab === 'grupal' || activeTab === 'laboratorio' || activeTab === 'tabla') && (
           <div className="flex items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
@@ -505,6 +626,32 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             </select>
           </div>
         )}
+
+        {activeTab === 'laboratorio' && (
+          <div className="flex items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre:</label>
+            <select 
+              value={highlightPlayerId || ''} 
+              onChange={(e) => setHighlightPlayerId(e.target.value ? Number(e.target.value) : null)}
+              className="bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-red-500 max-w-[200px]"
+            >
+              <option value="">Todos (Sin resaltar)</option>
+              {filteredByClubScopePlayers
+                .filter(p => {
+                  const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+                  const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
+                  const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
+                  return yearMatch && posMatch;
+                })
+                .sort((a, b) => `${a.nombre} ${a.apellido1}`.localeCompare(`${b.nombre} ${b.apellido1}`))
+                .map(p => (
+                  <option key={p.player_id} value={p.player_id}>
+                    {p.nombre} {p.apellido1}
+                  </option>
+                ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* CONTENIDO DINÁMICO */}
@@ -558,6 +705,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             antropometria={antropometria}
             selectedAnios={selectedAnios}
             selectedPosiciones={selectedPosiciones}
+            highlightPlayerId={highlightPlayerId}
           />
         )}
         {activeTab === 'categorias' && userRole !== 'club' && (
@@ -597,6 +745,35 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             vo2max={vo2maxData} 
             antropometria={antropometria}
             players={filteredByClubScopePlayers} 
+          />
+        )}
+
+        {activeTab === 'top10' && (
+          <TopTenDashboard
+            players={players}
+            imtpData={imtpData}
+            speedData={speedData}
+            vo2maxData={vo2maxData}
+            selectedAnios={selectedAnios}
+            selectedPosiciones={selectedPosiciones}
+            selectedClubId={selectedClubId}
+            clubs={clubs}
+            userRole={userRole}
+            clubFilterMode={clubFilterMode}
+            userClub={userClub}
+            userClubId={userClubId}
+            box1Metric={box1Metric}
+            setBox1Metric={setBox1Metric}
+            box2Metric={box2Metric}
+            setBox2Metric={setBox2Metric}
+            box3Metric={box3Metric}
+            setBox3Metric={setBox3Metric}
+            box4Metric={box4Metric}
+            setBox4Metric={setBox4Metric}
+            onSelectPlayer={(id) => {
+              setSelectedPlayerId(id);
+              setActiveTab('huella');
+            }}
           />
         )}
       </div>
@@ -673,6 +850,289 @@ const METRICS_OPTIONS = [
   { label: 'Estatura Proy (cm)', key: 'estatura_proy_media_cm', table: 'antropometria' },
 ];
 
+const TachometerGauge = ({ 
+  value, 
+  average, 
+  maxValue, 
+  title, 
+  unit, 
+  color = 'stroke-red-600',
+  fillColor = 'text-red-600',
+  lowerIsBetter = false,
+  percentile
+}: { 
+  value: number; 
+  average: number; 
+  maxValue: number; 
+  title: string; 
+  unit: string; 
+  color?: string;
+  fillColor?: string;
+  lowerIsBetter?: boolean;
+  percentile?: number;
+}) => {
+  const safeVal = isNaN(value) || value < 0 ? 0 : value;
+  const safeAvg = isNaN(average) || average < 0 ? 0 : average;
+  const max = isNaN(maxValue) || maxValue <= 0 ? 100 : maxValue;
+  
+  const valuePct = Math.min(100, Math.max(0, (safeVal / max) * 100));
+  const avgPct = Math.min(100, Math.max(0, (safeAvg / max) * 100));
+
+  const r = 70;
+  const cx = 100;
+  const cy = 90;
+  const circ = Math.PI * r; 
+  const strokeDashoffset = circ - (valuePct / 100) * circ;
+
+  const avgAngleRad = Math.PI - (avgPct / 100) * Math.PI;
+  const avgX = cx + r * Math.cos(avgAngleRad);
+  const avgY = cy - r * Math.sin(avgAngleRad);
+
+  const valueAngleRad = Math.PI - (valuePct / 100) * Math.PI;
+  const needleLen = r - 10;
+  const needleX = cx + needleLen * Math.cos(valueAngleRad);
+  const needleY = cy - needleLen * Math.sin(valueAngleRad);
+
+  const isBetter = lowerIsBetter 
+    ? (safeVal > 0 && safeAvg > 0 ? safeVal <= safeAvg : false) 
+    : (safeVal >= safeAvg);
+
+  const pctDiff = safeAvg > 0 
+    ? (lowerIsBetter 
+        ? ((safeAvg - safeVal) / safeAvg) * 100 
+        : ((safeVal - safeAvg) / safeAvg) * 100
+      )
+    : 0;
+
+  const getPercentileLevel = (pct: number) => {
+    if (pct >= 90) return 'Elite';
+    if (pct >= 75) return 'Sobresaliente';
+    if (pct >= 45) return 'Promedio';
+    if (pct >= 20) return 'Bajo Promedio';
+    return 'Por Mejorar';
+  };
+
+  const getPercentileColorClass = (pct: number) => {
+    if (pct >= 90) return 'text-purple-600 bg-purple-50 border-purple-100 dark:border-purple-200/20';
+    if (pct >= 75) return 'text-emerald-600 bg-emerald-50 border-emerald-100 dark:border-emerald-200/20';
+    if (pct >= 45) return 'text-blue-600 bg-blue-50 border-blue-100 dark:border-blue-200/20';
+    if (pct >= 20) return 'text-orange-600 bg-orange-50 border-orange-100 dark:border-orange-200/20';
+    return 'text-red-500 bg-red-50 border-red-100 dark:border-red-200/20';
+  };
+
+  return (
+    <div key={title} className="bg-slate-50/50 rounded-3xl p-5 border border-slate-100 flex flex-col items-center justify-between shadow-xs hover:border-slate-200 hover:bg-slate-50/80 transition-all duration-300">
+      <div className="text-center w-full">
+        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">{title}</span>
+        <div className="flex justify-center items-baseline gap-1">
+          <span className="text-xl font-black text-slate-900 italic tracking-tight">
+            {safeVal > 0 ? safeVal.toLocaleString('es-ES', { maximumFractionDigits: 1 }) : 'S/D'}
+          </span>
+          {safeVal > 0 && <span className="text-[9px] font-bold text-slate-400 uppercase">{unit}</span>}
+        </div>
+      </div>
+
+      <div className="relative w-full h-24 my-2 flex items-center justify-center overflow-hidden">
+        <svg viewBox="0 0 200 110" className="w-36 h-24">
+          <path 
+            d="M 30 90 A 70 70 0 0 1 170 90" 
+            fill="none" 
+            stroke="#f1f5f9" 
+            strokeWidth="12" 
+            strokeLinecap="round"
+          />
+          {safeVal > 0 && (
+            <path 
+              d="M 30 90 A 70 70 0 0 1 170 90" 
+              fill="none" 
+              className={`${color} stroke-current`}
+              strokeWidth="12" 
+              strokeLinecap="round"
+              strokeDasharray={`${circ} ${circ * 2}`}
+              strokeDashoffset={strokeDashoffset}
+              style={{ transition: 'stroke-dashoffset 0.8s ease-out' }}
+            />
+          )}
+
+          {safeAvg > 0 && (
+            <circle 
+              cx={avgX} 
+              cy={avgY} 
+              r="5" 
+              fill="#0f172a" 
+              stroke="#ffffff"
+              strokeWidth="1.5"
+            />
+          )}
+
+          <circle cx={cx} cy={cy} r="5" className={fillColor} fill="currentColor" />
+
+          {safeVal > 0 && (
+            <line 
+              x1={cx} 
+              y1={cy} 
+              x2={needleX} 
+              y2={needleY} 
+              stroke="#0f172a" 
+              strokeWidth="3.5" 
+              strokeLinecap="round"
+              style={{ transition: 'transform 0.8s ease-out', transformOrigin: `${cx}px ${cy}px` }}
+            />
+          )}
+        </svg>
+
+        <div className="absolute bottom-0 text-center">
+          <p className="text-[7px] font-black uppercase text-slate-400 tracking-wider">Promedio Cat.</p>
+          <p className="text-[10px] font-black text-slate-700">
+            {safeAvg > 0 ? `${safeAvg.toLocaleString('es-ES', { maximumFractionDigits: 1 })} ${unit}` : 'S/D'}
+          </p>
+        </div>
+      </div>
+
+      <div className="w-full flex justify-between items-center bg-white px-3 py-1.5 rounded-xl border border-slate-100 z-10 mt-1">
+        <div className="text-left">
+          <p className="text-[7px] font-black uppercase text-slate-400 tracking-wider">vs Promedio</p>
+          <p className={`text-[9px] font-black italic ${isBetter && safeVal > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+            {safeVal > 0 && safeAvg > 0 ? `${isBetter ? '+' : ''}${pctDiff.toFixed(1)}%` : '—'}
+          </p>
+        </div>
+        <div className={`px-2 py-0.5 rounded-full text-[7px] font-black uppercase ${safeVal > 0 && safeAvg > 0 ? (isBetter ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500') : 'bg-slate-50 text-slate-400'}`}>
+          {safeVal > 0 && safeAvg > 0 ? (isBetter ? 'Sobresaliente' : 'Bajo Promedio') : 'Sin Marcas'}
+        </div>
+      </div>
+
+      {percentile !== undefined && safeVal > 0 && (
+        <div className="w-full flex justify-between items-center bg-white px-3 py-1 mt-1.5 rounded-xl border border-slate-100 z-10">
+          <div className="text-left">
+            <p className="text-[7px] font-black uppercase text-slate-400 tracking-wider">Percentil</p>
+            <p className="text-[9px] font-black italic text-slate-900">
+              P{percentile}
+            </p>
+          </div>
+          <div className={`px-2 py-0.5 rounded-full text-[7px] font-black uppercase border ${getPercentileColorClass(percentile)}`}>
+            {getPercentileLevel(percentile)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const parseAthleteAiSummary = (text: string | null) => {
+  if (!text) return null;
+
+  let capacities = "";
+  let improvements: string[] = [];
+  let conclusion = "";
+
+  const lowerText = text.toLowerCase();
+  
+  // Find indicators of various possible sections
+  const capIdx = Math.max(
+    lowerText.indexOf("resumen de capacidades"), 
+    lowerText.indexOf("1. resumen de capacidades"),
+    lowerText.indexOf("capacidades")
+  );
+  const impIdx = Math.max(
+    lowerText.indexOf("puntos de mejora"), 
+    lowerText.indexOf("2. puntos de mejora"),
+    lowerText.indexOf("puntos de mej"),
+    lowerText.indexOf("aspectos a trabajar")
+  );
+  const conIdx = Math.max(
+    lowerText.indexOf("conclusión técnica"), 
+    lowerText.indexOf("3. conclusión técnica"),
+    lowerText.indexOf("conclusion tec"),
+    lowerText.indexOf("conclusión")
+  );
+
+  // Parse Capacities
+  if (capIdx !== -1) {
+    const start = text.indexOf("\n", capIdx);
+    const end = impIdx !== -1 ? impIdx : (conIdx !== -1 ? conIdx : text.length);
+    capacities = text.substring(start, end).trim();
+    capacities = capacities.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
+  } else {
+    if (impIdx !== -1) {
+      capacities = text.substring(0, impIdx).trim();
+    } else {
+      capacities = text;
+    }
+  }
+
+  // Parse Improvements
+  if (impIdx !== -1) {
+    const start = text.indexOf("\n", impIdx);
+    const end = conIdx !== -1 ? conIdx : text.length;
+    const impText = text.substring(start, end).trim();
+    
+    const lines = impText.split("\n");
+    improvements = lines
+      .map(line => line.trim())
+      .filter(line => line.startsWith("-") || line.startsWith("*") || /^\d+\./.test(line))
+      .map(line => line.replace(/^(?:-|\*|\d+\.)\s*/, "").trim());
+
+    if (improvements.length === 0) {
+      const cleanedImp = impText.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
+      if (cleanedImp) {
+        improvements = [cleanedImp];
+      }
+    }
+  }
+
+  // Parse Conclusion
+  if (conIdx !== -1) {
+    const start = text.indexOf("\n", conIdx);
+    conclusion = text.substring(start).trim();
+    conclusion = conclusion.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
+  }
+
+  return {
+    capacities: capacities || "El jugador presenta un correcto perfil morfológico y neuromuscular, adaptado al microciclo.",
+    improvements: improvements.length > 0 ? improvements : [
+      "Optimizar la resistencia intermitente por medio de bloques anaeróbicos.",
+      "Sesiones preventivas compensatorias para mitigar asimetrías bilaterales en salto vertical."
+    ],
+    conclusion: conclusion || "Deportista con alto valor atlético y proyección competitiva internacional."
+  };
+};
+
+const getLatestCompositeAntro = (records: any[], playerId: number): any => {
+  const sorted = records
+    .filter(d => Number(d.player_id) === Number(playerId))
+    .sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime());
+  if (sorted.length === 0) return undefined;
+  
+  const composite = { ...sorted[0] };
+  const fieldsToMerge = [
+    'talla_cm', 'talla_sentada_cm', 'masa_corporal_kg',
+    'masa_muscular_kg', 'masa_muscular_pct', 
+    'masa_adiposa_kg', 'masa_adiposa_pct',
+    'masa_osea_kg', 'masa_osea_pct',
+    'indice_imo', 'indice_imc',
+    'somatotipo_endo', 'somatotipo_meso', 'somatotipo_ecto',
+    'somatotipo_eje_x', 'somatotipo_eje_y',
+    'maduracion_mirwald', 'maduracion_moore', 'maduracion_media',
+    'phv_mirwald', 'phv_moore', 'phv_media',
+    'sum_pliegues_6_mm', 'sum_pliegues_8_mm'
+  ];
+  
+  fieldsToMerge.forEach(field => {
+    const initialVal = composite[field];
+    if (initialVal === null || initialVal === undefined || initialVal === '' || isNaN(Number(initialVal)) || Number(initialVal) <= 0) {
+      for (const r of sorted) {
+        const val = r[field];
+        if (val !== null && val !== undefined && val !== '' && !isNaN(Number(val)) && Number(val) > 0) {
+          composite[field] = val;
+          break;
+        }
+      }
+    }
+  });
+  
+  return composite;
+};
+
 const AthleteHuella = ({ 
   player, imtp, speed, antropometria, vo2max, medicalReports, internalLoads, gps,
   allImtp, allSpeed, allAntro, allVo2, allPlayers, clubs 
@@ -694,12 +1154,56 @@ const AthleteHuella = ({
 }) => {
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
+  const [aiTab, setAiTab] = useState<'perfil' | 'mejoras' | 'chat'>('perfil');
+  const [goalStatuses, setGoalStatuses] = useState<Record<string, 'todo' | 'progress' | 'done'>>({});
+  const [chatQuery, setChatQuery] = useState('');
+  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
+  const [chatSending, setChatSending] = useState(false);
 
   useEffect(() => {
     if (player) {
       generateAiSummary();
+      setGoalStatuses({});
+      setChatHistory([]);
+      setAiTab('perfil');
     }
   }, [player]);
+
+  // Pre-process antropometria and allAntro arrays to calculate IMO dynamically if empty or 0
+  const processedAntro = useMemo(() => {
+    return (antropometria || []).map(d => {
+      let imo = d.indice_imo;
+      if (imo == null || isNaN(Number(imo)) || Number(imo) <= 0) {
+        if (d.masa_muscular_kg != null && d.masa_osea_kg != null && Number(d.masa_osea_kg) > 0) {
+          imo = Number(d.masa_muscular_kg) / Number(d.masa_osea_kg);
+        } else {
+          imo = 0;
+        }
+      }
+      return {
+        ...d,
+        indice_imo: Math.round(Number(imo) * 100) / 100
+      };
+    });
+  }, [antropometria]);
+
+  const processedAllAntro = useMemo(() => {
+    return (allAntro || []).map(d => {
+      let imo = d.indice_imo;
+      if (imo == null || isNaN(Number(imo)) || Number(imo) <= 0) {
+        if (d.masa_muscular_kg != null && d.masa_osea_kg != null && Number(d.masa_osea_kg) > 0) {
+          imo = Number(d.masa_muscular_kg) / Number(d.masa_osea_kg);
+        } else {
+          imo = 0;
+        }
+      }
+      return {
+        ...d,
+        indice_imo: Math.round(Number(imo) * 100) / 100
+      };
+    });
+  }, [allAntro]);
+
 
   const generateAiSummary = async () => {
     if (!player) return;
@@ -722,6 +1226,38 @@ const AthleteHuella = ({
     }
   };
 
+  const handleConsultAssistant = async (customQuery?: string) => {
+    const query = customQuery || chatQuery;
+    if (!query.trim() || !player) return;
+
+    setChatSending(true);
+    if (!customQuery) {
+      setChatQuery('');
+    }
+    
+    const userMessage = { role: 'user' as const, text: query };
+    setChatHistory(prev => [...prev, userMessage]);
+
+    try {
+      const metrics = {
+        imtp: imtp.slice(-1)[0],
+        speed: speed.slice(-1)[0],
+        antropometria: antropometria.slice(-1)[0],
+        vo2max: vo2max.slice(-1)[0],
+        recentLoads: internalLoads.slice(-5)
+      };
+      const currentHist = chatHistory.length > 0 ? chatHistory : [];
+      const response = await askAthleteAiAssistant(player, metrics, query, [...currentHist, userMessage]);
+      setChatHistory(prev => [...prev, { role: 'model' as const, text: response }]);
+    } catch (err) {
+      console.error("Error asking athlete AI assistant:", err);
+      setChatHistory(prev => [...prev, { role: 'model' as const, text: "Error de conexión con la base del Director de Ciencias. Reintente." }]);
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+
   if (!player) return (
     <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
       <i className="fa-solid fa-user-magnifying-glass text-4xl text-slate-200 mb-4"></i>
@@ -731,8 +1267,44 @@ const AthleteHuella = ({
 
   const latestImtp = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
   const latestSpeed = [...speed].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-  const latestAntro = [...antropometria].sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
+  const latestAntro = getLatestCompositeAntro(processedAntro, player.player_id);
   const latestVo2 = [...vo2max].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+
+  // Personal Best Marks (Max values among player's records)
+  const bestImtpFuerzaVal = imtp && imtp.length > 0 
+    ? Math.max(...imtp.map(d => Number(d.imtp_fuerza_n)).filter(v => !isNaN(v) && v > 0)) 
+    : 0;
+  const bestImtpFuerza = bestImtpFuerzaVal !== -Infinity && bestImtpFuerzaVal > 0 ? bestImtpFuerzaVal : 0;
+
+  const bestCmjHeightVal = imtp && imtp.length > 0 
+    ? Math.max(...imtp.map(d => Number(d.cmj_altura_salto_im)).filter(v => !isNaN(v) && v > 0)) 
+    : 0;
+  const bestCmjHeight = bestCmjHeightVal !== -Infinity && bestCmjHeightVal > 0 ? bestCmjHeightVal : 0;
+
+  const bestSpeedVal = speed && speed.length > 0
+    ? Math.max(...speed.map(d => Number(d.vel_10m)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestSpeed = bestSpeedVal !== -Infinity && bestSpeedVal > 0 ? bestSpeedVal : 0;
+
+  const bestVo2Val = vo2max && vo2max.length > 0
+    ? Math.max(...vo2max.map(d => Number(d.vo2_max)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestVo2 = bestVo2Val !== -Infinity && bestVo2Val > 0 ? bestVo2Val : 0;
+
+  const bestImtpRelativoVal = imtp && imtp.length > 0 
+    ? Math.max(...imtp.map(d => Number(d.imtp_f_relativa_n_kg)).filter(v => !isNaN(v) && v > 0)) 
+    : 0;
+  const bestImtpRelativo = bestImtpRelativoVal !== -Infinity && bestImtpRelativoVal > 0 ? bestImtpRelativoVal : 0;
+
+  const bestSpeedTimeVal = speed && speed.length > 0
+    ? Math.min(...speed.map(d => Number(d.tiempo_total)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestSpeedTime = bestSpeedTimeVal !== Infinity && bestSpeedTimeVal > 0 ? bestSpeedTimeVal : 0;
+
+  const bestCmjRsiVal = imtp && imtp.length > 0
+    ? Math.max(...imtp.map(d => Number(d.cmj_rsi_mod)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestCmjRsi = bestCmjRsiVal !== -Infinity && bestCmjRsiVal > 0 ? bestCmjRsiVal : 0;
 
   const playerYearRaw = (player as any).anio ? Number((player as any).anio) : new Date(player.fecha_nacimiento).getFullYear();
   const playerYear = isNaN(playerYearRaw) ? '-' : playerYearRaw;
@@ -743,31 +1315,152 @@ const AthleteHuella = ({
   const categoryPlayerIds = categoryPlayers.map(p => p.player_id);
 
   const getAvg = (data: any[], key: string) => {
-    const values = data
-      .filter(d => categoryPlayerIds.includes(d.player_id) && d[key] != null && !isNaN(Number(d[key])))
+    let targetPlayerIds = categoryPlayerIds;
+    let values = data
+      .filter(d => targetPlayerIds.includes(d.player_id) && d[key] != null && !isNaN(Number(d[key])))
       .map(d => Number(d[key]));
+
+    if (values.length === 0) {
+      values = data
+        .filter(d => d[key] != null && !isNaN(Number(d[key])))
+        .map(d => Number(d[key]));
+    }
+
     if (values.length === 0) return 0;
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
     return isNaN(avg) ? 0 : avg;
   };
 
+  const getGlobalMax = (data: any[], key: string) => {
+    const values = data
+      .filter(d => d[key] != null && !isNaN(Number(d[key])))
+      .map(d => Number(d[key]));
+    if (values.length === 0) return 100;
+    const maxVal = Math.max(...values);
+    return isNaN(maxVal) ? 100 : maxVal;
+  };
+
+  const avgImtpFuerza = getAvg(allImtp, 'imtp_fuerza_n');
+  const avgCmjHeight = getAvg(allImtp, 'cmj_altura_salto_im');
+  const avgSpeed = getAvg(allSpeed, 'vel_10m');
+  const avgVo2 = getAvg(allVo2, 'vo2_max');
+  const avgMasaMuscular = getAvg(allAntro, 'masa_muscular_pct');
+
+  const avgImtpRelativo = getAvg(allImtp, 'imtp_f_relativa_n_kg');
+  const avgSpeedTime = getAvg(allSpeed, 'tiempo_total');
+  const avgCmjRsi = getAvg(allImtp, 'cmj_rsi_mod');
+
+  const latestMasaMuscular = (latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct)))
+    ? Number(latestAntro.masa_muscular_pct)
+    : 0;
+
+  const maxScaleImtp = Math.max(bestImtpFuerza, avgImtpFuerza, getGlobalMax(allImtp, 'imtp_fuerza_n')) * 1.1;
+  const maxScaleCmj = Math.max(bestCmjHeight, avgCmjHeight, getGlobalMax(allImtp, 'cmj_altura_salto_im')) * 1.1;
+  const maxScaleSpeed = Math.max(bestSpeed, avgSpeed, getGlobalMax(allSpeed, 'vel_10m')) * 1.1;
+  const maxScaleVo2 = Math.max(bestVo2, avgVo2, getGlobalMax(allVo2, 'vo2_max')) * 1.1;
+  const maxScaleMasaMuscular = Math.max(latestMasaMuscular, avgMasaMuscular, getGlobalMax(allAntro, 'masa_muscular_pct')) * 1.1;
+
+  const maxScaleImtpRelativo = Math.max(bestImtpRelativo, avgImtpRelativo, getGlobalMax(allImtp, 'imtp_f_relativa_n_kg'), 60) * 1.1;
+  const maxScaleSpeedTime = Math.max(bestSpeedTime, avgSpeedTime, getGlobalMax(allSpeed, 'tiempo_total'), 6) * 1.1;
+  const maxScaleCmjRsi = Math.max(bestCmjRsi, avgCmjRsi, getGlobalMax(allImtp, 'cmj_rsi_mod'), 1.5) * 1.1;
+
+  const calculatePercentile = (playerValue: number, data: any[], key: string, lowerIsBetter: boolean = false) => {
+    if (isNaN(playerValue) || playerValue <= 0) return undefined;
+
+    let targetPlayerIds = categoryPlayerIds;
+    let playerBestValues = targetPlayerIds.map(pId => {
+      const pRows = data.filter(d => d.player_id === pId && d[key] != null && !isNaN(Number(d[key])));
+      if (pRows.length === 0) return null;
+      const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+      if (numericVals.length === 0) return null;
+      return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+    }).filter((v): v is number => v !== null);
+
+    // Fallback: use all players if we don't have enough data in the specific age category
+    if (playerBestValues.length <= 1) {
+      const allPlayerIds = allPlayers.map(p => p.player_id);
+      playerBestValues = allPlayerIds.map(pId => {
+        const pRows = data.filter(d => d.player_id === pId && d[key] != null && !isNaN(Number(d[key])));
+        if (pRows.length === 0) return null;
+        const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+        if (numericVals.length === 0) return null;
+        return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+      }).filter((v): v is number => v !== null);
+    }
+
+    if (playerBestValues.length === 0) return undefined;
+    if (playerBestValues.length === 1) return 50;
+
+    let countWorse = 0;
+    let countEqual = 0;
+
+    playerBestValues.forEach(val => {
+      if (lowerIsBetter) {
+        if (val > playerValue) {
+          countWorse++;
+        } else if (val === playerValue) {
+          countEqual++;
+        }
+      } else {
+        if (val < playerValue) {
+          countWorse++;
+        } else if (val === playerValue) {
+          countEqual++;
+        }
+      }
+    });
+
+    const rank = countWorse + (countEqual - 1) * 0.5;
+    const percentile = (rank / (playerBestValues.length - 1)) * 100;
+    return Math.min(99, Math.max(1, Math.round(percentile)));
+  };
+
+  const pctImtp = calculatePercentile(bestImtpFuerza, allImtp, 'imtp_fuerza_n');
+  const pctImtpRelativo = calculatePercentile(bestImtpRelativo, allImtp, 'imtp_f_relativa_n_kg');
+  const pctSpeedTime = calculatePercentile(bestSpeedTime, allSpeed, 'tiempo_total', true);
+  const pctCmjRsi = calculatePercentile(bestCmjRsi, allImtp, 'cmj_rsi_mod');
+  const pctVo2 = calculatePercentile(bestVo2, allVo2, 'vo2_max');
+
+  const avgMasaMuscularPct = getAvg(processedAllAntro, 'masa_muscular_pct');
+  const avgMasaMuscularKg = getAvg(processedAllAntro, 'masa_muscular_kg');
+  const avgMasaAdiposaPct = getAvg(processedAllAntro, 'masa_adiposa_pct');
+  const avgMasaAdiposaKg = getAvg(processedAllAntro, 'masa_adiposa_kg');
+  const avgSumPliegues6 = getAvg(processedAllAntro, 'sum_pliegues_6_mm');
+  const avgIndiceImo = getAvg(processedAllAntro, 'indice_imo');
+
+  const valMasaMuscularPct = (latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct))) ? Number(latestAntro.masa_muscular_pct) : 0;
+  const valMasaMuscularKg = (latestAntro?.masa_muscular_kg != null && !isNaN(Number(latestAntro.masa_muscular_kg))) ? Number(latestAntro.masa_muscular_kg) : 0;
+  const valMasaAdiposaPct = (latestAntro?.masa_adiposa_pct != null && !isNaN(Number(latestAntro.masa_adiposa_pct))) ? Number(latestAntro.masa_adiposa_pct) : 0;
+  const valMasaAdiposaKg = (latestAntro?.masa_adiposa_kg != null && !isNaN(Number(latestAntro.masa_adiposa_kg))) ? Number(latestAntro.masa_adiposa_kg) : 0;
+  const valSumPliegues6 = (latestAntro?.sum_pliegues_6_mm != null && !isNaN(Number(latestAntro.sum_pliegues_6_mm))) ? Number(latestAntro.sum_pliegues_6_mm) : 0;
+  const valIndiceImo = (latestAntro?.indice_imo != null && !isNaN(Number(latestAntro.indice_imo))) ? Number(latestAntro.indice_imo) : 0;
+
+  const maxScaleMasaMuscularPct = Math.max(valMasaMuscularPct, avgMasaMuscularPct, getGlobalMax(processedAllAntro, 'masa_muscular_pct'), 60) * 1.1;
+  const maxScaleMasaMuscularKg = Math.max(valMasaMuscularKg, avgMasaMuscularKg, getGlobalMax(processedAllAntro, 'masa_muscular_kg'), 60) * 1.1;
+  const maxScaleMasaAdiposaPct = Math.max(valMasaAdiposaPct, avgMasaAdiposaPct, getGlobalMax(processedAllAntro, 'masa_adiposa_pct'), 30) * 1.1;
+  const maxScaleMasaAdiposaKg = Math.max(valMasaAdiposaKg, avgMasaAdiposaKg, getGlobalMax(processedAllAntro, 'masa_adiposa_kg'), 15) * 1.1;
+  const maxScaleSumPliegues6 = Math.max(valSumPliegues6, avgSumPliegues6, getGlobalMax(processedAllAntro, 'sum_pliegues_6_mm'), 100) * 1.1;
+  const maxScaleIndiceImo = Math.max(valIndiceImo, avgIndiceImo, getGlobalMax(processedAllAntro, 'indice_imo'), 5) * 1.1;
+
+  const pctMasaMuscularPct = calculatePercentile(valMasaMuscularPct, processedAllAntro, 'masa_muscular_pct');
+  const pctMasaMuscularKg = calculatePercentile(valMasaMuscularKg, processedAllAntro, 'masa_muscular_kg');
+  const pctMasaAdiposaPct = calculatePercentile(valMasaAdiposaPct, processedAllAntro, 'masa_adiposa_pct', true);
+  const pctMasaAdiposaKg = calculatePercentile(valMasaAdiposaKg, processedAllAntro, 'masa_adiposa_kg', true);
+  const pctSumPliegues6 = calculatePercentile(valSumPliegues6, processedAllAntro, 'sum_pliegues_6_mm', true);
+  const pctIndiceImo = calculatePercentile(valIndiceImo, processedAllAntro, 'indice_imo');
+
   const radarData = [
-    { subject: 'Potencia', A: (latestImtp?.imtp_fuerza_n != null && !isNaN(Number(latestImtp.imtp_fuerza_n))) ? Number(latestImtp.imtp_fuerza_n) : 0, B: getAvg(allImtp, 'imtp_fuerza_n'), fullMark: 5000 },
-    { subject: 'Velocidad', A: (latestSpeed?.vel_10m != null && !isNaN(Number(latestSpeed.vel_10m))) ? Number(latestSpeed.vel_10m) : 0, B: getAvg(allSpeed, 'vel_10m'), fullMark: 10 },
-    { subject: 'Resistencia', A: (latestVo2?.vo2_max != null && !isNaN(Number(latestVo2.vo2_max))) ? Number(latestVo2.vo2_max) : 0, B: getAvg(allVo2, 'vo2_max'), fullMark: 80 },
-    { subject: 'Masa Musc.', A: (latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct))) ? Number(latestAntro.masa_muscular_pct) : 0, B: getAvg(allAntro, 'masa_muscular_pct'), fullMark: 60 },
-    { subject: 'Masa Grasa', A: (latestAntro?.masa_adiposa_pct != null && !isNaN(Number(latestAntro.masa_adiposa_pct))) ? 100 - Number(latestAntro.masa_adiposa_pct) : 0, B: 100 - getAvg(allAntro, 'masa_adiposa_pct'), fullMark: 100 },
+    { subject: 'Potencia', A: (bestImtpFuerza > 0) ? bestImtpFuerza : ((latestImtp?.imtp_fuerza_n != null && !isNaN(Number(latestImtp.imtp_fuerza_n))) ? Number(latestImtp.imtp_fuerza_n) : 0), B: avgImtpFuerza, fullMark: 5000 },
+    { subject: 'Velocidad', A: (bestSpeed > 0) ? bestSpeed : ((latestSpeed?.vel_10m != null && !isNaN(Number(latestSpeed.vel_10m))) ? Number(latestSpeed.vel_10m) : 0), B: avgSpeed, fullMark: 10 },
+    { subject: 'Resistencia', A: (bestVo2 > 0) ? bestVo2 : ((latestVo2?.vo2_max != null && !isNaN(Number(latestVo2.vo2_max))) ? Number(latestVo2.vo2_max) : 0), B: avgVo2, fullMark: 80 },
+    { subject: 'Masa Musc.', A: (latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct))) ? Number(latestAntro.masa_muscular_pct) : 0, B: getAvg(processedAllAntro, 'masa_muscular_pct'), fullMark: 60 },
+    { subject: 'Masa Grasa', A: (latestAntro?.masa_adiposa_pct != null && !isNaN(Number(latestAntro.masa_adiposa_pct))) ? 100 - Number(latestAntro.masa_adiposa_pct) : 0, B: 100 - getAvg(processedAllAntro, 'masa_adiposa_pct'), fullMark: 100 },
   ];
 
   const normalizedRadarData = radarData.map(d => ({
     subject: d.subject,
     A: (d.A / d.fullMark) * 100,
     B: (d.B / d.fullMark) * 100,
-  }));
-
-  const recentLoadsData = internalLoads.slice(-14).map(l => ({
-    date: l.session_date.split('T')[0],
-    load: l.load
   }));
 
   return (
@@ -787,9 +1480,9 @@ const AthleteHuella = ({
             </div>
             <h2 className="text-4xl md:text-5xl font-black text-slate-900 uppercase tracking-tighter italic leading-none mb-2">{player.nombre} {player.apellido1} {player.apellido2 || ''}</h2>
             <div className="flex items-center gap-3">
-              <span className="text-slate-400 font-black text-sm uppercase tracking-widest">{player.posicion}</span>
-              <span className="text-slate-200">|</span>
-              <ClubBadge clubName={player.club || player.club_name} idClub={player.id_club} clubs={clubs} logoSize="w-5 h-5" className="text-slate-600 font-black text-sm uppercase tracking-widest" />
+               <span className="text-slate-400 font-black text-sm uppercase tracking-widest">{player.posicion}</span>
+               <span className="text-slate-200">|</span>
+               <ClubBadge clubName={player.club || player.club_name} idClub={player.id_club} clubs={clubs} logoSize="w-5 h-5" className="text-slate-600 font-black text-sm uppercase tracking-widest" />
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8">
@@ -839,168 +1532,497 @@ const AthleteHuella = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* AI INSIGHTS BENTO */}
-        <div className="lg:col-span-2 space-y-8">
-          <div className="bg-[#0b1220] rounded-[40px] p-10 text-white shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-8">
-              <i className="fa-solid fa-sparkles text-red-600 text-3xl animate-pulse"></i>
+      {/* TACHOMETERS FULL WIDTH ROW UNDER HEADER */}
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+          <i className="fa-solid fa-gauge-high text-red-600"></i>
+          Mejores Valores de Evaluaciones vs Promedio Categoría
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+          <TachometerGauge 
+            value={bestImtpFuerza} 
+            average={avgImtpFuerza} 
+            maxValue={maxScaleImtp > 0 ? maxScaleImtp : 5000} 
+            title="IMTP Máximo" 
+            unit="N" 
+            color="stroke-red-600"
+            fillColor="text-red-600"
+            percentile={pctImtp}
+          />
+          <TachometerGauge 
+            value={bestImtpRelativo} 
+            average={avgImtpRelativo} 
+            maxValue={maxScaleImtpRelativo > 0 ? maxScaleImtpRelativo : 100} 
+            title="IMTP Relativo" 
+            unit="N/kg" 
+            color="stroke-orange-500"
+            fillColor="text-orange-500"
+            percentile={pctImtpRelativo}
+          />
+          <TachometerGauge 
+            value={bestSpeedTime} 
+            average={avgSpeedTime} 
+            maxValue={maxScaleSpeedTime > 0 ? maxScaleSpeedTime : 6.0} 
+            title="Test de Velocidad (Tiempo Total)" 
+            unit="s" 
+            color="stroke-blue-600"
+            fillColor="text-blue-600"
+            lowerIsBetter={true}
+            percentile={pctSpeedTime}
+          />
+          <TachometerGauge 
+            value={bestCmjRsi} 
+            average={avgCmjRsi} 
+            maxValue={maxScaleCmjRsi > 0 ? maxScaleCmjRsi : 2.0} 
+            title="RSI_mod CMJ" 
+            unit="" 
+            color="stroke-emerald-600"
+            fillColor="text-emerald-600"
+            percentile={pctCmjRsi}
+          />
+          <TachometerGauge 
+            value={bestVo2} 
+            average={avgVo2} 
+            maxValue={maxScaleVo2 > 0 ? maxScaleVo2 : 80} 
+            title="Consumo de Oxígeno" 
+            unit="ml/kg/min" 
+            color="stroke-purple-600"
+            fillColor="text-purple-600"
+            percentile={pctVo2}
+          />
+        </div>
+      </div>
+
+      {/* AI INSIGHTS BENTO - REDESIGNED TO TAKE FULL WIDTH */}
+      <div className="w-full space-y-8 mb-8">
+        <div className="bg-[#0b1220] rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col min-h-[480px]">
+          {/* Top Glowing Header bar */}
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-red-600 via-amber-500 to-red-600"></div>
+          
+          {/* Background Light Ambient Effects */}
+          <div className="absolute top-10 right-10 w-96 h-96 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="absolute bottom-10 left-10 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+          <div className="p-8 sm:p-10 flex-1 flex flex-col z-10">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="px-2 py-0.5 bg-red-600/20 text-red-500 rounded-md text-[8px] font-black uppercase tracking-widest animate-pulse flex items-center gap-1">
+                    <i className="fa-solid fa-sparkles text-[7px]"></i> Motor Gemini Activo
+                  </span>
+                  <span className="text-white/40 text-[10px] font-bold font-mono">Último análisis: Hoy</span>
+                </div>
+                <h3 className="text-2xl font-black uppercase tracking-tight italic flex items-center gap-3 text-white">
+                  <i className="fa-solid fa-robot text-red-500 text-xl"></i>
+                  Perfil de Inteligencia Deportiva
+                </h3>
+              </div>
+
+              {/* Sub-Tabs Switches */}
+              <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 self-start sm:self-auto">
+                <button
+                  onClick={() => setAiTab('perfil')}
+                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 ${
+                    aiTab === 'perfil' 
+                      ? 'bg-red-600 text-white shadow-md shadow-red-600/30' 
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <i className="fa-solid fa-id-card"></i>
+                  Perfil
+                </button>
+                <button
+                  onClick={() => setAiTab('mejoras')}
+                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 ${
+                    aiTab === 'mejoras' 
+                      ? 'bg-red-600 text-white shadow-md shadow-red-600/30' 
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <i className="fa-solid fa-list-check"></i>
+                  Tareas
+                  {Object.values(goalStatuses).filter(v => v === 'done').length > 0 && (
+                    <span className="ml-1 w-2 h-2 rounded-full bg-emerald-500 inline-block animate-ping"></span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setAiTab('chat')}
+                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 ${
+                    aiTab === 'chat' 
+                      ? 'bg-red-600 text-white shadow-md shadow-red-600/30' 
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <i className="fa-solid fa-comment-dots"></i>
+                  Consultar IA
+                </button>
+              </div>
             </div>
-            <h3 className="text-xl font-black uppercase tracking-tighter italic mb-6 flex items-center gap-3">
-              <span className="w-2 h-6 bg-red-600 rounded-full"></span>
-              Perfil Ejecutivo IA
-            </h3>
+
             {loadingAi ? (
-              <div className="py-12 flex flex-col items-center justify-center space-y-4">
-                <div className="w-10 h-10 border-2 border-white/10 border-t-red-600 rounded-full animate-spin"></div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Analizando huella digital...</p>
+              <div className="flex-1 flex flex-col items-center justify-center py-20 space-y-4">
+                <div className="relative">
+                  <div className="w-16 h-16 border-4 border-red-600/20 border-t-red-600 rounded-full animate-spin"></div>
+                  <i className="fa-solid fa-brain text-red-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-lg animate-pulse"></i>
+                </div>
+                <div className="text-center">
+                  <p className="text-[12px] font-black uppercase tracking-widest text-white/80">Sincronizando Huella Antropométrica...</p>
+                  <p className="text-[10px] text-white/40 mt-1">Generando síntesis diagnóstica en tiempo real</p>
+                </div>
               </div>
             ) : (
-              <div className="prose prose-invert max-w-none prose-sm">
-                <Markdown>{aiSummary || "No hay datos suficientes para generar el perfil."}</Markdown>
+              <div className="flex-1 flex flex-col justify-between">
+                <AnimatePresence mode="wait">
+                  {aiTab === 'perfil' && (
+                    <motion.div
+                      key="perfil"
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -15 }}
+                      className="space-y-6 flex-1 flex flex-col justify-between"
+                    >
+                      {/* Quick Player Summary Box (SANS CAT, MADUREZ, ESTADO BOXES AS REQUESTED) */}
+                      <div className="bg-white/5 rounded-3xl p-5 border border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-red-600 to-amber-500 flex items-center justify-center text-white text-lg font-black italic shadow-lg animate-fade-in">
+                            {player?.nombre?.charAt(0) || 'A'}{player?.apellido1?.charAt(0) || 'P'}
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-white italic">{player?.nombre} {player?.apellido1} {player?.apellido2}</p>
+                            <p className="text-[10px] font-black uppercase text-red-500 tracking-wider flex items-center gap-1.5 mt-0.5">
+                              <i className="fa-solid fa-futbol text-[9px]"></i> {player?.posicion}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Joined Executive Summary Text Row - Occupying full horizontal width */}
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-black text-red-500 uppercase tracking-widest flex items-center gap-2">
+                          <i className="fa-solid fa-compass-drafting"></i> Análisis de Capacidades Físicas y Conclusiones
+                        </h4>
+                        <div className="text-white/80 text-xs sm:text-sm bg-white/[0.02] border border-white/5 p-6 rounded-3xl space-y-4">
+                          <div className="whitespace-pre-line leading-relaxed text-white/90">
+                            {parseAthleteAiSummary(aiSummary)?.capacities}
+                          </div>
+                          <div className="pt-4 border-t border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex-1">
+                              <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                                <i className="fa-solid fa-circle-check text-red-500 text-[8px]"></i> Conclusión Técnico-Científica
+                              </p>
+                              <p className="text-xs text-white/90 italic font-semibold leading-relaxed">
+                                "{parseAthleteAiSummary(aiSummary)?.conclusion || 'El jugador presenta un biotipo físico y motor aeróbico sobresalientes para su categoría.'}"
+                              </p>
+                            </div>
+                            <div className="shrink-0 flex items-center gap-2.5 pt-2 md:pt-0 md:pl-4 border-t md:border-t-0 md:border-l border-white/10">
+                              <div className="w-8 h-8 rounded-full bg-red-600/20 text-red-500 flex items-center justify-center text-xs">
+                                <i className="fa-solid fa-signature"></i>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black text-white uppercase tracking-wider">Dirección de Ciencias</p>
+                                <p className="text-[8px] text-white/40 font-bold uppercase">La Roja Performance Hub</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {aiTab === 'mejoras' && (
+                    <motion.div
+                      key="mejoras"
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -15 }}
+                      className="space-y-6 flex-1 flex flex-col"
+                    >
+                      {/* Interactive Checklist Board description */}
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white/5 p-5 rounded-3xl border border-white/5">
+                        <div>
+                          <p className="text-xs font-black text-amber-400 uppercase tracking-widest flex items-center gap-1">
+                            <i className="fa-solid fa-bullseye"></i> Objetivos Tácticos Individuales
+                          </p>
+                          <p className="text-[10px] text-white/60 mt-1">Haz clic sobre cada objetivo para actualizar el avance en este microciclo</p>
+                        </div>
+                        
+                        {/* Realtime progress bar */}
+                        <div className="w-full md:w-48">
+                          <div className="flex justify-between text-[9px] font-black uppercase text-white/50 mb-1">
+                            <span>Progreso Microciclo</span>
+                            <span className="text-amber-400 font-mono">
+                              {Math.round(
+                                ((Object.values(goalStatuses).filter(v => v === 'done').length * 1.0 + 
+                                  Object.values(goalStatuses).filter(v => v === 'progress').length * 0.5) / 
+                                 Math.max(1, parseAthleteAiSummary(aiSummary)?.improvements.length || 1)) * 100
+                              )}%
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-red-600 to-amber-500 transition-all duration-500 ease-out"
+                              style={{
+                                width: `${
+                                  ((Object.values(goalStatuses).filter(v => v === 'done').length * 1.0 + 
+                                    Object.values(goalStatuses).filter(v => v === 'progress').length * 0.5) / 
+                                   Math.max(1, parseAthleteAiSummary(aiSummary)?.improvements.length || 1)) * 100
+                                }%`
+                              }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Checklist layout */}
+                      <div className="grid grid-cols-1 gap-3">
+                        {parseAthleteAiSummary(aiSummary)?.improvements.map((imp, idx) => {
+                          const status = goalStatuses[idx] || 'todo';
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                const nextStatus: 'todo' | 'progress' | 'done' = 
+                                  status === 'todo' ? 'progress' : status === 'progress' ? 'done' : 'todo';
+                                setGoalStatuses(prev => ({ ...prev, [idx]: nextStatus }));
+                              }}
+                              className={`p-4 rounded-2xl border transition-all duration-300 flex items-center justify-between cursor-pointer group ${
+                                status === 'done' 
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20' 
+                                  : status === 'progress'
+                                  ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20 shadow-inner'
+                                  : 'bg-white/5 border-white/5 hover:bg-white/10'
+                              }`}
+                            >
+                              <div className="flex items-center gap-4 flex-1">
+                                {/* Status indicator button */}
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${
+                                  status === 'done' 
+                                    ? 'bg-emerald-500/20 text-emerald-500' 
+                                    : status === 'progress'
+                                    ? 'bg-amber-400/20 text-amber-400 animate-pulse'
+                                    : 'bg-white/10 text-white/50 group-hover:bg-white/20'
+                                }`}>
+                                  {status === 'done' && <i className="fa-solid fa-circle-check text-sm"></i>}
+                                  {status === 'progress' && <i className="fa-solid fa-rotate text-xs animate-spin"></i>}
+                                  {status === 'todo' && <i className="fa-solid fa-circle-notch text-xs"></i>}
+                                </div>
+                                <div className="flex-1">
+                                  <p className={`text-xs font-semibold select-none leading-relaxed ${status === 'done' ? 'text-white/60 line-through' : 'text-white'}`}>
+                                    {imp}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Status badge */}
+                              <div className="ml-4">
+                                <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded-md ${
+                                  status === 'done'
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/10'
+                                    : status === 'progress'
+                                    ? 'bg-amber-400/20 text-amber-400 border border-amber-400/10'
+                                    : 'bg-white/10 text-white/40'
+                                }`}>
+                                  {status === 'done' ? 'Superado' : status === 'progress' ? 'En Curso' : 'Pendiente'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {aiTab === 'chat' && (
+                    <motion.div
+                      key="chat"
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -15 }}
+                      className="space-y-4 flex-1 flex flex-col h-[320px]"
+                    >
+                      {/* Conversation Board History */}
+                      <div className="flex-1 bg-white/[0.02] rounded-3xl p-4 border border-white/5 overflow-y-auto space-y-3 max-h-[220px] scrollbar-thin scrollbar-thumb-white/10">
+                        {chatHistory.length === 0 ? (
+                          <div className="h-full flex flex-col items-center justify-center p-6 text-center">
+                            <i className="fa-solid fa-comments text-white/10 text-3xl mb-2 animate-bounce"></i>
+                            <p className="text-[10px] uppercase font-black tracking-widest text-white/30">Consultas de Ciencias del Deporte</p>
+                            <p className="text-xs text-white/55 mt-1 max-w-sm leading-relaxed">Pregúntale al Asistente IA sobre cargas semanales, adaptaciones de sprint, o directrices nutricionales personalizadas.</p>
+                          </div>
+                        ) : (
+                          chatHistory.map((msg, idx) => (
+                            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
+                                msg.role === 'user' 
+                                  ? 'bg-red-600 text-white rounded-tr-none' 
+                                  : 'bg-white/10 text-white/90 rounded-tl-none border border-white/5 prose prose-invert prose-xs'
+                              }`}>
+                                {msg.role === 'user' ? (
+                                  msg.text
+                                ) : (
+                                  <Markdown>{msg.text}</Markdown>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        {chatSending && (
+                          <div className="flex justify-start">
+                            <div className="bg-white/5 text-white/55 rounded-2xl p-3 text-xs flex items-center gap-2">
+                              <div className="w-2.5 h-2.5 border border-white/30 border-t-white rounded-full animate-spin"></div>
+                              <span>Redactando recomendación fisiológica...</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Interactive quick pills */}
+                      {chatHistory.length === 0 && (
+                        <div className="space-y-1.5">
+                          <p className="text-[8px] font-black uppercase text-white/40 tracking-wider">Preguntas Rápidas Sugeridas</p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              disabled={chatSending}
+                              onClick={() => handleConsultAssistant(`¿Qué recomendaciones preventivas específicas harías con respecto a su desempeño como ${player?.posicion}?`)}
+                              className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] text-white/80 font-semibold border border-white/5 transition text-left cursor-pointer"
+                            >
+                              ⚡ Prevenir lesiones en su posición
+                            </button>
+                            <button
+                              disabled={chatSending}
+                              onClick={() => handleConsultAssistant(`¿Cómo dosificar el volumen e intensidad de velocidad 10m y fuerza vertical para este microciclo de ${player?.nombre}?`)}
+                              className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] text-white/80 font-semibold border border-white/5 transition text-left cursor-pointer"
+                            >
+                              🎯 Dosificación fuerza/velocidad
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Input Row */}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={chatQuery}
+                          onChange={(e) => setChatQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleConsultAssistant();
+                          }}
+                          placeholder="Sugiéreme entrenamiento intermitente para asimetrías..."
+                          className="flex-1 bg-white/5 focus:bg-white/10 border border-white/10 focus:border-red-600 rounded-xl px-4 py-2 text-xs text-white placeholder-white/30 focus:outline-none transition"
+                          disabled={chatSending}
+                        />
+                        <button
+                          onClick={() => handleConsultAssistant()}
+                          disabled={chatSending || !chatQuery.trim()}
+                          className="w-10 h-10 bg-red-600 hover:bg-red-500 disabled:bg-white/10 text-white rounded-xl flex items-center justify-center transition cursor-pointer"
+                        >
+                          <i className="fa-solid fa-arrow-up text-xs"></i>
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Refresh bottom-action triggers */}
+                <div className="mt-8 pt-6 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest flex items-center gap-1.5">
+                    <i className="fa-solid fa-code-branch text-red-500"></i> Integrado con la base de datos de entrenamiento La Roja
+                  </p>
+                  <button
+                    onClick={generateAiSummary}
+                    disabled={loadingAi}
+                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/20 text-white/80 text-xs font-black uppercase tracking-wider transition-all border border-white/10 flex items-center justify-center gap-1.5 self-end sm:self-auto cursor-pointer"
+                  >
+                    <i className="fa-solid fa-arrows-rotate text-[10px]"></i>
+                    Forzar Re-Análisis
+                  </button>
+                </div>
               </div>
             )}
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
-                <i className="fa-solid fa-heart-pulse text-red-600"></i>
-                Historial Médico Reciente
-              </h3>
-              <div className="space-y-4">
-                {medicalReports.length > 0 ? (
-                  medicalReports.slice(0, 3).map((report, idx) => (
-                    <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{report.report_date}</span>
-                        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${report.severity === 'high' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                          {report.severity}
-                        </span>
-                      </div>
-                      <p className="text-xs font-bold text-slate-700 leading-relaxed">{report.diagnostico_medico || report.observation}</p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="py-10 text-center">
-                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Sin incidencias médicas</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
-                <i className="fa-solid fa-gauge-high text-blue-600"></i>
-                Tendencia de Carga (14d)
-              </h3>
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={recentLoadsData}>
-                    <defs>
-                      <linearGradient id="colorLoad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="date" hide />
-                    <YAxis hide />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#0b1220', border: 'none', borderRadius: '12px', fontSize: '10px', color: '#fff' }}
-                      itemStyle={{ color: '#fff', fontWeight: 'bold' }}
-                    />
-                    <Area type="monotone" dataKey="load" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorLoad)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-4 flex justify-between items-center">
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Carga Media</p>
-                  <p className="text-lg font-black italic text-slate-900">
-                    {(() => {
-                      const validLoads = internalLoads.filter(l => l.load != null && !isNaN(Number(l.load)));
-                      if (validLoads.length === 0) return 0;
-                      const avg = validLoads.reduce((a, b) => a + Number(b.load), 0) / validLoads.length;
-                      return isNaN(avg) ? 0 : Math.round(avg);
-                    })()}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Estado</p>
-                  <p className="text-xs font-black italic text-emerald-600 uppercase">Estable</p>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
+      </div>
 
-        {/* PERFORMANCE RADAR BENTO */}
-        <div className="space-y-8">
-          <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-8 flex items-center gap-2">
-              <i className="fa-solid fa-radar text-red-600"></i>
-              Huella de Rendimiento
+      {/* METRICAS ANTROPOMETRICAS BENTO - FULL WIDTH SINGLE ROW */}
+      <div className="w-full">
+        {/* METRICAS ANTROPOMETRICAS BENTO */}
+        <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col justify-between">
+          <div>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+              <i className="fa-solid fa-arrows-up-down-left-right text-red-600"></i> Métricas Antropométricas
             </h3>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart cx="50%" cy="50%" outerRadius="80%" data={normalizedRadarData}>
-                  <PolarGrid stroke="#f1f5f9" />
-                  <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 9, fontWeight: 900 }} />
-                  <Radar name="Atleta" dataKey="A" stroke="#dc2626" fill="#dc2626" fillOpacity={0.6} />
-                  <Radar name="Promedio" dataKey="B" stroke="#e2e8f0" fill="#e2e8f0" fillOpacity={0.4} />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mt-6 space-y-3">
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">VO2 Max</span>
-                <span className="text-sm font-black italic text-slate-900">
-                  {(latestVo2?.vo2_max != null && !isNaN(Number(latestVo2.vo2_max))) ? latestVo2.vo2_max : '-'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Vel. 10m</span>
-                <span className="text-sm font-black italic text-slate-900">
-                  {(latestSpeed?.vel_10m != null && !isNaN(Number(latestSpeed.vel_10m))) ? `${latestSpeed.vel_10m} km/h` : '-'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Fuerza IMTP</span>
-                <span className="text-sm font-black italic text-slate-900">
-                  {(latestImtp?.imtp_fuerza_n != null && !isNaN(Number(latestImtp.imtp_fuerza_n))) ? `${latestImtp.imtp_fuerza_n} N` : '-'}
-                </span>
-              </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              <TachometerGauge 
+                value={valMasaMuscularPct} 
+                average={avgMasaMuscularPct} 
+                maxValue={maxScaleMasaMuscularPct} 
+                title="% Masa Muscular" 
+                unit="%" 
+                color="stroke-emerald-600"
+                fillColor="text-emerald-600"
+                percentile={pctMasaMuscularPct}
+              />
+              <TachometerGauge 
+                value={valMasaMuscularKg} 
+                average={avgMasaMuscularKg} 
+                maxValue={maxScaleMasaMuscularKg} 
+                title="Kg Masa Muscular" 
+                unit="kg" 
+                color="stroke-teal-600"
+                fillColor="text-teal-600"
+                percentile={pctMasaMuscularKg}
+              />
+              <TachometerGauge 
+                value={valMasaAdiposaPct} 
+                average={avgMasaAdiposaPct} 
+                maxValue={maxScaleMasaAdiposaPct} 
+                title="% Masa Grasa" 
+                unit="%" 
+                color="stroke-red-500"
+                fillColor="text-red-500"
+                lowerIsBetter={true}
+                percentile={pctMasaAdiposaPct}
+              />
+              <TachometerGauge 
+                value={valMasaAdiposaKg} 
+                average={avgMasaAdiposaKg} 
+                maxValue={maxScaleMasaAdiposaKg} 
+                title="Kg Masa Grasa" 
+                unit="kg" 
+                color="stroke-orange-500"
+                fillColor="text-orange-500"
+                lowerIsBetter={true}
+                percentile={pctMasaAdiposaKg}
+              />
+              <TachometerGauge 
+                value={valSumPliegues6} 
+                average={avgSumPliegues6} 
+                maxValue={maxScaleSumPliegues6} 
+                title="6 Pliegues" 
+                unit="mm" 
+                color="stroke-blue-600"
+                fillColor="text-blue-600"
+                lowerIsBetter={true}
+                percentile={pctSumPliegues6}
+              />
+              <TachometerGauge 
+                value={valIndiceImo} 
+                average={avgIndiceImo} 
+                maxValue={maxScaleIndiceImo} 
+                title="Índice IMO" 
+                unit="" 
+                color="stroke-purple-600"
+                fillColor="text-purple-600"
+                percentile={pctIndiceImo}
+              />
             </div>
           </div>
-
-          <div className="bg-slate-900 rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden">
-            <div className="absolute bottom-0 right-0 w-32 h-32 bg-red-600/20 rounded-full -mr-16 -mb-16 blur-2xl"></div>
-            <h3 className="text-sm font-black uppercase tracking-widest mb-6">Métricas Antropométricas</h3>
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">% Grasa</p>
-                <p className="text-2xl font-black italic text-red-500">
-                  {(latestAntro?.masa_adiposa_pct != null && !isNaN(Number(latestAntro.masa_adiposa_pct))) ? `${latestAntro.masa_adiposa_pct}%` : '-'}
-                </p>
-              </div>
-              <div>
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">% Muscular</p>
-                <p className="text-2xl font-black italic text-emerald-500">
-                  {(latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct))) ? `${latestAntro.masa_muscular_pct}%` : '-'}
-                </p>
-              </div>
-              <div>
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Índice IMO</p>
-                <p className="text-2xl font-black italic">
-                  {(latestAntro?.indice_imo != null && !isNaN(Number(latestAntro.indice_imo))) ? latestAntro.indice_imo : '-'}
-                </p>
-              </div>
-              <div>
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Somatotipo</p>
-                <p className="text-xs font-black italic uppercase text-slate-400">Meso-Ecto</p>
-              </div>
-            </div>
+          
+          <div className="mt-8 pt-6 border-t border-slate-100 space-y-2">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Diagnóstico Morfológico</p>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              El somatotipo del atleta revela un predominio muscular alto con baja grasa adiposa, adecuado para alta explosividad.
+            </p>
           </div>
         </div>
       </div>
@@ -1042,8 +2064,8 @@ const IndividualDashboard = ({
   const [selectedAntroMetrics, setSelectedAntroMetrics] = useState<string[]>([
     'masa_adiposa_pct',
     'masa_muscular_pct',
-    'sumatoria_6_pliegues',
-    'peso'
+    'sum_pliegues_6_mm',
+    'masa_corporal_kg'
   ]);
 
   const imtpMetrics = METRICS_OPTIONS.filter(m => m.table === 'imtp');
@@ -1110,10 +2132,7 @@ const IndividualDashboard = ({
     <div className="space-y-8">
       {/* HEADER PERFIL ATLETA */}
       <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-wrap items-center justify-between gap-8">
-        <div className="flex items-center gap-6">
-          <div className="w-20 h-20 bg-slate-50 rounded-[24px] flex items-center justify-center text-slate-300 border border-slate-100">
-            <i className="fa-solid fa-user text-3xl"></i>
-          </div>
+        <div className="flex items-center">
           <div>
             <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">{player.nombre} {player.apellido1} {player.apellido2}</h2>
             <div className="flex flex-wrap gap-4 mt-2">
@@ -1494,7 +2513,7 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
   const [selectedImtpMetrics, setSelectedImtpMetrics] = useState<string[]>(['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'dsi_valor', 'fuerza_cmj']);
   const [selectedSpeedMetrics, setSelectedSpeedMetrics] = useState<string[]>(['tiempo_total', 'vel_10m', 'tiempo_10m', 'tiempo_20_30m']);
   const [selectedVo2Metrics, setSelectedVo2Metrics] = useState<string[]>(['vo2_max', 'vam', 'fc_max', 'mts']);
-  const [selectedAntroMetrics, setSelectedAntroMetrics] = useState<string[]>(['masa_adiposa_pct', 'masa_muscular_pct', 'sumatoria_6_pliegues', 'peso']);
+  const [selectedAntroMetrics, setSelectedAntroMetrics] = useState<string[]>(['masa_adiposa_pct', 'masa_muscular_pct', 'sum_pliegues_6_mm', 'masa_corporal_kg']);
   const [selectedSquadPosiciones, setSelectedSquadPosiciones] = useState<string[]>([]);
   
   const [summaries, setSummaries] = useState<Record<string, string>>({});
@@ -2043,7 +3062,7 @@ const CorrelationsInsights = ({ players, imtp, speed, vo2max, antropometria, sel
       const pImtp = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
       const pSpeed = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
       const pVo2 = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-      const pAntro = antropometria.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
+      const pAntro = getLatestCompositeAntro(antropometria, p.player_id);
       
       return {
         ...pImtp,
@@ -2176,7 +3195,7 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
         if (option?.table === 'imtp') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
         else if (option?.table === 'speed') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
         else if (option?.table === 'vo2max') val = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
-        else if (option?.table === 'antropometria') val = antropometria.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0]?.[metricKey as keyof AntropometriaData];
+        else if (option?.table === 'antropometria') val = getLatestCompositeAntro(antropometria, p.player_id)?.[metricKey];
       }
       return Number(val);
     }).filter(v => v !== null && !isNaN(v));
@@ -2229,7 +3248,7 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
         if (option?.table === 'imtp') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
         else if (option?.table === 'speed') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
         else if (option?.table === 'vo2max') val = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
-        else if (option?.table === 'antropometria') val = antropometria.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0]?.[metricKey as keyof AntropometriaData];
+        else if (option?.table === 'antropometria') val = getLatestCompositeAntro(antropometria, p.player_id)?.[metricKey];
       }
       return Number(val);
     }).filter(v => v !== null && !isNaN(v));
@@ -2588,14 +3607,15 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
   );
 };
 
-const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnios, selectedPosiciones }: { 
+const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnios, selectedPosiciones, highlightPlayerId }: { 
   players: PlayerData[], 
   imtp: IMTPData[], 
   speed: SpeedTestData[], 
   vo2max: VO2MaxData[], 
   antropometria: AntropometriaData[],
   selectedAnios: number[],
-  selectedPosiciones: string[]
+  selectedPosiciones: string[],
+  highlightPlayerId: number | null
 }) => {
   const [axes, setAxes] = useState([
     { x: 'imtp_fuerza_n', y: 'fuerza_cmj' },
@@ -2616,7 +3636,7 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
         const pImtp = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
         const pSpeed = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
         const pVo2 = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-        const pAntro = antropometria.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime())[0];
+        const pAntro = getLatestCompositeAntro(antropometria, p.player_id);
         
         return {
           id: p.player_id,
@@ -2797,15 +3817,37 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
                     }}
                   />
                   <Scatter name="Jugadores" data={mergedData} fill="#ef4444">
-                    {mergedData.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={POSITION_COLORS[entry.posicion as keyof typeof POSITION_COLORS] || '#ef4444'} 
-                        fillOpacity={0.8}
-                        strokeWidth={2}
-                        stroke={POSITION_COLORS[entry.posicion as keyof typeof POSITION_COLORS] || '#ef4444'}
-                      />
-                    ))}
+                    {mergedData.map((entry, index) => {
+                      const baseColor = POSITION_COLORS[entry.posicion as keyof typeof POSITION_COLORS] || '#ef4444';
+                      const hasHighlight = highlightPlayerId !== null;
+                      const isHighlighted = hasHighlight && Number(entry.id) === Number(highlightPlayerId);
+                      
+                      const fill = hasHighlight 
+                        ? (isHighlighted ? baseColor : '#cbd5e1') 
+                        : baseColor;
+                        
+                      const stroke = hasHighlight 
+                        ? (isHighlighted ? baseColor : '#e2e8f0') 
+                        : baseColor;
+                        
+                      const fillOpacity = hasHighlight 
+                        ? (isHighlighted ? 1.0 : 0.35) 
+                        : 0.8;
+                        
+                      const strokeWidth = hasHighlight 
+                        ? (isHighlighted ? 5 : 1) 
+                        : 2;
+
+                      return (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={fill} 
+                          fillOpacity={fillOpacity}
+                          strokeWidth={strokeWidth}
+                          stroke={stroke}
+                        />
+                      );
+                    })}
                   </Scatter>
                   {stats && (
                     <Scatter 
@@ -3133,6 +4175,311 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
             <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">No se encontraron registros</p>
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// --- TOP TEN DASHBOARD ---
+
+const TOP_TEN_METRIC_OPTIONS = [
+  { label: 'IMTP Máximo (N)', key: 'imtp_fuerza_n', unit: 'N', icon: 'fa-dumbbell', colorClass: 'text-orange-500 bg-orange-50 stroke-orange-500 border-orange-100' },
+  { label: 'IMTP Relativo (N/kg)', key: 'imtp_f_relativa_n_kg', unit: 'N/kg', icon: 'fa-bolt', colorClass: 'text-red-500 bg-red-50 stroke-red-500 border-red-100' },
+  { label: 'CMJ RSI Mod', key: 'cmj_rsi_mod', unit: 'Index', icon: 'fa-compress', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100' },
+  { label: 'Test de Velocidad (s)', key: 'tiempo_total', unit: 's', icon: 'fa-gauge-high', colorClass: 'text-blue-500 bg-blue-50 stroke-blue-500 border-blue-100' },
+  { label: 'Consumo de Oxígeno (VO2)', key: 'vo2_max', unit: 'ml/kg/min', icon: 'fa-wind', colorClass: 'text-purple-500 bg-purple-50 stroke-purple-500 border-purple-100' },
+];
+
+interface TopTenDashboardProps {
+  players: PlayerData[];
+  imtpData: IMTPData[];
+  speedData: SpeedTestData[];
+  vo2maxData: VO2MaxData[];
+  selectedAnios: number[];
+  selectedPosiciones: string[];
+  selectedClubId: number | null;
+  clubs: any[];
+  userRole?: string;
+  clubFilterMode: 'all' | 'club';
+  userClub?: string;
+  userClubId?: number | null;
+  box1Metric: string;
+  setBox1Metric: (val: string) => void;
+  box2Metric: string;
+  setBox2Metric: (val: string) => void;
+  box3Metric: string;
+  setBox3Metric: (val: string) => void;
+  box4Metric: string;
+  setBox4Metric: (val: string) => void;
+  onSelectPlayer: (id: number) => void;
+}
+
+const TopTenDashboard: React.FC<TopTenDashboardProps> = ({
+  players,
+  imtpData,
+  speedData,
+  vo2maxData,
+  selectedAnios,
+  selectedPosiciones,
+  selectedClubId,
+  clubs,
+  userRole,
+  clubFilterMode,
+  userClub,
+  userClubId,
+  box1Metric,
+  setBox1Metric,
+  box2Metric,
+  setBox2Metric,
+  box3Metric,
+  setBox3Metric,
+  box4Metric,
+  setBox4Metric,
+  onSelectPlayer
+}) => {
+
+  const getRankData = (metricKey: string) => {
+    const filtered = players.filter(p => {
+      const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
+      const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
+      const clubMatch = selectedClubId === null || Number(p.id_club) === Number(selectedClubId);
+      
+      if (userRole === 'club' && clubFilterMode === 'club') {
+        if (userClubId) {
+          return yearMatch && posMatch && clubMatch && p.id_club === userClubId;
+        } else if (userClub) {
+          const uClubNorm = normalizeClub(userClub);
+          const pClub = p.club || p.club_name || '';
+          return yearMatch && posMatch && clubMatch && pClub && normalizeClub(pClub) === uClubNorm;
+        }
+      }
+      return yearMatch && posMatch && clubMatch;
+    });
+
+    const list: { player: PlayerData; value: number }[] = [];
+
+    filtered.forEach(p => {
+      let val: number | null = null;
+      if (metricKey === 'imtp_fuerza_n' || metricKey === 'imtp_f_relativa_n_kg' || metricKey === 'cmj_rsi_mod') {
+        const rows = imtpData.filter(d => d.player_id === p.player_id);
+        if (rows.length > 0) {
+          const vals = rows.map(r => Number(r[metricKey as keyof IMTPData])).filter(v => !isNaN(v) && v > 0);
+          if (vals.length > 0) {
+            val = Math.max(...vals);
+          }
+        }
+      } else if (metricKey === 'tiempo_total') {
+        const rows = speedData.filter(d => d.player_id === p.player_id);
+        if (rows.length > 0) {
+          const vals = rows.map(r => Number(r.tiempo_total)).filter(v => !isNaN(v) && v > 0);
+          if (vals.length > 0) {
+            val = Math.min(...vals);
+          }
+        }
+      } else if (metricKey === 'vo2_max') {
+        const rows = vo2maxData.filter(d => d.player_id === p.player_id);
+        if (rows.length > 0) {
+          const vals = rows.map(r => Number(r.vo2_max)).filter(v => !isNaN(v) && v > 0);
+          if (vals.length > 0) {
+            val = Math.max(...vals);
+          }
+        }
+      }
+
+      if (val !== null && val !== -Infinity && val !== Infinity) {
+        list.push({ player: p, value: val });
+      }
+    });
+
+    if (metricKey === 'tiempo_total') {
+      list.sort((a, b) => a.value - b.value);
+    } else {
+      list.sort((a, b) => b.value - a.value);
+    }
+
+    return list.slice(0, 10);
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div className="bg-[#0b1220] rounded-[32px] p-6 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-xl md:text-2xl font-black italic tracking-tight uppercase flex items-center gap-2">
+            <i className="fa-solid fa-trophy text-amber-500"></i> RANKING DE RENDIMIENTO <span className="text-red-500">TOP 10</span>
+          </h2>
+          <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mt-1">
+            Visualización comparativa de mejores marcas acumuladas según los filtros seleccionados.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-4 text-xs font-bold text-slate-300">
+          <div className="bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2">
+            <span className="text-slate-400 font-bold">Fórmula de Ranking:</span>
+            <span>Récord Histórico Personal</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        <TopTenBox
+          title="Fuerza Máxima (IMTP)"
+          boxNum={1}
+          metricKey={box1Metric}
+          setMetricKey={setBox1Metric}
+          data={getRankData(box1Metric)}
+          clubs={clubs}
+          onSelectPlayer={onSelectPlayer}
+        />
+        <TopTenBox
+          title="Fuerza Relativa (IMTP)"
+          boxNum={2}
+          metricKey={box2Metric}
+          setMetricKey={setBox2Metric}
+          data={getRankData(box2Metric)}
+          clubs={clubs}
+          onSelectPlayer={onSelectPlayer}
+        />
+        <TopTenBox
+          title="Velocidad (10m / Total)"
+          boxNum={3}
+          metricKey={box3Metric}
+          setMetricKey={setBox3Metric}
+          data={getRankData(box3Metric)}
+          clubs={clubs}
+          onSelectPlayer={onSelectPlayer}
+          lowerIsBetter={box3Metric === 'tiempo_total'}
+        />
+        <TopTenBox
+          title="Consumo de Oxígeno o RSI"
+          boxNum={4}
+          metricKey={box4Metric}
+          setMetricKey={setBox4Metric}
+          data={getRankData(box4Metric)}
+          clubs={clubs}
+          onSelectPlayer={onSelectPlayer}
+        />
+      </div>
+    </div>
+  );
+};
+
+interface TopTenBoxProps {
+  title: string;
+  boxNum: number;
+  metricKey: string;
+  setMetricKey: (key: string) => void;
+  data: { player: PlayerData; value: number }[];
+  clubs: any[];
+  onSelectPlayer: (id: number) => void;
+  lowerIsBetter?: boolean;
+}
+
+const TopTenBox: React.FC<TopTenBoxProps> = ({
+  title,
+  boxNum,
+  metricKey,
+  setMetricKey,
+  data,
+  clubs,
+  onSelectPlayer,
+  lowerIsBetter = false
+}) => {
+  const currentMetric = TOP_TEN_METRIC_OPTIONS.find(o => o.key === metricKey) || TOP_TEN_METRIC_OPTIONS[0];
+
+  return (
+    <div className="bg-white rounded-[32px] p-5 border border-slate-100 shadow-sm hover:border-slate-200 transition-all duration-300 flex flex-col justify-between h-[600px]">
+      <div>
+        <div className="flex justify-between items-start gap-2 mb-4">
+          <div>
+            <span className="text-[9px] font-black uppercase text-red-600 tracking-wider">Caja #{boxNum}</span>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-tight leading-none mt-0.5 whitespace-nowrap overflow-ellipsis">
+              {currentMetric.label.split(' (')[0]}
+            </h3>
+          </div>
+          <div className="relative">
+            <select
+              value={metricKey}
+              onChange={(e) => setMetricKey(e.target.value)}
+              className="bg-slate-50 border-none rounded-xl px-2 py-1 text-[9px] font-black text-slate-600 uppercase tracking-tight outline-none focus:ring-1 focus:ring-red-500 max-w-[110px]"
+            >
+              {TOP_TEN_METRIC_OPTIONS.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-2xl border border-slate-100/60 mb-3">
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${currentMetric.colorClass}`}>
+            <i className={`fa-solid ${currentMetric.icon} text-[11px]`}></i>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[7px] font-black uppercase text-slate-400 leading-none">Unidad</p>
+            <p className="text-[10px] font-black text-slate-700 leading-tight mt-0.5 truncate">
+              {currentMetric.unit ? currentMetric.unit : 'Índice'} {lowerIsBetter && <span className="text-[8px] font-bold text-blue-500 italic lowercase tracking-normal">(menor tiempo es mejor)</span>}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-1.5 mt-2 overflow-y-auto max-h-[440px] pr-1">
+          {data.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center bg-slate-50/50 rounded-2xl border border-slate-50 border-dashed">
+              <i className="fa-solid fa-ranking-star text-slate-200 text-2xl mb-2"></i>
+              <p className="text-slate-400 text-[9px] font-black uppercase tracking-wider">Sin atletas evaluados</p>
+            </div>
+          ) : (
+            data.map((item, index) => {
+              const rank = index + 1;
+              const isFirst = rank === 1;
+              const isSecond = rank === 2;
+              const isThird = rank === 3;
+
+              let badgeStyle = "bg-slate-100 text-slate-500 border border-slate-200/80";
+              if (isFirst) badgeStyle = "bg-amber-100 text-amber-700 border-amber-205 shadow-xs shadow-amber-200/50";
+              if (isSecond) badgeStyle = "bg-slate-200 text-slate-700 border-slate-300";
+              if (isThird) badgeStyle = "bg-amber-50 text-amber-800 border-amber-150";
+
+              return (
+                <div
+                  key={item.player.player_id}
+                  onClick={() => onSelectPlayer(item.player.player_id)}
+                  className="flex items-center justify-between p-2 rounded-2xl bg-white hover:bg-slate-50/80 border border-slate-50 hover:border-slate-150 transition-all duration-300 cursor-pointer group"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className={`w-5.5 h-5.5 rounded-lg ${badgeStyle} flex items-center justify-center shrink-0 font-black text-[9px]`}>
+                      {rank}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-slate-800 uppercase italic truncate group-hover:text-red-600 transition-colors">
+                        {item.player.nombre} {item.player.apellido1}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[7px] font-bold uppercase tracking-tight text-slate-400 bg-slate-50 px-1 py-0.2 rounded">
+                          {item.player.posicion}
+                        </span>
+                        <ClubBadge
+                          idClub={item.player.id_club}
+                          clubName={item.player.club || item.player.club_name}
+                          clubs={clubs}
+                          showName={false}
+                          logoSize="w-2.5 h-2.5"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[11px] font-black italic text-slate-900 leading-none">
+                      {item.value.toFixed(item.value % 1 === 0 ? 0 : 2)}
+                    </p>
+                    <p className="text-[6px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">
+                      {currentMetric.unit}
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );
