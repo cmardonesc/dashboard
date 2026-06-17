@@ -1243,6 +1243,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                <thead className="bg-[#0b1220] text-white font-black uppercase text-[9px] md:text-[10px]">
                  <tr>
                    <th className="px-4 md:px-8 py-4 md:py-5 text-left sticky left-0 bg-[#0b1220] z-10">Atleta</th>
+                   <th className="px-2 md:px-4 py-4 md:py-5">Categoría</th>
                    <th className="px-2 md:px-4 py-4 md:py-5">Minutos</th>
                    <th className="px-2 md:px-4 py-4 md:py-5">Dist. Total (m)</th>
                    <th className="px-2 md:px-4 py-4 md:py-5">m/min</th>
@@ -1252,7 +1253,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                    <th className="px-2 md:px-4 py-4 md:py-5">Sprints (n)</th>
                    <th className="px-2 md:px-4 py-4 md:py-5">Vel. Máx (km/h)</th>
                    <th className="px-2 md:px-4 py-4 md:py-5">Acc/Decc AI</th>
-                   <th className="px-4 md:px-8 py-4 md:py-5 text-right">IFR (%)</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-slate-100 font-black italic uppercase text-[10px] md:text-xs">
@@ -1290,6 +1290,9 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             playerName
                           )}
                         </td>
+                       <td className="px-2 md:px-4 py-4 md:py-5 text-slate-500 font-bold tracking-tight">
+                         {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
+                       </td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.minutos?.toFixed(1) || '0.0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.dist_total_m?.toFixed(0) || '0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">
@@ -1303,18 +1306,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.sprints_n?.toFixed(0) || '0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5 text-red-600 font-black">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
                        <td className="px-2 md:px-4 py-4 md:py-5">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
-                       <td className="px-4 md:px-8 py-4 md:py-5 text-right">
-                         {ifrValue !== null ? (
-                           <div 
-                             className="inline-block px-3 py-1 rounded-full text-white font-black text-[10px] shadow-sm"
-                             style={{ backgroundColor: getIFRColor(ifrValue) }}
-                           >
-                             {ifrValue.toFixed(1)}%
-                           </div>
-                         ) : (
-                           <span className="text-slate-300">-</span>
-                         )}
-                       </td>
+
                      </tr>
                    );
                  })}
@@ -1647,6 +1639,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.2em]">
                           <tr>
                             <th className="px-4 py-2 text-left">ATLETA</th>
+                            <th className="px-1 py-2">CATEGORÍA</th>
                             <th className="px-1 py-2">MIN</th>
                             <th className="px-1 py-2">DIST (M)</th>
                             <th className="px-1 py-2">M/MIN</th>
@@ -1655,7 +1648,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             <th className="px-1 py-2">SPRINT</th>
                             <th className="px-1 py-2">VEL MAX</th>
                             <th className="px-1 py-2">ACC/DECC</th>
-                            <th className="px-4 py-2 text-right">IFR (%)</th>
                           </tr>
                         </thead>
                         <tbody className="text-[8px] font-mono font-black text-slate-900">
@@ -1699,6 +1691,9 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                      showName={true}
                                    />
                                 </td>
+                                <td className="px-1 py-0.5 text-slate-500 text-[8px] uppercase font-bold text-center">
+                                  {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
+                                </td>
                                 <td className="px-1 py-0.5 text-slate-400 italic text-[8px]">{row.minutos?.toFixed(0) || '0'}</td>
                                 <td className="px-1 py-0.5 text-[#0b1220] italic text-[8px]">{row.dist_total_m?.toFixed(0) || '0'}</td>
                                 <td className="px-1 py-0.5">
@@ -1711,18 +1706,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <td className="px-1 py-0.5 text-blue-600 italic text-[8px]">{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
                                 <td className="px-1 py-0.5 text-red-600 text-[10px] italic">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
                                 <td className="px-1 py-0.5 text-[#0b1220] italic text-[8px]">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
-                                <td className="px-4 py-0.5 text-right">
-                                  {ifrValue !== null ? (
-                                    <div 
-                                      className="inline-block px-2 py-0.5 rounded-full text-white font-black text-[7px] shadow-sm"
-                                      style={{ backgroundColor: getIFRColor(ifrValue) }}
-                                    >
-                                      {ifrValue.toFixed(1)}%
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-300">-</span>
-                                  )}
-                                </td>
                               </tr>
                             );
                           })}
@@ -1730,6 +1713,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           {chunkIdx === gpsChunks.length - 1 && reportData.gpsAvg && (
                             <tr className="bg-[#0b1220] text-white font-black italic h-8">
                               <td className="px-4 py-0.5 text-left uppercase font-sans tracking-[0.2em] text-[8px]">Promedio Grupal</td>
+                              <td className="px-1 py-0.5 text-emerald-400/50 text-[8px]">-</td>
                               <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.minutos.toFixed(0)}</td>
                               <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.dist.toFixed(0)}</td>
                               <td className="px-1 py-0.5 text-red-500 text-sm">{reportData.gpsAvg.mpm.toFixed(1)}</td>

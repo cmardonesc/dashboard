@@ -151,25 +151,21 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         .from('citaciones')
         .select(`
           id,
+          player_id,
+          microcycle_id,
           fecha_citacion,
           observacion,
-          microcycles!fk_citaciones_microcycles (
-            id,
-            category_id,
-            micro_number,
-            type,
-            start_date,
-            end_date,
-            city
+          microcycles!citaciones_microcycle_fk (
+            id, category_id, micro_number, type, start_date, end_date, city
           )
         `)
         .eq('player_id', playerId)
         .order('fecha_citacion', { ascending: false });
-      
-      if (citError) {
-        console.error("Error fetching citations:", citError);
-        // Fallback or handle error
-      }
+
+      console.log('CIT ERROR:', JSON.stringify(citError));
+      console.log('CIT DATA COUNT:', citData?.length);
+      console.log('CIT DATA[0]:', JSON.stringify(citData?.[0], null, 2));
+
       setCitations(citData || []);
 
       // 3. Training & Matches (Internal Load)
@@ -508,6 +504,15 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const inferredCategory = useMemo(() => {
     if (!profileData) return 'S/D';
     if (profileData.categoria) return profileData.categoria;
+    // Walk back or look at the most recent citations to determine the actual category they were called up to
+    if (citations && citations.length > 0) {
+      const latestCit = citations[0];
+      const categoryId = latestCit.microcycles?.category_id;
+      if (categoryId !== undefined && categoryId !== null) {
+        const catLabel = REVERSE_CATEGORY_ID_MAP[categoryId];
+        if (catLabel) return catLabel;
+      }
+    }
     if (profileData.anio) {
       const year = Number(profileData.anio);
       if (year === 2011) return 'sub_15';
@@ -516,11 +521,13 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       if (year >= 2012) return 'sub_13';
     }
     return 'SUB 17'; // Default fallback
-  }, [profileData]);
+  }, [profileData, citations]);
+
+  const filteredCitations = useMemo(() => {
+    return citations;
+  }, [citations]);
 
   const matchedParticipation = useMemo(() => {
-    const playerCategoryId = inferredCategory ? CATEGORY_ID_MAP[inferredCategory.toLowerCase().replace(' ', '_')] : null;
-
     return categoryMatches
       .map(match => {
         const gpsRecord = gpsStats.find(g => g.fecha === match.date);
@@ -528,41 +535,22 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         
         // Match by microcycle citation or category citation covering the date
         const isCitedForThisMicrocycle = match.microcycle_id 
-          ? citations.some(cit => cit.microcycles?.id === match.microcycle_id)
+          ? filteredCitations.some(cit => cit.microcycles?.id === match.microcycle_id)
           : false;
 
-        const isCitedForThisCategoryOnDate = citations.some(cit => {
+        const isCitedForThisCategoryOnDate = filteredCitations.some(cit => {
           const mc = cit.microcycles;
           if (!mc) return false;
           if (Number(mc.category_id) !== Number(match.category_id)) return false;
           if (mc.start_date && mc.end_date) {
             return match.date >= mc.start_date && match.date <= mc.end_date;
           }
-          return true;
+          return cit.fecha_citacion === match.date;
         });
 
         const hasActivity = !!gpsRecord || !!internalMatchRecord;
-        
-        // Check if player has *any* citation for this match's category
-        const possessesCitationForThisCategory = citations.some(cit => {
-          const catId = cit.microcycles?.category_id;
-          return catId !== undefined && catId !== null && Number(catId) === Number(match.category_id);
-        });
 
-        const matchesPlayerCategory = playerCategoryId !== null && playerCategoryId !== undefined && Number(match.category_id) === Number(playerCategoryId);
-
-        const belongsToThisCategory = 
-          isCitedForThisMicrocycle || 
-          isCitedForThisCategoryOnDate || 
-          (hasActivity && possessesCitationForThisCategory) ||
-          (hasActivity && matchesPlayerCategory) ||
-          (hasActivity && (
-            citations.length === 0 || 
-            !citations.some(cit => {
-              const catId = cit.microcycles?.category_id;
-              return catId && Number(catId) === Number(match.category_id);
-            })
-          ));
+        const belongsToThisCategory = isCitedForThisMicrocycle || isCitedForThisCategoryOnDate;
 
         const participated = hasActivity && belongsToThisCategory;
 
@@ -574,7 +562,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         };
       })
       .filter(item => item.participated);
-  }, [categoryMatches, gpsStats, matchData, citations, inferredCategory]);
+  }, [categoryMatches, gpsStats, matchData, filteredCitations]);
 
   const matchDatesSet = useMemo(() => {
     const dates = new Set<string>();
@@ -848,7 +836,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
                 <div className="mt-10 space-y-4">
                    <BioItem label="Clase" value={profileData.anio || 'N/A'} />
-                   <BioItem label="Categoría" value={inferredCategory.toUpperCase().replace('_', ' ')} />
+                   <BioItem label="Última Categoría" value={inferredCategory.toUpperCase().replace('_', ' ')} />
                    <BioItem label="Pierna" value={profileData.perfil_pierna || 'S/D'} />
                    <BioItem label="ID Unico" value={profileData.player_id} />
                 </div>

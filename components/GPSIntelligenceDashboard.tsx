@@ -289,8 +289,8 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
               posicion: rawPos,
               categoria: catName,
               posGroup: rawPos.includes('DEF') ? 'DEFENSA' :
-                        rawPos.includes('VOL') || rawPos.includes('MED') || rawPos.includes('VOL') ? 'VOLANTE' :
-                        rawPos.includes('DEL') || rawPos.includes('EXT') || rawPos.includes('PUN') ? 'DELANTERO' : 'OTROS'
+                        rawPos.includes('VOL') || rawPos.includes('MED') || rawPos.includes('PUN') ? 'VOLANTE' :
+                        rawPos.includes('DEL') || rawPos.includes('EXT') ? 'DELANTERO' : 'OTROS'
             };
           }).filter(d => !d.posicion.includes('POR') && !d.posicion.includes('ARQ'));
           setSessionData(mapped);
@@ -1684,10 +1684,11 @@ function ReferenceRadarSet({ category, playerData, referenceData }: { category: 
         // Categoría match (handle "SUB 15" vs "SUB_15")
         const catMatch = rCat === normalizedCategory || rCat === displayCategory;
         
-        // Posicion match (map VOLANTE to MEDIO if needed)
+        // Posicion match (map GROUPS to DB values)
         let posMatch = rPos === pGroup;
-        if (!posMatch && pGroup === 'VOLANTE') posMatch = rPos === 'MEDIO';
-        if (!posMatch && pGroup === 'DELANTERO') posMatch = rPos === 'ATACANTE';
+        if (!posMatch && pGroup === 'VOLANTE') posMatch = (rPos === 'MEDIO' || rPos === 'VOLANTE');
+        if (!posMatch && pGroup === 'DELANTERO') posMatch = (rPos === 'DELANTERO' || rPos === 'ATACANTE');
+        if (!posMatch && pGroup === 'DEFENSA') posMatch = (rPos === 'DEFENSA' || rPos.includes('DEFENSA'));
         
         return catMatch && posMatch;
     });
@@ -1744,7 +1745,7 @@ function ReferenceRadarSet({ category, playerData, referenceData }: { category: 
     <div className="bg-white/5 rounded-[40px] p-6 border border-white/5 flex flex-col h-full group hover:bg-white/10 transition-all">
       <div className="text-center mb-6">
         <h4 className="text-sm font-black text-white italic tracking-widest">{category}</h4>
-        <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-loose">Padrón Elites U. Católica / Chile</p>
+        <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-loose">Partidos Oficiales de Chile</p>
       </div>
 
       <div className="flex-1 min-h-[300px]">

@@ -54,12 +54,14 @@ export const TelegramNotificationsArea: React.FC<TelegramNotificationsAreaProps>
   const [stress, setStress] = useState(2);
   const [soreness, setSoreness] = useState(1);
   const [wellnessNotes, setWellnessNotes] = useState('Leve sobrecarga isquios');
+  const [wellnessEnfermedad, setWellnessEnfermedad] = useState('Ninguna (Sano)');
 
   // Internal Load Fields
   const [rpe, setRpe] = useState(7);
   const [duration, setDuration] = useState(75);
   const [sessionType, setSessionType] = useState('FIELD');
   const [loadNotes, setLoadNotes] = useState('Sesión táctica alta intensidad');
+  const [loadEnfermedad, setLoadEnfermedad] = useState('Ninguna (Sano)');
 
   // Injury Fields
   const [diagnostico, setDiagnostico] = useState('Esguince tobillo grado II');
@@ -101,6 +103,8 @@ export const TelegramNotificationsArea: React.FC<TelegramNotificationsAreaProps>
   const [matchResult, setMatchResult] = useState('Chile 2 - 1 O\'Higgins');
   const [matchMinsPlayed, setMatchMinsPlayed] = useState(90);
   const [matchRpe, setMatchRpe] = useState(8);
+  const [matchMolestias, setMatchMolestias] = useState('Ninguna');
+  const [matchEnfermedad, setMatchEnfermedad] = useState('Ninguna (Sano)');
 
   // Cronograma Fields
   const [cronoFecha, setCronoFecha] = useState('2026-06-06');
@@ -147,11 +151,11 @@ export const TelegramNotificationsArea: React.FC<TelegramNotificationsAreaProps>
 
     switch (selectedEvent) {
       case 'wellness_checkin':
-        return `✅ <b>Check-in Wellness de Selección</b>\n\n👤 <b>Jugador:</b> ${pName}\n🛡️ <b>Club:</b> ${pClub}\n📊 <b>Fatiga:</b> ${fatigue}/5\n💤 <b>Sueño:</b> ${sleep}/5\n⚡ <b>Estrés:</b> ${stress}/5\n🤕 <b>Soreness/Dolor:</b> ${soreness}/5\n📋 <b>Zonas Molestias:</b> ${wellnessNotes || 'Ninguna'}\n\n📍 <i>Complejo Juan Pinto Durán</i>`;
+        return `✅ <b>Check-in Wellness de Selección</b>\n\n👤 <b>Jugador:</b> ${pName}\n🛡️ <b>Club:</b> ${pClub}\n📊 <b>Fatiga:</b> ${fatigue}/5\n💤 <b>Sueño:</b> ${sleep}/5\n⚡ <b>Estrés:</b> ${stress}/5\n🤕 <b>Soreness/Dolor:</b> ${soreness}/5\n🩹 <b>Zonas Molestias:</b> ${wellnessNotes || 'Ninguna'}\n🤒 <b>Estado de Salud / Síntomas:</b> ${wellnessEnfermedad || 'Ninguno (Sano)'}\n\n📍 <i>Complejo Juan Pinto Durán</i>`;
       
       case 'internal_load':
         const sRPE = Number(rpe) * Number(duration);
-        return `📊 <b>Nuevo Checkout - Carga Interna</b>\n\n👤 <b>Jugador:</b> ${pName}\n🏃‍♂️ <b>Sesión:</b> ${sessionType}\n⏱️ <b>Duración:</b> ${duration} minutos\n📈 <b>RPE Esfuerzo:</b> ${rpe}/10\n🔋 <b>Carga (sRPE):</b> ${sRPE} u.a.\n📝 <b>Detalle:</b> ${loadNotes}`;
+        return `📊 <b>Nuevo Checkout - Carga Interna</b>\n\n👤 <b>Jugador:</b> ${pName}\n🏃‍♂️ <b>Sesión:</b> ${sessionType}\n⏱️ <b>Duración:</b> ${duration} minutos\n📈 <b>RPE Esfuerzo:</b> ${rpe}/10\n🔋 <b>Carga (sRPE):</b> ${sRPE} u.a.\n🩹 <b>Zonas Molestias:</b> ${loadNotes || 'Ninguna'}\n🤒 <b>Estado de Salud / Síntomas:</b> ${loadEnfermedad || 'Ninguno (Sano)'}`;
       
       case 'lesion_insert':
         return `🚨 <b>Nueva Lesión Diagnosticada</b>\n\n👤 <b>Jugador:</b> ${pName}\n🩺 <b>Diagnóstico:</b> ${diagnostico}\n🩹 <b>Localización:</b> ${injuryLocation}\n⚠️ <b>Gravedad:</b> ${injurySeverity}\n🚫 <b>Disponibilidad:</b> No Disponible 🔴`;
@@ -175,7 +179,7 @@ export const TelegramNotificationsArea: React.FC<TelegramNotificationsAreaProps>
         return `📣 <b>Nueva Citación al Microciclo Generada</b>\n\n👤 <b>Jugador:</b> ${pName}\n🔰 <b>Categoría SBS:</b> ${citacionCategory}\n⚙️ <b>Microciclo ID:</b> ${citacionMicrocycle}\n📅 <b>Fecha citación:</b> ${citacionDate}`;
       
       case 'match_reports':
-        return `🏆 <b>Reporte de Competencia Finalizado</b>\n\n👤 <b>Jugador:</b> ${pName}\n⚔️ <b>Rival:</b> ${matchRival}\n📊 <b>Resultado:</b> ${matchResult}\n⏱️ <b>Minutos en cancha:</b> ${matchMinsPlayed} min\n📈 <b>RPE:</b> ${matchRpe}/10`;
+        return `🏆 <b>Reporte de Competencia Finalizado</b>\n\n👤 <b>Jugador:</b> ${pName}\n⚔️ <b>Rival:</b> ${matchRival}\n📊 <b>Resultado:</b> ${matchResult}\n⏱️ <b>Minutos en cancha:</b> ${matchMinsPlayed} min\n📈 <b>RPE:</b> ${matchRpe}/10\n🩹 <b>Zonas Molestias:</b> ${matchMolestias || 'Ninguna'}\n🤒 <b>Estado de Salud / Síntomas:</b> ${matchEnfermedad || 'Ninguno (Sano)'}`;
       
       case 'cronograma':
         return `🗓️ <b>Actividad Añadida al Cronograma Técnico</b>\n\n📅 <b>Día:</b> ${cronoFecha}\n⏰ <b>Hora:</b> ${cronoHora} horas\n⚡ <b>Actividad:</b> ${cronoActividad}\n🏢 <b>Lugar:</b> ${cronoLugar}`;
@@ -194,10 +198,12 @@ export const TelegramNotificationsArea: React.FC<TelegramNotificationsAreaProps>
     stress,
     soreness,
     wellnessNotes,
+    wellnessEnfermedad,
     rpe,
     duration,
     sessionType,
     loadNotes,
+    loadEnfermedad,
     diagnostico,
     injuryLocation,
     injurySeverity,
@@ -225,6 +231,8 @@ export const TelegramNotificationsArea: React.FC<TelegramNotificationsAreaProps>
     matchResult,
     matchMinsPlayed,
     matchRpe,
+    matchMolestias,
+    matchEnfermedad,
     cronoFecha,
     cronoHora,
     cronoActividad,
@@ -419,11 +427,11 @@ serve(async (req) => {
     }
 
     if (table === "wellness_checkin" && type === "INSERT") {
-      text = \`✅ <b>Check-in Wellness de Selección</b>\\n\\n👤 <b>Jugador:</b> \${playerName}\\n🛡️ <b>Club:</b> \${playerClub}\\n📊 <b>Fatiga:</b> \${record.fatigue || 0}/5\\n💤 <b>Sueño:</b> \${record.sleep_quality || 0}/5\\n⚡ <b>Estrés:</b> \${record.stress || 0}/5\\n🤕 <b>Dolor:</b> \${record.soreness || 0}/5\\n📋 <b>Detalles:</b> \${record.molestias || "Ninguna"}\\n\\n📍 <i>Complejo Juan Pinto Durán</i>\`;
+      text = \`✅ <b>Check-in Wellness de Selección</b>\\n\\n👤 <b>Jugador:</b> \${playerName}\\n🛡️ <b>Club:</b> \${playerClub}\\n📊 <b>Fatiga:</b> \·\${record.fatigue || 0}/5\\n💤 <b>Sueño:</b> \·\${record.sleep_quality || 0}/5\\n⚡ <b>Estrés:</b> \·\${record.stress || 0}/5\\n🤕 <b>Dolor:</b> \·\${record.soreness || 0}/5\\n🩹 <b>Zonas Molestias:</b> \·\${record.molestias || "Ninguna"}\\n🤒 <b>Estado de Salud / Síntomas:</b> \·\${record.enfermedad || "Ninguno (Sano)"}\\n\\n📍 <i>Complejo Juan Pinto Durán</i>\`;
     } 
     else if (table === "internal_load" && type === "INSERT") {
       const sRpe = (record.rpe || 0) * (record.duration_min || 0);
-      text = \`📊 <b>Nuevo Checkout - Carga Interna</b>\\n\\n👤 <b>Jugador:</b> \${playerName}\\n🏃‍♂️ <b>Sesión:</b> \${record.type || "FIELD"}\\n⏱️ <b>Duración:</b> \${record.duration_min || 0} minutos\\n📈 <b>RPE:</b> \${record.rpe || 0}/10\\n🔋 <b>Carga:</b> \${sRpe} u.a.\\n📝 <b>Detalle:</b> \${record.molestias || ""}\`;
+      text = \`📊 <b>Nuevo Checkout - Carga Interna</b>\\n\\n👤 <b>Jugador:</b> \·\${playerName}\\n🏃‍♂️ <b>Sesión:</b> \·\${record.type || "FIELD"}\\n⏱️ <b>Duración:</b> \·\${record.duration_min || 0} minutos\\n📈 <b>RPE:</b> \·\${record.rpe || 0}/10\\n🔋 <b>Carga:</b> \·\${sRpe} u.a.\\n🩹 <b>Zonas Molestias:</b> \·\${record.molestias || "Ninguna"}\\n🤒 <b>Estado de Salud / Síntomas:</b> \·\${record.enfermedad || "Ninguno (Sano)"}\`;
     } 
     else if (table === "lesionados" && type === "INSERT") {
       text = \`🚨 <b>Nueva Lesión Diagnosticada</b>\\n\\n👤 <b>Jugador:</b> \${playerName}\\n🩺 <b>Diagnóstico:</b> \${record.diagnostico_clinico || "S/D"}\\n🩹 <b>Localización:</b> \${record.localizacion || "S/D"}\\n⚠️ <b>Gravedad:</b> \${record.disponibilidad || "Moderado"}\\n🚫 <b>Disponibilidad:</b> No Disponible 🔴\`;
@@ -447,7 +455,7 @@ serve(async (req) => {
        text = \`📣 <b>Nueva Citación al Microciclo Generada</b>\\n\\n👤 <b>Jugador:</b> \${playerName}\\n⚙️ <b>Fecha citación:</b> \${record.fecha || ""}\\n📋 <b>Motivo:</b> \${record.motivo || "Entrenamiento"}\`;
     }
     else if (table === "match_reports" && type === "INSERT") {
-       text = \`🏆 <b>Reporte de Competencia Finalizado</b>\\n\\n👤 <b>Jugador:</b> \${playerName}\\n⚔️ <b>Rival:</b> \${record.rival || "S/D"}\\n📊 <b>Resultado:</b> \${record.resultado || "A cargo"}\\n⏱️ <b>Minutos en cancha:</b> \${record.minutos_jugados || 0} min\\n📈 <b>RPE:</b> \${record.rpe || 0}/10\`;
+       text = \`🏆 <b>Reporte de Competencia Finalizado</b>\\n\\n👤 <b>Jugador:</b> \${playerName}\\n⚔️ <b>Rival:</b> \${record.rival || "S/D"}\\n📊 <b>Resultado:</b> \${record.resultado || "A cargo"}\\n⏱️ <b>Minutos en cancha:</b> \${record.minutos_jugados || 0} min\\n📈 <b>RPE:</b> \${record.rpe || 0}/10\\n🩹 <b>Zonas Molestias:</b> \${record.molestias || "Ninguna"}\\n🤒 <b>Estado de Salud / Síntomas:</b> \·\${record.enfermedad || "Ninguno (Sano)"}\`;
     }
     else if (table === "cronograma_semanal" && type === "INSERT") {
        text = \`🗓️ <b>Actividad Añadida al Cronograma Técnico</b>\\n\\n📅 <b>Día:</b> \${record.fecha}\\n⏰ <b>Hora:</b> \·\${record.hora} horas\\n⚡ <b>Actividad:</b> \${record.actividad}\\n🏢 <b>Lugar:</b> \${record.lugar || "Pinto Durán"}\`;
@@ -663,6 +671,15 @@ serve(async (req) => {
                     className="w-full px-4 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:border-red-500"
                   />
                 </div>
+                <div className="col-span-2 space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Estado de Salud / Síntomas</label>
+                  <input
+                    type="text"
+                    value={wellnessEnfermedad}
+                    onChange={(e) => setWellnessEnfermedad(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:border-red-500"
+                  />
+                </div>
               </div>
             )}
 
@@ -684,9 +701,13 @@ serve(async (req) => {
                     <option value="MATCH">Partido (MATCH)</option>
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Notas de carga</label>
+                <div className="space-y-2 col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Molestias / Zonas</label>
                   <input type="text" value={loadNotes} onChange={(e) => setLoadNotes(e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-xl text-xs outline-none" />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Estado de Salud / Síntomas</label>
+                  <input type="text" value={loadEnfermedad} onChange={(e) => setLoadEnfermedad(e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-xl text-xs outline-none" />
                 </div>
               </div>
             )}
@@ -850,6 +871,14 @@ serve(async (req) => {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Percepción de Esfuerzo (RPE)</label>
                   <input type="number" min="1" max="10" value={matchRpe} onChange={(e) => setMatchRpe(Number(e.target.value))} className="w-full px-4 py-2 border border-slate-200 rounded-xl text-xs outline-none" />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Molestias / Zonas</label>
+                  <input type="text" value={matchMolestias} onChange={(e) => setMatchMolestias(e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-xl text-xs outline-none" />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Estado de Salud / Síntomas</label>
+                  <input type="text" value={matchEnfermedad} onChange={(e) => setMatchEnfermedad(e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-xl text-xs outline-none" />
                 </div>
               </div>
             )}

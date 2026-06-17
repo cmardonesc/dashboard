@@ -121,9 +121,6 @@ const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange,
           {nutricionOpen && !isCollapsed && (
             <div className="mt-2 ml-4 space-y-1 border-l border-white/10 pl-4 animate-in slide-in-from-top-2 duration-200">
               <SubmenuButton active={activeMenu === 'nutricion_antropometria'} label="Antropometría" onClick={() => onMenuChange('nutricion_antropometria')} />
-              <SubmenuButton active={activeMenu === 'nutricion_recomendaciones'} label="Recomendaciones" onClick={() => onMenuChange('nutricion_recomendaciones')} />
-              <SubmenuButton active={activeMenu === 'nutricion_formularios'} label="Formularios" onClick={() => onMenuChange('nutricion_formularios')} />
-              <SubmenuButton active={activeMenu === 'nutricion_chef'} label="Chef Assistant" onClick={() => onMenuChange('nutricion_chef')} />
             </div>
           )}
         </div>

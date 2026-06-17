@@ -207,12 +207,15 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
               <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
                 <button
                   onClick={() => onMenuChange('planificacion_anual')}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                    activeMenu === 'planificacion_anual' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeMenu === 'planificacion_anual' ? 'text-red-400 bg-red-900/20' : 'text-red-500/80 hover:text-red-400'
                   }`}
                 >
-                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_anual' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
-                  <span className="text-[10px] font-bold">Planificación Anual</span>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'planificacion_anual' ? 'bg-red-400' : 'bg-red-500/80'}`}></div>
+                    <span className="text-[10px] font-bold">Planificación Anual</span>
+                  </div>
+                  <span className="text-[8px] bg-red-950/60 text-red-400 px-1 py-0.5 rounded-md font-bold border border-red-500/30">En Desarrollo</span>
                 </button>
                 <button
                   onClick={() => onMenuChange('planificacion_semanal')}
@@ -319,27 +322,33 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                     {/* REPORTE DE SESIÓN */}
                     <button
                       onClick={() => onMenuChange('fisica_reporte')}
-                      className={`w-full flex items-center gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
+                      className={`w-full flex items-center justify-between gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
                         activeMenu === 'fisica_reporte' 
-                          ? 'bg-blue-600 text-white shadow-lg' 
-                          : 'text-slate-500 hover:text-slate-300'
+                          ? 'bg-red-950/40 text-red-400 border border-red-900/50 shadow-lg' 
+                          : 'text-red-500/80 hover:text-red-400'
                       }`}
                     >
-                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_reporte' ? 'bg-white' : 'bg-slate-700'}`}></div>
-                      <span className="text-xs font-bold tracking-tight">Reporte Sesión</span>
+                      <div className="flex items-center gap-4">
+                        <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_reporte' ? 'bg-red-400' : 'bg-red-500/80'}`}></div>
+                        <span className="text-xs font-bold tracking-tight">Reporte Sesión</span>
+                      </div>
+                      <span className="text-[8px] bg-red-950/60 text-red-400 px-1 py-0.5 rounded-md font-bold border border-red-500/30">En Desarrollo</span>
                     </button>
 
                     {/* PRONÓSTICO DE CARGAS */}
                     <button
                       onClick={() => onMenuChange('fisica_pronostico')}
-                      className={`w-full flex items-center gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
+                      className={`w-full flex items-center justify-between gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
                         activeMenu === 'fisica_pronostico' 
-                          ? 'bg-blue-600 text-white shadow-lg' 
-                          : 'text-slate-500 hover:text-slate-300'
+                          ? 'bg-red-950/40 text-red-400 border border-red-900/50 shadow-lg' 
+                          : 'text-red-500/80 hover:text-red-400'
                       }`}
                     >
-                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_pronostico' ? 'bg-white' : 'bg-slate-700'}`}></div>
-                      <span className="text-xs font-bold tracking-tight">Pronóstico de Cargas</span>
+                      <div className="flex items-center gap-4">
+                        <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_pronostico' ? 'bg-red-400' : 'bg-red-500/80'}`}></div>
+                        <span className="text-xs font-bold tracking-tight">Pronóstico de Cargas</span>
+                      </div>
+                      <span className="text-[8px] bg-red-950/60 text-red-400 px-1 py-0.5 rounded-md font-bold border border-red-500/30">En Desarrollo</span>
                     </button>
                   </>
                 )}

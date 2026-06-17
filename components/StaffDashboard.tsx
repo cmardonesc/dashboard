@@ -1063,13 +1063,13 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
                 <div className="max-w-2xl">
                   <div className="flex items-center gap-3 mb-4 md:mb-6">
                     <span className="bg-red-600 text-white px-3 md:px-4 py-1 md:py-1.5 rounded-full text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-red-900/40">
-                      LIVE DASHBOARD
+                      La Roja Performance
                     </span>
-                    <span className="text-slate-500 text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em]">SISTEMA CENTRALIZADO DE ÉLITE</span>
+                    <span className="text-slate-400 text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em]">PLATAFORMA OFICIAL</span>
                   </div>
-                  <h1 className="text-white text-4xl md:text-6xl font-black italic tracking-tighter uppercase leading-[0.85] mb-6 md:mb-10">
-                    DASHBOARD <br/>
-                    <span className="text-red-600">SELECCIONES JUVENILES DE CHILE</span>
+                  <h1 className="text-white text-3xl md:text-5xl font-black tracking-tighter uppercase leading-[1.05] mb-6 md:mb-10">
+                    Centralización de Datos <br/>
+                    <span className="text-red-500 italic block mt-2">Selecciones Juveniles</span>
                   </h1>
 
                   <div className="flex flex-wrap gap-4">
