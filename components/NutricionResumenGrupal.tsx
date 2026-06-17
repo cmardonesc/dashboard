@@ -16,11 +16,38 @@ interface NutricionResumenGrupalProps {
 const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ performanceRecords, userRole, userClub, clubs = [] }) => {
   const [startDate, setStartDate] = useState<string>('2020-01-01');
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [selectedClub, setSelectedClub] = useState<string>(userRole === 'club' && userClub ? userClub : 'TODOS');
-  const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
+  const [selectedClubs, setSelectedClubs] = useState<string[]>(
+    userRole === 'club' && userClub ? [userClub] : []
+  );
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [isClubDropdownOpen, setIsClubDropdownOpen] = useState(false);
+  const [clubQuery, setClubQuery] = useState('');
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [categoryQuery, setCategoryQuery] = useState('');
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const hasInitializedDates = useRef(false);
+
+  const handleToggleClub = (clubName: string) => {
+    if (userRole === 'club' && userClub) return;
+    setSelectedClubs(prev => {
+      if (prev.includes(clubName)) {
+        return prev.filter(c => c !== clubName);
+      } else {
+        return [...prev, clubName];
+      }
+    });
+  };
+
+  const handleToggleCategory = (catName: string) => {
+    setSelectedCategories(prev => {
+      if (prev.includes(catName)) {
+        return prev.filter(c => c !== catName);
+      } else {
+        return [...prev, catName];
+      }
+    });
+  };
 
   // Set initial dates to the latest evaluation date when data is loaded
   useEffect(() => {
@@ -115,6 +142,16 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     return Array.from(c).sort();
   }, [performanceRecords]);
 
+  const filteredClubsBySearch = useMemo(() => {
+    if (!clubQuery) return availableClubs;
+    return availableClubs.filter(club => club.toLowerCase().includes(clubQuery.toLowerCase()));
+  }, [availableClubs, clubQuery]);
+
+  const filteredCategoriesBySearch = useMemo(() => {
+    if (!categoryQuery) return categories;
+    return categories.filter(cat => cat.toLowerCase().includes(categoryQuery.toLowerCase()));
+  }, [categories, categoryQuery]);
+
   const filteredData = useMemo(() => {
     return performanceRecords.flatMap(record => {
       if (!record.nutrition) return [];
@@ -126,12 +163,15 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
           const matchesDate = date >= start && date <= end;
           
           // If user is a club, we show ALL players for comparison (anonymized later)
-          // If user is admin, we respect the selectedClub filter
-          const matchesClub = selectedClub === 'TODOS' || 
-            (record.player.club && normalizeClub(record.player.club) === normalizeClub(selectedClub)) ||
-            (record.player.club_name && normalizeClub(record.player.club_name) === normalizeClub(selectedClub));
+          // If user is admin, we respect the selectedClubs filter (multi-select)
+          const matchesClub = selectedClubs.length === 0 || selectedClubs.some(sc => 
+            (record.player.club && normalizeClub(record.player.club) === normalizeClub(sc)) ||
+            (record.player.club_name && normalizeClub(record.player.club_name) === normalizeClub(sc))
+          );
           
-          const matchesCategory = selectedCategory === 'TODAS' || record.player.anio?.toString() === selectedCategory;
+          const matchesCategory = selectedCategories.length === 0 || selectedCategories.some(sc =>
+            record.player.anio?.toString() === sc
+          );
           return matchesDate && matchesClub && matchesCategory;
         })
         .map(n => ({
@@ -139,7 +179,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
           data: n
         }));
     });
-  }, [performanceRecords, startDate, endDate, selectedClub, selectedCategory]);
+  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories]);
 
   const chartData = useMemo(() => {
     if (filteredData.length === 0) return null;
@@ -290,33 +330,206 @@ La composición tisular grupal cumple robustamente con los estándares internaci
           </div>
 
           {/* Club Filter */}
-          <div className="space-y-2">
+          <div className="space-y-2 relative">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Filtrar por Club</label>
-            <select 
-              value={selectedClub}
-              onChange={e => setSelectedClub(e.target.value)}
-              className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
-            >
-              <option value="TODOS">Todos los Clubes</option>
-              {userRole === 'club' ? (
-                userClub && <option value={userClub}>{userClub}</option>
-              ) : (
-                availableClubs.map(club => <option key={club} value={club}>{club}</option>)
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsClubDropdownOpen(!isClubDropdownOpen)}
+                className="w-full bg-slate-50 hover:bg-slate-100/70 text-slate-800 border-none rounded-2xl px-6 py-4 text-xs font-bold transition-all flex items-center justify-between gap-3 focus:outline-none"
+              >
+                <span className="truncate">
+                  {selectedClubs.length === 0
+                    ? 'Todos los Clubes'
+                    : selectedClubs.length === 1
+                      ? selectedClubs[0]
+                      : `${selectedClubs.length} Clubes Seleccionados`}
+                </span>
+                <div className="flex items-center gap-2 bg-slate-200/60 text-slate-700 px-2.5 py-1 rounded-xl text-[9px] font-black italic">
+                  {selectedClubs.length > 0 ? selectedClubs.length : 'TODOS'}
+                  <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${isClubDropdownOpen ? 'rotate-180' : ''}`}></i>
+                </div>
+              </button>
+
+              {isClubDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10 cursor-default" onClick={() => setIsClubDropdownOpen(false)} />
+                  <div className="origin-top-right absolute right-0 mt-2 w-full min-w-[280px] rounded-3xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20 p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                      <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Listado de Clubes</span>
+                      {userRole !== 'club' && (
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedClubs(availableClubs)}
+                            className="px-2.5 py-1 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                          >
+                            Todos
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedClubs([])}
+                            className="px-2.5 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                          >
+                            Limpiar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {userRole === 'club' && userClub ? (
+                      <div className="space-y-1">
+                        <label className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-xl text-[10px] font-bold text-slate-700 select-none">
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={true}
+                              readOnly
+                              className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-not-allowed"
+                            />
+                            <span className="uppercase tracking-wider font-extrabold">{userClub}</span>
+                          </div>
+                          <span className="text-[7.5px] font-black tracking-widest uppercase bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded-full">LOCK</span>
+                        </label>
+                      </div>
+                    ) : (
+                      <>
+                        {availableClubs.length > 5 && (
+                          <div className="relative mb-3">
+                            <input
+                              type="text"
+                              placeholder="Buscar club..."
+                              className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-red-500/20 outline-none"
+                              onChange={(e) => setClubQuery(e.target.value)}
+                              value={clubQuery}
+                            />
+                            <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                          </div>
+                        )}
+
+                        <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
+                          {filteredClubsBySearch.map(club => {
+                            const isChecked = selectedClubs.includes(club);
+                            return (
+                              <label
+                                key={club}
+                                className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-all rounded-xl hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
+                                  isChecked ? 'bg-red-50/30 text-red-900 font-extrabold' : ''
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => handleToggleClub(club)}
+                                    className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                                  />
+                                  <span className="uppercase tracking-wider">{club}</span>
+                                </div>
+                              </label>
+                            );
+                          })}
+                          {filteredClubsBySearch.length === 0 && (
+                            <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron clubes</p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
               )}
-            </select>
+            </div>
           </div>
 
           {/* Category Filter */}
-          <div className="space-y-2">
+          <div className="space-y-2 relative">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Categoría / Año</label>
-            <select 
-              value={selectedCategory}
-              onChange={e => setSelectedCategory(e.target.value)}
-              className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold outline-none focus:ring-2 focus:ring-red-500"
-            >
-              <option value="TODAS">Todas las Categorías</option>
-              {categories.map(cat => <option key={cat} value={cat}>Categoría {cat}</option>)}
-            </select>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                className="w-full bg-slate-50 hover:bg-slate-100/70 text-slate-800 border-none rounded-2xl px-6 py-4 text-xs font-bold transition-all flex items-center justify-between gap-3 focus:outline-none"
+              >
+                <span className="truncate">
+                  {selectedCategories.length === 0
+                    ? 'Todas las Categorías'
+                    : selectedCategories.length === 1
+                      ? `Categoría ${selectedCategories[0]}`
+                      : `${selectedCategories.length} Cat. Seleccionadas`}
+                </span>
+                <div className="flex items-center gap-2 bg-slate-200/60 text-slate-700 px-2.5 py-1 rounded-xl text-[9px] font-black italic">
+                  {selectedCategories.length > 0 ? selectedCategories.length : 'TODAS'}
+                  <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`}></i>
+                </div>
+              </button>
+
+              {isCategoryDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10 cursor-default" onClick={() => setIsCategoryDropdownOpen(false)} />
+                  <div className="origin-top-right absolute right-0 mt-2 w-full min-w-[280px] rounded-3xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20 p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                      <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Listado de Categorías</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCategories(categories)}
+                          className="px-2.5 py-1 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Todas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCategories([])}
+                          className="px-2.5 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                    </div>
+
+                    {categories.length > 5 && (
+                      <div className="relative mb-3">
+                        <input
+                          type="text"
+                          placeholder="Buscar categoría..."
+                          className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-red-500/20 outline-none"
+                          onChange={(e) => setCategoryQuery(e.target.value)}
+                          value={categoryQuery}
+                        />
+                        <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                      </div>
+                    )}
+
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
+                      {filteredCategoriesBySearch.map(cat => {
+                        const isChecked = selectedCategories.includes(cat);
+                        return (
+                          <label
+                            key={cat}
+                            className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-all rounded-xl hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
+                              isChecked ? 'bg-red-50/30 text-red-900 font-extrabold' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => handleToggleCategory(cat)}
+                                className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                              />
+                              <span className="uppercase tracking-wider">Categoría {cat}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                      {filteredCategoriesBySearch.length === 0 && (
+                        <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron categorías</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

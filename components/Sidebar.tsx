@@ -51,7 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const [planificacionOpen, setPlanificacionOpen] = useState(isPlanificacionActive);
 
   // Estado para Área Técnica y sus submenús
-  const TECNICA_IDS = ['tecnica', 'tecnica_biblioteca', 'tecnica_convocatoria', 'tecnica_partidos'];
+  const TECNICA_IDS = ['tecnica', 'tecnica_biblioteca', 'tecnica_convocatoria'];
   const isTecnicaActive = TECNICA_IDS.includes(activeMenu);
   const [tecnicaOpen, setTecnicaOpen] = useState(isTecnicaActive);
 
@@ -482,16 +482,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                 >
                   <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_biblioteca' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
                   <span className="text-[10px] font-bold">Base de Tareas</span>
-                </button>
-
-                <button
-                  onClick={() => onMenuChange('tecnica_partidos')}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                    activeMenu === 'tecnica_partidos' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_partidos' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
-                  <span className="text-[10px] font-bold">Informes de Partido</span>
                 </button>
               </div>
             )}

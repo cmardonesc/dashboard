@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { AthletePerformanceRecord, Category, User, NutritionData } from '../types';
 import { supabase } from '../lib/supabase';
+import { normalizeClub } from '../lib/utils';
 import NutritionReport from './NutritionReport';
 import ClubBadge from './ClubBadge';
 import {
@@ -67,11 +68,19 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
   // Memo for ALL selectable players (even without nutrition data)
   const allSelectablePlayers = useMemo(() => {
     let base = players.length > 0 ? players : performanceRecords.map(r => r.player);
-    if (userRole === 'club' && userClub) {
-      base = base.filter(p => (p.club || p.club_name) === userClub);
+    if (userRole === 'club') {
+      if (userClubId) {
+        base = base.filter(p => p.id_club === userClubId);
+      } else if (userClub) {
+        const normUserClub = normalizeClub(userClub);
+        base = base.filter(p => {
+          const pClub = p.club || p.club_name;
+          return pClub && normalizeClub(pClub) === normUserClub;
+        });
+      }
     }
     return base;
-  }, [players, performanceRecords, userRole, userClub]);
+  }, [players, performanceRecords, userRole, userClub, userClubId]);
 
   const [showReport, setShowReport] = useState(false);
 
@@ -136,9 +145,10 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
       if (userClubId) {
         base = base.filter(r => r.player.id_club === userClubId);
       } else if (userClub) {
+        const normUserClub = normalizeClub(userClub);
         base = base.filter(r => {
           const pClub = r.player.club || r.player.club_name;
-          return pClub === userClub;
+          return pClub && normalizeClub(pClub) === normUserClub;
         });
       }
     }
@@ -336,7 +346,7 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
           >
             <i className="fa-solid fa-rotate text-sm md:text-base"></i>
           </button>
-          {userRole !== 'club' && (
+          {userRole !== 'player' && (
             <button onClick={() => setIsDrawerOpen(true)} className="flex-1 md:flex-none bg-[#0b1220] text-white px-4 md:px-8 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-xl">
               <i className="fa-solid fa-plus"></i> Ingreso Manual ISAK
             </button>
@@ -614,9 +624,13 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
                    {performanceRecords
                     .filter(r => {
                       // Filtro por club si es necesario
-                      if (userRole === 'club' && userClub) {
-                        const pClub = r.player.club || r.player.club_name;
-                        if (pClub !== userClub) return false;
+                      if (userRole === 'club') {
+                        if (userClubId) {
+                          if (r.player.id_club !== userClubId) return false;
+                        } else if (userClub) {
+                          const pClub = r.player.club || r.player.club_name;
+                          if (!pClub || normalizeClub(pClub) !== normalizeClub(userClub)) return false;
+                        }
                       }
                       
                       return r.player.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -717,98 +731,171 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
               {/* Year Filter */}
               <div className="relative">
                 <button 
-                  onClick={() => setShowYearDropdown(!showYearDropdown)}
-                  className="bg-slate-50 border border-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl py-3 pl-4 pr-10 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer min-w-[180px] text-left flex justify-between items-center"
+                  type="button"
+                  onClick={() => {
+                    setShowYearDropdown(!showYearDropdown);
+                    setShowPosDropdown(false);
+                  }}
+                  className="bg-slate-50 hover:bg-slate-100/70 border border-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer min-w-[200px] text-left flex justify-between items-center transition-all"
                 >
                   <span className="truncate">
-                    {selectedBirthYears.includes('TODOS') ? 'TODAS LAS CATEGORÍAS' : `CATEGORÍAS: ${selectedBirthYears.join(', ')}`}
+                    {selectedBirthYears.includes('TODOS') || selectedBirthYears.length === 0
+                      ? 'Todas las Categorías'
+                      : selectedBirthYears.length === 1
+                        ? `Categoría ${selectedBirthYears[0]}`
+                        : `${selectedBirthYears.length} Cat. Seleccionadas`}
                   </span>
-                  <i className={`fa-solid fa-chevron-down text-slate-400 text-[10px] transition-transform ${showYearDropdown ? 'rotate-180' : ''}`}></i>
+                  <div className="flex items-center gap-2 bg-slate-200/60 text-slate-700 px-2 py-0.5 rounded-lg text-[9px] font-black italic ml-2">
+                    {selectedBirthYears.includes('TODOS') || selectedBirthYears.length === 0 ? 'TODAS' : selectedBirthYears.length}
+                    <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${showYearDropdown ? 'rotate-180' : ''}`}></i>
+                  </div>
                 </button>
                 
                 {showYearDropdown && (
-                  <div className="absolute top-full left-0 mt-2 w-full min-w-[200px] bg-white rounded-xl shadow-xl border border-slate-100 z-50 max-h-60 overflow-y-auto p-1">
-                    <button
-                      onClick={() => {
-                        setSelectedBirthYears(['TODOS']);
-                        setShowYearDropdown(false);
-                      }}
-                      className={`w-full text-left px-4 py-2 text-xs font-bold uppercase hover:bg-slate-50 rounded-lg flex justify-between items-center ${selectedBirthYears.includes('TODOS') ? 'text-red-600 bg-red-50' : 'text-slate-600'}`}
-                    >
-                      TODAS LAS CATEGORÍAS
-                      {selectedBirthYears.includes('TODOS') && <i className="fa-solid fa-check"></i>}
-                    </button>
-                    {availableBirthYears.map(year => {
-                      const isSelected = selectedBirthYears.includes(year);
-                      return (
-                        <button
-                          key={year}
-                          onClick={() => {
-                            setSelectedBirthYears(prev => {
-                              if (year === 'TODOS') return ['TODOS'];
-                              const newSelection = prev.includes('TODOS') ? [] : [...prev];
-                              
-                              if (newSelection.includes(year)) {
-                                const filtered = newSelection.filter(y => y !== year);
-                                return filtered.length === 0 ? ['TODOS'] : filtered;
-                              } else {
-                                return [...newSelection, year];
-                              }
-                            });
-                          }}
-                          className={`w-full text-left px-4 py-2 text-xs font-bold uppercase hover:bg-slate-50 rounded-lg flex justify-between items-center ${isSelected ? 'text-red-600 bg-red-50' : 'text-slate-600'}`}
-                        >
-                          CATEGORÍA {year}
-                          {isSelected && <i className="fa-solid fa-check"></i>}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <>
+                    <div className="fixed inset-0 z-10 cursor-default" onClick={() => setShowYearDropdown(false)} />
+                    <div className="origin-top-left absolute left-0 mt-2 w-full min-w-[260px] bg-white rounded-2xl shadow-xl border border-slate-100 z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-2.5">
+                        <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Categorías / Años</span>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBirthYears(['TODOS'])}
+                            className="px-2 py-0.5 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-md text-[8px] font-black uppercase tracking-wider transition-all"
+                          >
+                            Todas
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBirthYears([])}
+                            className="px-2 py-0.5 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-md text-[8px] font-black uppercase tracking-wider transition-all"
+                          >
+                            Limpiar
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 pr-1 select-none">
+                        {availableBirthYears.map(year => {
+                          const isChecked = selectedBirthYears.includes(year) && !selectedBirthYears.includes('TODOS');
+                          return (
+                            <label
+                              key={year}
+                              className={`flex items-center justify-between px-2.5 py-2 cursor-pointer transition-all rounded-lg hover:bg-slate-50 text-[10px] font-bold text-slate-700 ${
+                                isChecked ? 'bg-red-50/30 text-red-600 font-extrabold' : ''
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setSelectedBirthYears(prev => {
+                                      const newSelection = prev.includes('TODOS') ? [] : [...prev];
+                                      if (newSelection.includes(year)) {
+                                        const filtered = newSelection.filter(y => y !== year);
+                                        return filtered.length === 0 ? ['TODOS'] : filtered;
+                                      } else {
+                                        return [...newSelection, year];
+                                      }
+                                    });
+                                  }}
+                                  className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                                />
+                                <span className="uppercase tracking-wider">Categoría {year}</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
 
               {/* Position Filter */}
-              <div className="flex flex-col gap-2">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Filtrar por Posición</label>
-                <div className="flex flex-wrap gap-1">
-                  <button
-                    onClick={() => {
-                      setSelectedPositions(['TODAS']);
-                    }}
-                    className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-tighter transition-all ${
-                      selectedPositions.includes('TODAS') ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
-                    }`}
-                  >
-                    Todas
-                  </button>
-                  {ORDERED_POSITIONS.map(pos => {
-                    const isSelected = selectedPositions.includes(pos);
-                    return (
-                      <button
-                        key={pos}
-                        onClick={() => {
-                          setSelectedPositions(prev => {
-                            if (pos === 'TODAS') return ['TODAS'];
-                            const newSelection = prev.includes('TODAS') ? [] : [...prev];
-                            
-                            if (newSelection.includes(pos)) {
-                              const filtered = newSelection.filter(p => p !== pos);
-                              return filtered.length === 0 ? ['TODAS'] : filtered;
-                            } else {
-                              return [...newSelection, pos];
-                            }
-                          });
-                        }}
-                        className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-tighter transition-all ${
-                          isSelected ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
-                        }`}
-                        title={pos}
-                      >
-                        {POSITION_ABBR[pos] || pos}
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="relative">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowPosDropdown(!showPosDropdown);
+                    setShowYearDropdown(false);
+                  }}
+                  className="bg-slate-50 hover:bg-slate-100/70 border border-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer min-w-[200px] text-left flex justify-between items-center transition-all"
+                >
+                  <span className="truncate">
+                    {selectedPositions.includes('TODAS') || selectedPositions.length === 0
+                      ? 'Todas las Posiciones'
+                      : selectedPositions.length === 1
+                        ? `Posición ${POSITION_ABBR[selectedPositions[0]] || selectedPositions[0]}`
+                        : `${selectedPositions.length} Pos. Seleccionadas`}
+                  </span>
+                  <div className="flex items-center gap-2 bg-slate-200/60 text-slate-700 px-2 py-0.5 rounded-lg text-[9px] font-black italic ml-2">
+                    {selectedPositions.includes('TODAS') || selectedPositions.length === 0 ? 'TODAS' : selectedPositions.length}
+                    <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${showPosDropdown ? 'rotate-180' : ''}`}></i>
+                  </div>
+                </button>
+                
+                {showPosDropdown && (
+                  <>
+                    <div className="fixed inset-0 z-10 cursor-default" onClick={() => setShowPosDropdown(false)} />
+                    <div className="origin-top-left absolute left-0 mt-2 w-full min-w-[260px] bg-white rounded-2xl shadow-xl border border-slate-100 z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-2.5">
+                        <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Filtrar por Posición</span>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPositions(['TODAS'])}
+                            className="px-2 py-0.5 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-md text-[8px] font-black uppercase tracking-wider transition-all"
+                          >
+                            Todas
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPositions([])}
+                            className="px-2 py-0.5 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-md text-[8px] font-black uppercase tracking-wider transition-all"
+                          >
+                            Limpiar
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 pr-1 select-none">
+                        {ORDERED_POSITIONS.map(pos => {
+                          const isChecked = selectedPositions.includes(pos) && !selectedPositions.includes('TODAS');
+                          return (
+                            <label
+                              key={pos}
+                              className={`flex items-center justify-between px-2.5 py-2 cursor-pointer transition-all rounded-lg hover:bg-slate-50 text-[10px] font-bold text-slate-700 ${
+                                isChecked ? 'bg-red-50/30 text-red-600 font-extrabold' : ''
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setSelectedPositions(prev => {
+                                      const newSelection = prev.includes('TODAS') ? [] : [...prev];
+                                      if (newSelection.includes(pos)) {
+                                        const filtered = newSelection.filter(p => p !== pos);
+                                        return filtered.length === 0 ? ['TODAS'] : filtered;
+                                      } else {
+                                        return [...newSelection, pos];
+                                      }
+                                    });
+                                  }}
+                                  className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                                />
+                                <span className="uppercase tracking-wider">{pos} ({POSITION_ABBR[pos] || pos})</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -850,7 +937,18 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
                   </div>
                   <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto p-1">
                     {performanceRecords
-                      .filter(r => r.player.name.toLowerCase().includes(playerSearchTerm.toLowerCase()))
+                      .filter(r => {
+                        // Filtro por club si es necesario para el rol de club
+                        if (userRole === 'club') {
+                          if (userClubId) {
+                            if (r.player.id_club !== userClubId) return false;
+                          } else if (userClub) {
+                            const pClub = r.player.club || r.player.club_name;
+                            if (!pClub || normalizeClub(pClub) !== normalizeClub(userClub)) return false;
+                          }
+                        }
+                        return r.player.name.toLowerCase().includes(playerSearchTerm.toLowerCase());
+                      })
                       .map(r => (
                         <button key={r.player.id} onClick={() => handleSelectAthleteForm(r.player)} className="p-4 bg-slate-50 hover:bg-red-50 rounded-2xl text-left transition-all border border-transparent hover:border-red-100 group">
                           <p className="text-xs font-black uppercase italic text-slate-900 group-hover:text-red-600 transition-colors">{r.player.name}</p>
@@ -945,71 +1043,175 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
         <div className="space-y-8 animate-in fade-in duration-500">
           {/* Filtros Multi-Selección */}
           <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-wrap items-end gap-6">
+            {/* Year Filter */}
             <div className="relative">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-2 block italic">Año de Nacimiento</label>
               <button 
-                onClick={() => setShowYearDropdown(!showYearDropdown)}
-                className="bg-slate-50 px-6 py-3 rounded-2xl text-xs font-black text-slate-700 flex items-center gap-3 border border-slate-100 hover:bg-slate-100 transition-all min-w-[200px] justify-between"
+                type="button"
+                onClick={() => {
+                  setShowYearDropdown(!showYearDropdown);
+                  setShowPosDropdown(false);
+                }}
+                className="bg-slate-50 hover:bg-slate-100/70 border border-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer min-w-[200px] text-left flex justify-between items-center transition-all"
               >
-                {selectedBirthYears.includes('TODOS') ? 'Todos los Años' : `${selectedBirthYears.length} Seleccionados`}
-                <i className={`fa-solid fa-chevron-down transition-transform ${showYearDropdown ? 'rotate-180' : ''}`}></i>
-              </button>
-              {showYearDropdown && (
-                <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-4 z-50 grid grid-cols-2 gap-2 animate-in fade-in zoom-in duration-200">
-                  <button 
-                    onClick={() => setSelectedBirthYears(['TODOS'])}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedBirthYears.includes('TODOS') ? 'bg-red-600 text-white' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-                  >
-                    Todos
-                  </button>
-                  {availableBirthYears.map(year => (
-                    <button 
-                      key={year}
-                      onClick={() => {
-                        const newYears = selectedBirthYears.includes('TODOS') ? [year] : 
-                                       selectedBirthYears.includes(year) ? selectedBirthYears.filter(y => y !== year) : [...selectedBirthYears, year];
-                        setSelectedBirthYears(newYears.length === 0 ? ['TODOS'] : newYears);
-                      }}
-                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedBirthYears.includes(year) ? 'bg-red-600 text-white' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-                    >
-                      {year}
-                    </button>
-                  ))}
+                <span className="truncate">
+                  {selectedBirthYears.includes('TODOS') || selectedBirthYears.length === 0
+                    ? 'Todas las Categorías'
+                    : selectedBirthYears.length === 1
+                      ? `Categoría ${selectedBirthYears[0]}`
+                      : `${selectedBirthYears.length} Cat. Seleccionadas`}
+                </span>
+                <div className="flex items-center gap-2 bg-slate-200/60 text-slate-700 px-2 py-0.5 rounded-lg text-[9px] font-black italic ml-2">
+                  {selectedBirthYears.includes('TODOS') || selectedBirthYears.length === 0 ? 'TODAS' : selectedBirthYears.length}
+                  <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${showYearDropdown ? 'rotate-180' : ''}`}></i>
                 </div>
+              </button>
+              
+              {showYearDropdown && (
+                <>
+                  <div className="fixed inset-0 z-10 cursor-default" onClick={() => setShowYearDropdown(false)} />
+                  <div className="origin-top-left absolute left-0 mt-2 w-full min-w-[260px] bg-white rounded-2xl shadow-xl border border-slate-100 z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-2.5">
+                      <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Categorías / Años</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBirthYears(['TODOS'])}
+                          className="px-2 py-0.5 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-md text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Todas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBirthYears([])}
+                          className="px-2 py-0.5 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-md text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 pr-1 select-none">
+                      {availableBirthYears.map(year => {
+                        const isChecked = selectedBirthYears.includes(year) && !selectedBirthYears.includes('TODOS');
+                        return (
+                          <label
+                            key={year}
+                            className={`flex items-center justify-between px-2.5 py-2 cursor-pointer transition-all rounded-lg hover:bg-slate-50 text-[10px] font-bold text-slate-700 ${
+                              isChecked ? 'bg-red-50/30 text-red-600 font-extrabold' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setSelectedBirthYears(prev => {
+                                    const newSelection = prev.includes('TODOS') ? [] : [...prev];
+                                    if (newSelection.includes(year)) {
+                                      const filtered = newSelection.filter(y => y !== year);
+                                      return filtered.length === 0 ? ['TODOS'] : filtered;
+                                    } else {
+                                      return [...newSelection, year];
+                                    }
+                                  });
+                                }}
+                                className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                              />
+                              <span className="uppercase tracking-wider">Categoría {year}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
+            {/* Position Filter */}
             <div className="relative">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-2 block italic">Posición</label>
               <button 
-                onClick={() => setShowPosDropdown(!showPosDropdown)}
-                className="bg-slate-50 px-6 py-3 rounded-2xl text-xs font-black text-slate-700 flex items-center gap-3 border border-slate-100 hover:bg-slate-100 transition-all min-w-[200px] justify-between"
+                type="button"
+                onClick={() => {
+                  setShowPosDropdown(!showPosDropdown);
+                  setShowYearDropdown(false);
+                }}
+                className="bg-slate-50 hover:bg-slate-100/70 border border-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer min-w-[200px] text-left flex justify-between items-center transition-all"
               >
-                {selectedPositions.includes('TODAS') ? 'Todas las Posiciones' : `${selectedPositions.length} Seleccionadas`}
-                <i className={`fa-solid fa-chevron-down transition-transform ${showPosDropdown ? 'rotate-180' : ''}`}></i>
-              </button>
-              {showPosDropdown && (
-                <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-4 z-50 flex flex-col gap-1 animate-in fade-in zoom-in duration-200">
-                  <button 
-                    onClick={() => setSelectedPositions(['TODAS'])}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-left ${selectedPositions.includes('TODAS') ? 'bg-red-600 text-white' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-                  >
-                    Todas
-                  </button>
-                  {availablePositions.map(pos => (
-                    <button 
-                      key={pos}
-                      onClick={() => {
-                        const newPos = selectedPositions.includes('TODAS') ? [pos] : 
-                                     selectedPositions.includes(pos) ? selectedPositions.filter(p => p !== pos) : [...selectedPositions, pos];
-                        setSelectedPositions(newPos.length === 0 ? ['TODAS'] : newPos);
-                      }}
-                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-left ${selectedPositions.includes(pos) ? 'bg-red-600 text-white' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-                    >
-                      {pos}
-                    </button>
-                  ))}
+                <span className="truncate">
+                  {selectedPositions.includes('TODAS') || selectedPositions.length === 0
+                    ? 'Todas las Posiciones'
+                    : selectedPositions.length === 1
+                      ? `Posición ${POSITION_ABBR[selectedPositions[0]] || selectedPositions[0]}`
+                      : `${selectedPositions.length} Pos. Seleccionadas`}
+                </span>
+                <div className="flex items-center gap-2 bg-slate-200/60 text-slate-700 px-2 py-0.5 rounded-lg text-[9px] font-black italic ml-2">
+                  {selectedPositions.includes('TODAS') || selectedPositions.length === 0 ? 'TODAS' : selectedPositions.length}
+                  <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${showPosDropdown ? 'rotate-180' : ''}`}></i>
                 </div>
+              </button>
+              
+              {showPosDropdown && (
+                <>
+                  <div className="fixed inset-0 z-10 cursor-default" onClick={() => setShowPosDropdown(false)} />
+                  <div className="origin-top-left absolute left-0 mt-2 w-full min-w-[260px] bg-white rounded-2xl shadow-xl border border-slate-100 z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-2.5">
+                      <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Filtrar por Posición</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPositions(['TODAS'])}
+                          className="px-2 py-0.5 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-md text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Todas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPositions([])}
+                          className="px-2 py-0.5 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-md text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 pr-1 select-none">
+                      {availablePositions.map(pos => {
+                        const isChecked = selectedPositions.includes(pos) && !selectedPositions.includes('TODAS');
+                        return (
+                          <label
+                            key={pos}
+                            className={`flex items-center justify-between px-2.5 py-2 cursor-pointer transition-all rounded-lg hover:bg-slate-50 text-[10px] font-bold text-slate-700 ${
+                              isChecked ? 'bg-red-50/30 text-red-600 font-extrabold' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setSelectedPositions(prev => {
+                                    const newSelection = prev.includes('TODAS') ? [] : [...prev];
+                                    if (newSelection.includes(pos)) {
+                                      const filtered = newSelection.filter(p => p !== pos);
+                                      return filtered.length === 0 ? ['TODAS'] : filtered;
+                                    } else {
+                                      return [...newSelection, pos];
+                                    }
+                                  });
+                                }}
+                                className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                              />
+                              <span className="uppercase tracking-wider">{pos} ({POSITION_ABBR[pos] || pos})</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </div>

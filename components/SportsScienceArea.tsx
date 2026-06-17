@@ -850,6 +850,53 @@ const METRICS_OPTIONS = [
   { label: 'Estatura Proy (cm)', key: 'estatura_proy_media_cm', table: 'antropometria' },
 ];
 
+const getLatestMetricValue = (
+  playerId: number,
+  metricKey: string,
+  imtp: any[],
+  speed: any[],
+  vo2max: any[],
+  antropometria: any[]
+): number | undefined => {
+  const option = METRICS_OPTIONS.find(o => o.key === metricKey);
+  if (!option) return undefined;
+  
+  let records: any[] = [];
+  let dateField = '';
+  
+  if (option.table === 'imtp') {
+    records = imtp;
+    dateField = 'fecha_test';
+  } else if (option.table === 'speed') {
+    records = speed;
+    dateField = 'fecha';
+  } else if (option.table === 'vo2max') {
+    records = vo2max;
+    dateField = 'fecha';
+  } else if (option.table === 'antropometria') {
+    records = antropometria;
+    dateField = 'fecha_medicion';
+  } else {
+    return undefined;
+  }
+  
+  const sorted = records
+    .filter(r => Number(r.player_id) === Number(playerId))
+    .sort((a, b) => new Date(b[dateField]).getTime() - new Date(a[dateField]).getTime());
+    
+  for (const r of sorted) {
+    const val = r[metricKey];
+    if (val !== null && val !== undefined && val !== '') {
+      const valNum = Number(val);
+      if (!isNaN(valNum)) {
+        return valNum;
+      }
+    }
+  }
+  
+  return undefined;
+};
+
 const TachometerGauge = ({ 
   value, 
   average, 
@@ -859,7 +906,8 @@ const TachometerGauge = ({
   color = 'stroke-red-600',
   fillColor = 'text-red-600',
   lowerIsBetter = false,
-  percentile
+  percentile,
+  outlier
 }: { 
   value: number; 
   average: number; 
@@ -870,6 +918,7 @@ const TachometerGauge = ({
   fillColor?: string;
   lowerIsBetter?: boolean;
   percentile?: number;
+  outlier?: 'low' | 'high';
 }) => {
   const safeVal = isNaN(value) || value < 0 ? 0 : value;
   const safeAvg = isNaN(average) || average < 0 ? 0 : average;
@@ -924,11 +973,18 @@ const TachometerGauge = ({
     <div key={title} className="bg-slate-50/50 rounded-3xl p-5 border border-slate-100 flex flex-col items-center justify-between shadow-xs hover:border-slate-200 hover:bg-slate-50/80 transition-all duration-300">
       <div className="text-center w-full">
         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">{title}</span>
-        <div className="flex justify-center items-baseline gap-1">
-          <span className="text-xl font-black text-slate-900 italic tracking-tight">
-            {safeVal > 0 ? safeVal.toLocaleString('es-ES', { maximumFractionDigits: 1 }) : 'S/D'}
-          </span>
-          {safeVal > 0 && <span className="text-[9px] font-bold text-slate-400 uppercase">{unit}</span>}
+        <div className="flex flex-col items-center justify-center">
+          <div className="flex justify-center items-baseline gap-1">
+            <span className="text-xl font-black text-slate-900 italic tracking-tight">
+              {safeVal > 0 ? safeVal.toLocaleString('es-ES', { maximumFractionDigits: 1 }) : 'S/D'}
+            </span>
+            {safeVal > 0 && <span className="text-[9px] font-bold text-slate-400 uppercase">{unit}</span>}
+          </div>
+          {outlier && safeVal > 0 && (
+            <div className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-[8px] font-black text-amber-700 px-2 py-0.5 mt-1 rounded-full uppercase tracking-wider animate-pulse">
+              <i className="fa-solid fa-triangle-exclamation text-[7px]"></i> Atípico {outlier === 'high' ? 'Alto' : 'Bajo'}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1159,6 +1215,8 @@ const AthleteHuella = ({
   const [chatQuery, setChatQuery] = useState('');
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
   const [chatSending, setChatSending] = useState(false);
+  const [comparisonTarget, setComparisonTarget] = useState<'category' | '2010plus'>('category');
+  const [excludeOutliers, setExcludeOutliers] = useState(false);
 
   useEffect(() => {
     if (player) {
@@ -1204,6 +1262,69 @@ const AthleteHuella = ({
     });
   }, [allAntro]);
 
+  const playerYearRaw = player ? ((player as any).anio ? Number((player as any).anio) : new Date(player.fecha_nacimiento).getFullYear()) : NaN;
+  const playerYear = isNaN(playerYearRaw) ? '-' : playerYearRaw;
+
+  const activeComparisonPlayerIds = useMemo(() => {
+    if (!player) return [];
+    if (comparisonTarget === '2010plus') {
+      return allPlayers.filter(p => {
+        const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+        return !isNaN(pYear) && pYear <= 2010;
+      }).map(p => p.player_id);
+    } else {
+      return allPlayers.filter(p => {
+        const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+        return pYear === playerYear;
+      }).map(p => p.player_id);
+    }
+  }, [allPlayers, comparisonTarget, playerYear, player]);
+
+  const getCohortOutliersCount = (data: any[], key: string, lowerIsBetter: boolean = false) => {
+    let targetPlayerIds = activeComparisonPlayerIds;
+    let playerBestValues = targetPlayerIds.map(pId => {
+      const pRows = data.filter(d => d.player_id === pId && d[key] != null && !isNaN(Number(d[key])));
+      if (pRows.length === 0) return null;
+      const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+      if (numericVals.length === 0) return null;
+      return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+    }).filter((v): v is number => v !== null);
+
+    if (playerBestValues.length < 4) return 0;
+    const sorted = [...playerBestValues].sort((a, b) => a - b);
+    const getQuantile = (q: number) => {
+      const pos = (sorted.length - 1) * q;
+      const base = Math.floor(pos);
+      const rest = pos - base;
+      return sorted[base + 1] !== undefined
+        ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+        : sorted[base];
+    };
+    const q1 = getQuantile(0.25);
+    const q3 = getQuantile(0.75);
+    const iqr = q3 - q1;
+    const low = q1 - 1.5 * iqr;
+    const high = q3 + 1.5 * iqr;
+
+    const outliers = playerBestValues.filter(v => v < low || v > high);
+    return outliers.length;
+  };
+
+  const totalCohortOutliers = useMemo(() => {
+    let count = 0;
+    count += getCohortOutliersCount(allImtp, 'imtp_fuerza_n');
+    count += getCohortOutliersCount(allImtp, 'imtp_f_relativa_n_kg');
+    count += getCohortOutliersCount(allSpeed, 'tiempo_total', true);
+    count += getCohortOutliersCount(allImtp, 'cmj_rsi_mod');
+    count += getCohortOutliersCount(allVo2, 'vo2_max');
+    count += getCohortOutliersCount(processedAllAntro, 'masa_muscular_pct');
+    count += getCohortOutliersCount(processedAllAntro, 'masa_muscular_kg');
+    count += getCohortOutliersCount(processedAllAntro, 'masa_adiposa_pct', true);
+    count += getCohortOutliersCount(processedAllAntro, 'masa_adiposa_kg', true);
+    count += getCohortOutliersCount(processedAllAntro, 'sum_pliegues_6_mm', true);
+    count += getCohortOutliersCount(processedAllAntro, 'indice_imo');
+    return count;
+  }, [activeComparisonPlayerIds, allImtp, allSpeed, allVo2, processedAllAntro]);
 
   const generateAiSummary = async () => {
     if (!player) return;
@@ -1306,16 +1427,8 @@ const AthleteHuella = ({
     : 0;
   const bestCmjRsi = bestCmjRsiVal !== -Infinity && bestCmjRsiVal > 0 ? bestCmjRsiVal : 0;
 
-  const playerYearRaw = (player as any).anio ? Number((player as any).anio) : new Date(player.fecha_nacimiento).getFullYear();
-  const playerYear = isNaN(playerYearRaw) ? '-' : playerYearRaw;
-  const categoryPlayers = allPlayers.filter(p => {
-    const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
-    return pYear === playerYear;
-  });
-  const categoryPlayerIds = categoryPlayers.map(p => p.player_id);
-
   const getAvg = (data: any[], key: string) => {
-    let targetPlayerIds = categoryPlayerIds;
+    let targetPlayerIds = activeComparisonPlayerIds;
     let values = data
       .filter(d => targetPlayerIds.includes(d.player_id) && d[key] != null && !isNaN(Number(d[key])))
       .map(d => Number(d[key]));
@@ -1324,6 +1437,26 @@ const AthleteHuella = ({
       values = data
         .filter(d => d[key] != null && !isNaN(Number(d[key])))
         .map(d => Number(d[key]));
+    }
+
+    if (values.length === 0) return 0;
+
+    if (excludeOutliers && values.length >= 4) {
+      const sorted = [...values].sort((a, b) => a - b);
+      const getQuantile = (q: number) => {
+        const pos = (sorted.length - 1) * q;
+        const base = Math.floor(pos);
+        const rest = pos - base;
+        return sorted[base + 1] !== undefined
+          ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+          : sorted[base];
+      };
+      const q1 = getQuantile(0.25);
+      const q3 = getQuantile(0.75);
+      const iqr = q3 - q1;
+      const low = q1 - 1.5 * iqr;
+      const high = q3 + 1.5 * iqr;
+      values = values.filter(v => v >= low && v <= high);
     }
 
     if (values.length === 0) return 0;
@@ -1367,7 +1500,7 @@ const AthleteHuella = ({
   const calculatePercentile = (playerValue: number, data: any[], key: string, lowerIsBetter: boolean = false) => {
     if (isNaN(playerValue) || playerValue <= 0) return undefined;
 
-    let targetPlayerIds = categoryPlayerIds;
+    let targetPlayerIds = activeComparisonPlayerIds;
     let playerBestValues = targetPlayerIds.map(pId => {
       const pRows = data.filter(d => d.player_id === pId && d[key] != null && !isNaN(Number(d[key])));
       if (pRows.length === 0) return null;
@@ -1386,6 +1519,26 @@ const AthleteHuella = ({
         if (numericVals.length === 0) return null;
         return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
       }).filter((v): v is number => v !== null);
+    }
+
+    if (playerBestValues.length === 0) return undefined;
+
+    if (excludeOutliers && playerBestValues.length >= 4) {
+      const sorted = [...playerBestValues].sort((a, b) => a - b);
+      const getQuantile = (q: number) => {
+        const pos = (sorted.length - 1) * q;
+        const base = Math.floor(pos);
+        const rest = pos - base;
+        return sorted[base + 1] !== undefined
+          ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+          : sorted[base];
+      };
+      const q1 = getQuantile(0.25);
+      const q3 = getQuantile(0.75);
+      const iqr = q3 - q1;
+      const low = q1 - 1.5 * iqr;
+      const high = q3 + 1.5 * iqr;
+      playerBestValues = playerBestValues.filter(v => v >= low && v <= high);
     }
 
     if (playerBestValues.length === 0) return undefined;
@@ -1415,11 +1568,74 @@ const AthleteHuella = ({
     return Math.min(99, Math.max(1, Math.round(percentile)));
   };
 
+  const checkOutlier = (playerValue: number, data: any[], key: string, lowerIsBetter: boolean = false) => {
+    if (isNaN(playerValue) || playerValue <= 0) return undefined;
+
+    let targetPlayerIds = activeComparisonPlayerIds;
+    let playerBestValues = targetPlayerIds.map(pId => {
+      const pRows = data.filter(d => d.player_id === pId && d[key] != null && !isNaN(Number(d[key])));
+      if (pRows.length === 0) return null;
+      const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+      if (numericVals.length === 0) return null;
+      return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+    }).filter((v): v is number => v !== null);
+
+    // Fallback if not enough data
+    if (playerBestValues.length < 4) {
+      const allPlayerIds = allPlayers.map(p => p.player_id);
+      playerBestValues = allPlayerIds.map(pId => {
+        const pRows = data.filter(d => d.player_id === pId && d[key] != null && !isNaN(Number(d[key])));
+        if (pRows.length === 0) return null;
+        const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+        if (numericVals.length === 0) return null;
+        return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+      }).filter((v): v is number => v !== null);
+    }
+
+    if (playerBestValues.length < 4) return undefined;
+
+    // Sort ascending
+    const sorted = [...playerBestValues].sort((a, b) => a - b);
+    
+    // Function to calculate quantile
+    const getQuantile = (q: number) => {
+      const pos = (sorted.length - 1) * q;
+      const base = Math.floor(pos);
+      const rest = pos - base;
+      if (sorted[base + 1] !== undefined) {
+        return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+      } else {
+        return sorted[base];
+      }
+    };
+
+    const q1 = getQuantile(0.25);
+    const q3 = getQuantile(0.75);
+    const iqr = q3 - q1;
+
+    // Outliers threshold: 1.5 * IQR
+    const lowBoundary = q1 - 1.5 * iqr;
+    const highBoundary = q3 + 1.5 * iqr;
+
+    if (playerValue < lowBoundary) {
+      return 'low';
+    } else if (playerValue > highBoundary) {
+      return 'high';
+    }
+    return undefined;
+  };
+
   const pctImtp = calculatePercentile(bestImtpFuerza, allImtp, 'imtp_fuerza_n');
   const pctImtpRelativo = calculatePercentile(bestImtpRelativo, allImtp, 'imtp_f_relativa_n_kg');
   const pctSpeedTime = calculatePercentile(bestSpeedTime, allSpeed, 'tiempo_total', true);
   const pctCmjRsi = calculatePercentile(bestCmjRsi, allImtp, 'cmj_rsi_mod');
   const pctVo2 = calculatePercentile(bestVo2, allVo2, 'vo2_max');
+
+  const outlierImtp = checkOutlier(bestImtpFuerza, allImtp, 'imtp_fuerza_n');
+  const outlierImtpRelativo = checkOutlier(bestImtpRelativo, allImtp, 'imtp_f_relativa_n_kg');
+  const outlierSpeedTime = checkOutlier(bestSpeedTime, allSpeed, 'tiempo_total', true);
+  const outlierCmjRsi = checkOutlier(bestCmjRsi, allImtp, 'cmj_rsi_mod');
+  const outlierVo2 = checkOutlier(bestVo2, allVo2, 'vo2_max');
 
   const avgMasaMuscularPct = getAvg(processedAllAntro, 'masa_muscular_pct');
   const avgMasaMuscularKg = getAvg(processedAllAntro, 'masa_muscular_kg');
@@ -1448,6 +1664,13 @@ const AthleteHuella = ({
   const pctMasaAdiposaKg = calculatePercentile(valMasaAdiposaKg, processedAllAntro, 'masa_adiposa_kg', true);
   const pctSumPliegues6 = calculatePercentile(valSumPliegues6, processedAllAntro, 'sum_pliegues_6_mm', true);
   const pctIndiceImo = calculatePercentile(valIndiceImo, processedAllAntro, 'indice_imo');
+
+  const outlierMasaMuscularPct = checkOutlier(valMasaMuscularPct, processedAllAntro, 'masa_muscular_pct');
+  const outlierMasaMuscularKg = checkOutlier(valMasaMuscularKg, processedAllAntro, 'masa_muscular_kg');
+  const outlierMasaAdiposaPct = checkOutlier(valMasaAdiposaPct, processedAllAntro, 'masa_adiposa_pct', true);
+  const outlierMasaAdiposaKg = checkOutlier(valMasaAdiposaKg, processedAllAntro, 'masa_adiposa_kg', true);
+  const outlierSumPliegues6 = checkOutlier(valSumPliegues6, processedAllAntro, 'sum_pliegues_6_mm', true);
+  const outlierIndiceImo = checkOutlier(valIndiceImo, processedAllAntro, 'indice_imo');
 
   const radarData = [
     { subject: 'Potencia', A: (bestImtpFuerza > 0) ? bestImtpFuerza : ((latestImtp?.imtp_fuerza_n != null && !isNaN(Number(latestImtp.imtp_fuerza_n))) ? Number(latestImtp.imtp_fuerza_n) : 0), B: avgImtpFuerza, fullMark: 5000 },
@@ -1485,7 +1708,7 @@ const AthleteHuella = ({
                <ClubBadge clubName={player.club || player.club_name} idClub={player.id_club} clubs={clubs} logoSize="w-5 h-5" className="text-slate-600 font-black text-sm uppercase tracking-widest" />
             </div>
             
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 mt-8">
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Año Nac.</p>
                 <p className="text-xl font-black italic text-slate-900">{playerYear}</p>
@@ -1500,14 +1723,6 @@ const AthleteHuella = ({
                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Peso (kg)</p>
                 <p className="text-xl font-black italic text-slate-900">
                   {(latestAntro?.masa_corporal_kg != null && !isNaN(Number(latestAntro.masa_corporal_kg))) ? latestAntro.masa_corporal_kg : '-'}
-                </p>
-              </div>
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">PHV Status</p>
-                <p className="text-xl font-black italic text-emerald-600">
-                  {(latestAntro?.phv_media != null && !isNaN(Number(latestAntro.phv_media))) 
-                    ? Number(latestAntro.phv_media).toFixed(2) 
-                    : '-'}
                 </p>
               </div>
             </div>
@@ -1534,10 +1749,59 @@ const AthleteHuella = ({
 
       {/* TACHOMETERS FULL WIDTH ROW UNDER HEADER */}
       <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
-          <i className="fa-solid fa-gauge-high text-red-600"></i>
-          Mejores Valores de Evaluaciones vs Promedio Categoría
-        </h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
+          <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+            <i className="fa-solid fa-gauge-high text-red-600"></i>
+            Mejores Valores de Evaluaciones vs Promedio {comparisonTarget === 'category' ? `Categoría (${playerYear})` : 'Grupo Seleccionado (2010+)'}
+          </h3>
+          <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+            {/* Outliers Filter Toggle */}
+            <button
+              onClick={() => setExcludeOutliers(!excludeOutliers)}
+              className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-xl border transition-all duration-200 flex items-center gap-2 ${
+                excludeOutliers
+                  ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-xs'
+                  : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
+              }`}
+              title={excludeOutliers ? "Haz clic para incluir valores atípicos" : "Haz clic para excluir valores atípicos"}
+            >
+              <i className={`fa-solid ${excludeOutliers ? 'fa-filter-circle-xmark text-amber-600' : 'fa-filter text-slate-400'}`}></i>
+              {excludeOutliers ? 'Sin Atípicos' : 'Con Atípicos'}
+              {totalCohortOutliers > 0 && (
+                <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black ${
+                  excludeOutliers 
+                    ? 'bg-amber-600 text-white animate-pulse' 
+                    : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {totalCohortOutliers} Atípicos
+                </span>
+              )}
+            </button>
+
+            <div className="bg-slate-50 p-1 rounded-xl border border-slate-150/60 flex items-center gap-1 shadow-inner">
+              <button
+                onClick={() => setComparisonTarget('category')}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 ${
+                  comparisonTarget === 'category'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Su Categoría ({playerYear})
+              </button>
+              <button
+                onClick={() => setComparisonTarget('2010plus')}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 ${
+                  comparisonTarget === '2010plus'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                2010 hacia arriba
+              </button>
+            </div>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
           <TachometerGauge 
             value={bestImtpFuerza} 
@@ -1548,6 +1812,7 @@ const AthleteHuella = ({
             color="stroke-red-600"
             fillColor="text-red-600"
             percentile={pctImtp}
+            outlier={outlierImtp}
           />
           <TachometerGauge 
             value={bestImtpRelativo} 
@@ -1558,6 +1823,7 @@ const AthleteHuella = ({
             color="stroke-orange-500"
             fillColor="text-orange-500"
             percentile={pctImtpRelativo}
+            outlier={outlierImtpRelativo}
           />
           <TachometerGauge 
             value={bestSpeedTime} 
@@ -1569,6 +1835,7 @@ const AthleteHuella = ({
             fillColor="text-blue-600"
             lowerIsBetter={true}
             percentile={pctSpeedTime}
+            outlier={outlierSpeedTime}
           />
           <TachometerGauge 
             value={bestCmjRsi} 
@@ -1579,6 +1846,7 @@ const AthleteHuella = ({
             color="stroke-emerald-600"
             fillColor="text-emerald-600"
             percentile={pctCmjRsi}
+            outlier={outlierCmjRsi}
           />
           <TachometerGauge 
             value={bestVo2} 
@@ -1589,7 +1857,210 @@ const AthleteHuella = ({
             color="stroke-purple-600"
             fillColor="text-purple-600"
             percentile={pctVo2}
+            outlier={outlierVo2}
           />
+        </div>
+      </div>
+
+      {/* METRICAS ANTROPOMETRICAS BENTO - FULL WIDTH SINGLE ROW */}
+      <div className="w-full mb-8">
+        {/* METRICAS ANTROPOMETRICAS BENTO */}
+        <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col justify-between">
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                <i className="fa-solid fa-arrows-up-down-left-right text-red-600"></i>
+                Métricas Antropométricas vs Promedio {comparisonTarget === 'category' ? `Categoría (${playerYear})` : 'Grupo Seleccionado (2010+)'}
+              </h3>
+              <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+                {/* Outliers Filter Toggle */}
+                <button
+                  onClick={() => setExcludeOutliers(!excludeOutliers)}
+                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-xl border transition-all duration-200 flex items-center gap-2 ${
+                    excludeOutliers
+                      ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
+                  }`}
+                  title={excludeOutliers ? "Haz clic para incluir valores atípicos" : "Haz clic para excluir valores atípicos"}
+                >
+                  <i className={`fa-solid ${excludeOutliers ? 'fa-filter-circle-xmark text-amber-600' : 'fa-filter text-slate-400'}`}></i>
+                  {excludeOutliers ? 'Sin Atípicos' : 'Con Atípicos'}
+                  {totalCohortOutliers > 0 && (
+                    <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black ${
+                      excludeOutliers 
+                        ? 'bg-amber-600 text-white animate-pulse' 
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {totalCohortOutliers} Atípicos
+                    </span>
+                  )}
+                </button>
+
+                <div className="bg-slate-50 p-1 rounded-xl border border-slate-150/60 flex items-center gap-1 shadow-inner">
+                  <button
+                    onClick={() => setComparisonTarget('category')}
+                    className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 ${
+                      comparisonTarget === 'category'
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Su Categoría ({playerYear})
+                  </button>
+                  <button
+                    onClick={() => setComparisonTarget('2010plus')}
+                    className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 ${
+                      comparisonTarget === '2010plus'
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    2010 hacia arriba
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              <TachometerGauge 
+                value={valMasaMuscularPct} 
+                average={avgMasaMuscularPct} 
+                maxValue={maxScaleMasaMuscularPct} 
+                title="% Masa Muscular" 
+                unit="%" 
+                color="stroke-emerald-600"
+                fillColor="text-emerald-600"
+                percentile={pctMasaMuscularPct}
+                outlier={outlierMasaMuscularPct}
+              />
+              <TachometerGauge 
+                value={valMasaMuscularKg} 
+                average={avgMasaMuscularKg} 
+                maxValue={maxScaleMasaMuscularKg} 
+                title="Kg Masa Muscular" 
+                unit="kg" 
+                color="stroke-teal-600"
+                fillColor="text-teal-600"
+                percentile={pctMasaMuscularKg}
+                outlier={outlierMasaMuscularKg}
+              />
+              <TachometerGauge 
+                value={valMasaAdiposaPct} 
+                average={avgMasaAdiposaPct} 
+                maxValue={maxScaleMasaAdiposaPct} 
+                title="% Masa Grasa" 
+                unit="%" 
+                color="stroke-red-500"
+                fillColor="text-red-500"
+                lowerIsBetter={true}
+                percentile={pctMasaAdiposaPct}
+                outlier={outlierMasaAdiposaPct}
+              />
+              <TachometerGauge 
+                value={valMasaAdiposaKg} 
+                average={avgMasaAdiposaKg} 
+                maxValue={maxScaleMasaAdiposaKg} 
+                title="Kg Masa Grasa" 
+                unit="kg" 
+                color="stroke-orange-500"
+                fillColor="text-orange-500"
+                lowerIsBetter={true}
+                percentile={pctMasaAdiposaKg}
+                outlier={outlierMasaAdiposaKg}
+              />
+              <TachometerGauge 
+                value={valSumPliegues6} 
+                average={avgSumPliegues6} 
+                maxValue={maxScaleSumPliegues6} 
+                title="6 Pliegues" 
+                unit="mm" 
+                color="stroke-blue-600"
+                fillColor="text-blue-600"
+                lowerIsBetter={true}
+                percentile={pctSumPliegues6}
+                outlier={outlierSumPliegues6}
+              />
+              <TachometerGauge 
+                value={valIndiceImo} 
+                average={avgIndiceImo} 
+                maxValue={maxScaleIndiceImo} 
+                title="Índice IMO" 
+                unit="" 
+                color="stroke-purple-600"
+                fillColor="text-purple-600"
+                percentile={pctIndiceImo}
+                outlier={outlierIndiceImo}
+              />
+            </div>
+          </div>
+          
+          <div className="mt-8 pt-6 border-t border-slate-100 space-y-4">
+            <div>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Diagnóstico Morfológico</p>
+              <p className="text-xs text-slate-600 leading-relaxed mt-1">
+                El somatotipo del atleta revela un predominio muscular alto con baja grasa adiposa, adecuado para alta explosividad.
+              </p>
+            </div>
+
+            <div className="pt-4 border-t border-slate-50/80">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Parámetros de Maduración (PHV)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100/60 flex items-center justify-between">
+                  <div>
+                    <span className="text-[9.5px] font-bold text-slate-400 uppercase block leading-none">Años para PHV</span>
+                    <span className="text-xs font-black text-slate-700 mt-1 block">
+                      {latestAntro?.maduracion_media != null && !isNaN(Number(latestAntro.maduracion_media)) 
+                        ? `${Number(latestAntro.maduracion_media).toFixed(2)} años` 
+                        : '-'}
+                    </span>
+                  </div>
+                  <i className="fa-solid fa-clock text-slate-400/80 text-xs"></i>
+                </div>
+                
+                <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100/60 flex items-center justify-between">
+                  <div>
+                    <span className="text-[9.5px] font-bold text-slate-400 uppercase block leading-none">Edad PHV (Pico)</span>
+                    <span className="text-xs font-black text-slate-700 mt-1 block">
+                      {latestAntro?.phv_media != null && !isNaN(Number(latestAntro.phv_media)) 
+                        ? `${Number(latestAntro.phv_media).toFixed(1)} años` 
+                        : '-'}
+                    </span>
+                  </div>
+                  <i className="fa-solid fa-chart-line text-slate-400/80 text-xs"></i>
+                </div>
+                
+                {(() => {
+                  const mVal = latestAntro?.maduracion_media != null ? Number(latestAntro.maduracion_media) : null;
+                  let maturationLabel = '-';
+                  let maturationColor = 'text-slate-600 bg-slate-50/50 border-slate-100/60';
+                  
+                  if (mVal !== null && !isNaN(mVal)) {
+                    if (mVal < -0.5) {
+                      maturationLabel = 'PRE-PHV';
+                      maturationColor = 'text-blue-600 bg-blue-50/60 border-blue-100/60';
+                    } else if (mVal <= 0.5) {
+                      maturationLabel = 'CIRCA-PHV';
+                      maturationColor = 'text-amber-600 bg-amber-50/60 border-amber-100/60';
+                    } else {
+                      maturationLabel = 'POST-PHV';
+                      maturationColor = 'text-emerald-700 bg-emerald-50/60 border-emerald-150/60';
+                    }
+                  }
+                  
+                  return (
+                    <div className={`rounded-2xl p-3 border flex items-center justify-between ${maturationColor}`}>
+                      <div>
+                        <span className="text-[9.5px] font-bold opacity-80 uppercase block leading-none">Estado Madurativo</span>
+                        <span className="text-xs font-black mt-1 block tracking-wider uppercase">
+                          {maturationLabel}
+                        </span>
+                      </div>
+                      <i className="fa-solid fa-seedling text-current text-xs"></i>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1939,90 +2410,6 @@ const AthleteHuella = ({
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      </div>
-
-      {/* METRICAS ANTROPOMETRICAS BENTO - FULL WIDTH SINGLE ROW */}
-      <div className="w-full">
-        {/* METRICAS ANTROPOMETRICAS BENTO */}
-        <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
-              <i className="fa-solid fa-arrows-up-down-left-right text-red-600"></i> Métricas Antropométricas
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-              <TachometerGauge 
-                value={valMasaMuscularPct} 
-                average={avgMasaMuscularPct} 
-                maxValue={maxScaleMasaMuscularPct} 
-                title="% Masa Muscular" 
-                unit="%" 
-                color="stroke-emerald-600"
-                fillColor="text-emerald-600"
-                percentile={pctMasaMuscularPct}
-              />
-              <TachometerGauge 
-                value={valMasaMuscularKg} 
-                average={avgMasaMuscularKg} 
-                maxValue={maxScaleMasaMuscularKg} 
-                title="Kg Masa Muscular" 
-                unit="kg" 
-                color="stroke-teal-600"
-                fillColor="text-teal-600"
-                percentile={pctMasaMuscularKg}
-              />
-              <TachometerGauge 
-                value={valMasaAdiposaPct} 
-                average={avgMasaAdiposaPct} 
-                maxValue={maxScaleMasaAdiposaPct} 
-                title="% Masa Grasa" 
-                unit="%" 
-                color="stroke-red-500"
-                fillColor="text-red-500"
-                lowerIsBetter={true}
-                percentile={pctMasaAdiposaPct}
-              />
-              <TachometerGauge 
-                value={valMasaAdiposaKg} 
-                average={avgMasaAdiposaKg} 
-                maxValue={maxScaleMasaAdiposaKg} 
-                title="Kg Masa Grasa" 
-                unit="kg" 
-                color="stroke-orange-500"
-                fillColor="text-orange-500"
-                lowerIsBetter={true}
-                percentile={pctMasaAdiposaKg}
-              />
-              <TachometerGauge 
-                value={valSumPliegues6} 
-                average={avgSumPliegues6} 
-                maxValue={maxScaleSumPliegues6} 
-                title="6 Pliegues" 
-                unit="mm" 
-                color="stroke-blue-600"
-                fillColor="text-blue-600"
-                lowerIsBetter={true}
-                percentile={pctSumPliegues6}
-              />
-              <TachometerGauge 
-                value={valIndiceImo} 
-                average={avgIndiceImo} 
-                maxValue={maxScaleIndiceImo} 
-                title="Índice IMO" 
-                unit="" 
-                color="stroke-purple-600"
-                fillColor="text-purple-600"
-                percentile={pctIndiceImo}
-              />
-            </div>
-          </div>
-          
-          <div className="mt-8 pt-6 border-t border-slate-100 space-y-2">
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Diagnóstico Morfológico</p>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              El somatotipo del atleta revela un predominio muscular alto con baja grasa adiposa, adecuado para alta explosividad.
-            </p>
           </div>
         </div>
       </div>
@@ -3059,16 +3446,12 @@ const CorrelationsInsights = ({ players, imtp, speed, vo2max, antropometria, sel
     });
 
     const playersData = filteredPlayers.map(p => {
-      const pImtp = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
-      const pSpeed = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-      const pVo2 = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-      const pAntro = getLatestCompositeAntro(antropometria, p.player_id);
-      
+      const metricsData: Record<string, number | undefined> = {};
+      METRICS_OPTIONS.forEach(opt => {
+        metricsData[opt.key] = getLatestMetricValue(p.player_id, opt.key, imtp, speed, vo2max, antropometria);
+      });
       return {
-        ...pImtp,
-        ...pSpeed,
-        ...pVo2,
-        ...pAntro
+        ...metricsData
       };
     });
 
@@ -3187,18 +3570,9 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     });
 
     const values = filteredPlayers.map(p => {
-      let val: any = null;
-      if (metricKey === 'imtp_fuerza_n') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.imtp_fuerza_n;
-      else if (metricKey === 'vel_10m') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_10m;
-      else {
-        const option = METRICS_OPTIONS.find(o => o.key === metricKey);
-        if (option?.table === 'imtp') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
-        else if (option?.table === 'speed') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
-        else if (option?.table === 'vo2max') val = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
-        else if (option?.table === 'antropometria') val = getLatestCompositeAntro(antropometria, p.player_id)?.[metricKey];
-      }
-      return Number(val);
-    }).filter(v => v !== null && !isNaN(v));
+      const val = getLatestMetricValue(p.player_id, metricKey, imtp, speed, vo2max, antropometria);
+      return val !== undefined ? Number(val) : null;
+    }).filter((v): v is number => v !== null && !isNaN(v));
 
     if (values.length === 0) return null;
 
@@ -3240,18 +3614,9 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     });
 
     const values = filteredPlayers.map(p => {
-      let val: any = null;
-      if (metricKey === 'imtp_fuerza_n') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.imtp_fuerza_n;
-      else if (metricKey === 'vel_10m') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.vel_10m;
-      else {
-        const option = METRICS_OPTIONS.find(o => o.key === metricKey);
-        if (option?.table === 'imtp') val = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]?.[metricKey as keyof IMTPData];
-        else if (option?.table === 'speed') val = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof SpeedTestData];
-        else if (option?.table === 'vo2max') val = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0]?.[metricKey as keyof VO2MaxData];
-        else if (option?.table === 'antropometria') val = getLatestCompositeAntro(antropometria, p.player_id)?.[metricKey];
-      }
-      return Number(val);
-    }).filter(v => v !== null && !isNaN(v));
+      const val = getLatestMetricValue(p.player_id, metricKey, imtp, speed, vo2max, antropometria);
+      return val !== undefined ? Number(val) : null;
+    }).filter((v): v is number => v !== null && !isNaN(v));
 
     if (values.length === 0) return null;
 
@@ -3633,19 +3998,16 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
         return yearMatch && posMatch;
       })
       .map(p => {
-        const pImtp = imtp.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
-        const pSpeed = speed.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-        const pVo2 = vo2max.filter(d => d.player_id === p.player_id).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-        const pAntro = getLatestCompositeAntro(antropometria, p.player_id);
+        const metricsData: Record<string, number | undefined> = {};
+        METRICS_OPTIONS.forEach(opt => {
+          metricsData[opt.key] = getLatestMetricValue(p.player_id, opt.key, imtp, speed, vo2max, antropometria);
+        });
         
         return {
           id: p.player_id,
           name: `${p.nombre} ${p.apellido1}`,
           posicion: p.posicion,
-          ...pImtp,
-          ...pSpeed,
-          ...pVo2,
-          ...pAntro
+          ...metricsData
         };
       });
   }, [players, imtp, speed, vo2max, antropometria, selectedAnios, selectedPosiciones]);
@@ -3708,19 +4070,6 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
         const stats = regressionData[idx];
         return (
           <div key={idx} className="bg-white rounded-[40px] p-8 md:p-12 shadow-sm border border-slate-100 flex flex-col relative overflow-hidden">
-            {stats && (
-              <div className="absolute top-32 right-12 z-10 bg-slate-900/5 backdrop-blur-md p-4 rounded-2xl border border-white/20 shadow-sm">
-                <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-2">Análisis Estadístico</p>
-                <div className="space-y-1">
-                  <p className="text-xs font-black text-red-600 tracking-tighter">
-                    y = {(stats.slope != null && !isNaN(Number(stats.slope))) ? stats.slope.toFixed(3) : '0.000'}x {stats.intercept >= 0 ? '+' : '-'} {(stats.intercept != null && !isNaN(Number(stats.intercept))) ? Math.abs(stats.intercept).toFixed(2) : '0.00'}
-                  </p>
-                  <p className="text-xs font-black text-slate-600 tracking-tighter">
-                    R = {(stats.r != null && !isNaN(Number(stats.r))) ? stats.r.toFixed(3) : '0.000'}
-                  </p>
-                </div>
-              </div>
-            )}
             
             <div className="flex flex-wrap items-center justify-between gap-6 mb-12">
               <div className="flex items-center gap-4">
@@ -3732,7 +4081,7 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Laboratorio de Rendimiento</p>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-4">
+              <div className="flex flex-wrap gap-4 items-end">
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Variable Independiente (Eje X)</span>
                   <select 
@@ -3753,6 +4102,20 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
                     {METRICS_OPTIONS.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
                   </select>
                 </div>
+
+                {stats && (
+                  <div className="bg-slate-50 border border-slate-100 p-2.5 px-4 rounded-2xl min-h-[46px] flex flex-col justify-center">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Análisis Estadístico</p>
+                    <div className="flex gap-4 items-center">
+                      <p className="text-xs font-black text-red-600 tracking-tighter">
+                        y = {(stats.slope != null && !isNaN(Number(stats.slope))) ? stats.slope.toFixed(3) : '0.000'}x {stats.intercept >= 0 ? '+' : '-'} {(stats.intercept != null && !isNaN(Number(stats.intercept))) ? Math.abs(stats.intercept).toFixed(2) : '0.00'}
+                      </p>
+                      <p className="text-xs font-black text-slate-600 tracking-tighter">
+                        R = {(stats.r != null && !isNaN(Number(stats.r))) ? stats.r.toFixed(3) : '0.000'}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

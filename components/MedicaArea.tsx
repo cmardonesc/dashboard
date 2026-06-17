@@ -81,7 +81,13 @@ interface MedicalExam {
   description: string;
 }
 
+const formatDateGlobal = (dateStr?: string) => {
+  if (!dateStr) return 'Pendiente';
+  return new Date(dateStr).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
 const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, onMenuChange, userRole, userClub, userClubId, clubs = [] }) => {
+  const formatDate = formatDateGlobal;
   const [view, setView] = useState<MedicaView>('medical_attention');
   const [reportingPlayer, setReportingPlayer] = useState<User | null>(null);
   const [editingInjuryId, setEditingInjuryId] = useState<string | null>(null);
@@ -145,6 +151,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   const [currentStaffEmail, setCurrentStaffEmail] = useState<string>('');
   const [loggedStaffName, setLoggedStaffName] = useState<string>('');
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
+  const [dateQuery, setDateQuery] = useState('');
 
   const formatStaffEmail = (email: string): string => {
     if (!email) return 'Staff';
@@ -180,6 +188,14 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     const dates = dailyReports.map(r => r.report_date).filter(Boolean);
     return Array.from(new Set(dates)).sort((a, b) => b.localeCompare(a));
   }, [dailyReports]);
+
+  const filteredDatesBySearch = useMemo(() => {
+    if (!dateQuery) return availableDates;
+    return availableDates.filter(date => {
+      const formatted = formatDateGlobal(date).toLowerCase();
+      return formatted.includes(dateQuery) || date.toLowerCase().includes(dateQuery);
+    });
+  }, [availableDates, dateQuery]);
 
   const previousReports = useMemo(() => {
     if (!reportingPlayer || !reportingPlayer.player_id) return [];
@@ -516,13 +532,28 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       try {
         const { data, error } = await supabase
           .from('citaciones')
-          .select('player_id, fecha_citacion, microcycles!fk_citaciones_microcycles(category_id)')
+          .select(`
+            player_id,
+            microcycles!fk_citaciones_microcycles (
+              category_id,
+              start_date,
+              end_date
+            )
+          `)
           .in('player_id', playerIds);
-        if (!error) citations = data;
-        else {
+        if (!error) {
+          citations = data;
+        } else {
           const { data: fallbackData } = await supabase
             .from('citaciones')
-            .select('player_id, fecha_citacion')
+            .select(`
+              player_id,
+              microcycles (
+                category_id,
+                start_date,
+                end_date
+              )
+            `)
             .in('player_id', playerIds);
           citations = fallbackData;
         }
@@ -531,16 +562,23 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       }
 
       const processedReports = reports.map(report => {
-        // Find matching citation by date and player
-        const matchingCitation = citations?.find(c => 
-          c.player_id === report.player_id && 
-          (c.fecha || c.fecha_citacion) === report.report_date
-        );
+        // Find matching citation by date range of the microcycle and player
+        const reportDate = report.report_date;
+        const matchingCitation = citations?.find(c => {
+          if (c.player_id !== report.player_id) return false;
+          const mcObj = c.microcycles || c['microcycles!fk_citaciones_microcycles'] || c.microcycles_fk_citaciones_microcycles;
+          const mc = Array.isArray(mcObj) ? mcObj[0] : mcObj;
+          if (mc && mc.start_date && mc.end_date) {
+            return reportDate >= mc.start_date && reportDate <= mc.end_date;
+          }
+          return false;
+        });
 
         let categoryStr = report.players?.categoria || '-';
-        if (matchingCitation && (matchingCitation as any).microcycles) {
-          const micro = (matchingCitation as any).microcycles;
-          const catId = Array.isArray(micro) ? micro[0]?.category_id : micro?.category_id;
+        if (matchingCitation) {
+          const mcObj = matchingCitation.microcycles || matchingCitation['microcycles!fk_citaciones_microcycles'] || matchingCitation.microcycles_fk_citaciones_microcycles;
+          const mc = Array.isArray(mcObj) ? mcObj[0] : mcObj;
+          const catId = mc?.category_id;
           
           if (catId) {
             const category = REVERSE_CATEGORY_ID_MAP[catId];
@@ -946,11 +984,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     if (f.includes('retorno') || f.includes('parcial')) return 'bg-amber-100 text-amber-600';
     if (f.includes('alta')) return 'bg-emerald-100 text-emerald-600';
     return 'bg-slate-100 text-slate-600';
-  };
-
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return 'Pendiente';
-    return new Date(dateStr).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
   return (
@@ -1850,66 +1883,120 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
               </h3>
             </div>
 
-            {/* DYNAMIC DATE FILTERS WITH MULTI-SELECT CHECKBOX KEY-VALUE PILLS (CAJA DE LISTADO) */}
+            {/* DYNAMIC DATE FILTERS WITH MULTI-SELECT DROPDOWN */}
             {availableDates.length > 0 && (
-              <div className="flex flex-col md:flex-row gap-6 bg-slate-50 p-6 rounded-[24px] border border-slate-100 animate-in fade-in duration-300">
-                {/* Left column: Controls & Title */}
-                <div className="md:w-1/3 flex flex-col justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <i className="fa-solid fa-calendar-days text-[#0b1220] text-sm"></i>
-                      <p className="text-[10px] font-black uppercase text-[#0b1220] tracking-wider">Filtrar por Fechas:</p>
-                    </div>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
-                      Selecciona una o más fechas en la caja de listado para filtrar el historial de atenciones.
-                    </p>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 p-6 rounded-[24px] border border-slate-100 animate-in fade-in duration-300">
+                <div className="flex flex-col gap-1 max-w-md">
+                  <div className="flex items-center gap-2">
+                    <i className="fa-solid fa-calendar-days text-blue-500 text-sm"></i>
+                    <p className="text-[10px] font-black uppercase text-[#0b1220] tracking-wider">Filtrar por Fechas:</p>
                   </div>
-                  
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setSelectedDates(availableDates)}
-                      className="flex-1 px-3 py-2 bg-white hover:bg-[#0b1220] hover:text-white text-slate-700 border border-slate-200 rounded-xl text-[8px] font-black uppercase tracking-wider transition-all shadow-sm"
-                    >
-                      Todas
-                    </button>
-                    <button 
-                      onClick={() => setSelectedDates([])}
-                      className="flex-1 px-3 py-2 bg-white hover:bg-red-600 hover:text-white text-slate-700 border border-slate-200 rounded-xl text-[8px] font-black uppercase tracking-wider transition-all shadow-sm"
-                    >
-                      Limpiar
-                    </button>
-                  </div>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                    Selecciona una o más fechas desde el menú desplegable para filtrar el historial de atenciones.
+                  </p>
                 </div>
-                
-                {/* Right column: Vertical Scrollable Listbox ("Caja de listado") */}
-                <div className="flex-1 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-inner">
-                  <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 custom-scrollbar">
-                    {availableDates.map(date => {
-                      const isChecked = selectedDates.includes(date);
-                      const count = dailyReports.filter(r => r.report_date === date).length;
-                      return (
-                        <label
-                          key={date}
-                          className={`flex items-center justify-between px-4 py-2 cursor-pointer transition-all hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
-                            isChecked ? 'bg-blue-50/40 text-blue-900 border-l-4 border-blue-600' : 'pl-[18px]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => handleToggleDate(date)}
-                              className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
-                            />
-                            <span className="uppercase tracking-wider font-extrabold">{formatDate(date)}</span>
-                          </div>
-                          <span className="text-[8px] font-black uppercase bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
-                            {count} {count === 1 ? 'Atención' : 'Atenciones'}
-                          </span>
-                        </label>
-                      );
-                    })}
+
+                {/* Dropdown Multi-select element */}
+                <div className="relative inline-block text-left w-full sm:w-auto min-w-[280px] z-20">
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setIsDateDropdownOpen(!isDateDropdownOpen)}
+                      className="w-full bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-2xl px-6 py-4 text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center justify-between gap-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    >
+                      <span className="truncate">
+                        {selectedDates.length === 0
+                          ? 'Todas las Fechas'
+                          : selectedDates.length === 1
+                            ? formatDate(selectedDates[0])
+                            : `${selectedDates.length} Fechas Seleccionadas`}
+                      </span>
+                      <div className="flex items-center gap-2 bg-slate-100 text-slate-600 px-2 py-1 rounded-lg text-[9px] font-black italic">
+                        {selectedDates.length > 0 ? selectedDates.length : 'TODAS'}
+                        <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${isDateDropdownOpen ? 'rotate-180' : ''}`}></i>
+                      </div>
+                    </button>
                   </div>
+
+                  {isDateDropdownOpen && (
+                    <>
+                      {/* Overlay to handle click outside */}
+                      <div 
+                        className="fixed inset-0 z-10 cursor-default" 
+                        onClick={() => setIsDateDropdownOpen(false)}
+                      />
+                      
+                      <div className="origin-top-right absolute right-0 mt-2 w-full sm:w-80 rounded-2xl shadow-xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                          <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Listado de Fechas</span>
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDates(availableDates)}
+                              className="px-2 py-1 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                            >
+                              Todas
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDates([])}
+                              className="px-2 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                            >
+                              Limpiar
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Search field if dates list is long */}
+                        {availableDates.length > 5 && (
+                          <div className="relative mb-3">
+                            <input
+                              type="text"
+                              placeholder="Buscar fecha..."
+                              className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                              onChange={(e) => {
+                                const val = e.target.value.toLowerCase();
+                                setDateQuery(val);
+                              }}
+                              value={dateQuery}
+                            />
+                            <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                          </div>
+                        )}
+
+                        <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
+                          {filteredDatesBySearch.map(date => {
+                            const isChecked = selectedDates.includes(date);
+                            const count = dailyReports.filter(r => r.report_date === date).length;
+                            return (
+                              <label
+                                key={date}
+                                className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-all rounded-xl hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
+                                  isChecked ? 'bg-blue-50/50 text-blue-900' : ''
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => handleToggleDate(date)}
+                                    className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                                  />
+                                  <span className="uppercase tracking-wider font-extrabold">{formatDate(date)}</span>
+                                </div>
+                                <span className="text-[7.5px] font-black tracking-widest uppercase bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">
+                                  {count} {count === 1 ? 'ATENCIÓN' : 'ATENCIONES'}
+                                </span>
+                              </label>
+                            );
+                          })}
+                          {filteredDatesBySearch.length === 0 && (
+                            <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron fechas</p>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}

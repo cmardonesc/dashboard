@@ -612,6 +612,7 @@ export default function App() {
         setUserClub(null)
         setLinkedPlayerId(null)
         setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
+        setActiveMenu('inicio');
       }
     })
 
@@ -625,6 +626,7 @@ export default function App() {
   const handleLoginSuccess = async (session: any) => {
     console.log("Manejando éxito de login...", session.user.email);
     setSessionUser(session.user);
+    setActiveMenu('inicio');
     
     // Mostrar loading mientras buscamos el rol para dar feedback visual
     setLoading(true);
