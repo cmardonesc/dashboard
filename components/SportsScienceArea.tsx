@@ -406,7 +406,6 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             {userRole !== 'club' && (
               <>
                 <TabButton active={activeTab === 'categorias'} label="Categorías" icon="fa-layer-group" onClick={() => setActiveTab('categorias')} />
-                <TabButton active={activeTab === 'insights'} label="Insights" icon="fa-lightbulb" onClick={() => setActiveTab('insights')} />
                 <TabButton active={activeTab === 'salud'} label="Salud y Carga" icon="fa-heart-pulse" onClick={() => setActiveTab('salud')} />
               </>
             )}
@@ -564,7 +563,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
           </div>
         </div>
         
-        {userRole === 'club' && (activeTab === 'grupal' || activeTab === 'laboratorio' || activeTab === 'tabla') && (
+        {userRole === 'club' && (activeTab === 'grupal' || activeTab === 'laboratorio' || activeTab === 'tabla' || activeTab === 'top10') && (
           <div className="flex items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ámbito:</label>
             <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-100">
@@ -750,7 +749,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
 
         {activeTab === 'top10' && (
           <TopTenDashboard
-            players={players}
+            players={filteredByClubScopePlayers}
             imtpData={imtpData}
             speedData={speedData}
             vo2maxData={vo2maxData}
@@ -2553,7 +2552,7 @@ const IndividualDashboard = ({
       {/* BLOQUES DINÁMICOS IMTP */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">IMTP</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Fuerza y Potencia</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         
@@ -3107,7 +3106,7 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
       {/* SECCIÓN IMTP BOX PLOTS */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Distribución IMTP por Posición</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Distribución Fuerza y Potencia por Posición</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -4444,7 +4443,7 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
       <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-wrap items-center justify-between gap-6">
         <div className="flex flex-wrap gap-2">
           {[
-            { id: 'imtp', label: 'IMTP & Saltos', icon: 'fa-bolt' },
+            { id: 'imtp', label: 'Fuerza y Potencia & Saltos', icon: 'fa-bolt' },
             { id: 'speed', label: 'Velocidad', icon: 'fa-gauge-high' },
             { id: 'vo2max', label: 'Resistencia', icon: 'fa-wind' },
             { id: 'antropometria', label: 'Antropometría', icon: 'fa-ruler-combined' },
@@ -4496,7 +4495,7 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
                           {player ? `${player.nombre} ${player.apellido1}` : 'DESCONOCIDO'}
                         </span>
                         <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
-                          {player?.posicion || '-'}
+                          {player?.posicion || '-'} {player ? ` • AÑO: ${(player as any).anio || (player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : '-')}` : ''}
                         </span>
                       </div>
                     </td>
@@ -4816,17 +4815,13 @@ const TopTenBox: React.FC<TopTenBoxProps> = ({
                       <p className="text-[10px] font-black text-slate-800 uppercase italic truncate group-hover:text-red-600 transition-colors">
                         {item.player.nombre} {item.player.apellido1}
                       </p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[7px] font-bold uppercase tracking-tight text-slate-400 bg-slate-50 px-1 py-0.2 rounded">
                           {item.player.posicion}
                         </span>
-                        <ClubBadge
-                          idClub={item.player.id_club}
-                          clubName={item.player.club || item.player.club_name}
-                          clubs={clubs}
-                          showName={false}
-                          logoSize="w-2.5 h-2.5"
-                        />
+                        <span className="text-[7px] font-bold uppercase tracking-tight text-slate-400 bg-slate-50 px-1 py-0.2 rounded">
+                          AÑO: {(item.player as any).anio || (item.player.fecha_nacimiento ? new Date(item.player.fecha_nacimiento).getFullYear() : '-')}
+                        </span>
                       </div>
                     </div>
                   </div>
