@@ -162,6 +162,7 @@ export default function NutritionReport({ data, history, player, onClose, clubs 
     const val = currentMaduracion;
     if (val < -0.5) return { label: 'PRE-PHV', color: 'text-blue-600', bg: 'bg-blue-50', desc: 'Fase de crecimiento lento pre-estirón.' };
     if (val <= 0.5) return { label: 'CIRCA-PHV', color: 'text-amber-600', bg: 'bg-amber-50', desc: 'Pico de crecimiento. Riesgo de lesiones.' };
+    if (val < 1.0) return { label: 'POST-PHV (Ventana de peligro y cuidado corporal)', color: 'text-orange-600', bg: 'bg-orange-50', desc: 'Post-PHV pero aún dentro de una ventana de peligro y cuidado corporal.' };
     return { label: 'POST-PHV', color: 'text-emerald-600', bg: 'bg-emerald-50', desc: 'Crecimiento finalizado. Apto para fuerza.' };
   }, [currentMaduracion]);
 

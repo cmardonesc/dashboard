@@ -283,14 +283,30 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
               }
             }
             
+            let posGroupVal = 'OTROS';
+            const rawPosUpper = rawPos.toUpperCase();
+            if (rawPosUpper.includes('CENTRAL')) {
+              posGroupVal = 'DEFENSA CENTRAL';
+            } else if (rawPosUpper.includes('LATERAL') || rawPosUpper.includes('LAT')) {
+              posGroupVal = 'DEFENSA LATERAL';
+            } else if (rawPosUpper.includes('VOLANTE') || rawPosUpper.includes('MEDIA') || rawPosUpper.includes('PUNTA') || rawPosUpper.includes('MED') || rawPosUpper.includes('VOL') || rawPosUpper.includes('PUN')) {
+              posGroupVal = 'VOLANTE';
+            } else if (rawPosUpper.includes('EXTREMO') || rawPosUpper.includes('EXT') || rawPosUpper.includes('ALA')) {
+              posGroupVal = 'DELANTERO EXTREMO';
+            } else if (rawPosUpper.includes('CENTRO') || rawPosUpper.includes('DELANTERO') || rawPosUpper.includes('9') || rawPosUpper.includes('DEL')) {
+              posGroupVal = 'DELANTERO CENTRO';
+            } else {
+              if (rawPosUpper.includes('DEF')) posGroupVal = 'DEFENSA CENTRAL';
+              else if (rawPosUpper.includes('DEL')) posGroupVal = 'DELANTERO CENTRO';
+              else if (rawPosUpper.includes('EXT')) posGroupVal = 'DELANTERO EXTREMO';
+            }
+
             return {
               ...d,
               player: finalPlayer,
               posicion: rawPos,
               categoria: catName,
-              posGroup: rawPos.includes('DEF') ? 'DEFENSA' :
-                        rawPos.includes('VOL') || rawPos.includes('MED') || rawPos.includes('PUN') ? 'VOLANTE' :
-                        rawPos.includes('DEL') || rawPos.includes('EXT') ? 'DELANTERO' : 'OTROS'
+              posGroup: posGroupVal
             };
           }).filter(d => !d.posicion.includes('POR') && !d.posicion.includes('ARQ'));
           setSessionData(mapped);
@@ -335,7 +351,7 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
   }, [filteredSessionData]);
 
   const positionalData = useMemo(() => {
-    const groups = ['DEFENSA', 'VOLANTE', 'DELANTERO'];
+    const groups = ['DEFENSA CENTRAL', 'DEFENSA LATERAL', 'VOLANTE', 'DELANTERO EXTREMO', 'DELANTERO CENTRO'];
     return groups.map(group => {
       const groupPlayers = filteredSessionData.filter(d => d.posGroup === group);
       const count = groupPlayers.length;
@@ -727,12 +743,21 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
                       }}
                     />
                     <Scatter name="Jugadores" data={filteredSessionData}>
-                      {filteredSessionData.map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={entry.posGroup === 'DEFENSA' ? '#3b82f6' : entry.posGroup === 'VOLANTE' ? '#10b981' : entry.posGroup === 'DELANTERO' ? '#ef4444' : '#94a3b8'} 
-                        />
-                      ))}
+                      {filteredSessionData.map((entry, index) => {
+                        let dotColor = '#94a3b8';
+                        if (entry.posGroup === 'DEFENSA CENTRAL') dotColor = '#1e40af';
+                        else if (entry.posGroup === 'DEFENSA LATERAL') dotColor = '#3b82f6';
+                        else if (entry.posGroup === 'VOLANTE') dotColor = '#10b981';
+                        else if (entry.posGroup === 'DELANTERO EXTREMO') dotColor = '#f43f5e';
+                        else if (entry.posGroup === 'DELANTERO CENTRO') dotColor = '#be123c';
+                        
+                        return (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={dotColor} 
+                          />
+                        );
+                      })}
                     </Scatter>
                     <ReferenceLine 
                       x={filteredSessionData.reduce((acc, curr) => acc + (Number(curr[scatterXMetricId]) || 0), 0) / (filteredSessionData.length || 1)} 
@@ -750,14 +775,16 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
                 </ResponsiveContainer>
               </div>
               <div className="flex flex-wrap justify-center gap-4 mt-6">
-                {['DEFENSA', 'VOLANTE', 'DELANTERO'].map(group => (
-                  <div key={group} className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${
-                      group === 'DEFENSA' ? 'bg-blue-500' : 
-                      group === 'VOLANTE' ? 'bg-emerald-500' : 
-                      'bg-red-500'
-                    }`}></div>
-                    <span className="text-[8px] font-black uppercase text-slate-400">{group}</span>
+                {[
+                  { name: 'DEFENSA CENTRAL', color: 'bg-[#1e40af]' },
+                  { name: 'DEFENSA LATERAL', color: 'bg-[#3b82f6]' },
+                  { name: 'VOLANTE', color: 'bg-[#10b981]' },
+                  { name: 'DELANTERO EXTREMO', color: 'bg-[#f43f5e]' },
+                  { name: 'DELANTERO CENTRO', color: 'bg-[#be123c]' }
+                ].map(group => (
+                  <div key={group.name} className="flex items-center gap-2">
+                    <div className={`w-2.5 h-2.5 rounded-full ${group.color}`}></div>
+                    <span className="text-[8px] font-black uppercase text-slate-400">{group.name}</span>
                   </div>
                 ))}
               </div>
@@ -1687,8 +1714,8 @@ function ReferenceRadarSet({ category, playerData, referenceData }: { category: 
         // Posicion match (map GROUPS to DB values)
         let posMatch = rPos === pGroup;
         if (!posMatch && pGroup === 'VOLANTE') posMatch = (rPos === 'MEDIO' || rPos === 'VOLANTE');
-        if (!posMatch && pGroup === 'DELANTERO') posMatch = (rPos === 'DELANTERO' || rPos === 'ATACANTE');
-        if (!posMatch && pGroup === 'DEFENSA') posMatch = (rPos === 'DEFENSA' || rPos.includes('DEFENSA'));
+        if (!posMatch && pGroup.includes('DELANTERO')) posMatch = (rPos === 'DELANTERO' || rPos === 'ATACANTE' || rPos === 'DELANTERO CENTRO' || rPos === 'DELANTERO EXTREMO' || rPos.includes('DELANTERO') || rPos.includes('EXTREMO') || rPos.includes('CENTRO'));
+        if (!posMatch && pGroup.includes('DEFENSA')) posMatch = (rPos === 'DEFENSA' || rPos.includes('DEFENSA') || rPos === 'DEFENSA CENTRAL' || rPos === 'DEFENSA LATERAL');
         
         return catMatch && posMatch;
     });

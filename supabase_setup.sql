@@ -563,7 +563,7 @@ values
 ('Santiago Morning', 'santiagomorning', 'https://drive.google.com/file/d/1OmzxvOTxrDFvDHLCVnPROX3bwWq85WqB/view?usp=sharing', true),
 ('Santiago Wanderers', 'santiagowanderers', 'https://drive.google.com/file/d/1xVST7LALS5exStbFDDH9gPGloLIVwGwK/view?usp=sharing', true),
 ('Trasandino de Los Andes', 'trasandino', 'https://drive.google.com/file/d/1pMdD0_BC3yvv4WF-OoLi2MdpIMmzil9q/view?usp=sharing', true),
-('Unión Española', 'unionespanola', 'https://drive.google.com/file/d/1VXU3ehA5V1d6dtT-20uD1OmAfR9yj0hG/view?usp=sharing', true),
+('Unión Española', 'unionespanola', 'https://drive.google.com/file/d/1VXU3ehA5V1d6dtT-20uD1OmAfR9yj0hG/view?usp=drive_link', true),
 ('Unión La Calera', 'unionlacalera', 'https://drive.google.com/file/d/1WAA9Mo-wKemc3Fj694ySoZUhM9ICK8O7/view?usp=sharing', true),
 ('Unión San Felipe', 'unionsanfelipe', 'https://drive.google.com/file/d/1HXJw-elYvwJG1yn3DUaJGFl1hKmGClqf/view?usp=sharing', true),
 ('Universidad Católica', 'universidadcatolica', 'https://drive.google.com/file/d/1z5OO2cabtRy6qHigXumVJH_PCO7TMwTt/view?usp=sharing', true),

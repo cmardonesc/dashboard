@@ -2039,6 +2039,9 @@ const AthleteHuella = ({
                     } else if (mVal <= 0.5) {
                       maturationLabel = 'CIRCA-PHV';
                       maturationColor = 'text-amber-600 bg-amber-50/60 border-amber-100/60';
+                    } else if (mVal < 1.0) {
+                      maturationLabel = 'POST-PHV (Ventana de peligro y cuidado corporal)';
+                      maturationColor = 'text-orange-600 bg-orange-50/60 border-orange-100/60';
                     } else {
                       maturationLabel = 'POST-PHV';
                       maturationColor = 'text-emerald-700 bg-emerald-50/60 border-emerald-150/60';
