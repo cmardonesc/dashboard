@@ -1802,7 +1802,7 @@ export default function CitacionesArea({
       <div className="flex-1 bg-[#f8fafc] rounded-[48px] border border-slate-200 shadow-sm flex flex-col overflow-hidden relative">
         <div className="p-10 bg-white border-b border-slate-200">
            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-             <div className="md:col-span-4 relative">
+             <div className="md:col-span-6 relative">
                <i className="fa-solid fa-magnifying-glass absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
                <input type="text" placeholder="BUSCAR ATLETA..." className="w-full bg-slate-50 p-5 pl-14 rounded-[24px] font-black text-[11px] uppercase tracking-widest outline-none focus:ring-4 focus:ring-red-500/10 border-none transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
              </div>
@@ -1811,14 +1811,6 @@ export default function CitacionesArea({
                  <option value="TODOS">CLUB: TODOS</option>
                  {uniqueClubs.map(c => (
                    <option key={c.id} value={c.id.toString()}>{c.nombre}</option>
-                 ))}
-               </select>
-             </div>
-             <div className="md:col-span-2">
-               <select className="w-full bg-slate-50 p-5 rounded-[24px] font-black text-[10px] uppercase tracking-widest outline-none appearance-none cursor-pointer border-none shadow-sm" value={selectedCategoryPlayer} onChange={e => setSelectedCategoryPlayer(e.target.value)}>
-                 <option value="TODOS">CAT: TODAS</option>
-                 {Object.values(Category).map(cat => (
-                   <option key={cat} value={cat}>{formatCategoryLabel(cat)}</option>
                  ))}
                </select>
              </div>

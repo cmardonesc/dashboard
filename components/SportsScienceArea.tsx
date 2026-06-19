@@ -403,9 +403,9 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             <TabButton active={activeTab === 'individual'} label="Reporte Individual" icon="fa-chart-line" onClick={() => setActiveTab('individual')} />
             <TabButton active={activeTab === 'grupal'} label="Análisis Grupal" icon="fa-users-rays" onClick={() => setActiveTab('grupal')} />
             <TabButton active={activeTab === 'laboratorio'} label="Laboratorio" icon="fa-flask-vial" onClick={() => setActiveTab('laboratorio')} />
+            <TabButton active={activeTab === 'categorias'} label="Categorías" icon="fa-layer-group" onClick={() => setActiveTab('categorias')} />
             {userRole !== 'club' && (
               <>
-                <TabButton active={activeTab === 'categorias'} label="Categorías" icon="fa-layer-group" onClick={() => setActiveTab('categorias')} />
                 <TabButton active={activeTab === 'salud'} label="Salud y Carga" icon="fa-heart-pulse" onClick={() => setActiveTab('salud')} />
               </>
             )}
@@ -707,7 +707,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             highlightPlayerId={highlightPlayerId}
           />
         )}
-        {activeTab === 'categorias' && userRole !== 'club' && (
+        {activeTab === 'categorias' && (
           <Categorias 
             players={anonymizedPlayers}
             imtp={imtpData}
