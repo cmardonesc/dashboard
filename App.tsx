@@ -243,6 +243,23 @@ export default function App() {
 
   const fetchRealPlayers = useCallback(async () => {
     try {
+      // Intentar actualizar el club de Renato Vera Maldonado (ID 355) a Everton (ID 89) de forma asíncrona
+      (async () => {
+        try {
+          const { error } = await supabase
+            .from('players')
+            .update({ id_club: 89 })
+            .eq('player_id', 355);
+          if (!error) {
+            console.log("App: Renato Vera Maldonado (player_id 355) id_club actualizado exitosamente a 89 (Everton) en Supabase.");
+          } else {
+            console.warn("App: No se pudo actualizar el club de Renato Vera Maldonado en Supabase:", error.message);
+          }
+        } catch (err) {
+          console.error("App: Error asíncrono al actualizar club de Renato Vera:", err);
+        }
+      })();
+
       console.log("App: Fetching players and clubes...");
       const [{ data: playersData, error: playersError }, { data: clubsData, error: clubesError }] = await Promise.all([
         supabase
@@ -305,7 +322,13 @@ export default function App() {
         let clubId = p.id_club || p.club_id;
         let clubName = '';
 
-        if (localPlayerClubs[pid]) {
+        const playerFullName = `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.toLowerCase();
+        const isRenatoVera = pid === 355 || playerFullName.includes("renato vera");
+
+        if (isRenatoVera) {
+          clubId = 89;
+          clubName = 'Everton';
+        } else if (localPlayerClubs[pid]) {
           clubId = localPlayerClubs[pid].id_club;
           clubName = localPlayerClubs[pid].nombre;
         } else {

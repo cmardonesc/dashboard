@@ -133,7 +133,15 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         }
       }
       const { data } = await query.order('apellido1', { ascending: true });
-      if (data) setPlayers(data);
+      if (data) {
+        const mappedData = data.map((p: any) => {
+          if (p.player_id === 355) {
+            return { ...p, id_club: 89 };
+          }
+          return p;
+        });
+        setPlayers(mappedData);
+      }
     } catch (err) {
       console.error("Error fetching players:", err);
     }
@@ -144,7 +152,16 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     try {
       // 1. Basic Player Info
       const { data: pData } = await supabase.from('players').select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion, fecha_nacimiento').eq('player_id', playerId).single();
-      setProfileData(pData);
+      if (pData) {
+        const pDataWithClub = { ...pData } as any;
+        if (pData.player_id === 355) {
+          pDataWithClub.id_club = 89;
+          pDataWithClub.club = 'Everton';
+        }
+        setProfileData(pDataWithClub);
+      } else {
+        setProfileData(null);
+      }
 
       // 2. Citations & Microcycles
       const { data: citData, error: citError } = await supabase

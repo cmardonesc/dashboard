@@ -182,7 +182,13 @@ const LogisticaJugadores: React.FC<LogisticaJugadoresProps> = ({ onRefresh }) =>
         let matchedIdClub = p.id_club;
         let clubName = 'SIN CLUB';
 
-        if (localPlayerClubs[p.player_id]) {
+        const fullName = `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`.toLowerCase();
+        const isRenatoVera = p.player_id === 355 || fullName.includes("renato vera");
+
+        if (isRenatoVera) {
+          matchedIdClub = 89;
+          clubName = 'Everton';
+        } else if (localPlayerClubs[p.player_id]) {
           matchedIdClub = localPlayerClubs[p.player_id].id_club;
           clubName = localPlayerClubs[p.player_id].nombre;
         } else {

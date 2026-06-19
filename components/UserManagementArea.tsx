@@ -105,8 +105,15 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
         return nameA.localeCompare(nameB);
       });
 
+      const correctedPlays = (plays || []).map((p: any) => {
+        if (p.player_id === 355) {
+          return { ...p, id_club: 89 };
+        }
+        return p;
+      });
+
       setProfiles(profs || []);
-      setPlayers(plays || []);
+      setPlayers(correctedPlays);
       setDbClubs(finalClubs);
 
       // Calcular clubes pendientes (legacy feature: relies on non-existent 'club' column)

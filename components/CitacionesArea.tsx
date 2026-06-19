@@ -100,7 +100,13 @@ export default function CitacionesArea({
     let clubIdFromObj = p.id_club || p.club_id;
     let resolvedClubName = 'SIN CLUB';
 
-    if (p.player_id && localPlayerClubs[p.player_id]) {
+    const playerFullName = (p.name || `${p.nombre || ''} ${p.apellido1 || ''} ${p.apellido2 || ''}`).toLowerCase();
+    const isRenatoVera = p.player_id === 355 || playerFullName.includes("renato vera");
+
+    if (isRenatoVera) {
+      clubIdFromObj = 89;
+      resolvedClubName = 'Everton';
+    } else if (p.player_id && localPlayerClubs[p.player_id]) {
       clubIdFromObj = localPlayerClubs[p.player_id].id_club;
       resolvedClubName = localPlayerClubs[p.player_id].nombre;
     } else {
@@ -379,7 +385,12 @@ export default function CitacionesArea({
           let resolvedClubId = p.id_club;
           let resolvedClubName = '';
 
-          if (p.player_id && localPlayerClubs[p.player_id]) {
+          const isRenatoVera = p.player_id === 355 || fullName.toLowerCase().includes("renato vera");
+
+          if (isRenatoVera) {
+            resolvedClubId = 89;
+            resolvedClubName = 'Everton';
+          } else if (p.player_id && localPlayerClubs[p.player_id]) {
             resolvedClubId = localPlayerClubs[p.player_id].id_club;
             resolvedClubName = localPlayerClubs[p.player_id].nombre;
           } else {
