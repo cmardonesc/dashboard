@@ -1015,7 +1015,7 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
 
     if (isVolante) {
       profile = 'Volante (Rodillo Aeróbico)';
-      focus = 'Carga Total (45%) y Agilidad/Transición (30%)';
+      focus = 'Carga Total (45%) y Agilidad Multidireccional (25%)';
       tradeoff = 'Maximiza la cobertura box-to-box y recuperación; sacrifica explosividad defensiva fija central.';
       description = 'El motor del equipo. Su rol demanda un despliegue de cobertura total del campo de juego a ritmos sostenidos y constantes dirección/giro rápidos.';
       dimensions = [
@@ -1033,9 +1033,9 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
           scoreContribution: ratio(dist, targets.dist) * 45
         },
         { 
-          name: 'Agilidad (Frenos/Acel)', 
-          weight: '30%', 
-          weightVal: 30,
+          name: 'Agilidad multidireccional', 
+          weight: '25%', 
+          weightVal: 25,
           value: ratio(accDec, targets.accDec) * 100,
           metricLabel: 'Aceleraciones y Desaceleraciones AI (>3 m/s²)',
           metricVal: accDec,
@@ -1043,12 +1043,12 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
           baseTarget: baseTargets.accDec,
           adjustedTarget: targets.accDec,
           isTimeAdjusted: true,
-          scoreContribution: ratio(accDec, targets.accDec) * 30
+          scoreContribution: ratio(accDec, targets.accDec) * 25
         },
         { 
-          name: 'Intensidad de Juego (m/min)', 
-          weight: '15%', 
-          weightVal: 15,
+          name: 'Intensidad de juego', 
+          weight: '20%', 
+          weightVal: 20,
           value: ratio(int, targets.int) * 100,
           metricLabel: 'Metros recorridos por Minuto',
           metricVal: int,
@@ -1056,7 +1056,7 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
           baseTarget: baseTargets.int,
           adjustedTarget: targets.int,
           isTimeAdjusted: false,
-          scoreContribution: ratio(int, targets.int) * 15
+          scoreContribution: ratio(int, targets.int) * 20
         },
         { 
           name: 'Muy Alta Intensidad (HSR)', 
@@ -1072,10 +1072,10 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
           scoreContribution: ratio(hsr, targets.hsr) * 10
         }
       ];
-      score = Math.round(ratio(dist, targets.dist) * 45 + ratio(accDec, targets.accDec) * 30 + ratio(int, targets.int) * 15 + ratio(hsr, targets.hsr) * 10);
+      score = Math.round(ratio(dist, targets.dist) * 45 + ratio(accDec, targets.accDec) * 25 + ratio(int, targets.int) * 20 + ratio(hsr, targets.hsr) * 10);
     } else if (isLateral) {
       profile = 'Defensa Lateral (Explosivo Defensivo)';
-      focus = 'Explosividad de Carrera (40%) e Intensidad de Ida/Vuelta (35%)';
+      focus = 'Explosividad de Carrera (40%) y Agilidad Reactiva (20%)';
       tradeoff = 'Maximiza transiciones verticales intensas; sacrifica anclaje posicional y conservación estática.';
       description = 'El velocista de banda. Exige capacidad para desdoblarse constantemente y sostener ritmos de juego y sprints de ida y vuelta lineales.';
       dimensions = [
@@ -1094,8 +1094,8 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
         },
         { 
           name: 'Intensidad Relativa (m/min)', 
-          weight: '35%', 
-          weightVal: 35,
+          weight: '25%', 
+          weightVal: 25,
           value: ratio(int, targets.int) * 100,
           metricLabel: 'Metros recorridos por Minuto',
           metricVal: int,
@@ -1103,7 +1103,7 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
           baseTarget: baseTargets.int,
           adjustedTarget: targets.int,
           isTimeAdjusted: false,
-          scoreContribution: ratio(int, targets.int) * 35
+          scoreContribution: ratio(int, targets.int) * 25
         },
         { 
           name: 'Carga / Volumen de Apoyos', 
@@ -1120,8 +1120,8 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
         },
         { 
           name: 'Agilidad Reactiva (Acc)', 
-          weight: '10%', 
-          weightVal: 10,
+          weight: '20%', 
+          weightVal: 20,
           value: ratio(accDec, targets.accDec) * 100,
           metricLabel: 'Aceleraciones y Desaceleraciones AI (>3 m/s²)',
           metricVal: accDec,
@@ -1129,10 +1129,10 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
           baseTarget: baseTargets.accDec,
           adjustedTarget: targets.accDec,
           isTimeAdjusted: true,
-          scoreContribution: ratio(accDec, targets.accDec) * 10
+          scoreContribution: ratio(accDec, targets.accDec) * 20
         }
       ];
-      score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(int, targets.int) * 35 + ratio(dist, targets.dist) * 15 + ratio(accDec, targets.accDec) * 10);
+      score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(int, targets.int) * 25 + ratio(dist, targets.dist) * 15 + ratio(accDec, targets.accDec) * 20);
     } else if (isCentral) {
       profile = 'Defensa Central (Guardián Reactivo)';
       focus = 'Velocidad de Respuesta (35%) y Picos Acelerativos (30%)';
@@ -1256,22 +1256,22 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
     } else {
       // Default / Delantero Centro
       profile = 'Delantero Centro (Finalizador Versátil)';
-      focus = 'Intensidad de Presión (35%) y Sprints en Área (25%)';
+      focus = 'Velocidad de Alta Intensidad (35%) y Sprints en Área (25%)';
       tradeoff = 'Maximiza explosión y remate en área chica; sacrifica distancias amplias y patrullaje defensivo.';
-      description = 'El definidor del bloque. Exige un equilibrio entre m/min (presión y apoyos cortos) y sprints específicos dentro de la zona de finalización.';
+      description = 'El definidor del bloque. Exige un equilibrio entre velocidad de alta intensidad (HSR) y sprints específicos dentro de la zona de finalización.';
       dimensions = [
         { 
-          name: 'Intensidad de Trabajo (m/min)', 
+          name: 'Velocidad de Alta Intensidad (HSR)', 
           weight: '35%', 
           weightVal: 35,
-          value: ratio(int, targets.int) * 100,
-          metricLabel: 'Metros recorridos por Minuto',
-          metricVal: int,
-          unit: 'm/min',
-          baseTarget: baseTargets.int,
-          adjustedTarget: targets.int,
-          isTimeAdjusted: false,
-          scoreContribution: ratio(int, targets.int) * 35
+          value: ratio(hsr, targets.hsr) * 100,
+          metricLabel: 'Carrera a Alta Velocidad (20-25 km/h)',
+          metricVal: hsr,
+          unit: 'm',
+          baseTarget: baseTargets.hsr,
+          adjustedTarget: targets.hsr,
+          isTimeAdjusted: true,
+          scoreContribution: ratio(hsr, targets.hsr) * 35
         },
         { 
           name: 'Sprints Cortos de Definición', 
@@ -1313,7 +1313,7 @@ function IndividualPerformanceView({ playerId, sessionData, positionalAverages, 
           scoreContribution: ratio(dist, targets.dist) * 20
         }
       ];
-      score = Math.round(ratio(int, targets.int) * 35 + ratio(sprint, targets.sprint) * 25 + ratio(accDec, targets.accDec) * 20 + ratio(dist, targets.dist) * 20);
+      score = Math.round(ratio(hsr, targets.hsr) * 35 + ratio(sprint, targets.sprint) * 25 + ratio(accDec, targets.accDec) * 20 + ratio(dist, targets.dist) * 20);
     }
 
     // Force exact benchmark value if mapped in database rows (like the CSV values provided)
