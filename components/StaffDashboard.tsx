@@ -1341,7 +1341,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       case 'nutricion_resumen_grupal':
         return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'nutricion_comparativo':
-        return <NutricionArea performanceRecords={performanceRecords} players={players || performanceRecords.map(r => r.player)} initialTab="general" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'nutricion_individual':
         return <NutricionArea performanceRecords={performanceRecords} players={players || performanceRecords.map(r => r.player)} initialTab="individual" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'nutricion_top10':
@@ -1361,6 +1360,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} clubs={clubs} hideCronograma={true} initialTab="partidos" />;
       case 'tecnica_biblioteca':
         return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} clubs={clubs} hideCronograma={true} initialTab="tareas" />;
+      case 'tecnica_competencia':
+        return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} clubs={clubs} hideCronograma={true} initialTab="competencia" />;
       case 'tecnica_convocatoria':
         return <TecnicaArea performanceRecords={performanceRecords} onMenuChange={onMenuChange} onRefresh={handleRefresh} clubs={clubs} hideCronograma={true} initialTab="convocatoria" />;
       case 'citaciones':

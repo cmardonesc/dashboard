@@ -57,8 +57,8 @@ const POSITION_ABBR: { [key: string]: string } = {
   'Sin definir': 'S/D',
 };
 
-const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, players = [], initialTab = 'general', userRole, userClub, userClubId, clubs = [] }) => {
-  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, players = [], initialTab = 'individual', userRole, userClub, userClubId, clubs = [] }) => {
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab === 'general' ? 'individual' : initialTab);
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -357,7 +357,6 @@ const NutricionArea: React.FC<NutricionAreaProps> = ({ performanceRecords, playe
       {/* Tabs Sub-Menu */}
       <div className="bg-white/50 p-1.5 rounded-[24px] border border-slate-100 flex items-center gap-2 max-w-fit shadow-sm overflow-x-auto">
         {[
-          { id: 'general', label: 'Dashboard Comparativo', icon: 'fa-chart-pie' },
           { id: 'individual', label: 'Reporte Individual', icon: 'fa-user-tag' },
           { id: 'top10', label: 'Top 10 Rankings', icon: 'fa-trophy' },
           { id: 'crecimiento', label: 'Crecimiento & Maduración', icon: 'fa-dna' }

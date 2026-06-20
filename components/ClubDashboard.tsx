@@ -357,12 +357,6 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
                 Informe Individual
               </button>
               <button 
-                onClick={() => setSubSection('grupal')} 
-                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${subSection === 'grupal' ? 'bg-[#0b1220] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                Informe Grupal
-              </button>
-              <button 
                 onClick={() => setSubSection('resumen')} 
                 className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${subSection === 'resumen' ? 'bg-[#0b1220] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
               >
@@ -379,7 +373,7 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
             ) : (
               <NutricionArea 
                 performanceRecords={performanceRecords} 
-                initialTab={subSection === 'grupal' ? 'general' : 'individual'} 
+                initialTab="individual" 
                 userRole="club"
                 userClub={userClub}
                 clubs={clubs}

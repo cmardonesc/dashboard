@@ -76,13 +76,7 @@ export default function DesconvocatoriaArea({
   const [categoryFilters, setCategoryFilters] = useState<string[]>(['TODOS'])
 
   const toggleCategoryFilter = (cat: string) => {
-    setCategoryFilters(prev => {
-      if (cat === 'TODOS') return ['TODOS'];
-      const newSelection = prev.includes(cat)
-        ? prev.filter(c => c !== cat)
-        : [...prev.filter(c => c !== 'TODOS'), cat];
-      return newSelection.length === 0 ? ['TODOS'] : newSelection;
-    });
+    setCategoryFilters([cat]);
   };
   
   const [microciclos, setMicrociclos] = useState<MicrocicloBajas[]>([])

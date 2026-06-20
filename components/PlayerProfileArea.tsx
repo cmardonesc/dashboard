@@ -59,9 +59,12 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   }, []);
   
   // Filter States
-  const [filterYear, setFilterYear] = useState<string>('');
-  const [filterPosition, setFilterPosition] = useState<string>('');
-  const [filterClubId, setFilterClubId] = useState<string>('');
+  const [filterYear, setFilterYear] = useState<string[]>([]);
+  const [filterPosition, setFilterPosition] = useState<string[]>([]);
+  const [filterClubId, setFilterClubId] = useState<string[]>([]);
+  const [showYearDropdown, setShowYearDropdown] = useState(false);
+  const [showPositionDropdown, setShowPositionDropdown] = useState(false);
+  const [showClubDropdown, setShowClubDropdown] = useState(false);
   
   // Data States
   const [citations, setCitations] = useState<any[]>([]);
@@ -721,9 +724,9 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       const playerPos = p.posicion || p.position;
       const playerClubId = p.id_club || p.club_id;
 
-      const matchYear = !filterYear || String(playerYear) === filterYear;
-      const matchPosition = !filterPosition || playerPos === filterPosition;
-      const matchClub = !filterClubId || String(playerClubId) === filterClubId;
+      const matchYear = filterYear.length === 0 || filterYear.includes(String(playerYear));
+      const matchPosition = filterPosition.length === 0 || filterPosition.includes(String(playerPos));
+      const matchClub = filterClubId.length === 0 || filterClubId.includes(String(playerClubId));
       
       return matchYear && matchPosition && matchClub;
     });
@@ -765,35 +768,161 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         {userRole !== UserRole.PLAYER && (
           <div className="flex flex-wrap items-center gap-3">
              {/* Year Filter */}
-             <select 
-               value={filterYear} 
-               onChange={(e) => setFilterYear(e.target.value)}
-               className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500/10 transition-all"
-             >
-               <option value="">Año (Todos)</option>
-               {uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}
-             </select>
+             <div className="relative">
+               <button 
+                 type="button"
+                 onClick={() => {
+                   setShowYearDropdown(!showYearDropdown);
+                   setShowPositionDropdown(false);
+                   setShowClubDropdown(false);
+                 }}
+                 className="bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500/10 transition-all flex items-center gap-2"
+               >
+                 <span>
+                   {filterYear.length === 0 ? 'Año (Todos)' : `${filterYear.length} Años`}
+                 </span>
+                 <i className={`fa-solid fa-chevron-down text-[8px] transition-transform ${showYearDropdown ? 'rotate-180' : ''}`} />
+               </button>
+               {showYearDropdown && (
+                 <>
+                   <div className="fixed inset-0 z-10" onClick={() => setShowYearDropdown(false)} />
+                   <div className="absolute left-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-2 max-h-60 overflow-y-auto">
+                     <div className="flex items-center justify-between border-b border-slate-50 pb-1.5 mb-1.5">
+                       <span className="text-[9px] font-bold text-slate-400 uppercase">Años</span>
+                       <button 
+                         type="button" 
+                         onClick={() => setFilterYear([])} 
+                         className="text-[8px] font-black uppercase text-red-500"
+                       >
+                         Limpiar
+                       </button>
+                     </div>
+                     {uniqueYears.map(y => {
+                       const strY = String(y);
+                       const isChecked = filterYear.includes(strY);
+                       return (
+                         <label key={strY} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 transition-all">
+                           <input 
+                             type="checkbox" 
+                             checked={isChecked}
+                             onChange={() => {
+                               setFilterYear(prev => isChecked ? prev.filter(item => item !== strY) : [...prev, strY]);
+                             }}
+                             className="w-3.5 h-3.5 text-[#CF1B2B] rounded border-slate-300 focus:ring-red-500 cursor-pointer"
+                           />
+                           <span>{y}</span>
+                         </label>
+                       );
+                     })}
+                   </div>
+                 </>
+               )}
+             </div>
 
              {/* Position Filter */}
-             <select 
-               value={filterPosition} 
-               onChange={(e) => setFilterPosition(e.target.value)}
-               className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500/10 transition-all"
-             >
-               <option value="">Posición (Todas)</option>
-               {uniquePositions.map(pos => <option key={pos} value={pos}>{pos}</option>)}
-             </select>
+             <div className="relative">
+               <button 
+                 type="button"
+                 onClick={() => {
+                   setShowPositionDropdown(!showPositionDropdown);
+                   setShowYearDropdown(false);
+                   setShowClubDropdown(false);
+                 }}
+                 className="bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500/10 transition-all flex items-center gap-2"
+               >
+                 <span>
+                   {filterPosition.length === 0 ? 'Posición (Todas)' : `${filterPosition.length} Pos.`}
+                 </span>
+                 <i className={`fa-solid fa-chevron-down text-[8px] transition-transform ${showPositionDropdown ? 'rotate-180' : ''}`} />
+               </button>
+               {showPositionDropdown && (
+                 <>
+                   <div className="fixed inset-0 z-10" onClick={() => setShowPositionDropdown(false)} />
+                   <div className="absolute left-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-2 max-h-60 overflow-y-auto">
+                     <div className="flex items-center justify-between border-b border-slate-50 pb-1.5 mb-1.5">
+                       <span className="text-[9px] font-bold text-slate-400 uppercase">Posición</span>
+                       <button 
+                         type="button" 
+                         onClick={() => setFilterPosition([])} 
+                         className="text-[8px] font-black uppercase text-red-500"
+                       >
+                         Limpiar
+                       </button>
+                     </div>
+                     {uniquePositions.map(pos => {
+                       const strPos = String(pos);
+                       const isChecked = filterPosition.includes(strPos);
+                       return (
+                         <label key={strPos} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 transition-all">
+                           <input 
+                             type="checkbox" 
+                             checked={isChecked}
+                             onChange={() => {
+                               setFilterPosition(prev => isChecked ? prev.filter(item => item !== strPos) : [...prev, strPos]);
+                             }}
+                             className="w-3.5 h-3.5 text-[#CF1B2B] rounded border-slate-300 focus:ring-red-500 cursor-pointer"
+                           />
+                           <span>{pos}</span>
+                         </label>
+                       );
+                     })}
+                   </div>
+                 </>
+               )}
+             </div>
 
              {/* Club Filter */}
              {userRole !== 'club' && (
-               <select 
-                 value={filterClubId} 
-                 onChange={(e) => setFilterClubId(e.target.value)}
-                 className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500/10 transition-all"
-               >
-                 <option value="">Club (Todos)</option>
-                 {uniqueClubs.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-               </select>
+               <div className="relative">
+                 <button 
+                   type="button"
+                   onClick={() => {
+                     setShowClubDropdown(!showClubDropdown);
+                     setShowYearDropdown(false);
+                     setShowPositionDropdown(false);
+                   }}
+                   className="bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500/10 transition-all flex items-center gap-2"
+                 >
+                   <span>
+                     {filterClubId.length === 0 ? 'Club (Todos)' : `${filterClubId.length} Clubes`}
+                   </span>
+                   <i className={`fa-solid fa-chevron-down text-[8px] transition-transform ${showClubDropdown ? 'rotate-180' : ''}`} />
+                 </button>
+                 {showClubDropdown && (
+                   <>
+                     <div className="fixed inset-0 z-10" onClick={() => setShowClubDropdown(false)} />
+                     <div className="absolute left-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-2 max-h-60 overflow-y-auto">
+                       <div className="flex items-center justify-between border-b border-slate-50 pb-1.5 mb-1.5">
+                         <span className="text-[9px] font-bold text-slate-400 uppercase">Clubes</span>
+                         <button 
+                           type="button" 
+                           onClick={() => setFilterClubId([])} 
+                           className="text-[8px] font-black uppercase text-red-500"
+                         >
+                           Limpiar
+                         </button>
+                       </div>
+                       {uniqueClubs.map(c => {
+                         const strClubId = String(c.id);
+                         const isChecked = filterClubId.includes(strClubId);
+                         return (
+                           <label key={strClubId} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 transition-all">
+                             <input 
+                               type="checkbox" 
+                               checked={isChecked}
+                               onChange={() => {
+                                 setFilterClubId(prev => isChecked ? prev.filter(item => item !== strClubId) : [...prev, strClubId]);
+                               }}
+                               className="w-3.5 h-3.5 text-[#CF1B2B] rounded border-slate-300 focus:ring-red-500 cursor-pointer"
+                             />
+                             <span className="truncate">{c.nombre}</span>
+                           </label>
+                         );
+                       })}
+                     </div>
+                   </>
+                 )}
+               </div>
              )}
 
              <div className="h-8 w-px bg-slate-100 mx-2 hidden md:block"></div>

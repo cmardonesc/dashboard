@@ -154,6 +154,14 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
   const [dateQuery, setDateQuery] = useState('');
 
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
+  const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
+  const [selectedClubs, setSelectedClubs] = useState<string[]>([]);
+
+  const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
+  const [isPositionDropdownOpen, setIsPositionDropdownOpen] = useState(false);
+  const [isClubDropdownOpen, setIsClubDropdownOpen] = useState(false);
+
   const formatStaffEmail = (email: string): string => {
     if (!email) return 'Staff';
     const namePart = email.split('@')[0];
@@ -180,14 +188,58 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   };
 
   const filteredDailyReports = useMemo(() => {
-    if (selectedDates.length === 0) return dailyReports;
-    return dailyReports.filter(report => selectedDates.includes(report.report_date));
-  }, [dailyReports, selectedDates]);
+    let filtered = dailyReports;
+    if (selectedDates.length > 0) {
+      filtered = filtered.filter(report => selectedDates.includes(report.report_date));
+    }
+    if (selectedYears.length > 0) {
+      filtered = filtered.filter(report => report.players?.anio && selectedYears.includes(String(report.players.anio)));
+    }
+    if (selectedPositions.length > 0) {
+      filtered = filtered.filter(report => report.players?.posicion && selectedPositions.includes(String(report.players.posicion)));
+    }
+    if (selectedClubs.length > 0) {
+      filtered = filtered.filter(report => {
+        const id = report.players?.id_club;
+        const clubObj = Array.isArray(report.players?.clubes) ? report.players?.clubes[0] : report.players?.clubes;
+        const dbClub = clubs?.find(c => Number(c.id_club) === Number(id) || Number(c.id) === Number(id));
+        const name = dbClub?.nombre || clubObj?.nombre || report.players?.club || '';
+        return (id && selectedClubs.includes(String(id))) || (name && selectedClubs.includes(name));
+      });
+    }
+    return filtered;
+  }, [dailyReports, selectedDates, selectedYears, selectedPositions, selectedClubs, clubs]);
 
   const availableDates = useMemo(() => {
     const dates = dailyReports.map(r => r.report_date).filter(Boolean);
     return Array.from(new Set(dates)).sort((a, b) => b.localeCompare(a));
   }, [dailyReports]);
+
+  const availableYears = useMemo(() => {
+    const years = dailyReports.map(r => r.players?.anio).filter(Boolean).map(y => String(y));
+    return Array.from(new Set(years)).sort((a, b) => b.localeCompare(a));
+  }, [dailyReports]);
+
+  const availablePositions = useMemo(() => {
+    const positions = dailyReports.map(r => r.players?.posicion).filter(Boolean).map(p => String(p));
+    return Array.from(new Set(positions)).sort();
+  }, [dailyReports]);
+
+  const availableClubs = useMemo(() => {
+    const clubsMap = new Map<string, string>();
+    dailyReports.forEach(r => {
+      const id = r.players?.id_club;
+      const clubObj = Array.isArray(r.players?.clubes) ? r.players?.clubes[0] : r.players?.clubes;
+      const dbClub = clubs?.find(c => Number(c.id_club) === Number(id) || Number(c.id) === Number(id));
+      const name = dbClub?.nombre || clubObj?.nombre || r.players?.club || (id ? `Club #${id}` : 'Desconocido');
+      if (id) {
+        clubsMap.set(String(id), name);
+      } else if (name && name !== 'Desconocido') {
+        clubsMap.set(name, name);
+      }
+    });
+    return Array.from(clubsMap.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [dailyReports, clubs]);
 
   const filteredDatesBySearch = useMemo(() => {
     if (!dateQuery) return availableDates;
@@ -1883,120 +1935,214 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
               </h3>
             </div>
 
-            {/* DYNAMIC DATE FILTERS WITH MULTI-SELECT DROPDOWN */}
-            {availableDates.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 p-6 rounded-[24px] border border-slate-100 animate-in fade-in duration-300">
-                <div className="flex flex-col gap-1 max-w-md">
-                  <div className="flex items-center gap-2">
-                    <i className="fa-solid fa-calendar-days text-blue-500 text-sm"></i>
-                    <p className="text-[10px] font-black uppercase text-[#0b1220] tracking-wider">Filtrar por Fechas:</p>
-                  </div>
-                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
-                    Selecciona una o más fechas desde el menú desplegable para filtrar el historial de atenciones.
-                  </p>
+            {/* ADVANCED MULTI-SELECT FILTERS ROW */}
+            {dailyReports.length > 0 && (
+              <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100 space-y-4 animate-in fade-in duration-300">
+                <div className="flex items-center gap-2">
+                  <i className="fa-solid fa-sliders text-blue-500 text-sm"></i>
+                  <p className="text-[10px] font-black uppercase text-[#0b1220] tracking-wider">Filtros de Búsqueda Avanzada:</p>
                 </div>
 
-                {/* Dropdown Multi-select element */}
-                <div className="relative inline-block text-left w-full sm:w-auto min-w-[280px] z-20">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Date Filter Dropdown */}
+                  <div className="relative z-30">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Fecha de Atención</label>
                     <button
                       type="button"
-                      onClick={() => setIsDateDropdownOpen(!isDateDropdownOpen)}
-                      className="w-full bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-2xl px-6 py-4 text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center justify-between gap-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      onClick={() => {
+                        setIsDateDropdownOpen(!isDateDropdownOpen);
+                        setIsYearDropdownOpen(false);
+                        setIsPositionDropdownOpen(false);
+                        setIsClubDropdownOpen(false);
+                      }}
+                      className="w-full bg-white hover:bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase text-slate-700 tracking-wider transition-all shadow-sm flex items-center justify-between gap-2 focus:outline-none"
                     >
                       <span className="truncate">
-                        {selectedDates.length === 0
-                          ? 'Todas las Fechas'
-                          : selectedDates.length === 1
-                            ? formatDate(selectedDates[0])
-                            : `${selectedDates.length} Fechas Seleccionadas`}
+                        {selectedDates.length === 0 ? 'Todas las Fechas' : `${selectedDates.length} Seleccionadas`}
                       </span>
-                      <div className="flex items-center gap-2 bg-slate-100 text-slate-600 px-2 py-1 rounded-lg text-[9px] font-black italic">
-                        {selectedDates.length > 0 ? selectedDates.length : 'TODAS'}
-                        <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${isDateDropdownOpen ? 'rotate-180' : ''}`}></i>
-                      </div>
+                      <i className={`fa-solid fa-chevron-down text-[8px] text-slate-400 transition-transform ${isDateDropdownOpen ? 'rotate-180' : ''}`}></i>
                     </button>
-                  </div>
-
-                  {isDateDropdownOpen && (
-                    <>
-                      {/* Overlay to handle click outside */}
-                      <div 
-                        className="fixed inset-0 z-10 cursor-default" 
-                        onClick={() => setIsDateDropdownOpen(false)}
-                      />
-                      
-                      <div className="origin-top-right absolute right-0 mt-2 w-full sm:w-80 rounded-2xl shadow-xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
-                          <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Listado de Fechas</span>
-                          <div className="flex gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedDates(availableDates)}
-                              className="px-2 py-1 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
-                            >
-                              Todas
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedDates([])}
-                              className="px-2 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
-                            >
-                              Limpiar
-                            </button>
+                    {isDateDropdownOpen && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setIsDateDropdownOpen(false)} />
+                        <div className="absolute left-0 mt-1.5 w-72 bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-3 max-h-60 overflow-y-auto">
+                          <div className="flex items-center justify-between border-b border-slate-50 pb-2 mb-2">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">Fechas</span>
+                            <div className="flex gap-1.5">
+                              <button type="button" onClick={() => setSelectedDates(availableDates)} className="text-[8px] font-black uppercase text-blue-500">Todas</button>
+                              <button type="button" onClick={() => setSelectedDates([])} className="text-[8px] font-black uppercase text-red-500">Limpiar</button>
+                            </div>
                           </div>
-                        </div>
-
-                        {/* Search field if dates list is long */}
-                        {availableDates.length > 5 && (
-                          <div className="relative mb-3">
-                            <input
-                              type="text"
-                              placeholder="Buscar fecha..."
-                              className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/20 outline-none"
-                              onChange={(e) => {
-                                const val = e.target.value.toLowerCase();
-                                setDateQuery(val);
-                              }}
-                              value={dateQuery}
-                            />
-                            <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
-                          </div>
-                        )}
-
-                        <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
-                          {filteredDatesBySearch.map(date => {
+                          {availableDates.map(date => {
                             const isChecked = selectedDates.includes(date);
-                            const count = dailyReports.filter(r => r.report_date === date).length;
                             return (
-                              <label
-                                key={date}
-                                className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-all rounded-xl hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
-                                  isChecked ? 'bg-blue-50/50 text-blue-900' : ''
-                                }`}
-                              >
-                                <div className="flex items-center gap-2.5">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => handleToggleDate(date)}
-                                    className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
-                                  />
-                                  <span className="uppercase tracking-wider font-extrabold">{formatDate(date)}</span>
-                                </div>
-                                <span className="text-[7.5px] font-black tracking-widest uppercase bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">
-                                  {count} {count === 1 ? 'ATENCIÓN' : 'ATENCIONES'}
-                                </span>
+                              <label key={date} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 transition-all">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setSelectedDates(prev => isChecked ? prev.filter(d => d !== date) : [...prev, date]);
+                                  }}
+                                  className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <span>{formatDate(date)}</span>
                               </label>
                             );
                           })}
-                          {filteredDatesBySearch.length === 0 && (
-                            <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron fechas</p>
-                          )}
                         </div>
-                      </div>
-                    </>
-                  )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* Year Filter Dropdown */}
+                  <div className="relative z-30">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Año / Categoría</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsYearDropdownOpen(!isYearDropdownOpen);
+                        setIsDateDropdownOpen(false);
+                        setIsPositionDropdownOpen(false);
+                        setIsClubDropdownOpen(false);
+                      }}
+                      className="w-full bg-white hover:bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase text-slate-700 tracking-wider transition-all shadow-sm flex items-center justify-between gap-2 focus:outline-none"
+                    >
+                      <span className="truncate">
+                        {selectedYears.length === 0 ? 'Todos los Años' : `${selectedYears.length} Seleccionados`}
+                      </span>
+                      <i className={`fa-solid fa-chevron-down text-[8px] text-slate-400 transition-transform ${isYearDropdownOpen ? 'rotate-180' : ''}`}></i>
+                    </button>
+                    {isYearDropdownOpen && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setIsYearDropdownOpen(false)} />
+                        <div className="absolute left-0 mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-3 max-h-60 overflow-y-auto">
+                          <div className="flex items-center justify-between border-b border-slate-50 pb-2 mb-2">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">Años</span>
+                            <div className="flex gap-1.5">
+                              <button type="button" onClick={() => setSelectedYears(availableYears)} className="text-[8px] font-black uppercase text-blue-500">Todos</button>
+                              <button type="button" onClick={() => setSelectedYears([])} className="text-[8px] font-black uppercase text-red-500">Limpiar</button>
+                            </div>
+                          </div>
+                          {availableYears.map(year => {
+                            const isChecked = selectedYears.includes(year);
+                            return (
+                              <label key={year} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 transition-all">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setSelectedYears(prev => isChecked ? prev.filter(y => y !== year) : [...prev, year]);
+                                  }}
+                                  className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <span>Año {year}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Position Filter Dropdown */}
+                  <div className="relative z-20">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Posición</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPositionDropdownOpen(!isPositionDropdownOpen);
+                        setIsDateDropdownOpen(false);
+                        setIsYearDropdownOpen(false);
+                        setIsClubDropdownOpen(false);
+                      }}
+                      className="w-full bg-white hover:bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase text-slate-700 tracking-wider transition-all shadow-sm flex items-center justify-between gap-2 focus:outline-none"
+                    >
+                      <span className="truncate">
+                        {selectedPositions.length === 0 ? 'Todas las Posiciones' : `${selectedPositions.length} Seleccionadas`}
+                      </span>
+                      <i className={`fa-solid fa-chevron-down text-[8px] text-slate-400 transition-transform ${isPositionDropdownOpen ? 'rotate-180' : ''}`}></i>
+                    </button>
+                    {isPositionDropdownOpen && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setIsPositionDropdownOpen(false)} />
+                        <div className="absolute left-0 mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-3 max-h-60 overflow-y-auto">
+                          <div className="flex items-center justify-between border-b border-slate-50 pb-2 mb-2">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">Posiciones</span>
+                            <div className="flex gap-1.5">
+                              <button type="button" onClick={() => setSelectedPositions(availablePositions)} className="text-[8px] font-black uppercase text-blue-500">Todas</button>
+                              <button type="button" onClick={() => setSelectedPositions([])} className="text-[8px] font-black uppercase text-red-500">Limpiar</button>
+                            </div>
+                          </div>
+                          {availablePositions.map(pos => {
+                            const isChecked = selectedPositions.includes(pos);
+                            return (
+                              <label key={pos} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 transition-all">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setSelectedPositions(prev => isChecked ? prev.filter(p => p !== pos) : [...prev, pos]);
+                                  }}
+                                  className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <span>{pos}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Club Filter Dropdown */}
+                  <div className="relative z-20">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Club</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsClubDropdownOpen(!isClubDropdownOpen);
+                        setIsDateDropdownOpen(false);
+                        setIsYearDropdownOpen(false);
+                        setIsPositionDropdownOpen(false);
+                      }}
+                      className="w-full bg-white hover:bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase text-slate-700 tracking-wider transition-all shadow-sm flex items-center justify-between gap-2 focus:outline-none"
+                    >
+                      <span className="truncate">
+                        {selectedClubs.length === 0 ? 'Todos los Clubes' : `${selectedClubs.length} Seleccionados`}
+                      </span>
+                      <i className={`fa-solid fa-chevron-down text-[8px] text-slate-400 transition-transform ${isClubDropdownOpen ? 'rotate-180' : ''}`}></i>
+                    </button>
+                    {isClubDropdownOpen && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setIsClubDropdownOpen(false)} />
+                        <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-3 max-h-60 overflow-y-auto">
+                          <div className="flex items-center justify-between border-b border-slate-50 pb-2 mb-2">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">Clubes</span>
+                            <div className="flex gap-1.5">
+                              <button type="button" onClick={() => setSelectedClubs(availableClubs.map(c => c.id))} className="text-[8px] font-black uppercase text-blue-500">Todos</button>
+                              <button type="button" onClick={() => setSelectedClubs([])} className="text-[8px] font-black uppercase text-red-500">Limpiar</button>
+                            </div>
+                          </div>
+                          {availableClubs.map(club => {
+                            const isChecked = selectedClubs.includes(club.id);
+                            return (
+                              <label key={club.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 transition-all">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setSelectedClubs(prev => isChecked ? prev.filter(c => c !== club.id) : [...prev, club.id]);
+                                  }}
+                                  className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <span className="truncate">{club.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

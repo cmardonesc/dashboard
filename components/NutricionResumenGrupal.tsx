@@ -20,13 +20,26 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     userRole === 'club' && userClub ? [userClub] : []
   );
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [isClubDropdownOpen, setIsClubDropdownOpen] = useState(false);
   const [clubQuery, setClubQuery] = useState('');
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [categoryQuery, setCategoryQuery] = useState('');
+  const [isPositionDropdownOpen, setIsPositionDropdownOpen] = useState(false);
+  const [positionQuery, setPositionQuery] = useState('');
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const hasInitializedDates = useRef(false);
+
+  const handleTogglePosition = (posName: string) => {
+    setSelectedPositions(prev => {
+      if (prev.includes(posName)) {
+        return prev.filter(p => p !== posName);
+      } else {
+        return [...prev, posName];
+      }
+    });
+  };
 
   const handleToggleClub = (clubName: string) => {
     if (userRole === 'club' && userClub) return;
@@ -142,6 +155,14 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     return Array.from(c).sort();
   }, [performanceRecords]);
 
+  const positions = useMemo(() => {
+    const p = new Set<string>();
+    performanceRecords.forEach(r => {
+      if (r.player.position) p.add(r.player.position);
+    });
+    return Array.from(p).sort();
+  }, [performanceRecords]);
+
   const filteredClubsBySearch = useMemo(() => {
     if (!clubQuery) return availableClubs;
     return availableClubs.filter(club => club.toLowerCase().includes(clubQuery.toLowerCase()));
@@ -151,6 +172,11 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     if (!categoryQuery) return categories;
     return categories.filter(cat => cat.toLowerCase().includes(categoryQuery.toLowerCase()));
   }, [categories, categoryQuery]);
+
+  const filteredPositionsBySearch = useMemo(() => {
+    if (!positionQuery) return positions;
+    return positions.filter(pos => pos.toLowerCase().includes(positionQuery.toLowerCase()));
+  }, [positions, positionQuery]);
 
   const filteredData = useMemo(() => {
     return performanceRecords.flatMap(record => {
@@ -172,14 +198,19 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
           const matchesCategory = selectedCategories.length === 0 || selectedCategories.some(sc =>
             record.player.anio?.toString() === sc
           );
-          return matchesDate && matchesClub && matchesCategory;
+
+          const matchesPosition = selectedPositions.length === 0 || selectedPositions.some(sp =>
+            record.player.position?.toString() === sp
+          );
+
+          return matchesDate && matchesClub && matchesCategory && matchesPosition;
         })
         .map(n => ({
           player: record.player,
           data: n
         }));
     });
-  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories]);
+  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions]);
 
   const chartData = useMemo(() => {
     if (filteredData.length === 0) return null;
@@ -308,7 +339,7 @@ La composición tisular grupal cumple robustamente con los estándares internaci
 
       {/* Filters Bar */}
       <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           {/* Date Range Filter */}
           <div className="lg:col-span-2 space-y-2">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Rango de Fechas (Evaluaciones)</label>
@@ -524,6 +555,97 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                       })}
                       {filteredCategoriesBySearch.length === 0 && (
                         <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron categorías</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Position Filter */}
+          <div className="space-y-2 relative">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Posición</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsPositionDropdownOpen(!isPositionDropdownOpen)}
+                className="w-full bg-slate-50 hover:bg-slate-100/70 text-slate-800 border-none rounded-2xl px-6 py-4 text-xs font-bold transition-all flex items-center justify-between gap-3 focus:outline-none"
+              >
+                <span className="truncate">
+                  {selectedPositions.length === 0
+                    ? 'Todas las Posiciones'
+                    : selectedPositions.length === 1
+                      ? selectedPositions[0]
+                      : `${selectedPositions.length} Pos. Seleccionadas`}
+                </span>
+                <div className="flex items-center gap-2 bg-slate-200/60 text-slate-700 px-2.5 py-1 rounded-xl text-[9px] font-black italic">
+                  {selectedPositions.length > 0 ? selectedPositions.length : 'TODAS'}
+                  <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${isPositionDropdownOpen ? 'rotate-180' : ''}`}></i>
+                </div>
+              </button>
+
+              {isPositionDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10 cursor-default" onClick={() => setIsPositionDropdownOpen(false)} />
+                  <div className="origin-top-right absolute right-0 mt-2 w-full min-w-[280px] rounded-3xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20 p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                      <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Listado de Posiciones</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPositions(positions)}
+                          className="px-2.5 py-1 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Todas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPositions([])}
+                          className="px-2.5 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                    </div>
+
+                    {positions.length > 5 && (
+                      <div className="relative mb-3">
+                        <input
+                          type="text"
+                          placeholder="Buscar posición..."
+                          className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-red-500/20 outline-none"
+                          onChange={(e) => setPositionQuery(e.target.value)}
+                          value={positionQuery}
+                        />
+                        <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                      </div>
+                    )}
+
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
+                      {filteredPositionsBySearch.map(pos => {
+                        const isChecked = selectedPositions.includes(pos);
+                        return (
+                          <label
+                            key={pos}
+                            className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-all rounded-xl hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
+                              isChecked ? 'bg-red-50/30 text-red-900 font-extrabold' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => handleTogglePosition(pos)}
+                                className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                              />
+                              <span className="uppercase tracking-wider">{pos}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                      {filteredPositionsBySearch.length === 0 && (
+                        <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron posiciones</p>
                       )}
                     </div>
                   </div>

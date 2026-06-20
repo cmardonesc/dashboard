@@ -89,6 +89,7 @@ export type MenuId =
   | 'tecnica_biblioteca'
   | 'tecnica_convocatoria'
   | 'tecnica_partidos'
+  | 'tecnica_competencia'
   | 'fisica_wellness'
   | 'fisica_pse'
   | 'fisica_carga_externa_total'

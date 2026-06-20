@@ -51,7 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const [planificacionOpen, setPlanificacionOpen] = useState(isPlanificacionActive);
 
   // Estado para Área Técnica y sus submenús
-  const TECNICA_IDS = ['tecnica', 'tecnica_biblioteca', 'tecnica_convocatoria'];
+  const TECNICA_IDS = ['tecnica', 'tecnica_biblioteca', 'tecnica_convocatoria', 'tecnica_competencia'];
   const isTecnicaActive = TECNICA_IDS.includes(activeMenu);
   const [tecnicaOpen, setTecnicaOpen] = useState(isTecnicaActive);
 
@@ -397,17 +397,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                 <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'nutricion_resumen_grupal' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
                 <span className="text-[10px] font-bold">Resumen Grupal</span>
               </button>
-              {userRole !== 'club' && (
-                <button
-                  onClick={() => onMenuChange('nutricion_comparativo')}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                    activeMenu === 'nutricion_comparativo' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'nutricion_comparativo' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
-                  <span className="text-[10px] font-bold">Dashboard Comparativo</span>
-                </button>
-              )}
               <button
                 onClick={() => onMenuChange('nutricion_individual')}
                 className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
@@ -482,6 +471,15 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                 >
                   <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_biblioteca' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
                   <span className="text-[10px] font-bold">Base de Tareas</span>
+                </button>
+                <button
+                  onClick={() => onMenuChange('tecnica_competencia')}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeMenu === 'tecnica_competencia' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_competencia' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                  <span className="text-[10px] font-bold">Reporte Competencia</span>
                 </button>
               </div>
             )}

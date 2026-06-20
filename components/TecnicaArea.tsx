@@ -98,13 +98,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['TODOS LOS PROCESOS']);
 
   const toggleCategory = (cat: string) => {
-    setSelectedCategories(prev => {
-      if (cat === 'TODOS LOS PROCESOS') return ['TODOS LOS PROCESOS'];
-      const newSelection = prev.includes(cat)
-        ? prev.filter(c => c !== cat)
-        : [...prev.filter(c => c !== 'TODOS LOS PROCESOS'), cat];
-      return newSelection.length === 0 ? ['TODOS LOS PROCESOS'] : newSelection;
-    });
+    setSelectedCategories([cat]);
   };
 
   // Biblioteca y planificación
@@ -386,6 +380,13 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       return d;
     });
   }, [selectedMicro]);
+
+  const filteredMatchReports = useMemo(() => {
+    if (!selectedMicro) return matchReports;
+    return matchReports.filter(report => {
+      return report.fecha >= selectedMicro.start_date && report.fecha <= selectedMicro.end_date;
+    });
+  }, [matchReports, selectedMicro]);
 
   const formatDateKey = (date: Date) => date.toISOString().split('T')[0];
 
@@ -1383,6 +1384,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
           <button onClick={() => setActiveTab('cronograma')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'cronograma' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
             <i className="fa-solid fa-calendar-week text-sm"></i> Cronograma Semanal
           </button>
+          <button onClick={() => setActiveTab('competencia')} className={`flex items-center gap-3 px-6 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'competencia' ? 'bg-[#CF1B2B] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+            <i className="fa-solid fa-trophy text-sm"></i> Reporte Competencia
+          </button>
         </div>
       )}
 
@@ -1924,14 +1928,14 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {matchReports.length === 0 ? (
+                  {filteredMatchReports.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-20 text-center text-slate-300 font-black uppercase italic tracking-widest">
                         Sin reportes registrados en este periodo
                       </td>
                     </tr>
                   ) : (
-                    matchReports.map((report) => (
+                    filteredMatchReports.map((report) => (
                       <tr key={report.id} className="group hover:bg-slate-50/50 transition-colors">
                         <td className="py-6">
                           <div className="flex items-center gap-3">

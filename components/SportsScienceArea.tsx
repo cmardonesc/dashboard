@@ -404,11 +404,6 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             <TabButton active={activeTab === 'grupal'} label="Análisis Grupal" icon="fa-users-rays" onClick={() => setActiveTab('grupal')} />
             <TabButton active={activeTab === 'laboratorio'} label="Laboratorio" icon="fa-flask-vial" onClick={() => setActiveTab('laboratorio')} />
             <TabButton active={activeTab === 'categorias'} label="Categorías" icon="fa-layer-group" onClick={() => setActiveTab('categorias')} />
-            {userRole !== 'club' && (
-              <>
-                <TabButton active={activeTab === 'salud'} label="Salud y Carga" icon="fa-heart-pulse" onClick={() => setActiveTab('salud')} />
-              </>
-            )}
             <TabButton active={activeTab === 'tabla'} label="Tabla de Datos" icon="fa-table" onClick={() => setActiveTab('tabla')} />
             <TabButton active={activeTab === 'top10'} label="Top Ten" icon="fa-ranking-star" onClick={() => {
               setActiveTab('top10');
