@@ -106,6 +106,10 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const [weeklySchedule, setWeeklySchedule] = useState<Record<string, (ItineraryActivity & { db_id?: any })[]>>({});
   const [fieldTasks, setFieldTasks] = useState<Record<string, Tarea[]>>({});
   const [matchReports, setMatchReports] = useState<any[]>([]);
+  const [microcyclePlayers, setMicrocyclePlayers] = useState<any[]>([]);
+  const [loadingPlayers, setLoadingPlayers] = useState(false);
+  const [exportingCompetencia, setExportingCompetencia] = useState(false);
+  const [filterOnlyResponded, setFilterOnlyResponded] = useState(true);
 
   // Modales
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -272,33 +276,106 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     setWeeklySchedule({});
     setFieldTasks({});
     setMatchReports([]);
+    setMicrocyclePlayers([]);
     fetchSchedule(mc.id);
     fetchWeeklyTasks(mc.id);
-    fetchMatchReports(mc.category_id);
+    fetchMatchReports(mc.category_id, mc.id);
     setViewMode('management');
     setActiveTab(initialTab || (hideCronograma ? 'partidos' : 'cronograma'));
   };
 
-  const fetchMatchReports = async (categoryId: number) => {
+  const fetchMatchReports = async (categoryId: number, microId?: number) => {
+    setLoadingPlayers(true);
     try {
-      // Primero obtener los IDs de los jugadores de esta categoría
-      // En este sistema, la categoría está en el microciclo, pero los reportes están vinculados al jugador.
-      // Así que buscamos los reportes de los jugadores que han sido citados en este microciclo o categoría.
-      
-      const { data, error } = await supabase
+      if (microId) {
+        // Obtenemos los IDs de los jugadores citados en este microciclo
+        const { data: citations, error: citeErr } = await supabase
+          .from('citaciones')
+          .select('player_id')
+          .eq('microcycle_id', microId);
+
+        if (!citeErr && citations && citations.length > 0) {
+          const playerIds = citations.map(c => c.player_id).filter(id => id !== null && id !== undefined);
+          if (playerIds.length > 0) {
+            const { data: playersData, error: playersErr } = await supabase
+              .from('players')
+              .select('*, clubes!fk_players_clubes(nombre)')
+              .in('player_id', playerIds);
+
+            if (!playersErr && playersData) {
+              setMicrocyclePlayers(playersData);
+            } else {
+              setMicrocyclePlayers([]);
+            }
+          } else {
+            setMicrocyclePlayers([]);
+          }
+        } else {
+          setMicrocyclePlayers([]);
+        }
+      } else {
+        setMicrocyclePlayers([]);
+      }
+    } catch (e) {
+      console.error("Error fetching microcycle players for match reports:", e);
+      setMicrocyclePlayers([]);
+    } finally {
+      setLoadingPlayers(false);
+    }
+
+    try {
+      // Metodo seguro: Trae los reportes de competencia directamente, sin joins complejos
+      const { data: mrData, error: mrErr } = await supabase
         .from('match_reports')
-        .select('*, players!fk_match_reports_players(nombre, apellido1, id_club, clubes!fk_players_clubes(nombre), player_id)')
+        .select('*')
         .order('fecha', { ascending: false });
 
-      if (error) throw error;
-      
-      // Filtrar por categoría (esto es una simplificación, idealmente el reporte debería tener categoría)
-      // Pero como no la tiene, mostramos todos los reportes por ahora o filtramos si tenemos performanceRecords.
-      if (data) {
-        setMatchReports(data);
+      if (mrErr) throw mrErr;
+
+      if (mrData) {
+        // Obtener de forma secuencial segura los jugadores implicados
+        const playerIds = Array.from(new Set(mrData.map(r => r.player_id).filter(id => id !== null && id !== undefined)));
+        let playersMap: Record<number, any> = {};
+
+        if (playerIds.length > 0) {
+          const { data: pData, error: pErr } = await supabase
+            .from('players')
+            .select('player_id, nombre, apellido1, id_club, clubes!fk_players_clubes(nombre)')
+            .in('player_id', playerIds);
+          
+          if (!pErr && pData) {
+            pData.forEach(p => {
+              playersMap[p.player_id] = p;
+            });
+          } else if (pErr) {
+            console.warn("Error fetching players for mapping match_reports:", pErr);
+          }
+        }
+
+        // Mapeamos los campos a la estructura esperada por el UI
+        const mapped = mrData.map((mr: any) => ({
+          id: mr.id,
+          player_id: mr.player_id,
+          fecha: mr.fecha,
+          rival: mr.rival,
+          resultado: mr.resultado,
+          minutos_jugados: mr.minutos_jugados,
+          rpe: mr.rpe,
+          molestias: mr.molestias,
+          enfermedad: mr.enfermedad,
+          players: playersMap[mr.player_id] ? {
+            player_id: mr.player_id,
+            nombre: playersMap[mr.player_id].nombre,
+            apellido1: playersMap[mr.player_id].apellido1,
+            id_club: playersMap[mr.player_id].id_club,
+            clubes: playersMap[mr.player_id].clubes
+          } : null
+        }));
+
+        setMatchReports(mapped);
       }
     } catch (err) {
-      console.warn("Error cargando reportes de competencia de 'match_reports', intentando fallback de tipo MATCH en 'internal_load':", err);
+      console.warn("Error cargando reportes via directa de 'match_reports', intentando fallback en 'internal_load':", err);
       try {
         const { data: loads, error: loadErr } = await supabase
           .from('internal_load')
@@ -383,10 +460,85 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
 
   const filteredMatchReports = useMemo(() => {
     if (!selectedMicro) return matchReports;
-    return matchReports.filter(report => {
-      return report.fecha >= selectedMicro.start_date && report.fecha <= selectedMicro.end_date;
-    });
+    
+    try {
+      // Ampliamos el rango de fechas para capturar reportes de fines de semana anteriores o inmediatos al microciclo
+      const startObj = new Date(selectedMicro.start_date + 'T12:00:00');
+      const endObj = new Date(selectedMicro.end_date + 'T12:00:00');
+      
+      // Retroceder 4 días (si el microciclo empieza el Lunes 22, incluye desde el Jueves 18 o Viernes 19 en adelante)
+      const expandedStart = new Date(startObj);
+      expandedStart.setDate(expandedStart.getDate() - 4);
+      
+      // Avanzar 2 días del final por si reportan tarde
+      const expandedEnd = new Date(endObj);
+      expandedEnd.setDate(expandedEnd.getDate() + 2);
+
+      const expStartStr = expandedStart.toISOString().split('T')[0];
+      const expEndStr = expandedEnd.toISOString().split('T')[0];
+
+      return matchReports.filter(report => {
+        return report.fecha >= expStartStr && report.fecha <= expEndStr;
+      });
+    } catch (e) {
+      console.error("Error calculating expanded dates:", e);
+      return matchReports.filter(report => {
+        return report.fecha >= selectedMicro.start_date && report.fecha <= selectedMicro.end_date;
+      });
+    }
   }, [matchReports, selectedMicro]);
+
+  const unifiedCompetenciaReports = useMemo(() => {
+    if (!selectedMicro) return [];
+
+    // Mapear cada jugador del microciclo para ver si contestó
+    const mappedInternal = microcyclePlayers.map(player => {
+      const report = filteredMatchReports.find(r => r.player_id === player.player_id || Number(r.player_id) === Number(player.player_id));
+      
+      return {
+        id: report?.id || `missing-${player.player_id}`,
+        player_id: player.player_id,
+        nombre: player.nombre,
+        apellido1: player.apellido1,
+        club_nombre: (Array.isArray(player.clubes) ? player.clubes[0]?.nombre : player.clubes?.nombre) || player.club || 'SIN CLUB',
+        respondio: !!report,
+        fecha: report?.fecha || null,
+        rival: report?.rival || null,
+        resultado: report?.resultado || null,
+        minutos_jugados: report?.minutos_jugados !== undefined && report?.minutos_jugados !== null ? report.minutos_jugados : null,
+        rpe: report?.rpe || null,
+        molestias: report?.molestias || null,
+        enfermedad: report?.enfermedad || null
+      };
+    });
+
+    // Ordenar los que respondieron primero o mantener el orden alfabético
+    return mappedInternal.sort((a, b) => {
+      if (a.respondio && !b.respondio) return -1;
+      if (!a.respondio && b.respondio) return 1;
+      return `${a.nombre} ${a.apellido1}`.localeCompare(`${b.nombre} ${b.apellido1}`);
+    });
+  }, [microcyclePlayers, filteredMatchReports, selectedMicro]);
+
+  const competenciaStats = useMemo(() => {
+    const total = unifiedCompetenciaReports.length;
+    const responded = unifiedCompetenciaReports.filter(r => r.respondio).length;
+    const pending = total - responded;
+    
+    const activeReports = unifiedCompetenciaReports.filter(r => r.respondio);
+    const totalMinutes = activeReports.reduce((acc, r) => acc + (r.minutos_jugados || 0), 0);
+    const avgMinutes = responded > 0 ? Math.round(totalMinutes / responded) : 0;
+    
+    const totalRpe = activeReports.reduce((acc, r) => acc + (r.rpe || 0), 0);
+    const avgRpe = responded > 0 ? Number((totalRpe / responded).toFixed(1)) : 0;
+    
+    const alerts = activeReports.filter(r => 
+      (r.molestias && r.molestias.toLowerCase() !== 'sin molestias' && r.molestias.toLowerCase() !== 'ninguno' && r.molestias.trim() !== '') || 
+      (r.enfermedad && r.enfermedad.trim() !== '')
+    ).length;
+
+    return { total, responded, pending, avgMinutes, avgRpe, alerts };
+  }, [unifiedCompetenciaReports]);
 
   const formatDateKey = (date: Date) => date.toISOString().split('T')[0];
 
@@ -988,6 +1140,73 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     
     const text = encodeURIComponent(`*CRONOGRAMA SEMANAL - ${category}*\n\n🔄 *Microciclo:* #${microName}\n📅 *Inicio:* ${startDate}\n\nSe ha compartido el cronograma semanal de actividades de la Selección. Saludos!`);
     window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const downloadCompetenciaReportPDF = async () => {
+    setExportingCompetencia(true);
+    try {
+      const container = document.getElementById('competencia-report-container');
+      if (!container) throw new Error("Contenedor no encontrado");
+
+      // Capturamos con html2canvas
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      
+      const microName = selectedMicro?.micro_number || selectedMicro?.id || 'microciclo';
+      const categoryName = selectedMicro ? formatCategoryLabel(selectedMicro.category_id).replace(/\s+/g, '-').toLowerCase() : 'categoria';
+      const fileName = `reporte-competencia-${microName}-${categoryName}.pdf`;
+      pdf.save(fileName);
+    } catch (err) {
+      console.error("Error al descargar PDF:", err);
+      alert("Hubo un error al generar el PDF del reporte de competencia.");
+    } finally {
+      setExportingCompetencia(false);
+    }
+  };
+
+  const downloadCompetenciaReportJPG = async () => {
+    setExportingCompetencia(true);
+    try {
+      const container = document.getElementById('competencia-report-container');
+      if (!container) throw new Error("Contenedor no encontrado");
+
+      // Capturamos con mayor nitidez para la imagen
+      const canvas = await html2canvas(container, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      
+      const microName = selectedMicro?.micro_number || selectedMicro?.id || 'microciclo';
+      const categoryName = selectedMicro ? formatCategoryLabel(selectedMicro.category_id).replace(/\s+/g, '-').toLowerCase() : 'categoria';
+      const fileName = `reporte-competencia-${microName}-${categoryName}.jpg`;
+
+      const link = document.createElement('a');
+      link.href = imgData;
+      link.download = fileName;
+      link.click();
+    } catch (err) {
+      console.error("Error al descargar JPG:", err);
+      alert("Hubo un error al generar la imagen del reporte de competencia.");
+    } finally {
+      setExportingCompetencia(false);
+    }
   };
 
   const generateWeeklySchedulePDF = async () => {
@@ -1905,98 +2124,349 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         </div>
       )}
 
-      {activeTab === 'competencia' && (
-        <div className="space-y-6 animate-in fade-in duration-500">
-          <div className="bg-white rounded-[40px] p-10 border border-slate-100 shadow-sm relative overflow-hidden">
-            <div className="flex items-center justify-between mb-10">
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
-                <span className="w-2 h-6 bg-red-600 rounded-full"></span>
-                Reportes de Jugadores en Competencia
-              </h3>
-            </div>
+      {activeTab === 'competencia' && (() => {
+        const displayedCompetenciaReports = filterOnlyResponded 
+          ? unifiedCompetenciaReports.filter(r => r.respondio) 
+          : unifiedCompetenciaReports;
+        const pendingPlayers = unifiedCompetenciaReports.filter(r => !r.respondio);
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
-                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
-                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Compromiso</th>
-                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Minutos</th>
-                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">RPE</th>
-                    <th className="pb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Molestias</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {filteredMatchReports.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-20 text-center text-slate-300 font-black uppercase italic tracking-widest">
-                        Sin reportes registrados en este periodo
-                      </td>
+        return (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div id="competencia-report-container" className="bg-white rounded-[40px] p-10 border border-slate-100 shadow-sm relative overflow-hidden">
+              {/* Cabecera Oficial Selección Nacional */}
+              <div className="mb-8 border-b border-slate-200 pb-6">
+                {/* Ribbon visual premium */}
+                <div className="flex flex-col md:flex-row md:items-center min-h-[7rem] bg-[#1a2333] rounded-3xl overflow-hidden relative shadow-md mb-6 p-4 md:p-0">
+                  {/* Título de Reporte con Clip Path */}
+                  <div className="bg-[#02428c] h-full flex items-center pl-6 pr-12 py-4 md:py-0 md:absolute md:left-0 md:top-0 md:bottom-0 relative z-20" style={{ clipPath: 'polygon(0 0, 90% 0, 100% 100%, 0% 100%)' }}>
+                    <span className="text-lg md:text-2xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
+                      REPORTE DE COMPETENCIA
+                    </span>
+                  </div>
+                  
+                  {/* Cuña roja decorativa */}
+                  <div className="hidden md:block bg-[#e2231a] h-full w-20 relative z-10 shadow-lg left-56" style={{ clipPath: 'polygon(25% 0, 100% 0, 75% 100%, 0% 100%)' }}></div>
+                  
+                  {/* Información de Identidad */}
+                  <div className="flex-1 flex items-center gap-4 mt-4 md:mt-0 md:ml-80 overflow-hidden relative z-30">
+                    <div className="w-14 h-14 md:w-16 md:h-16 flex-shrink-0 flex items-center justify-center p-1.5 bg-white rounded-full shadow-md">
+                      <img 
+                        src={getDriveDirectLink(FEDERATION_LOGO)} 
+                        alt="Logo Selección" 
+                        className="w-full h-full object-contain"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    <div className="h-10 w-[1.5px] bg-slate-700 flex-shrink-0"></div>
+                    <div className="flex flex-col min-w-0">
+                      <h2 className="text-sm md:text-base font-black text-white uppercase tracking-tighter leading-tight">
+                        SELECCIÓN NACIONAL
+                      </h2>
+                      <span className="text-xs md:text-sm font-black text-red-500 uppercase tracking-tighter leading-tight">
+                        {selectedMicro ? formatCategoryLabel(selectedMicro.category_id) : 'Categoría Opcional'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grid de Metadatos del Microciclo */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-4 mt-4">
+                  <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                    <div className="w-2 h-2 rounded-full bg-[#02428c]"></div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">PROCESO / MICROCICLO</span>
+                      <span className="text-xs font-black text-slate-800 uppercase tracking-tight mt-1.5 truncate">
+                        {selectedMicro?.nombre_display || `MICROCICLO #${selectedMicro?.micro_number || selectedMicro?.id || '—'}`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                    <div className="w-2 h-2 rounded-full bg-red-600"></div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">PERIODO</span>
+                      <span className="text-xs font-black text-slate-800 tracking-tight mt-1.5">
+                        {selectedMicro ? (
+                          `${new Date(selectedMicro.start_date + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })} Al ${new Date(selectedMicro.end_date + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                        ) : '—'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">CONCENTRACIÓN</span>
+                      <span className="text-xs font-black text-slate-800 uppercase tracking-tight mt-1.5 truncate">
+                        {selectedMicro?.city ? `${selectedMicro.city}, ${selectedMicro.country || 'CHILE'}` : 'SANTIAGO, CHILE'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid de KPIs / Estadísticas Clave */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col justify-between shadow-sm">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">REPORTES ENVIADOS</span>
+                  <div className="my-3 flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-[#02428c] leading-none">
+                      {competenciaStats.responded}
+                    </span>
+                    <span className="text-xs font-bold text-slate-400">
+                      / {competenciaStats.total}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className="bg-[#02428c] h-full rounded-full transition-all duration-500" 
+                      style={{ width: `${competenciaStats.total > 0 ? (competenciaStats.responded / competenciaStats.total) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col justify-between shadow-sm">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">PROM. MINUTOS</span>
+                  <div className="my-3 flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-slate-800 leading-none">
+                      {competenciaStats.avgMinutes}
+                    </span>
+                    <span className="text-xs font-black text-slate-400">min</span>
+                  </div>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none">
+                    Por jugador participante
+                  </span>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col justify-between shadow-sm">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">ESFUERZO RPE PROM.</span>
+                  <div className="my-3 flex items-center gap-2">
+                    <span className="text-2xl font-black text-slate-800 leading-none">
+                      {competenciaStats.avgRpe}
+                    </span>
+                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase ${
+                      competenciaStats.avgRpe > 7 ? 'bg-red-100 text-red-600' : 
+                      competenciaStats.avgRpe > 4 ? 'bg-amber-100 text-amber-600' : 
+                      'bg-emerald-100 text-emerald-600'
+                    }`}>
+                      {competenciaStats.avgRpe > 7 ? 'Alto RPE' : competenciaStats.avgRpe > 4 ? 'Moderado' : 'Suave'}
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none">
+                    Escala de fatiga RPE
+                  </span>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col justify-between shadow-sm">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">JUGADORES CON ALERTA</span>
+                  <div className="my-3 flex items-baseline gap-1">
+                    <span className={`text-2xl font-black leading-none ${competenciaStats.alerts > 0 ? 'text-red-600' : 'text-slate-800'}`}>
+                      {competenciaStats.alerts}
+                    </span>
+                    <span className="text-xs font-bold text-slate-400">caso(s)</span>
+                  </div>
+                  <span className={`text-[9px] font-bold uppercase tracking-wider leading-none ${competenciaStats.alerts > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                    {competenciaStats.alerts > 0 ? 'Requieren evaluación médica' : 'Sin molestias clínicas'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Fila del Panel de Controles Interactivos (Ocultada en PDF / JPG) */}
+              <div className="flex items-center justify-between mb-6 flex-wrap gap-4 border-b border-slate-100 pb-6" data-html2canvas-ignore="true">
+                {/* Switch Segmentado */}
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setFilterOnlyResponded(true)}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 ${
+                      filterOnlyResponded 
+                        ? 'bg-white text-slate-800 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Solo Reportados ({competenciaStats.responded})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterOnlyResponded(false)}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 ${
+                      !filterOnlyResponded 
+                        ? 'bg-white text-slate-800 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Ver Lista Completa ({competenciaStats.total})
+                  </button>
+                </div>
+
+                {/* Acciones de Descarga */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={downloadCompetenciaReportPDF}
+                    disabled={exportingCompetencia}
+                    className="px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 shadow-sm transition-all active:scale-95 duration-200"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    {exportingCompetencia ? 'PDF...' : 'Descargar PDF'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadCompetenciaReportJPG}
+                    disabled={exportingCompetencia}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 shadow-sm transition-all active:scale-95 duration-200"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                    {exportingCompetencia ? 'JPG...' : 'Descargar JPG'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabla de Jugadores */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Compromiso</th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Minutos</th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">RPE</th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Molestias</th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Enfermedad / Síntomas</th>
                     </tr>
-                  ) : (
-                    filteredMatchReports.map((report) => (
-                      <tr key={report.id} className="group hover:bg-slate-50/50 transition-colors">
-                        <td className="py-6">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-black text-xs italic">
-                              {report.players?.nombre?.charAt(0)}
-                            </div>
-                            <div>
-                              <p 
-                                className="text-[11px] font-black text-slate-900 uppercase italic leading-none hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (report.players?.player_id) {
-                                    sessionStorage.setItem('selectedPlayerIdForProfile', String(report.players.player_id));
-                                    window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: report.players.player_id } }));
-                                  }
-                                }}
-                              >
-                                {report.players?.nombre} {report.players?.apellido1}
-                              </p>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                                {(Array.isArray(report.players?.clubes) ? report.players?.clubes[0]?.nombre : report.players?.clubes?.nombre) || report.players?.club || 'SIN CLUB'}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-6 text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
-                          {new Date(report.fecha + 'T12:00:00').toLocaleDateString()}
-                        </td>
-                        <td className="py-6">
-                          <p className="text-[10px] font-black text-red-600 uppercase italic tracking-tight">{report.resultado === 'Titular' ? 'TITULAR' : 'SUPLENTE'}</p>
-                          <p className="text-[9px] font-bold text-slate-900 uppercase tracking-widest">vs {report.rival}</p>
-                        </td>
-                        <td className="py-6 text-center">
-                          <span className="bg-[#0b1220] text-white px-3 py-1 rounded-lg text-[10px] font-black tracking-tighter italic">
-                            {report.minutos_jugados || 0}'
-                          </span>
-                        </td>
-                        <td className="py-6 text-center">
-                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${
-                            (report.rpe || 0) > 7 ? 'bg-red-100 text-red-600' : 
-                            (report.rpe || 0) > 4 ? 'bg-amber-100 text-amber-600' : 
-                            'bg-emerald-100 text-emerald-600'
-                          }`}>
-                            {report.rpe || 0}
-                          </span>
-                        </td>
-                        <td className="py-6">
-                          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tight leading-relaxed max-w-[200px]">
-                            {report.molestias || 'Sin molestias'}
-                            {report.enfermedad && <span className="text-red-500 block">Síntomas: {report.enfermedad}</span>}
-                          </p>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {displayedCompetenciaReports.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-20 text-center text-slate-300 font-black uppercase italic tracking-widest">
+                          Sin reportes registrados en este periodo
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      displayedCompetenciaReports.map((report) => (
+                        <tr 
+                          key={report.id} 
+                          className={`group hover:bg-slate-50/50 transition-all duration-300 ${
+                            !report.respondio ? 'opacity-35 saturate-50 blur-[0.4px] hover:blur-none hover:opacity-80' : ''
+                          }`}
+                        >
+                          <td className="py-5">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-black text-xs italic">
+                                {report.nombre?.charAt(0)}
+                              </div>
+                              <div>
+                                <p 
+                                  className="text-[11px] font-black text-slate-900 uppercase italic leading-none hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (report.player_id) {
+                                      sessionStorage.setItem('selectedPlayerIdForProfile', String(report.player_id));
+                                      window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: report.player_id } }));
+                                    }
+                                  }}
+                                >
+                                  {report.nombre} {report.apellido1}
+                                </p>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                  {report.club_nombre}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-5 text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
+                            {report.respondio && report.fecha ? (
+                              new Date(report.fecha + 'T12:00:00').toLocaleDateString()
+                            ) : (
+                              <span className="text-amber-500/85 font-black tracking-widest text-[9px]">PENDIENTE</span>
+                            )}
+                          </td>
+                          <td className="py-5">
+                            {report.respondio ? (
+                              <p className="text-[11px] font-bold text-slate-900 uppercase tracking-widest">
+                                vs {report.rival}
+                              </p>
+                            ) : (
+                              <span className="text-slate-400 font-medium italic">-</span>
+                            )}
+                          </td>
+                          <td className="py-5 text-center">
+                            {report.respondio && report.minutos_jugados !== null ? (
+                              <span className="bg-[#0b1220] text-white px-2.5 py-1 rounded-lg text-[10px] font-black tracking-tighter italic">
+                                {report.minutos_jugados}'
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-medium italic">-</span>
+                            )}
+                          </td>
+                          <td className="py-5 text-center">
+                            {report.respondio && report.rpe !== null ? (
+                              <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${
+                                (report.rpe || 0) > 7 ? 'bg-red-100 text-red-600' : 
+                                (report.rpe || 0) > 4 ? 'bg-amber-100 text-amber-600' : 
+                                'bg-emerald-100 text-emerald-600'
+                              }`}>
+                                {report.rpe}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-medium italic">-</span>
+                            )}
+                          </td>
+                          <td className="py-5">
+                            {report.respondio ? (
+                              <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-tight leading-relaxed max-w-[150px]">
+                                {report.molestias || 'Sin molestias'}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-medium italic">-</span>
+                            )}
+                          </td>
+                          <td className="py-5">
+                            {report.respondio ? (
+                              <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-tight leading-relaxed max-w-[150px]">
+                                {report.enfermedad ? (
+                                  <span className="text-red-500 font-black">{report.enfermedad}</span>
+                                ) : (
+                                  <span className="text-slate-400">Sin Síntomas</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-medium italic">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Bloque Compacto de Convocados Pendientes (Se oculta en el reporte PDF y JPG) */}
+              {filterOnlyResponded && pendingPlayers.length > 0 && (
+                <div className="mt-8 pt-6 border-t border-slate-100" data-html2canvas-ignore="true">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                    Jugadores Convocados con Reporte Pendiente ({pendingPlayers.length})
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {pendingPlayers.map(p => (
+                      <span 
+                        key={p.player_id} 
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-[10px] font-black text-slate-600 rounded-xl border border-slate-100 uppercase tracking-wide"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                        {p.nombre} {p.apellido1} <span className="text-slate-400 font-bold">({p.club_nombre})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
