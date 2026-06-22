@@ -390,14 +390,14 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     setSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const today = new Date().toISOString().split('T')[0];
+      const selectedDate = data.date || new Date().toISOString().split('T')[0];
 
       const matchResultValue = data.resultado || data.result || 'GANÓ';
       const matchMinutesValue = data.minutos !== undefined ? data.minutos : (data.minutes !== undefined ? data.minutes : 90);
 
       const payload = {
         player_id: player.player_id,
-        fecha: today,
+        fecha: selectedDate,
         rival: data.rival,
         resultado: matchResultValue,
         minutos_jugados: matchMinutesValue,
@@ -428,7 +428,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           
           const fallbackPayload = {
             player_id: player.player_id,
-            session_date: today,
+            session_date: selectedDate,
             rpe: data.rpe,
             duration_min: Number(matchMinutesValue) || 90,
             type: 'MATCH',
@@ -464,7 +464,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         }
       }
       
-      logActivity('Envío Reporte de Competencia', { playerId: player.player_id, date: today, rival: data.rival });
+      logActivity('Envío Reporte de Competencia', { playerId: player.player_id, date: selectedDate, rival: data.rival });
 
       setSuccessModalConfig({
         show: true,

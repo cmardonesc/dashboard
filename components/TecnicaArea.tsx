@@ -121,6 +121,50 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const [exportingCompetencia, setExportingCompetencia] = useState(false);
   const [filterOnlyResponded, setFilterOnlyResponded] = useState(true);
   const [competenciaPage, setCompetenciaPage] = useState(1);
+  const [competenciaSort, setCompetenciaSort] = useState<{
+    column: 'jugador' | 'fecha' | 'compromiso' | 'minutos' | 'rpe' | 'molestias' | 'enfermedad' | null;
+    direction: 'asc' | 'desc' | null;
+  }>({ column: null, direction: null });
+
+  const getSortedCompetenciaReports = (reports: any[]) => {
+    if (!competenciaSort.column || !competenciaSort.direction) return reports;
+    const { column: col, direction: dir } = competenciaSort;
+    return [...reports].sort((a, b) => {
+      let valA: any = null;
+      let valB: any = null;
+
+      if (col === 'jugador') {
+        valA = `${a.nombre || ''} ${a.apellido1 || ''}`.trim().toLowerCase();
+        valB = `${b.nombre || ''} ${b.apellido1 || ''}`.trim().toLowerCase();
+      } else if (col === 'fecha') {
+        valA = a.fecha ? new Date(a.fecha + 'T12:00:00').getTime() : (dir === 'asc' ? Infinity : -Infinity);
+        valB = b.fecha ? new Date(b.fecha + 'T12:00:00').getTime() : (dir === 'asc' ? Infinity : -Infinity);
+      } else if (col === 'compromiso') {
+        valA = (a.rival || '').trim().toLowerCase();
+        valB = (b.rival || '').trim().toLowerCase();
+      } else if (col === 'minutos') {
+        const minA = a.minutos_jugados !== null && a.minutos_jugados !== undefined ? Number(a.minutos_jugados) : (dir === 'asc' ? Infinity : -Infinity);
+        const minB = b.minutos_jugados !== null && b.minutos_jugados !== undefined ? Number(b.minutos_jugados) : (dir === 'asc' ? Infinity : -Infinity);
+        valA = minA;
+        valB = minB;
+      } else if (col === 'rpe') {
+        const rpeA = a.rpe !== null && a.rpe !== undefined ? Number(a.rpe) : (dir === 'asc' ? Infinity : -Infinity);
+        const rpeB = b.rpe !== null && b.rpe !== undefined ? Number(b.rpe) : (dir === 'asc' ? Infinity : -Infinity);
+        valA = rpeA;
+        valB = rpeB;
+      } else if (col === 'molestias') {
+        valA = (a.molestias || '').trim().toLowerCase();
+        valB = (b.molestias || '').trim().toLowerCase();
+      } else if (col === 'enfermedad') {
+        valA = (a.enfermedad || '').trim().toLowerCase();
+        valB = (b.enfermedad || '').trim().toLowerCase();
+      }
+
+      if (valA === valB) return 0;
+      if (valA < valB) return dir === 'asc' ? -1 : 1;
+      return dir === 'asc' ? 1 : -1;
+    });
+  };
 
   // Modales
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -1183,9 +1227,10 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const downloadCompetenciaReportPDF = async () => {
     setExportingCompetencia(true);
     try {
-      const activeReports = filterOnlyResponded 
+      const unfilteredReports = filterOnlyResponded 
         ? unifiedCompetenciaReports.filter(r => r.respondio) 
         : unifiedCompetenciaReports;
+      const activeReports = getSortedCompetenciaReports(unfilteredReports);
 
       const doc = new jsPDF({
         orientation: 'l',
@@ -2415,17 +2460,61 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       )}
 
       {activeTab === 'competencia' && (() => {
-        const displayedCompetenciaReports = filterOnlyResponded 
+        const rawReports = filterOnlyResponded 
           ? unifiedCompetenciaReports.filter(r => r.respondio) 
           : unifiedCompetenciaReports;
+        const sortedReports = getSortedCompetenciaReports(rawReports);
         const pendingPlayers = unifiedCompetenciaReports.filter(r => !r.respondio);
 
         const itemsPerPage = 10;
-        const totalItems = displayedCompetenciaReports.length;
+        const totalItems = sortedReports.length;
         const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
         const currentPage = Math.min(competenciaPage, totalPages);
         const startIndex = (currentPage - 1) * itemsPerPage;
-        const paginatedReports = displayedCompetenciaReports.slice(startIndex, startIndex + itemsPerPage);
+        const paginatedReports = sortedReports.slice(startIndex, startIndex + itemsPerPage);
+
+        const renderSortButtons = (columnKey: 'jugador' | 'fecha' | 'compromiso' | 'minutos' | 'rpe' | 'molestias' | 'enfermedad') => {
+          const isCurrent = competenciaSort.column === columnKey;
+          const isAsc = isCurrent && competenciaSort.direction === 'asc';
+          const isDesc = isCurrent && competenciaSort.direction === 'desc';
+
+          return (
+            <span className="inline-flex flex-col ml-1.5 align-middle select-none gap-[1px]" data-html2canvas-ignore="true">
+              <button 
+                type="button"
+                onClick={() => {
+                  if (isAsc) {
+                    setCompetenciaSort({ column: null, direction: null });
+                  } else {
+                    setCompetenciaSort({ column: columnKey, direction: 'asc' });
+                  }
+                }}
+                className={`p-0.5 hover:text-red-500 transition-all cursor-pointer ${isAsc ? 'text-red-600 scale-125' : 'text-slate-300'}`}
+                title="Sorteo Ascendente"
+              >
+                <svg className="w-2.5 h-2.5 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 4L4 12H20L12 4Z" />
+                </svg>
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  if (isDesc) {
+                    setCompetenciaSort({ column: null, direction: null });
+                  } else {
+                    setCompetenciaSort({ column: columnKey, direction: 'desc' });
+                  }
+                }}
+                className={`p-0.5 hover:text-red-500 transition-all cursor-pointer ${isDesc ? 'text-red-600 scale-125' : 'text-slate-300'}`}
+                title="Sorteo Descendente"
+              >
+                <svg className="w-2.5 h-2.5 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 20L4 12H20L12 20Z" />
+                </svg>
+              </button>
+            </span>
+          );
+        };
 
         return (
           <div className="space-y-6 animate-in fade-in duration-500">
@@ -2625,17 +2714,31 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-slate-100">
-                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
-                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
-                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Compromiso</th>
-                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Minutos</th>
-                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">RPE</th>
-                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Molestias</th>
-                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Enfermedad / Síntomas</th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest select-none">
+                        <span className="inline-flex items-center gap-1">Jugador {renderSortButtons('jugador')}</span>
+                      </th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest select-none">
+                        <span className="inline-flex items-center gap-1">Fecha {renderSortButtons('fecha')}</span>
+                      </th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest select-none">
+                        <span className="inline-flex items-center gap-1">Compromiso {renderSortButtons('compromiso')}</span>
+                      </th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center select-none">
+                        <span className="inline-flex items-center justify-center gap-1">Minutos {renderSortButtons('minutos')}</span>
+                      </th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center select-none">
+                        <span className="inline-flex items-center justify-center gap-1">RPE {renderSortButtons('rpe')}</span>
+                      </th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest select-none">
+                        <span className="inline-flex items-center gap-1">Molestias {renderSortButtons('molestias')}</span>
+                      </th>
+                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest select-none">
+                        <span className="inline-flex items-center gap-1">Enfermedad / Síntomas {renderSortButtons('enfermedad')}</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {displayedCompetenciaReports.length === 0 ? (
+                    {sortedReports.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="py-20 text-center text-slate-300 font-black uppercase italic tracking-widest">
                           Sin reportes registrados en este periodo

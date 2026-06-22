@@ -50,7 +50,8 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCate
     minutes: 90,
     rpe: 7,
     sorenessAreas: [] as string[],
-    illnessSymptoms: [] as string[]
+    illnessSymptoms: [] as string[],
+    date: new Date().toISOString().split('T')[0]
   });
 
   useEffect(() => {
@@ -70,7 +71,8 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCate
           minutes: 0,
           rpe: 0,
           sorenessAreas: [],
-          illnessSymptoms: []
+          illnessSymptoms: [],
+          date: formData.date
         });
         return;
       }
@@ -127,6 +129,16 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCate
 
         {!noMatchOrSuspended && (
           <div className="space-y-6 animate-in fade-in slide-in-from-top-1 duration-200">
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">📅 FECHA DEL PARTIDO</label>
+              <input 
+                type="date"
+                value={formData.date}
+                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              />
+            </div>
+
             <div>
               <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">🛡️ RIVAL</label>
               <select 
