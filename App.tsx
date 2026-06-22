@@ -562,7 +562,13 @@ export default function App() {
           if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
             const recoveredId = Number(session.user.user_metadata.player_id);
             console.log("Recuperando player_id desde metadata:", recoveredId);
-            await supabase.from('profiles').update({ player_id: recoveredId }).eq('id', session.user.id);
+            await supabase.from('profiles').upsert({
+              id: session.user.id,
+              player_id: recoveredId,
+              role: 'player',
+              email: session.user.email || null,
+              club_name: userData.club_name
+            });
             userData.player_id = recoveredId;
           }
 
@@ -716,7 +722,13 @@ export default function App() {
       // AUTO-POBLAR EMAIL si falta en la tabla profiles
       if (userData.role && !userData.email && session.user.email) {
         console.log("Actualizando email en perfil...");
-        supabase.from('profiles').update({ email: session.user.email }).eq('id', session.user.id).then();
+        supabase.from('profiles').upsert({
+          id: session.user.id,
+          role: userData.role,
+          player_id: userData.player_id,
+          club_name: userData.club_name,
+          email: session.user.email
+        }).then();
       }
 
       // NUEVO: RECOVERY FROM LEGACY CSV MAPPING
@@ -784,7 +796,13 @@ export default function App() {
       if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
         const recoveredId = Number(session.user.user_metadata.player_id);
         console.log("Recuperando player_id desde metadata en login:", recoveredId);
-        await supabase.from('profiles').update({ player_id: recoveredId }).eq('id', session.user.id);
+        await supabase.from('profiles').upsert({
+          id: session.user.id,
+          player_id: recoveredId,
+          role: 'player',
+          email: session.user.email || null,
+          club_name: userData.club_name
+        });
         userData.player_id = recoveredId;
       }
       

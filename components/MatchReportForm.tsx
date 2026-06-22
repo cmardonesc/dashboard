@@ -1,26 +1,33 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Category } from '../types';
 import { BODY_PARTS } from '../constants';
 
 interface MatchReportFormProps {
   onSubmit: (data: any) => void;
+  defaultCategory?: Category;
 }
 
 type MatchStep = 'context' | 'load' | 'soreness' | 'illness';
 
-const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit }) => {
+const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCategory }) => {
   const [step, setStep] = useState<MatchStep>('context');
   const [view, setView] = useState<'ANTERIOR' | 'POSTERIOR'>('ANTERIOR');
   const [formData, setFormData] = useState({
     rival: '',
-    category: 'Sub-20' as Category,
+    category: (defaultCategory || Category.SUB_17) as Category,
     result: 'GANÓ' as 'GANÓ' | 'EMPATÓ' | 'PERDIÓ',
     minutes: 90,
     rpe: 7,
     sorenessAreas: [] as string[],
     illnessSymptoms: [] as string[]
   });
+
+  useEffect(() => {
+    if (defaultCategory) {
+      setFormData(prev => ({ ...prev, category: defaultCategory }));
+    }
+  }, [defaultCategory]);
 
   const handleNext = () => {
     if (step === 'context') setStep('load');
@@ -122,11 +129,28 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit }) => {
       <div className="space-y-8">
         <div>
           <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">⏱️ MINUTOS JUGADOS</label>
+          <div className="flex gap-2 mb-4 overflow-x-auto py-1">
+            {[90, 75, 60, 45, 30, 15, 0].map((presetTime) => (
+              <button
+                key={presetTime}
+                type="button"
+                onClick={() => setFormData({ ...formData, minutes: presetTime })}
+                className={`py-2 px-4 rounded-xl text-xs font-black tracking-tighter transition-all shrink-0 ${
+                  formData.minutes === presetTime 
+                    ? 'bg-[#0b1220] text-white shadow-md' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {presetTime}'
+              </button>
+            ))}
+          </div>
           <input 
             type="number"
             value={formData.minutes}
             onChange={(e) => setFormData({ ...formData, minutes: parseInt(e.target.value) || 0 })}
             className="w-full bg-slate-50 border-none rounded-2xl px-8 py-5 text-xl font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="Minutos jugados..."
           />
         </div>
 

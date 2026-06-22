@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react'
-import { User, WellnessData, TrainingLoadData, GPSData } from '../types'
+import { User, WellnessData, TrainingLoadData, GPSData, Category } from '../types'
 import { supabase } from '../lib/supabase'
 import { logActivity } from '../lib/activityLogger'
 import WellnessForm from './WellnessForm'
@@ -97,7 +97,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       // Verificar si el jugador existe
       const { data: pData, error: pErr } = await supabase
         .from('players')
-        .select('player_id, nombre, apellido1')
+        .select('player_id, nombre, apellido1, id_club')
         .eq('player_id', pid)
         .maybeSingle();
       
@@ -105,6 +105,22 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       if (!pData) {
         alert("❌ ID NO ENCONTRADO: Verifica que tu ID sea el correcto (consulta a tu preparador físico).");
         return;
+      }
+
+      let clubName: string | null = null;
+      if (pData.id_club) {
+        try {
+          const { data: cData } = await supabase
+            .from('clubes')
+            .select('nombre')
+            .eq('id_club', pData.id_club)
+            .maybeSingle();
+          if (cData) {
+            clubName = cData.nombre;
+          }
+        } catch (clubErr) {
+          console.warn("No se pudo obtener el nombre del club:", clubErr);
+        }
       }
 
       // Intentar actualizar el perfil
@@ -117,10 +133,16 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         return;
       }
 
+      // Usar upsert en lugar de update para ser robustos ante cuentas creadas con master-bypass (mock ID)
       const { error: upError } = await supabase
         .from('profiles')
-        .update({ player_id: pid, email: player.email || null })
-        .eq('id', player.id);
+        .upsert({
+          id: player.id,
+          player_id: pid,
+          email: player.email || null,
+          role: 'player',
+          club_name: clubName
+        });
       
       if (upError) throw upError;
 
@@ -370,16 +392,20 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
       const today = new Date().toISOString().split('T')[0];
 
+      const matchResultValue = data.resultado !== undefined ? data.resultado : data.result;
+      const matchMinutesValue = data.minutos !== undefined ? data.minutos : data.minutes;
+
       const payload = {
         player_id: player.player_id,
         fecha: today,
         rival: data.rival,
-        resultado: data.resultado,
-        minutos_jugados: data.minutos,
+        resultado: matchResultValue,
+        minutos_jugados: matchMinutesValue,
         rpe: data.rpe,
         molestias: data.sorenessAreas.join(', '),
         enfermedad: data.illnessSymptoms.join(', '),
-        created_by: user?.id
+        created_by: user?.id,
+        Categoria: data.category || data.categoria || null
       };
 
       let saveError;
@@ -402,9 +428,9 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             player_id: player.player_id,
             session_date: today,
             rpe: data.rpe,
-            duration_min: Number(data.minutos) || 90,
+            duration_min: Number(matchMinutesValue) || 90,
             type: 'MATCH',
-            molestias: `[Partido vs ${data.rival || 'Desconocido'} - Resultado: ${data.resultado || 'Titular'}] | ` + (data.sorenessAreas.join(', ') || 'Sin molestias'),
+            molestias: `[Partido vs ${data.rival || 'Desconocido'} - Resultado: ${matchResultValue || 'Titular'}] | ` + (data.sorenessAreas.join(', ') || 'Sin molestias'),
             enfermedad: data.illnessSymptoms.join(', ') || null,
             session_index: 2, // Se registra con session_index 2 para no chocar si ya envió un check-out previo en index 1
             created_by: user?.id
@@ -754,7 +780,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       case 'reportes_match':
         return (
           <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <MatchReportForm onSubmit={handleMatchSubmit} />
+            <MatchReportForm onSubmit={handleMatchSubmit} defaultCategory={player?.category as Category} />
           </div>
         )
       case 'nutricion_antropometria':
