@@ -1188,7 +1188,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         : unifiedCompetenciaReports;
 
       const doc = new jsPDF({
-        orientation: 'p',
+        orientation: 'l',
         unit: 'mm',
         format: 'a4'
       });
@@ -1196,191 +1196,273 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       const primaryColor = [2, 66, 140] as [number, number, number];
       const secondaryColor = [226, 35, 26] as [number, number, number];
       const darkColor = [26, 35, 51] as [number, number, number];
-      const margin = 12;
+      const margin = 8;
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
 
-      const itemsPerPage = 10;
-      const totalPages = Math.ceil(activeReports.length / itemsPerPage) || 1;
+      // --- TOP COLOR BAR ---
+      doc.setFillColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.rect(0, 0, pageWidth, 4, 'F');
+
+      // --- CONTAINER HEADER (DARK NAVY RIBBON) ---
+      doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
+      doc.rect(margin, 8, pageWidth - (margin * 2), 16, 'F');
+
+      // Left Title Block
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.rect(margin, 8, 60, 16, 'F');
       
-      for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
-        if (pageIdx > 0) doc.addPage();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(255, 255, 255);
+      doc.text('REPORTE DE COMPETENCIA', margin + 6, 18);
 
-        // --- TOP COLOR BAR ---
-        doc.setFillColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-        doc.rect(0, 0, pageWidth, 4, 'F');
-
-        // --- CONTAINER HEADER (DARK NAVY RIBBON) ---
-        doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
-        doc.rect(margin, 10, pageWidth - (margin * 2), 24, 'F');
-
-        // Left Title Block
-        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.rect(margin, 10, 60, 24, 'F');
-        
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.setTextColor(255, 255, 255);
-        doc.text('REPORTE DE', margin + 6, 19);
-        doc.text('COMPETENCIA', margin + 6, 24);
-
-        // Logo
-        const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
-        try {
-          doc.addImage(logoUrl, 'PNG', margin + 70, 12, 20, 20);
-        } catch (e) {
-          console.error("Error loading logo for PDF:", e);
-        }
-
-        // Category text
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        doc.setTextColor(255, 255, 255);
-        doc.text('SELECCIÓN NACIONAL', margin + 94, 18);
-        
-        doc.setFontSize(9);
-        doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-        const catLabel = selectedMicro ? formatCategoryLabel(selectedMicro.category_id) : 'CATEGORÍA';
-        doc.text(catLabel.toUpperCase(), margin + 94, 23);
-
-        // --- METADATA BOXES ---
-        const boxY = 38;
-        const boxW = (pageWidth - (margin * 2) - 8) / 3;
-        const boxH = 14;
-
-        // Box 1: Proceso
-        doc.setFillColor(245, 247, 250);
-        doc.roundedRect(margin, boxY, boxW, boxH, 2, 2, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
-        doc.setTextColor(140, 140, 140);
-        doc.text('PROCESO / MICROCICLO', margin + 4, boxY + 4);
-        doc.setFontSize(8);
-        doc.setTextColor(40, 40, 40);
-        const microText = selectedMicro?.nombre_display || `MICROCICLO #${selectedMicro?.micro_number || selectedMicro?.id || '—'}`;
-        doc.text(microText.toUpperCase(), margin + 4, boxY + 10);
-
-        // Box 2: Periodo
-        doc.setFillColor(245, 247, 250);
-        doc.roundedRect(margin + boxW + 4, boxY, boxW, boxH, 2, 2, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
-        doc.setTextColor(140, 140, 140);
-        doc.text('PERIODO', margin + boxW + 8, boxY + 4);
-        doc.setFontSize(8);
-        doc.setTextColor(40, 40, 40);
-        const periodText = selectedMicro ? `${new Date(selectedMicro.start_date + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })} AL ${new Date(selectedMicro.end_date + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : '—';
-        doc.text(periodText.toUpperCase(), margin + boxW + 8, boxY + 10);
-
-        // Box 3: Concentracion
-        doc.setFillColor(245, 247, 250);
-        doc.roundedRect(margin + (boxW * 2) + 8, boxY, boxW, boxH, 2, 2, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
-        doc.setTextColor(140, 140, 140);
-        doc.text('CONCENTRACIÓN', margin + (boxW * 2) + 12, boxY + 4);
-        doc.setFontSize(8);
-        doc.setTextColor(40, 40, 40);
-        const concText = selectedMicro?.city ? `${selectedMicro.city}, ${selectedMicro.country || 'CHILE'}` : 'SANTIAGO, CHILE';
-        doc.text(concText.toUpperCase(), margin + (boxW * 2) + 12, boxY + 10);
-
-        // --- STATS KPIs (Page 1 Only) ---
-        let tableStartY = 56;
-        if (pageIdx === 0) {
-          const kpiY = 56;
-          const kpiW = (pageWidth - (margin * 2) - 12) / 4;
-          const kpiH = 16;
-
-          // KPI 1: Reportes
-          doc.setFillColor(245, 247, 250);
-          doc.roundedRect(margin, kpiY, kpiW, kpiH, 2, 2, 'F');
-          doc.setFontSize(6);
-          doc.setTextColor(140, 140, 140);
-          doc.text('REPORTES ENVIADOS', margin + 3, kpiY + 4);
-          doc.setFontSize(10);
-          doc.setTextColor(2, 66, 140);
-          doc.text(`${competenciaStats.responded} / ${competenciaStats.total}`, margin + 3, kpiY + 11);
-
-          // KPI 2: Minutos
-          doc.setFillColor(245, 247, 250);
-          doc.roundedRect(margin + kpiW + 4, kpiY, kpiW, kpiH, 2, 2, 'F');
-          doc.setFontSize(6);
-          doc.setTextColor(140, 140, 140);
-          doc.text('PROM. MINUTOS', margin + kpiW + 7, kpiY + 4);
-          doc.setFontSize(10);
-          doc.setTextColor(40, 40, 40);
-          doc.text(`${competenciaStats.avgMinutes} min`, margin + kpiW + 7, kpiY + 11);
-
-          // KPI 3: RPE
-          doc.setFillColor(245, 247, 250);
-          doc.roundedRect(margin + (kpiW * 2) + 8, kpiY, kpiW, kpiH, 2, 2, 'F');
-          doc.setFontSize(6);
-          doc.setTextColor(140, 140, 140);
-          doc.text('ESFUERZO RPE PROM.', margin + (kpiW * 2) + 11, kpiY + 4);
-          doc.setFontSize(10);
-          doc.setTextColor(40, 40, 40);
-          doc.text(`${competenciaStats.avgRpe}`, margin + (kpiW * 2) + 11, kpiY + 11);
-
-          // KPI 4: Alertas
-          doc.setFillColor(245, 247, 250);
-          doc.roundedRect(margin + (kpiW * 3) + 12, kpiY, kpiW, kpiH, 2, 2, 'F');
-          doc.setFontSize(6);
-          doc.setTextColor(140, 140, 140);
-          doc.text('JUGADORES CON ALERTA', margin + (kpiW * 3) + 15, kpiY + 4);
-          doc.setFontSize(10);
-          doc.setTextColor(competenciaStats.alerts > 0 ? 226 : 40, competenciaStats.alerts > 0 ? 35 : 40, competenciaStats.alerts > 0 ? 26 : 40);
-          doc.text(`${competenciaStats.alerts}`, margin + (kpiW * 3) + 15, kpiY + 11);
-
-          tableStartY = 76;
-        }
-
-        // Chunk rows
-        const chunk = activeReports.slice(pageIdx * itemsPerPage, (pageIdx + 1) * itemsPerPage);
-        const tableRows = chunk.map(r => [
-          `${r.nombre || ''} ${r.apellido1 || ''}\n${r.club_nombre || 'SIN CLUB'}`,
-          r.respondio && r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString() : '-',
-          r.respondio ? `VS ${r.rival || '—'}${r.categoria ? `\n(${String(r.categoria).replace('_', ' ').toUpperCase()})` : ''}` : '-',
-          r.respondio && r.minutos_jugados !== null ? `${r.minutos_jugados}'` : '-',
-          r.respondio && r.rpe !== null ? `${r.rpe}/10` : '-',
-          r.respondio ? (r.molestias || 'Sin molestias') : '-',
-          r.respondio ? (r.enfermedad || 'Sin Síntomas') : '-'
-        ]);
-
-        autoTable(doc, {
-          startY: tableStartY,
-          head: [['JUGADOR', 'FECHA', 'COMPROMISO', 'MINUTOS', 'RPE', 'MOLESTIAS', 'ENFERMEDAD / SÍNTOMAS']],
-          body: tableRows,
-          theme: 'striped',
-          headStyles: {
-            fillColor: primaryColor,
-            textColor: [255, 255, 255],
-            fontSize: 7.5,
-            fontStyle: 'bold',
-            halign: 'center'
-          },
-          bodyStyles: {
-            fontSize: 7,
-            textColor: [60, 60, 60],
-            valign: 'middle'
-          },
-          columnStyles: {
-            0: { cellWidth: 35, fontStyle: 'bold' },
-            1: { cellWidth: 18, halign: 'center' },
-            2: { cellWidth: 35 },
-            3: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
-            4: { cellWidth: 12, halign: 'center' },
-            5: { cellWidth: 35 },
-            6: { cellWidth: 35 }
-          },
-          margin: { left: margin, right: margin }
-        });
-
-        // Footer on each page
-        doc.setFontSize(7);
-        doc.setTextColor(170, 170, 170);
-        doc.text(`La Roja Performance - Reporte de Competencia | Hoja ${pageIdx + 1} de ${totalPages}`, margin, pageHeight - 8);
-        doc.text('CONFIDENCIAL — SELECCIÓN NACIONAL DE CHILE', pageWidth - margin, pageHeight - 8, { align: 'right' });
+      // Logo
+      const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+      try {
+        doc.addImage(logoUrl, 'PNG', margin + 68, 9, 14, 14);
+      } catch (e) {
+        console.error("Error loading logo for PDF:", e);
       }
+
+      // Category text
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('SELECCIÓN NACIONAL', margin + 88, 15);
+      
+      doc.setFontSize(8);
+      doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      const catLabel = selectedMicro ? formatCategoryLabel(selectedMicro.category_id) : 'CATEGORÍA';
+      doc.text(catLabel.toUpperCase(), margin + 88, 19);
+
+      // --- METADATA BOXES ---
+      const boxY = 28;
+      const boxW = (pageWidth - (margin * 2) - 8) / 3;
+      const boxH = 10;
+
+      // Box 1: Proceso
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(margin, boxY, boxW, boxH, 1.5, 1.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.5);
+      doc.setTextColor(140, 140, 140);
+      doc.text('PROCESO / MICROCICLO', margin + 4, boxY + 3.5);
+      doc.setFontSize(7.5);
+      doc.setTextColor(40, 40, 40);
+      const microText = selectedMicro?.nombre_display || `MICROCICLO #${selectedMicro?.micro_number || selectedMicro?.id || '—'}`;
+      doc.text(microText.toUpperCase(), margin + 4, boxY + 7.5);
+
+      // Box 2: Periodo
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(margin + boxW + 4, boxY, boxW, boxH, 1.5, 1.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.5);
+      doc.setTextColor(140, 140, 140);
+      doc.text('PERIODO', margin + boxW + 8, boxY + 3.5);
+      doc.setFontSize(7.5);
+      doc.setTextColor(40, 40, 40);
+      const periodText = selectedMicro ? `${new Date(selectedMicro.start_date + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })} AL ${new Date(selectedMicro.end_date + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : '—';
+      doc.text(periodText.toUpperCase(), margin + boxW + 8, boxY + 7.5);
+
+      // Box 3: Ciudad
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(margin + (boxW * 2) + 8, boxY, boxW, boxH, 1.5, 1.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.5);
+      doc.setTextColor(140, 140, 140);
+      doc.text('CIUDAD', margin + (boxW * 2) + 12, boxY + 3.5);
+      doc.setFontSize(7.5);
+      doc.setTextColor(40, 40, 40);
+      const concText = selectedMicro?.city ? `${selectedMicro.city}, ${selectedMicro.country || 'CHILE'}` : 'SANTIAGO, CHILE';
+      doc.text(concText.toUpperCase(), margin + (boxW * 2) + 12, boxY + 7.5);
+
+      // --- STATS KPIs ---
+      const kpiY = 41;
+      const kpiW = (pageWidth - (margin * 2) - 12) / 4;
+      const kpiH = 10;
+
+      // KPI 1: Reportes
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(margin, kpiY, kpiW, kpiH, 1.5, 1.5, 'F');
+      doc.setFontSize(5);
+      doc.setTextColor(140, 140, 140);
+      doc.text('REPORTES ENVIADOS', margin + 3, kpiY + 3);
+      doc.setFontSize(8.5);
+      doc.setTextColor(2, 66, 140);
+      doc.text(`${competenciaStats.responded} / ${competenciaStats.total}`, margin + 3, kpiY + 7.5);
+
+      // KPI 2: Minutos
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(margin + kpiW + 4, kpiY, kpiW, kpiH, 1.5, 1.5, 'F');
+      doc.setFontSize(5);
+      doc.setTextColor(140, 140, 140);
+      doc.text('PROM. MINUTOS', margin + kpiW + 7, kpiY + 3);
+      doc.setFontSize(8.5);
+      doc.setTextColor(40, 40, 40);
+      doc.text(`${competenciaStats.avgMinutes} min`, margin + kpiW + 7, kpiY + 7.5);
+
+      // KPI 3: RPE
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(margin + (kpiW * 2) + 8, kpiY, kpiW, kpiH, 1.5, 1.5, 'F');
+      doc.setFontSize(5);
+      doc.setTextColor(140, 140, 140);
+      doc.text('ESFUERZO RPE PROM.', margin + (kpiW * 2) + 11, kpiY + 3);
+      doc.setFontSize(8.5);
+      doc.setTextColor(40, 40, 40);
+      doc.text(`${competenciaStats.avgRpe}`, margin + (kpiW * 2) + 11, kpiY + 7.5);
+
+      // KPI 4: Alertas
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(margin + (kpiW * 3) + 12, kpiY, kpiW, kpiH, 1.5, 1.5, 'F');
+      doc.setFontSize(5);
+      doc.setTextColor(140, 140, 140);
+      doc.text('JUGADORES CON ALERTA', margin + (kpiW * 3) + 15, kpiY + 3);
+      doc.setFontSize(8.5);
+      doc.setTextColor(competenciaStats.alerts > 0 ? 226 : 40, competenciaStats.alerts > 0 ? 35 : 40, competenciaStats.alerts > 0 ? 26 : 40);
+      doc.text(`${competenciaStats.alerts}`, margin + (kpiW * 3) + 15, kpiY + 7.5);
+
+      const tableStartY = 54;
+
+      // Split active reports into two equal columns
+      const halfLength = Math.ceil(activeReports.length / 2);
+      const leftReports = activeReports.slice(0, halfLength);
+      const rightReports = activeReports.slice(halfLength);
+
+      const formatRow = (r: any) => [
+        `${r.nombre || ''} ${r.apellido1 || ''}\n${r.club_nombre || 'SIN CLUB'}`,
+        r.respondio && r.fecha 
+          ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }) 
+          : '-',
+        r.respondio ? `VS ${r.rival || '—'}${r.categoria ? `\n(${String(r.categoria).replace('_', ' ').toUpperCase()})` : ''}` : '-',
+        r.respondio && r.minutos_jugados !== null ? `${r.minutos_jugados}'` : '-',
+        r.respondio && r.rpe !== null ? `${r.rpe}/10` : '-',
+        r.respondio ? (r.molestias || 'Sin molestias') : '-',
+        r.respondio ? (r.enfermedad || 'Sin Síntomas') : '-'
+      ];
+
+      const leftRows = leftReports.map(formatRow);
+      const rightRows = rightReports.map(formatRow);
+
+      const spacing = 4;
+      const colWidth = (pageWidth - (margin * 2) - spacing) / 2;
+
+      const cellStylesParser = (data: any) => {
+        if (data.section === 'body') {
+          const valStr = (typeof data.cell.raw === 'string' ? data.cell.raw : (data.cell.text && data.cell.text.join(' ')) || '').trim();
+          
+          // Columna RPE: Index 4
+          if (data.column.index === 4) {
+            if (valStr && valStr !== '-') {
+              const rpeNum = parseInt(valStr.split('/')[0], 10);
+              if (!isNaN(rpeNum)) {
+                if (rpeNum > 7) {
+                  data.cell.styles.textColor = [220, 38, 38]; // red-600
+                  data.cell.styles.fontStyle = 'bold';
+                } else if (rpeNum > 4) {
+                  data.cell.styles.textColor = [217, 119, 6]; // amber-600
+                  data.cell.styles.fontStyle = 'bold';
+                } else if (rpeNum > 0) {
+                  data.cell.styles.textColor = [5, 150, 105]; // emerald-600
+                  data.cell.styles.fontStyle = 'bold';
+                }
+              }
+            }
+          }
+          // Columna MOLESTIAS: Index 5
+          if (data.column.index === 5) {
+            if (valStr && valStr !== '-') {
+              const valLower = valStr.toLowerCase();
+              if (valLower !== 'sin molestias' && valLower !== 'ninguno' && valLower !== 'ninguna' && valLower.trim() !== '') {
+                data.cell.styles.textColor = [220, 38, 38]; // red-600
+                data.cell.styles.fontStyle = 'bold';
+              } else {
+                data.cell.styles.textColor = [160, 160, 160]; // Soft grey
+              }
+            }
+          }
+          // Columna ENFERMEDAD / SÍNTOMAS: Index 6
+          if (data.column.index === 6) {
+            if (valStr && valStr !== '-') {
+              const valLower = valStr.toLowerCase();
+              if (valLower !== 'sin síntomas' && valLower !== 'sin sintomas' && valLower.trim() !== '') {
+                data.cell.styles.textColor = [220, 38, 38]; // red-600
+                data.cell.styles.fontStyle = 'bold';
+              } else {
+                data.cell.styles.textColor = [160, 160, 160]; // Soft grey
+              }
+            }
+          }
+        }
+      };
+
+      const tableHeaders = [['JUGADOR', 'FECHA', 'COMPROMISO', 'MIN', 'RPE', 'MOLESTIAS', 'ENF / SÍNTOMAS']];
+
+      const tableColumnStyles = {
+        0: { cellWidth: 26, fontStyle: 'bold' as const },
+        1: { cellWidth: 10, halign: 'center' as const },
+        2: { cellWidth: 24 },
+        3: { cellWidth: 8, halign: 'center' as const, fontStyle: 'bold' as const },
+        4: { cellWidth: 8, halign: 'center' as const },
+        5: { cellWidth: 31 },
+        6: { cellWidth: 31 }
+      };
+
+      // Draw Left Column Table
+      autoTable(doc, {
+        startY: tableStartY,
+        head: tableHeaders,
+        body: leftRows,
+        theme: 'striped',
+        tableWidth: colWidth,
+        margin: { left: margin },
+        styles: {
+          cellPadding: 0.6,
+          fontSize: 5.2,
+          textColor: [40, 40, 40],
+          valign: 'middle'
+        },
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 5.4,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        columnStyles: tableColumnStyles,
+        didParseCell: cellStylesParser
+      });
+
+      // Draw Right Column Table
+      autoTable(doc, {
+        startY: tableStartY,
+        head: tableHeaders,
+        body: rightRows,
+        theme: 'striped',
+        tableWidth: colWidth,
+        margin: { left: margin + colWidth + spacing },
+        styles: {
+          cellPadding: 0.6,
+          fontSize: 5.2,
+          textColor: [40, 40, 40],
+          valign: 'middle'
+        },
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 5.4,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        columnStyles: tableColumnStyles,
+        didParseCell: cellStylesParser
+      });
+
+      // Footer
+      doc.setFontSize(6);
+      doc.setTextColor(170, 170, 170);
+      doc.text(`La Roja Performance - Reporte de Competencia | Hoja 1 de 1`, margin, pageHeight - 5);
+      doc.text('CONFIDENCIAL — SELECCIÓN NACIONAL DE CHILE', pageWidth - margin, pageHeight - 5, { align: 'right' });
 
       const microName = selectedMicro?.micro_number || selectedMicro?.id || 'microciclo';
       const categoryName = selectedMicro ? formatCategoryLabel(selectedMicro.category_id).replace(/\s+/g, '-').toLowerCase() : 'categoria';
@@ -2411,7 +2493,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                   <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
                     <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                     <div className="flex flex-col min-w-0">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">CONCENTRACIÓN</span>
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">CIUDAD</span>
                       <span className="text-xs font-black text-slate-800 uppercase tracking-tight mt-1.5 truncate">
                         {selectedMicro?.city ? `${selectedMicro.city}, ${selectedMicro.country || 'CHILE'}` : 'SANTIAGO, CHILE'}
                       </span>
@@ -2644,8 +2726,16 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                           </td>
                           <td className="py-5">
                             {report.respondio ? (
-                              <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-tight leading-relaxed max-w-[150px]">
-                                {report.molestias || 'Sin molestias'}
+                              <div className="text-[9.5px] font-bold uppercase tracking-tight leading-relaxed max-w-[150px]">
+                                {report.molestias && 
+                                 report.molestias.trim() !== '' && 
+                                 report.molestias.toLowerCase() !== 'sin molestias' && 
+                                 report.molestias.toLowerCase() !== 'ninguno' && 
+                                 report.molestias.toLowerCase() !== 'ninguna' ? (
+                                  <span className="text-red-500 font-extrabold">{report.molestias}</span>
+                                ) : (
+                                  <span className="text-slate-400 font-medium">{report.molestias || 'Sin molestias'}</span>
+                                )}
                               </div>
                             ) : (
                               <span className="text-slate-400 font-medium italic">-</span>
@@ -2653,11 +2743,15 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                           </td>
                           <td className="py-5">
                             {report.respondio ? (
-                              <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-tight leading-relaxed max-w-[150px]">
-                                {report.enfermedad ? (
-                                  <span className="text-red-500 font-black">{report.enfermedad}</span>
+                              <div className="text-[9.5px] font-bold uppercase tracking-tight leading-relaxed max-w-[150px]">
+                                {report.enfermedad && 
+                                 report.enfermedad.trim() !== '' && 
+                                 report.enfermedad.toLowerCase() !== 'sin síntomas' && 
+                                 report.enfermedad.toLowerCase() !== 'sin sintomas' && 
+                                 report.enfermedad.toLowerCase() !== 'ninguno' ? (
+                                  <span className="text-red-500 font-extrabold">{report.enfermedad}</span>
                                 ) : (
-                                  <span className="text-slate-400">Sin Síntomas</span>
+                                  <span className="text-slate-400 font-medium">{report.enfermedad || 'Sin Síntomas'}</span>
                                 )}
                               </div>
                             ) : (
