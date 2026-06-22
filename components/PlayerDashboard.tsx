@@ -392,8 +392,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
       const today = new Date().toISOString().split('T')[0];
 
-      const matchResultValue = data.resultado !== undefined ? data.resultado : data.result;
-      const matchMinutesValue = data.minutos !== undefined ? data.minutos : data.minutes;
+      const matchResultValue = data.resultado || data.result || 'GANÓ';
+      const matchMinutesValue = data.minutos !== undefined ? data.minutos : (data.minutes !== undefined ? data.minutes : 90);
 
       const payload = {
         player_id: player.player_id,
@@ -407,6 +407,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         created_by: user?.id,
         Categoria: data.category || data.categoria || null
       };
+
+      console.log('Sending match report payload to Supabase:', payload);
 
       let saveError;
       try {

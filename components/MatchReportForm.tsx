@@ -10,13 +10,43 @@ interface MatchReportFormProps {
 
 type MatchStep = 'context' | 'load' | 'soreness' | 'illness';
 
+const CHILEAN_TEAMS = [
+  'Colo-Colo',
+  'Universidad de Chile',
+  'Universidad Católica',
+  'Unión Española',
+  'Coquimbo Unido',
+  'Deportes Iquique',
+  'Everton',
+  'Audax Italiano',
+  'Santiago Wanderers',
+  'Huachipato',
+  'O\'Higgins',
+  'Cobresal',
+  'Palestino',
+  'Ñublense',
+  'Cobreloa',
+  'Deportes Copiapó',
+  'Unión La Calera',
+  'Deportes Antofagasta',
+  'Deportes Temuco',
+  'Rangers',
+  'Curicó Unido',
+  'San Luis de Quillota',
+];
+
 const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCategory }) => {
   const [step, setStep] = useState<MatchStep>('context');
   const [view, setView] = useState<'ANTERIOR' | 'POSTERIOR'>('ANTERIOR');
+  const [noMatchOrSuspended, setNoMatchOrSuspended] = useState(false);
+  const [selectedRival, setSelectedRival] = useState('');
+  const [customRival, setCustomRival] = useState('');
+
   const [formData, setFormData] = useState({
     rival: '',
     category: (defaultCategory || Category.SUB_17) as Category,
     result: 'GANÓ' as 'GANÓ' | 'EMPATÓ' | 'PERDIÓ',
+    resultado: 'GANÓ' as 'GANÓ' | 'EMPATÓ' | 'PERDIÓ',
     minutes: 90,
     rpe: 7,
     sorenessAreas: [] as string[],
@@ -30,7 +60,22 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCate
   }, [defaultCategory]);
 
   const handleNext = () => {
-    if (step === 'context') setStep('load');
+    if (step === 'context') {
+      if (noMatchOrSuspended) {
+        onSubmit({
+          rival: 'PARTIDO SUSPENDIDO / SIN FECHA',
+          category: formData.category,
+          result: 'EMPATÓ',
+          resultado: 'EMPATÓ',
+          minutes: 0,
+          rpe: 0,
+          sorenessAreas: [],
+          illnessSymptoms: []
+        });
+        return;
+      }
+      setStep('load');
+    }
     else if (step === 'load') setStep('soreness');
     else if (step === 'soreness') setStep('illness');
     else onSubmit(formData);
@@ -63,58 +108,107 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCate
       </div>
 
       <div className="space-y-6">
-        <div>
-          <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">🛡️ RIVAL</label>
+        {/* CHECKBOX PARA TRATAR PARTIDO SUSPENDIDO */}
+        <div className="flex items-center gap-3 p-4 bg-red-50 rounded-2xl border border-red-100/60 mb-2 hover:bg-red-100/30 transition-all">
           <input 
-            type="text"
-            placeholder="Ej: Argentina, Colo Colo..."
-            value={formData.rival}
-            onChange={(e) => setFormData({ ...formData, rival: e.target.value })}
-            className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+            type="checkbox"
+            id="noMatchOrSuspended"
+            checked={noMatchOrSuspended}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setNoMatchOrSuspended(checked);
+            }}
+            className="w-5 h-5 text-red-600 border-red-300 rounded focus:ring-red-500 accent-red-600 cursor-pointer"
           />
+          <label htmlFor="noMatchOrSuspended" className="text-xs font-black text-red-850 uppercase tracking-tight cursor-pointer select-none">
+            No hubo Fecha / Partido Suspendido
+          </label>
         </div>
 
-        <div>
-          <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">📋 CATEGORÍA</label>
-          <select 
-            className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 appearance-none outline-none focus:ring-2 focus:ring-emerald-500"
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value as Category })}
-          >
-            {Object.values(Category).map(cat => <option key={cat} value={cat}>{cat.toUpperCase()}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">🏁 RESULTADO</label>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { id: 'GANÓ', emoji: '🏆', label: 'GANÓ', color: 'text-emerald-500', bg: 'bg-emerald-50' },
-              { id: 'EMPATÓ', emoji: '🤝', label: 'EMPATE', color: 'text-amber-500', bg: 'bg-amber-50' },
-              { id: 'PERDIÓ', emoji: '❌', label: 'PERDIÓ', color: 'text-red-500', bg: 'bg-red-50' },
-            ].map((res) => (
-              <button
-                key={res.id}
-                type="button"
-                onClick={() => setFormData({ ...formData, result: res.id as any })}
-                className={`py-6 rounded-3xl border-2 transition-all flex flex-col items-center gap-2 ${
-                  formData.result === res.id ? 'bg-[#0b1220] border-[#0b1220] text-white' : `bg-white border-slate-50 ${res.color}`
-                }`}
+        {!noMatchOrSuspended && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-top-1 duration-200">
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">🛡️ RIVAL</label>
+              <select 
+                value={selectedRival}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedRival(val);
+                  if (val !== 'OTRO') {
+                    setFormData(prev => ({ ...prev, rival: val }));
+                  } else {
+                    setFormData(prev => ({ ...prev, rival: customRival }));
+                  }
+                }}
+                className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 appearance-none outline-none focus:ring-2 focus:ring-emerald-500 mb-3 cursor-pointer"
               >
-                <span className="text-2xl">{res.emoji}</span>
-                <span className="text-[9px] font-black uppercase tracking-widest">{res.label}</span>
-              </button>
-            ))}
+                <option value="">SELECCIONAR RIVAL...</option>
+                {CHILEAN_TEAMS.map(team => (
+                  <option key={team} value={team}>{team.toUpperCase()}</option>
+                ))}
+                <option value="OTRO">OTRO (ESPECIFICAR)</option>
+              </select>
+
+              {selectedRival === 'OTRO' && (
+                <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                  <input 
+                    type="text"
+                    placeholder="Escribe el nombre del rival..."
+                    value={customRival}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomRival(val);
+                      setFormData(prev => ({ ...prev, rival: val }));
+                    }}
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">📋 CATEGORÍA</label>
+              <select 
+                className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 appearance-none outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                value={formData.category}
+                onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value as Category }))}
+              >
+                {Object.values(Category).map(cat => <option key={cat} value={cat}>{cat.toUpperCase()}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">🏁 RESULTADO</label>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { id: 'GANÓ', emoji: '🏆', label: 'GANÓ', color: 'text-emerald-500', bg: 'bg-emerald-50' },
+                  { id: 'EMPATÓ', emoji: '🤝', label: 'EMPATE', color: 'text-amber-500', bg: 'bg-amber-50' },
+                  { id: 'PERDIÓ', emoji: '❌', label: 'PERDIÓ', color: 'text-red-500', bg: 'bg-red-50' },
+                ].map((res) => (
+                  <button
+                    key={res.id}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, result: res.id as any, resultado: res.id as any }))}
+                    className={`py-6 rounded-3xl border-2 transition-all flex flex-col items-center gap-2 ${
+                      formData.result === res.id ? 'bg-[#0b1220] border-[#0b1220] text-white animate-pulse' : `bg-white border-slate-50 ${res.color}`
+                    }`}
+                  >
+                    <span className="text-2xl">{res.emoji}</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest">{res.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <button 
         type="button" 
         onClick={handleNext}
-        className="w-full mt-10 py-6 bg-[#0b1220] text-white rounded-[28px] text-xs font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-2"
+        className={`w-full mt-10 py-6 text-white rounded-[28px] text-xs font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 transition-all duration-300 ${noMatchOrSuspended ? 'bg-red-650 hover:bg-red-700 shadow-red-100' : 'bg-[#0b1220] hover:bg-slate-800'}`}
       >
-        CONTINUAR RENDIMIENTO ➡️
+        {noMatchOrSuspended ? 'ENVIAR Y CERRAR REPORTE 🏆' : 'CONTINUAR RENDIMIENTO ➡️'}
       </button>
     </div>
   );
