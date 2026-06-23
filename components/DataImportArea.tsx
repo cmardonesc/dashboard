@@ -805,12 +805,12 @@ export default function DataImportArea() {
       }
 
       // Clean data to insert to prevent non-existant column errors (like virtual field 'jugador')
-      const sanitizedData = dataToInsert.map(item => {
+      let sanitizedData = dataToInsert.map(item => {
         const cleanItem: any = {};
         
-        // Only include fields that are defined in config.fields (except the virtual names)
+        // Only include fields that are defined in config.fields
         config.fields.forEach(f => {
-          if (f.key !== 'jugador' && f.key !== 'jugador_nombre' && item[f.key] !== undefined && item[f.key] !== null) {
+          if (item[f.key] !== undefined && item[f.key] !== null) {
             cleanItem[f.key] = item[f.key];
           }
         });
@@ -830,11 +830,138 @@ export default function DataImportArea() {
         return cleanItem;
       });
 
-      const { error } = await supabase.from(config.table).upsert(sanitizedData, {
-        onConflict: config.conflictColumns.join(',')
+      // Filter out records without a valid player_id
+      sanitizedData = sanitizedData.filter(item => {
+        const pId = Number(item.player_id);
+        return !isNaN(pId) && pId > 0;
       });
 
-      if (error) throw error;
+      let uploadError = null;
+      try {
+        const { error } = await supabase.from(config.table).upsert(sanitizedData, {
+          onConflict: config.conflictColumns.join(',')
+        });
+        if (error) {
+          uploadError = error;
+        }
+      } catch (upsertCatchError: any) {
+        uploadError = upsertCatchError;
+      }
+
+      if (uploadError) {
+        console.warn("⚠️ Native upsert failed, attempting custom self-healing merge fallback...", uploadError);
+        
+        try {
+          const tableName = config.table;
+          const conflictCols = config.conflictColumns;
+
+          const dateCol = conflictCols.find(col => ['fecha', 'fecha_medicion', 'fecha_test', 'checkin_date', 'session_date'].includes(col));
+          
+          const validPlayerIds = Array.from(new Set(
+            sanitizedData
+              .map(d => Number(d.player_id))
+              .filter(id => !isNaN(id) && id > 0)
+          ));
+
+          if (validPlayerIds.length === 0) {
+            throw new Error("No hay registros con un ID de jugador registrado en el sistema. Asegúrate de que los nombres de los jugadores en el archivo coincidan exactamente con la base de datos.");
+          }
+
+          let query = supabase.from(tableName).select('*').in('player_id', validPlayerIds);
+
+          if (dateCol) {
+            const uniqDates = Array.from(new Set(sanitizedData.map((d: any) => d[dateCol]).filter(Boolean)));
+            if (uniqDates.length > 0) {
+              query = query.in(dateCol, uniqDates);
+            }
+          }
+
+          const { data: existingData, error: selectError } = await query;
+          if (selectError) throw selectError;
+
+          const existingMap = new Map<string, any>();
+          if (existingData) {
+            existingData.forEach((row: any) => {
+              const key = conflictCols.map(col => String(row[col] ?? '')).join('|');
+              existingMap.set(key, row);
+            });
+          }
+
+          const toInsert: any[] = [];
+          const toUpdate: { id: any; data: any; filters: any }[] = [];
+          const processedKeysInBatch = new Set<string>();
+
+          sanitizedData.forEach(item => {
+            const key = conflictCols.map(col => String(item[col] ?? '')).join('|');
+            
+            // Avoid local batch duplicates
+            if (processedKeysInBatch.has(key)) {
+              const insertIdx = toInsert.findIndex(x => conflictCols.map(col => String(x[col] ?? '')).join('|') === key);
+              if (insertIdx !== -1) {
+                toInsert[insertIdx] = item;
+              } else {
+                const updateIdx = toUpdate.findIndex(x => conflictCols.map(col => String(x.data[col] ?? '')).join('|') === key);
+                if (updateIdx !== -1) {
+                  toUpdate[updateIdx].data = item;
+                }
+              }
+              return;
+            }
+            
+            processedKeysInBatch.add(key);
+            const matchedRow = existingMap.get(key);
+
+            if (matchedRow) {
+              const filters: any = {};
+              conflictCols.forEach(col => {
+                filters[col] = item[col];
+              });
+              toUpdate.push({
+                id: matchedRow.id || null,
+                data: item,
+                filters
+              });
+            } else {
+              toInsert.push(item);
+            }
+          });
+
+          // Perform Inserts in a single batch
+          if (toInsert.length > 0) {
+            const { error: insertErr } = await supabase.from(tableName).insert(toInsert);
+            if (insertErr) throw insertErr;
+          }
+
+          // Perform Updates in safe chunks of 25 parallel requests to avoid DB choke
+          if (toUpdate.length > 0) {
+            const batchSize = 25;
+            for (let i = 0; i < toUpdate.length; i += batchSize) {
+              const chunk = toUpdate.slice(i, i + batchSize);
+              await Promise.all(
+                chunk.map(async (up) => {
+                  let updateQuery = supabase.from(tableName).update(up.data);
+                  if (up.id) {
+                    updateQuery = updateQuery.eq('id', up.id);
+                  } else {
+                    Object.entries(up.filters).forEach(([col, val]) => {
+                      updateQuery = updateQuery.eq(col, val);
+                    });
+                  }
+                  const { error: updateErr } = await updateQuery;
+                  if (updateErr) {
+                    console.error(`Error updating record in fallback merge for ${tableName}:`, updateErr);
+                  }
+                })
+              );
+            }
+          }
+
+          console.log(`✅ Custom fallback merge successfully premium processed: ${toInsert.length} inserts & ${toUpdate.length} updates.`);
+        } catch (fallbackError: any) {
+          console.error("❌ Custom self-healing merge fallback also failed:", fallbackError);
+          throw fallbackError;
+        }
+      }
 
       setMessage({ type: 'success', text: `Se han importado ${dataToInsert.length} registros correctamente.` });
       setCsvData([]);
@@ -1400,13 +1527,105 @@ export default function DataImportArea() {
 
       recordsToInsert = Array.from(aggregatedMap.values());
 
-      const { error } = await supabase.from('gps_import').upsert(recordsToInsert, {
-        onConflict: 'player_id,fecha'
-      });
+      let uploadError = null;
+      try {
+        const { error } = await supabase.from('gps_import').upsert(recordsToInsert, {
+          onConflict: 'player_id,fecha'
+        });
+        if (error) {
+          uploadError = error;
+        }
+      } catch (upsertCatchError: any) {
+        uploadError = upsertCatchError;
+      }
 
-      if (error) {
-        console.error("❌ Error en UPSERT:", error);
-        throw error;
+      if (uploadError) {
+        console.warn("⚠️ Native upsert for gps_import failed, attempting custom self-healing merge fallback...", uploadError);
+        try {
+          const tableName = 'gps_import';
+          const conflictCols = ['player_id', 'fecha'];
+          
+          const validPlayerIds = Array.from(new Set(
+            recordsToInsert
+              .map(d => Number(d.player_id))
+              .filter(id => !isNaN(id) && id > 0)
+          ));
+
+          if (validPlayerIds.length === 0) {
+            throw new Error("No hay registros válidos con un ID de jugador registrado en el sistema.");
+          }
+
+          let query = supabase.from(tableName).select('*').in('player_id', validPlayerIds);
+          const uniqDates = Array.from(new Set(recordsToInsert.map(d => d.fecha).filter(Boolean)));
+          if (uniqDates.length > 0) {
+            query = query.in('fecha', uniqDates);
+          }
+
+          const { data: existingData, error: selectError } = await query;
+          if (selectError) throw selectError;
+
+          const existingMap = new Map<string, any>();
+          if (existingData) {
+            existingData.forEach((row: any) => {
+              const key = conflictCols.map(col => String(row[col] ?? '')).join('|');
+              existingMap.set(key, row);
+            });
+          }
+
+          const toInsert: any[] = [];
+          const toUpdate: { id: any; data: any; filters: any }[] = [];
+
+          recordsToInsert.forEach(item => {
+            const key = conflictCols.map(col => String(item[col] ?? '')).join('|');
+            const matchedRow = existingMap.get(key);
+
+            if (matchedRow) {
+              const filters: any = {};
+              conflictCols.forEach(col => {
+                filters[col] = item[col];
+              });
+              toUpdate.push({
+                id: matchedRow.id || null,
+                data: item,
+                filters
+              });
+            } else {
+              toInsert.push(item);
+            }
+          });
+
+          if (toInsert.length > 0) {
+            const { error: insertErr } = await supabase.from(tableName).insert(toInsert);
+            if (insertErr) throw insertErr;
+          }
+
+          if (toUpdate.length > 0) {
+            const batchSize = 25;
+            for (let i = 0; i < toUpdate.length; i += batchSize) {
+              const chunk = toUpdate.slice(i, i + batchSize);
+              await Promise.all(
+                chunk.map(async (up) => {
+                  let updateQuery = supabase.from(tableName).update(up.data);
+                  if (up.id) {
+                    updateQuery = updateQuery.eq('id', up.id);
+                  } else {
+                    Object.entries(up.filters).forEach(([col, val]) => {
+                      updateQuery = updateQuery.eq(col, val);
+                    });
+                  }
+                  const { error: updateErr } = await updateQuery;
+                  if (updateErr) {
+                    console.error(`Error updating record in fallback merge for ${tableName}:`, updateErr);
+                  }
+                })
+              );
+            }
+          }
+          console.log(`✅ Custom fallback merge for gps_import successfully processed: ${toInsert.length} inserts & ${toUpdate.length} updates.`);
+        } catch (fallbackError: any) {
+          console.error("❌ Custom self-healing merge fallback for gps_import also failed:", fallbackError);
+          throw uploadError;
+        }
       }
 
       console.log(`✅ ${recordsToInsert.length} registros sincronizados`);

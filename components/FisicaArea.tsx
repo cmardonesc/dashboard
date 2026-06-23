@@ -61,6 +61,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   const [dailyTaskGps, setDailyTaskGps] = useState<any[]>([]);
   const [specialNote, setSpecialNote] = useState('');
   const [exportingWellness, setExportingWellness] = useState(false);
+  const [exportingReport, setExportingReport] = useState(false);
 
   // NUEVO: Estado para datos de gps_import (Totales)
   const [gpsImportData, setGpsImportData] = useState<any[]>([]);
@@ -393,9 +394,148 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     return { label: 'BAJA', color: 'text-blue-600' };
   };
 
+  const getRpeStyle = (rpe: number | null | undefined) => {
+    if (rpe === null || rpe === undefined) return { backgroundColor: 'transparent', color: '#64748b' };
+    const val = Math.max(1, Math.min(10, Number(rpe)));
+    // Hue ranges from 120 (emerald green/light green) down to 0 (crimson red)
+    const hue = 120 - Math.round(((val - 1) / 9) * 120);
+    return {
+      backgroundColor: `hsl(${hue}, 80%, 45%)`,
+      color: '#ffffff',
+      fontWeight: '900'
+    };
+  };
+
+  const getCargaStyle = (carga: number | null | undefined) => {
+    if (carga === null || carga === undefined) return { backgroundColor: 'transparent', color: '#64748b' };
+    const val = Math.max(1, Math.min(1000, Number(carga)));
+    // Hue ranges from 120 (emerald green) down to 0 (crimson red)
+    const hue = 120 - Math.round(((val - 1) / 999) * 120);
+    return {
+      backgroundColor: `hsl(${hue}, 80%, 40%)`,
+      color: '#ffffff',
+      fontWeight: '900'
+    };
+  };
+
   // Lógica de Impresión Directa
   const handleTriggerPrint = () => {
     window.print();
+  };
+
+  const downloadTechnicalReportPDF = async () => {
+    setExportingReport(true);
+    try {
+      const elements = document.querySelectorAll('.print-page-section');
+      if (!elements || elements.length === 0) {
+        throw new Error("No se encontraron páginas del reporte para exportar.");
+      }
+
+      // Initialize jsPDF A4 in landscape orientation (297 x 210 mm)
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const isAllCategories = selectedCategories.length === Object.values(Category).length;
+      const categorySlug = isAllCategories 
+        ? 'todas' 
+        : selectedCategories.map(c => c.toLowerCase().replace(/_/g, '-')).join('-');
+      const fileName = `reporte-tecnico-${categorySlug}-${selectedDate}.pdf`;
+
+      for (let i = 0; i < elements.length; i++) {
+        const element = elements[i] as HTMLElement;
+        const isDark = element.classList.contains('bg-[#0b1220]');
+        
+        const canvas = await html2canvas(element, {
+          scale: 2, // High resolution
+          useCORS: true,
+          scrollY: 0,
+          scrollX: 0,
+          backgroundColor: isDark ? '#0b1220' : '#ffffff',
+          logging: false,
+        });
+
+        // Use JPEG to keep PDF size small but crystal clear
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+        if (i > 0) {
+          doc.addPage();
+        }
+
+        // Draw the image to fit the entire landscape A4 sheet (297mm x 210mm)
+        doc.addImage(imgData, 'JPEG', 0, 0, 297, 210);
+      }
+
+      doc.save(fileName);
+    } catch (err) {
+      console.error("Error al descargar PDF del reporte técnico:", err);
+      alert("Hubo un error al generar el PDF del reporte técnico.");
+    } finally {
+      setExportingReport(false);
+    }
+  };
+
+  const downloadTechnicalReportJPG = async () => {
+    setExportingReport(true);
+    try {
+      const elements = document.querySelectorAll('.print-page-section');
+      if (!elements || elements.length === 0) {
+        throw new Error("No se encontraron páginas del reporte para exportar.");
+      }
+
+      const isAllCategories = selectedCategories.length === Object.values(Category).length;
+      const categorySlug = isAllCategories 
+        ? 'todas' 
+        : selectedCategories.map(c => c.toLowerCase().replace(/_/g, '-')).join('-');
+      const fileName = `reporte-tecnico-${categorySlug}-${selectedDate}.jpg`;
+
+      // Capture all pages
+      const canvasPromises = Array.from(elements).map(async (el) => {
+        const element = el as HTMLElement;
+        const isDark = element.classList.contains('bg-[#0b1220]');
+        return html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          scrollY: 0,
+          scrollX: 0,
+          backgroundColor: isDark ? '#0b1220' : '#ffffff',
+          logging: false,
+        });
+      });
+
+      const canvases = await Promise.all(canvasPromises);
+
+      // Create a master stitching canvas
+      const masterCanvas = document.createElement('canvas');
+      const ctx = masterCanvas.getContext('2d');
+      if (!ctx) throw new Error("No se pudo obtener el contexto 2D del canvas maestro.");
+
+      const width = canvases[0].width;
+      const totalHeight = canvases.reduce((sum, c) => sum + c.height, 0);
+
+      masterCanvas.width = width;
+      masterCanvas.height = totalHeight;
+
+      let currentY = 0;
+      for (const canvas of canvases) {
+        ctx.drawImage(canvas, 0, currentY);
+        currentY += canvas.height;
+      }
+
+      const imgData = masterCanvas.toDataURL('image/jpeg', 0.95);
+
+      const link = document.createElement('a');
+      link.href = imgData;
+      link.download = fileName;
+      link.click();
+    } catch (err) {
+      console.error("Error al descargar JPG del reporte técnico:", err);
+      alert("Hubo un error al generar la imagen JPG del reporte técnico.");
+    } finally {
+      setExportingReport(false);
+    }
   };
 
   // DERIVED DATA
@@ -742,6 +882,14 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           valA = a.load?.load ?? -1;
           valB = b.load?.load ?? -1;
           break;
+        case 'pse_molestias':
+          valA = a.load?.molestias?.toLowerCase() || '';
+          valB = b.load?.molestias?.toLowerCase() || '';
+          break;
+        case 'pse_enfermedad':
+          valA = a.load?.enfermedad?.toLowerCase() || '';
+          valB = b.load?.enfermedad?.toLowerCase() || '';
+          break;
         default:
           return 0;
       }
@@ -837,7 +985,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(255, 255, 255);
-      doc.text('REPORTE BIENESTAR FISIOLÓGICO', margin + 4, 18);
+      doc.text(view === 'pse' ? 'REPORTE DE CARGA INTERNA (PSE)' : 'REPORTE BIENESTAR FISIOLÓGICO', margin + 4, 18);
 
       // Logo
       const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
@@ -907,15 +1055,15 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       const kpiW = (pageWidth - (margin * 2) - 12) / 4;
       const kpiH = 10;
 
-      // KPI 1: Check-in Done
+      // KPI 1: Check-in / Check-out Done
       doc.setFillColor(245, 247, 250);
       doc.roundedRect(margin, kpiY, kpiW, kpiH, 1.5, 1.5, 'F');
       doc.setFontSize(5);
       doc.setTextColor(140, 140, 140);
-      doc.text('CHECK-IN COMPLETADOS', margin + 3, kpiY + 3);
+      doc.text(view === 'pse' ? 'CHECK-OUT COMPLETADOS' : 'CHECK-IN COMPLETADOS', margin + 3, kpiY + 3);
       doc.setFontSize(8.5);
       doc.setTextColor(2, 66, 140);
-      doc.text(`${stats.checkInDone} / ${currentCitadosPlayers.length}`, margin + 3, kpiY + 7.5);
+      doc.text(`${view === 'pse' ? stats.checkOutDone : stats.checkInDone} / ${currentCitadosPlayers.length}`, margin + 3, kpiY + 7.5);
 
       // KPI 2: Dolor Alertas
       doc.setFillColor(245, 247, 250);
@@ -937,26 +1085,42 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       doc.setTextColor(stats.healthAlerts > 0 ? 226 : 40, stats.healthAlerts > 0 ? 35 : 40, stats.healthAlerts > 0 ? 26 : 40);
       doc.text(`${stats.healthAlerts} alertas`, margin + (kpiW * 2) + 11, kpiY + 7.5);
 
-      // KPI 4: Promedio General
-      let sumAvg = 0;
-      let countAvg = 0;
-      unifiedList.forEach(item => {
-        if (item.wellness) {
-          const itemAvg = (item.wellness.fatigue + item.wellness.sleep + item.wellness.mood) / 3;
-          sumAvg += itemAvg;
-          countAvg++;
-        }
-      });
-      const wellnessDayAvgDecimal = countAvg > 0 ? (sumAvg / countAvg).toFixed(1) : '—';
+      // KPI 4: Promedio General / Carga Promedio
+      let kpi4Label = 'PROMEDIO BIENESTAR JORNADA';
+      let kpi4Value = '';
+      if (view === 'pse') {
+        kpi4Label = 'CARGA PROMEDIO JORNADA';
+        let sumLoads = 0;
+        let countLoads = 0;
+        unifiedList.forEach(item => {
+          if (item.load?.load) {
+            sumLoads += Number(item.load.load);
+            countLoads++;
+          }
+        });
+        kpi4Value = countLoads > 0 ? `${(sumLoads / countLoads).toFixed(0)} u.a.` : '—';
+      } else {
+        let sumAvg = 0;
+        let countAvg = 0;
+        unifiedList.forEach(item => {
+          if (item.wellness) {
+            const itemAvg = (item.wellness.fatigue + item.wellness.sleep + item.wellness.mood) / 3;
+            sumAvg += itemAvg;
+            countAvg++;
+          }
+        });
+        const wellnessDayAvgDecimal = countAvg > 0 ? (sumAvg / countAvg).toFixed(1) : '—';
+        kpi4Value = `${wellnessDayAvgDecimal} / 5.0`;
+      }
 
       doc.setFillColor(245, 247, 250);
       doc.roundedRect(margin + (kpiW * 3) + 12, kpiY, kpiW, kpiH, 1.5, 1.5, 'F');
       doc.setFontSize(5);
       doc.setTextColor(140, 140, 140);
-      doc.text('PROMEDIO BIENESTAR JORNADA', margin + (kpiW * 3) + 15, kpiY + 3);
+      doc.text(kpi4Label, margin + (kpiW * 3) + 15, kpiY + 3);
       doc.setFontSize(8.5);
       doc.setTextColor(40, 40, 40);
-      doc.text(`${wellnessDayAvgDecimal} / 5.0`, margin + (kpiW * 3) + 15, kpiY + 7.5);
+      doc.text(kpi4Value, margin + (kpiW * 3) + 15, kpiY + 7.5);
 
       const tableStartY = 54;
 
@@ -966,32 +1130,57 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       const rightGroup = unifiedList.slice(halfLength);
 
       const formatRow = (r: any) => {
-        const isPending = !r.hasReported;
-        const playerAvg = r.wellness ? ((r.wellness.fatigue + r.wellness.sleep + r.wellness.mood) / 3).toFixed(1) : '-';
-        
-        let painText = 'Sin Dolor';
-        if (r.wellness?.soreness_areas && r.wellness.soreness_areas.length > 0) {
-          painText = r.wellness.soreness_areas.join(', ');
-        }
-        
-        let healthText = 'Sano';
-        if (r.wellness?.illness_symptoms && r.wellness.illness_symptoms.length > 0) {
-          healthText = r.wellness.illness_symptoms.join(', ');
-        }
-        
-        const painAndHealth = isPending ? '-' : `${painText} | ${healthText}`;
+        if (view === 'pse') {
+          const isPending = !r.load;
+          const duration = r.load?.duration ? String(r.load.duration) : '-';
+          const rpe = r.load?.rpe !== undefined && r.load?.rpe !== null ? String(r.load.rpe) : '-';
+          const loadVal = r.load?.load !== undefined && r.load?.load !== null ? String(r.load.load) : '-';
+          
+          let painText = 'Sin Dolor';
+          if (r.load?.molestias) {
+            painText = r.load.molestias;
+          }
+          let healthText = 'Sano';
+          if (r.load?.enfermedad) {
+            healthText = r.load.enfermedad;
+          }
+          const painAndHealth = isPending ? '-' : `${painText} | ${healthText}`;
+          return [
+            `${r.player?.name || ''}\n${r.player?.club_name || r.player?.club || 'SIN CLUB'}`,
+            duration,
+            rpe,
+            loadVal,
+            painAndHealth.toUpperCase(),
+            isPending ? 'PENDIENTE' : 'OK'
+          ];
+        } else {
+          const isPending = !r.hasReported;
+          const playerAvg = r.wellness ? ((r.wellness.fatigue + r.wellness.sleep + r.wellness.mood) / 3).toFixed(1) : '-';
+          
+          let painText = 'Sin Dolor';
+          if (r.wellness?.soreness_areas && r.wellness.soreness_areas.length > 0) {
+            painText = r.wellness.soreness_areas.join(', ');
+          }
+          
+          let healthText = 'Sano';
+          if (r.wellness?.illness_symptoms && r.wellness.illness_symptoms.length > 0) {
+            healthText = r.wellness.illness_symptoms.join(', ');
+          }
+          
+          const painAndHealth = isPending ? '-' : `${painText} | ${healthText}`;
 
-        return [
-          `${r.player?.name || ''}\n${r.player?.club_name || r.player?.club || 'SIN CLUB'}`,
-          r.wellness ? String(r.wellness.fatigue) : '-',
-          r.wellness ? String(r.wellness.sleep) : '-',
-          r.wellness ? String(r.wellness.soreness) : '-',
-          r.wellness ? String(r.wellness.stress || '-') : '-',
-          r.wellness ? String(r.wellness.mood || '-') : '-',
-          playerAvg,
-          painAndHealth.toUpperCase(),
-          isPending ? 'PENDIENTE' : 'OK'
-        ];
+          return [
+            `${r.player?.name || ''}\n${r.player?.club_name || r.player?.club || 'SIN CLUB'}`,
+            r.wellness ? String(r.wellness.fatigue) : '-',
+            r.wellness ? String(r.wellness.sleep) : '-',
+            r.wellness ? String(r.wellness.soreness) : '-',
+            r.wellness ? String(r.wellness.stress || '-') : '-',
+            r.wellness ? String(r.wellness.mood || '-') : '-',
+            playerAvg,
+            painAndHealth.toUpperCase(),
+            isPending ? 'PENDIENTE' : 'OK'
+          ];
+        }
       };
 
       const leftRows = leftGroup.map(formatRow);
@@ -1017,65 +1206,134 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         data.cell.styles.lineColor = [240, 240, 240];
         data.cell.styles.lineWidth = 0.1;
 
-        const isRowPending = data.row.cells[8].text[0] === 'PENDIENTE';
-        if (isRowPending) {
-          data.cell.styles.textColor = [180, 180, 180];
-        }
-
-        // Alinear la columna de nombre/club a la izquierda
-        if (data.column.index === 0) {
-          data.cell.styles.halign = 'left';
-          data.cell.styles.fontStyle = 'bold';
-        } else if (data.column.index === 7) {
-          data.cell.styles.halign = 'left'; // dolores / sintomas
-          const text = (data.cell.text && data.cell.text[0]) || '';
-          if (text && text !== '-' && text !== 'SIN DOLOR | SANO') {
-            data.cell.styles.textColor = [226, 35, 26]; // Red text
-            data.cell.styles.fontStyle = 'bold';
+        if (view === 'pse') {
+          const isRowPending = data.row.cells[5].text[0] === 'PENDIENTE';
+          if (isRowPending) {
+            data.cell.styles.textColor = [180, 180, 180];
           }
-        } else {
-          data.cell.styles.halign = 'center';
-        }
 
-        // Colorear las notas 1-5 (Fatigue, Sleep, Soreness, Stress, Mood)
-        if (data.column.index >= 1 && data.column.index <= 5) {
-          const val = parseFloat(data.cell.text[0]);
-          if (!isNaN(val)) {
+          // Alinear la columna de nombre/club a la izquierda
+          if (data.column.index === 0) {
+            data.cell.styles.halign = 'left';
             data.cell.styles.fontStyle = 'bold';
-            if (val >= 4.0) {
-              data.cell.styles.textColor = [39, 174, 96]; // Verde
-            } else if (val >= 3.0) {
-              data.cell.styles.textColor = [212, 163, 89]; // Amarillo oscuro
-            } else {
-              data.cell.styles.textColor = [231, 76, 60];  // Rojo
-              data.cell.styles.fillColor = [254, 237, 238]; // fondo suave rojizo
+          } else if (data.column.index === 4) {
+            data.cell.styles.halign = 'left'; // dolores / sintomas
+            const text = (data.cell.text && data.cell.text[0]) || '';
+            if (text && text !== '-' && text !== 'SIN DOLOR | SANO') {
+              data.cell.styles.textColor = [226, 35, 26]; // Red text
+              data.cell.styles.fontStyle = 'bold';
+            }
+          } else {
+            data.cell.styles.halign = 'center';
+          }
+
+          // Colorear RPE (col 2)
+          if (data.column.index === 2) {
+            const val = parseFloat(data.cell.text[0]);
+            if (!isNaN(val)) {
+              data.cell.styles.fontStyle = 'bold';
+              if (val >= 8) {
+                data.cell.styles.textColor = [226, 35, 26];
+              } else if (val >= 5) {
+                data.cell.styles.textColor = [212, 163, 89];
+              } else {
+                data.cell.styles.textColor = [39, 174, 96];
+              }
             }
           }
-        }
 
-        // Colorear el promedio general
-        if (data.column.index === 6) {
-          const val = parseFloat(data.cell.text[0]);
-          if (!isNaN(val)) {
-            data.cell.styles.fontStyle = 'bold';
-            if (val >= 4.0) data.cell.styles.textColor = [39, 174, 96];
-            else if (val >= 3.0) data.cell.styles.textColor = [40, 40, 40];
-            else data.cell.styles.textColor = [231, 76, 60];
+          // Colorear Carga (col 3)
+          if (data.column.index === 3) {
+            const val = parseFloat(data.cell.text[0]);
+            if (!isNaN(val)) {
+              data.cell.styles.fontStyle = 'bold';
+              if (val >= 600) {
+                data.cell.styles.textColor = [226, 35, 26];
+              } else if (val >= 300) {
+                data.cell.styles.textColor = [212, 163, 89];
+              } else {
+                data.cell.styles.textColor = [39, 174, 96];
+              }
+            }
           }
-        }
 
-        // Colorear "PENDIENTE" vs "OK"
-        if (data.column.index === 8) {
-          data.cell.styles.fontStyle = 'bold';
-          if (data.cell.text[0] === 'PENDIENTE') {
-            data.cell.styles.textColor = [230, 126, 34]; // Naranja descriptivo
+          // Colorear status
+          if (data.column.index === 5) {
+            data.cell.styles.fontStyle = 'bold';
+            if (data.cell.text[0] === 'PENDIENTE') {
+              data.cell.styles.textColor = [230, 126, 34];
+            } else {
+              data.cell.styles.textColor = [39, 174, 96];
+            }
+          }
+        } else {
+          const isRowPending = data.row.cells[8].text[0] === 'PENDIENTE';
+          if (isRowPending) {
+            data.cell.styles.textColor = [180, 180, 180];
+          }
+
+          // Alinear la columna de nombre/club a la izquierda
+          if (data.column.index === 0) {
+            data.cell.styles.halign = 'left';
+            data.cell.styles.fontStyle = 'bold';
+          } else if (data.column.index === 7) {
+            data.cell.styles.halign = 'left'; // dolores / sintomas
+            const text = (data.cell.text && data.cell.text[0]) || '';
+            if (text && text !== '-' && text !== 'SIN DOLOR | SANO') {
+              data.cell.styles.textColor = [226, 35, 26]; // Red text
+              data.cell.styles.fontStyle = 'bold';
+            }
           } else {
-            data.cell.styles.textColor = [39, 174, 96];  // Verde
+            data.cell.styles.halign = 'center';
+          }
+
+          // Colorear las notas 1-5 (Fatigue, Sleep, Soreness, Stress, Mood)
+          if (data.column.index >= 1 && data.column.index <= 5) {
+            const val = parseFloat(data.cell.text[0]);
+            if (!isNaN(val)) {
+              data.cell.styles.fontStyle = 'bold';
+              if (val >= 4.0) {
+                data.cell.styles.textColor = [39, 174, 96]; // Verde
+              } else if (val >= 3.0) {
+                data.cell.styles.textColor = [212, 163, 89]; // Amarillo oscuro
+              } else {
+                data.cell.styles.textColor = [231, 76, 60];  // Rojo
+                data.cell.styles.fillColor = [254, 237, 238]; // fondo suave rojizo
+              }
+            }
+          }
+
+          // Colorear el promedio general
+          if (data.column.index === 6) {
+            const val = parseFloat(data.cell.text[0]);
+            if (!isNaN(val)) {
+              data.cell.styles.fontStyle = 'bold';
+              if (val >= 4.0) data.cell.styles.textColor = [39, 174, 96];
+              else if (val >= 3.0) data.cell.styles.textColor = [40, 40, 40];
+              else data.cell.styles.textColor = [231, 76, 60];
+            }
+          }
+
+          // Colorear "PENDIENTE" vs "OK"
+          if (data.column.index === 8) {
+            data.cell.styles.fontStyle = 'bold';
+            if (data.cell.text[0] === 'PENDIENTE') {
+              data.cell.styles.textColor = [230, 126, 34]; // Naranja descriptivo
+            } else {
+              data.cell.styles.textColor = [39, 174, 96];  // Verde
+            }
           }
         }
       };
 
-      const columnsToUse = [
+      const columnsToUse = view === 'pse' ? [
+        { header: 'ATLETA', dataKey: 0 },
+        { header: 'DUR', dataKey: 1 },
+        { header: 'RPE', dataKey: 2 },
+        { header: 'CARGA', dataKey: 3 },
+        { header: 'MOLESTIA / ENFERMEDAD', dataKey: 4 },
+        { header: 'ESTADO', dataKey: 5 }
+      ] : [
         { header: 'ATLETA', dataKey: 0 },
         { header: 'FAT', dataKey: 1 },
         { header: 'SUE', dataKey: 2 },
@@ -1087,6 +1345,25 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         { header: 'ESTADO', dataKey: 8 }
       ];
 
+      const columnStylesToUse: any = view === 'pse' ? {
+        0: { cellWidth: 32 },
+        1: { cellWidth: 10 },
+        2: { cellWidth: 10 },
+        3: { cellWidth: 14 },
+        4: { cellWidth: 'auto' },
+        5: { cellWidth: 16 }
+      } : {
+        0: { cellWidth: 25 },
+        1: { cellWidth: 7 },
+        2: { cellWidth: 7 },
+        3: { cellWidth: 7 },
+        4: { cellWidth: 7 },
+        5: { cellWidth: 7 },
+        6: { cellWidth: 9 },
+        7: { cellWidth: 'auto' },
+        8: { cellWidth: 14 }
+      };
+
       // Tabla Izquierda
       autoTable(doc, {
         head: [columnsToUse.map(col => col.header)],
@@ -1096,17 +1373,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         tableWidth: colWidth,
         styles: { overflow: 'linebreak', cellPadding: 1 },
         headStyles: { fillColor: [11, 18, 32] },
-        columnStyles: {
-          0: { cellWidth: 25 },
-          1: { cellWidth: 7 },
-          2: { cellWidth: 7 },
-          3: { cellWidth: 7 },
-          4: { cellWidth: 7 },
-          5: { cellWidth: 7 },
-          6: { cellWidth: 9 },
-          7: { cellWidth: 'auto' },
-          8: { cellWidth: 14 }
-        },
+        columnStyles: columnStylesToUse,
         didParseCell: cellStylesParser
       });
 
@@ -1120,17 +1387,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           tableWidth: colWidth,
           styles: { overflow: 'linebreak', cellPadding: 1 },
           headStyles: { fillColor: [11, 18, 32] },
-          columnStyles: {
-            0: { cellWidth: 25 },
-            1: { cellWidth: 7 },
-            2: { cellWidth: 7 },
-            3: { cellWidth: 7 },
-            4: { cellWidth: 7 },
-            5: { cellWidth: 7 },
-            6: { cellWidth: 9 },
-            7: { cellWidth: 'auto' },
-            8: { cellWidth: 14 }
-          },
+          columnStyles: columnStylesToUse,
           didParseCell: cellStylesParser
         });
       }
@@ -1147,11 +1404,17 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       doc.text('ELITE FOOTBALL PERFORMANCE PRO • ÁREA BIOMÉDICA & PREPARACIÓN FÍSICA', margin, pageHeight - 8);
       doc.text(`EXPORTADO EL ${new Date().toLocaleDateString('es-ES')} ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`, pageWidth - margin - 42, pageHeight - 8);
 
-      const fileName = `reporte-wellness-${selectedDate}.pdf`;
+      const isAllCategories = selectedCategories.length === Object.values(Category).length;
+      const categorySlug = isAllCategories 
+        ? 'todas' 
+        : selectedCategories.map(c => c.toLowerCase().replace(/_/g, '-')).join('-');
+      const fileName = view === 'pse' 
+        ? `reporte-pse-${categorySlug}-${selectedDate}.pdf` 
+        : `reporte-wellness-${categorySlug}-${selectedDate}.pdf`;
       doc.save(fileName);
     } catch (err) {
       console.error("Error al descargar PDF:", err);
-      alert("Hubo un error al generar el PDF del reporte de bienestar.");
+      alert(`Hubo un error al generar el PDF del reporte de ${view === 'pse' ? 'carga interna' : 'bienestar'}.`);
     } finally {
       setExportingWellness(false);
     }
@@ -1172,7 +1435,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      const fileName = `reporte-wellness-${selectedDate}.jpg`;
+      const isAllCategories = selectedCategories.length === Object.values(Category).length;
+      const categorySlug = isAllCategories 
+        ? 'todas' 
+        : selectedCategories.map(c => c.toLowerCase().replace(/_/g, '-')).join('-');
+      const fileName = view === 'pse' 
+        ? `reporte-pse-${categorySlug}-${selectedDate}.jpg` 
+        : `reporte-wellness-${categorySlug}-${selectedDate}.jpg`;
 
       const link = document.createElement('a');
       link.href = imgData;
@@ -1180,7 +1449,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       link.click();
     } catch (err) {
       console.error("Error al descargar JPG:", err);
-      alert("Hubo un error al generar la imagen JPG de bienestar.");
+      alert(`Hubo un error al generar la imagen JPG de ${view === 'pse' ? 'carga interna' : 'bienestar'}.`);
     } finally {
       setExportingWellness(false);
     }
@@ -1531,8 +1800,24 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           </div>
                         </div>
                       </th>
-                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Molestias</th>
-                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell">Enfermedad</th>
+                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell group cursor-pointer" onClick={() => { setSortField('pse_molestias'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Molestias
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-arrow-down-a-z ${sortField === 'pse_molestias' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-arrow-up-z-a ${sortField === 'pse_molestias' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-1 py-3 md:py-5 hidden lg:table-cell group cursor-pointer" onClick={() => { setSortField('pse_enfermedad'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                        <div className="flex flex-col items-center gap-1">
+                          Enfermedad
+                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-arrow-down-a-z ${sortField === 'pse_enfermedad' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            <i className={`fa-solid fa-arrow-up-z-a ${sortField === 'pse_enfermedad' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                          </div>
+                        </div>
+                      </th>
                     </>
                   )}
                   <th className="px-2 md:px-8 py-3 md:py-5 text-right last:rounded-r-2xl">Status</th>
@@ -1611,9 +1896,25 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       {(view === 'pse' || view === 'report') && (
                         <>
                           <td className="px-1 py-3 md:py-5 hidden sm:table-cell">{row.load?.duration || '-'}</td>
-                          <td className="px-1 py-3 md:py-5 text-sm md:text-lg">{row.load?.rpe || '-'}</td>
-                          <td className="px-1 py-3 md:py-5">
-                            {row.load ? <span className="bg-slate-900 text-white px-1.5 md:px-3 py-0.5 md:py-1 rounded-lg text-[8px] md:text-xs">{row.load.load}</span> : '-'}
+                          <td className="px-1 py-3 md:py-5 text-center text-sm md:text-lg">
+                            {row.load?.rpe ? (
+                              <span 
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-full shadow-sm text-xs md:text-sm text-white font-black"
+                                style={getRpeStyle(row.load.rpe)}
+                              >
+                                {row.load.rpe}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td className="px-1 py-3 md:py-5 text-center">
+                            {row.load?.load ? (
+                              <span 
+                                className="inline-flex items-center justify-center px-2 py-1 min-w-[54px] rounded-lg shadow-sm text-[10px] md:text-xs text-white font-black"
+                                style={getCargaStyle(row.load.load)}
+                              >
+                                {row.load.load}
+                              </span>
+                            ) : '-'}
                           </td>
                           <td className="px-1 py-3 md:py-5 hidden lg:table-cell">
                             {row.load?.molestias ? (
@@ -1662,7 +1963,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   {/* Título de Reporte con Clip Path */}
                   <div className="bg-[#02428c] h-full flex items-center pl-6 pr-12 py-4 md:py-0 md:absolute md:left-0 md:top-0 md:bottom-0 relative z-20 shadow-lg" style={{ clipPath: 'polygon(0 0, 90% 0, 100% 100%, 0% 100%)' }}>
                     <span className="text-md md:text-xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap pr-4">
-                      REPORTE BIENESTAR FISIOLÓGICO
+                      {view === 'pse' ? 'REPORTE DE CARGA INTERNA (PSE)' : 'REPORTE BIENESTAR FISIOLÓGICO'}
                     </span>
                   </div>
                   
@@ -1727,12 +2028,14 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
               {/* Grid de KPIs / Estadísticas Clave */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                {/* KPI 1: Check-ins */}
+                {/* KPI 1: Check-ins / Check-outs */}
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col justify-between shadow-sm">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">CHECK-IN COMPLETADOS</span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                    {view === 'pse' ? 'CHECK-OUT COMPLETADOS' : 'CHECK-IN COMPLETADOS'}
+                  </span>
                   <div className="my-3 flex items-baseline gap-1">
                     <span className="text-2xl font-black text-[#02428c] leading-none">
-                      {stats.checkInDone}
+                      {view === 'pse' ? stats.checkOutDone : stats.checkInDone}
                     </span>
                     <span className="text-xs font-bold text-slate-400">
                       / {currentCitadosPlayers.length}
@@ -1741,7 +2044,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
                     <div 
                       className="bg-[#02428c] h-full rounded-full transition-all duration-500" 
-                      style={{ width: `${currentCitadosPlayers.length > 0 ? (stats.checkInDone / currentCitadosPlayers.length) * 100 : 0}%` }}
+                      style={{ width: `${currentCitadosPlayers.length > 0 ? ((view === 'pse' ? stats.checkOutDone : stats.checkInDone) / currentCitadosPlayers.length) * 100 : 0}%` }}
                     ></div>
                   </div>
                 </div>
@@ -1774,17 +2077,31 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   </span>
                 </div>
 
-                {/* KPI 4: Promedio Bienestar */}
+                {/* KPI 4: Promedio Bienestar / Carga Promedio */}
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col justify-between shadow-sm">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">PROMEDIO BIENESTAR</span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                    {view === 'pse' ? 'CARGA PROMEDIO JORNADA' : 'PROMEDIO BIENESTAR'}
+                  </span>
                   <div className="my-3 flex items-baseline gap-1">
                     <span className="text-2xl font-black text-emerald-600 leading-none">
-                      {wellnessDayAvg}
+                      {view === 'pse' ? (
+                        (() => {
+                          let sumLoads = 0;
+                          let countLoads = 0;
+                          unifiedList.forEach(item => {
+                            if (item.load?.load) {
+                              sumLoads += Number(item.load.load);
+                              countLoads++;
+                            }
+                          });
+                          return countLoads > 0 ? (sumLoads / countLoads).toFixed(0) : '—';
+                        })()
+                      ) : wellnessDayAvg}
                     </span>
-                    <span className="text-xs font-bold text-slate-400">/ 5.0</span>
+                    <span className="text-xs font-bold text-slate-400">{view === 'pse' ? 'u.a.' : '/ 5.0'}</span>
                   </div>
                   <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none">
-                    Puntuación general del día
+                    {view === 'pse' ? 'Intensidad x Duración media' : 'Puntuación general del día'}
                   </span>
                 </div>
               </div>
@@ -1795,21 +2112,32 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 <div className="border border-slate-100 rounded-3xl p-4 bg-white shadow-sm overflow-x-auto">
                   <table className="w-full text-left text-[9px]">
                     <thead>
-                      <tr className="border-b border-slate-100 text-[8px] text-slate-400 font-black uppercase tracking-wider">
-                        <th className="pb-2">ATLETA</th>
-                        <th className="pb-2 text-center">FAT</th>
-                        <th className="pb-2 text-center">SUE</th>
-                        <th className="pb-2 text-center">DOL</th>
-                        <th className="pb-2 text-center">EST</th>
-                        <th className="pb-2 text-center">ÁNI</th>
-                        <th className="pb-2 text-center font-black">PROM</th>
-                        <th className="pb-2 pl-2">ZONA MOLESTIA / SÍNTOMAS</th>
-                        <th className="pb-2 text-center">CHECK</th>
-                      </tr>
+                      {view === 'pse' ? (
+                        <tr className="border-b border-slate-100 text-[8px] text-slate-400 font-black uppercase tracking-wider">
+                          <th className="pb-2">ATLETA</th>
+                          <th className="pb-2 text-center">DUR</th>
+                          <th className="pb-2 text-center">RPE</th>
+                          <th className="pb-2 text-center">CARGA</th>
+                          <th className="pb-2 pl-2 text-left">MOLESTIA / ENFERMEDAD</th>
+                          <th className="pb-2 text-center">CHECK</th>
+                        </tr>
+                      ) : (
+                        <tr className="border-b border-slate-100 text-[8px] text-slate-400 font-black uppercase tracking-wider">
+                          <th className="pb-2">ATLETA</th>
+                          <th className="pb-2 text-center">FAT</th>
+                          <th className="pb-2 text-center">SUE</th>
+                          <th className="pb-2 text-center">DOL</th>
+                          <th className="pb-2 text-center">EST</th>
+                          <th className="pb-2 text-center">ÁNI</th>
+                          <th className="pb-2 text-center font-black">PROM</th>
+                          <th className="pb-2 pl-2">ZONA MOLESTIA / SÍNTOMAS</th>
+                          <th className="pb-2 text-center">CHECK</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {leftWellnessList.map((row, idx) => {
-                        const isPending = !row.hasReported;
+                        const isPending = view === 'pse' ? !row.load : !row.hasReported;
                         const avgValue = row.wellness ? ((row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3).toFixed(1) : '-';
                         return (
                           <tr key={`left-well-${idx}`} className={`hover:bg-slate-50/50 transition-all ${isPending ? 'opacity-40' : ''}`}>
@@ -1817,40 +2145,86 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                               <span className="block font-black uppercase text-[10px]">{row.player?.name}</span>
                               <span className="text-[7.5px] uppercase tracking-wider text-slate-400 font-bold leading-none">{row.player?.club_name || row.player?.club || 'SIN CLUB'}</span>
                             </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.fatigue)}`}>{row.wellness.fatigue}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.sleep)}`}>{row.wellness.sleep}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.soreness)}`}>{row.wellness.soreness}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.stress || 0)}`}>{row.wellness.stress || 0}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.mood || 0)}`}>{row.wellness.mood || 0}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center font-black text-[10px]">
-                              {row.wellness ? <span className="text-slate-800">{avgValue}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate">
-                              {isPending ? '-' : (
-                                <div className="flex flex-col gap-0.5">
-                                  {row.wellness?.soreness_areas && row.wellness.soreness_areas.length > 0 ? (
-                                    <span className="text-red-500 font-bold">痛 {row.wellness.soreness_areas.join(', ')}</span>
-                                  ) : (
-                                    <span className="text-slate-400 font-bold">SIN MOL.</span>
+                            {view === 'pse' ? (
+                              <>
+                                <td className="py-2.5 text-center font-black">
+                                  {row.load?.duration ? `${row.load.duration}` : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.load?.rpe ? (
+                                    <span 
+                                      className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[8.5px] text-white font-black"
+                                      style={getRpeStyle(row.load.rpe)}
+                                    >
+                                      {row.load.rpe}
+                                    </span>
+                                  ) : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.load?.load ? (
+                                    <span 
+                                      className="inline-flex items-center justify-center px-1.5 py-0.5 min-w-[36px] rounded text-[8.5px] text-white font-black"
+                                      style={getCargaStyle(row.load.load)}
+                                    >
+                                      {row.load.load}
+                                    </span>
+                                  ) : '-'}
+                                </td>
+                                <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate text-left">
+                                  {!row.load ? '-' : (
+                                    <div className="flex flex-col gap-0.5">
+                                      {row.load?.molestias ? (
+                                        <span className="text-red-500 font-bold">痛 {row.load.molestias}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold justify-start text-left block">SIN MOL.</span>
+                                      )}
+                                      {row.load?.enfermedad ? (
+                                        <span className="text-amber-600 font-bold">🏥 {row.load.enfermedad}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold justify-start text-left block">SANO</span>
+                                      )}
+                                    </div>
                                   )}
-                                  {row.wellness?.illness_symptoms && row.wellness.illness_symptoms.length > 0 ? (
-                                    <span className="text-red-500 font-bold">🏥 {row.wellness.illness_symptoms.join(', ')}</span>
-                                  ) : (
-                                    <span className="text-slate-400 font-bold">SANO</span>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.fatigue)}`}>{row.wellness.fatigue}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.sleep)}`}>{row.wellness.sleep}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.soreness)}`}>{row.wellness.soreness}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.stress || 0)}`}>{row.wellness.stress || 0}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.mood || 0)}`}>{row.wellness.mood || 0}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center font-black text-[10px]">
+                                  {row.wellness ? <span className="text-slate-800">{avgValue}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate">
+                                  {isPending ? '-' : (
+                                    <div className="flex flex-col gap-0.5">
+                                      {row.wellness?.soreness_areas && row.wellness.soreness_areas.length > 0 ? (
+                                        <span className="text-red-500 font-bold">痛 {row.wellness.soreness_areas.join(', ')}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold">SIN MOL.</span>
+                                      )}
+                                      {row.wellness?.illness_symptoms && row.wellness.illness_symptoms.length > 0 ? (
+                                        <span className="text-red-500 font-bold">🏥 {row.wellness.illness_symptoms.join(', ')}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold">SANO</span>
+                                      )}
+                                    </div>
                                   )}
-                                </div>
-                              )}
-                            </td>
+                                </td>
+                              </>
+                            )}
                             <td className="py-2.5 text-center">
                               {isPending ? (
                                 <span className="px-1.5 py-0.5 bg-amber-50 text-amber-500 rounded text-[7.5px] font-black tracking-widest uppercase">PEND.</span>
@@ -1869,21 +2243,32 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 <div className="border border-slate-100 rounded-3xl p-4 bg-white shadow-sm overflow-x-auto">
                   <table className="w-full text-left text-[9px]">
                     <thead>
-                      <tr className="border-b border-slate-100 text-[8px] text-slate-400 font-black uppercase tracking-wider">
-                        <th className="pb-2">ATLETA</th>
-                        <th className="pb-2 text-center">FAT</th>
-                        <th className="pb-2 text-center">SUE</th>
-                        <th className="pb-2 text-center">DOL</th>
-                        <th className="pb-2 text-center">EST</th>
-                        <th className="pb-2 text-center">ÁNI</th>
-                        <th className="pb-2 text-center font-black">PROM</th>
-                        <th className="pb-2 pl-2">ZONA MOLESTIA / SÍNTOMAS</th>
-                        <th className="pb-2 text-center">CHECK</th>
-                      </tr>
+                      {view === 'pse' ? (
+                        <tr className="border-b border-slate-100 text-[8px] text-slate-400 font-black uppercase tracking-wider">
+                          <th className="pb-2">ATLETA</th>
+                          <th className="pb-2 text-center">DUR</th>
+                          <th className="pb-2 text-center">RPE</th>
+                          <th className="pb-2 text-center">CARGA</th>
+                          <th className="pb-2 pl-2 text-left">MOLESTIA / ENFERMEDAD</th>
+                          <th className="pb-2 text-center">CHECK</th>
+                        </tr>
+                      ) : (
+                        <tr className="border-b border-slate-100 text-[8px] text-slate-400 font-black uppercase tracking-wider">
+                          <th className="pb-2">ATLETA</th>
+                          <th className="pb-2 text-center">FAT</th>
+                          <th className="pb-2 text-center">SUE</th>
+                          <th className="pb-2 text-center">DOL</th>
+                          <th className="pb-2 text-center">EST</th>
+                          <th className="pb-2 text-center">ÁNI</th>
+                          <th className="pb-2 text-center font-black">PROM</th>
+                          <th className="pb-2 pl-2">ZONA MOLESTIA / SÍNTOMAS</th>
+                          <th className="pb-2 text-center">CHECK</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {rightWellnessList.map((row, idx) => {
-                        const isPending = !row.hasReported;
+                        const isPending = view === 'pse' ? !row.load : !row.hasReported;
                         const avgValue = row.wellness ? ((row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3).toFixed(1) : '-';
                         return (
                           <tr key={`right-well-${idx}`} className={`hover:bg-slate-50/50 transition-all ${isPending ? 'opacity-40' : ''}`}>
@@ -1891,40 +2276,86 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                               <span className="block font-black uppercase text-[10px]">{row.player?.name}</span>
                               <span className="text-[7.5px] uppercase tracking-wider text-slate-400 font-bold leading-none">{row.player?.club_name || row.player?.club || 'SIN CLUB'}</span>
                             </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.fatigue)}`}>{row.wellness.fatigue}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.sleep)}`}>{row.wellness.sleep}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.soreness)}`}>{row.wellness.soreness}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.stress || 0)}`}>{row.wellness.stress || 0}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.mood || 0)}`}>{row.wellness.mood || 0}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 text-center font-black text-[10px]">
-                              {row.wellness ? <span className="text-slate-800">{avgValue}</span> : '-'}
-                            </td>
-                            <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate">
-                              {isPending ? '-' : (
-                                <div className="flex flex-col gap-0.5">
-                                  {row.wellness?.soreness_areas && row.wellness.soreness_areas.length > 0 ? (
-                                    <span className="text-red-500 font-bold">痛 {row.wellness.soreness_areas.join(', ')}</span>
-                                  ) : (
-                                    <span className="text-slate-400 font-bold">SIN MOL.</span>
+                            {view === 'pse' ? (
+                              <>
+                                <td className="py-2.5 text-center font-black">
+                                  {row.load?.duration ? `${row.load.duration}` : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.load?.rpe ? (
+                                    <span 
+                                      className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[8.5px] text-white font-black"
+                                      style={getRpeStyle(row.load.rpe)}
+                                    >
+                                      {row.load.rpe}
+                                    </span>
+                                  ) : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.load?.load ? (
+                                    <span 
+                                      className="inline-flex items-center justify-center px-1.5 py-0.5 min-w-[36px] rounded text-[8.5px] text-white font-black"
+                                      style={getCargaStyle(row.load.load)}
+                                    >
+                                      {row.load.load}
+                                    </span>
+                                  ) : '-'}
+                                </td>
+                                <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate text-left">
+                                  {!row.load ? '-' : (
+                                    <div className="flex flex-col gap-0.5">
+                                      {row.load?.molestias ? (
+                                        <span className="text-red-500 font-bold">痛 {row.load.molestias}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold justify-start text-left block">SIN MOL.</span>
+                                      )}
+                                      {row.load?.enfermedad ? (
+                                        <span className="text-amber-600 font-bold">🏥 {row.load.enfermedad}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold justify-start text-left block">SANO</span>
+                                      )}
+                                    </div>
                                   )}
-                                  {row.wellness?.illness_symptoms && row.wellness.illness_symptoms.length > 0 ? (
-                                    <span className="text-red-500 font-bold">🏥 {row.wellness.illness_symptoms.join(', ')}</span>
-                                  ) : (
-                                    <span className="text-slate-400 font-bold">SANO</span>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.fatigue)}`}>{row.wellness.fatigue}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.sleep)}`}>{row.wellness.sleep}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.soreness)}`}>{row.wellness.soreness}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.stress || 0)}`}>{row.wellness.stress || 0}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  {row.wellness ? <span className={`w-5 h-5 flex items-center justify-center mx-auto rounded-full text-[8.5px] font-black ${getScoreColor(row.wellness.mood || 0)}`}>{row.wellness.mood || 0}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 text-center font-black text-[10px]">
+                                  {row.wellness ? <span className="text-slate-800">{avgValue}</span> : '-'}
+                                </td>
+                                <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate">
+                                  {isPending ? '-' : (
+                                    <div className="flex flex-col gap-0.5">
+                                      {row.wellness?.soreness_areas && row.wellness.soreness_areas.length > 0 ? (
+                                        <span className="text-red-500 font-bold">痛 {row.wellness.soreness_areas.join(', ')}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold">SIN MOL.</span>
+                                      )}
+                                      {row.wellness?.illness_symptoms && row.wellness.illness_symptoms.length > 0 ? (
+                                        <span className="text-red-500 font-bold">🏥 {row.wellness.illness_symptoms.join(', ')}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold">SANO</span>
+                                      )}
+                                    </div>
                                   )}
-                                </div>
-                              )}
-                            </td>
+                                </td>
+                              </>
+                            )}
                             <td className="py-2.5 text-center">
                               {isPending ? (
                                 <span className="px-1.5 py-0.5 bg-amber-50 text-amber-500 rounded text-[7.5px] font-black tracking-widest uppercase">PEND.</span>
@@ -2059,19 +2490,20 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   </div>
                   <div className="flex gap-4">
                     <button 
-                      onClick={() => {
-                          const text = encodeURIComponent(`*REPORTE FISIOLÓGICO DIARIO*\n\n📅 *Fecha:* ${selectedDate}\n\nSe han consolidado los datos de la Selección. Saludos!`);
-                          window.open(`https://wa.me/?text=${text}`, '_blank');
-                      }}
-                      className="bg-[#25D366] text-white px-8 py-5 rounded-full text-[11px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-[#128C7E] transition-all shadow-xl active:scale-95"
+                      onClick={downloadTechnicalReportPDF}
+                      disabled={exportingReport}
+                      className="bg-red-600 text-white px-8 py-5 rounded-full text-[11px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-red-700 transition-all shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <i className="fa-brands fa-whatsapp text-lg"></i> COMPARTIR
+                      <i className="fa-solid fa-file-pdf text-lg"></i>
+                      {exportingReport ? 'GENERANDO PDF...' : 'DESCARGAR PDF'}
                     </button>
                     <button 
-                      onClick={handleTriggerPrint} 
-                      className="bg-red-600 text-white px-12 py-5 rounded-full text-[11px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-red-700 transition-all shadow-xl active:scale-95"
+                      onClick={downloadTechnicalReportJPG}
+                      disabled={exportingReport}
+                      className="bg-emerald-600 text-white px-8 py-5 rounded-full text-[11px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <i className="fa-solid fa-file-pdf"></i> GENERAR PDF / IMPRIMIR
+                      <i className="fa-solid fa-file-image text-lg"></i>
+                      {exportingReport ? 'GENERANDO JPG...' : 'DESCARGAR JPG'}
                     </button>
                   </div>
                 </div>
@@ -2127,427 +2559,729 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
           {/* VISTA PREVIA DEL PDF (Solo visible en pantalla o impresión) */}
           <div className="space-y-0 print:bg-white print:m-0 print:p-0">
-            {/* PÁGINAS DE WELLNESS (Chunked) */}
-            {wellnessChunks.map((chunk, chunkIdx) => {
-              currentPageNum++;
+            {(() => {
+              const halfWellness = Math.ceil(reportData.wellnessList.length / 2);
+              const leftWellness = reportData.wellnessList.slice(0, halfWellness);
+              const rightWellness = reportData.wellnessList.slice(halfWellness);
+
+              const halfLoads = Math.ceil(reportData.loadList.length / 2);
+              const leftLoads = reportData.loadList.slice(0, halfLoads);
+              const rightLoads = reportData.loadList.slice(halfLoads);
+
+              const gpsParameters = [
+                { name: 'Distancia Total Promedio (m)', value: reportData.gpsAvg?.dist ? `${reportData.gpsAvg.dist.toFixed(0)} m` : '—' },
+                { name: 'm/min Promedio', value: reportData.gpsAvg?.mpm ? `${reportData.gpsAvg.mpm.toFixed(1)} m/min` : '—' },
+                { name: 'Distancia HSR Promedio (m)', value: reportData.gpsAvg?.hsr ? `${reportData.gpsAvg.hsr.toFixed(0)} m` : '—' },
+                { name: 'Distancia Sprint Promedio (m)', value: reportData.gpsAvg?.sprint ? `${reportData.gpsAvg.sprint.toFixed(0)} m` : '—' },
+                { name: 'Número de Sprints Promedio', value: reportData.gpsAvg?.nsp ? `${reportData.gpsAvg.nsp.toFixed(1)}` : '—' },
+                { name: 'Velocidad Máxima Esperable (km/h)', value: reportData.gpsAvg?.vmax ? `${reportData.gpsAvg.vmax.toFixed(1)} km/h` : '—' },
+                { name: 'Acc/Decc AI Promedio', value: reportData.gpsAvg?.acc ? `${reportData.gpsAvg.acc.toFixed(1)}` : '—' },
+              ];
+
               return (
-                <div key={`well-${chunkIdx}`} className="print-page-section">
-                  <PrintHeader 
-                    selectedDate={selectedDate} 
-                    selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
-                    activeMicrocycle={activeMicrocycle} 
-                    page={currentPageNum} 
-                    total={totalPages} 
-                  />
-                  
-                  <section>
-                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-3 uppercase tracking-widest italic">
-                      2. BIENESTAR INDIVIDUAL {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}
-                    </h3>
-                    <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
-                      <table className="w-full text-center border-collapse bg-white">
-                        <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.2em]">
-                          <tr>
-                            <th className="px-4 py-2 text-left">ATLETA</th>
-                            <th className="px-1 py-2">FATIGA</th>
-                            <th className="px-1 py-2">SUEÑO</th>
-                            <th className="px-1 py-2">DOLOR</th>
-                            <th className="px-1 py-2">ESTRÉS</th>
-                            <th className="px-1 py-2">ÁNIMO</th>
-                            <th className="px-1 py-2">PROM.</th>
-                            <th className="px-2 py-2">ZONA MOLESTIA</th>
-                            <th className="px-2 py-2">ESTADO SALUD</th>
-                            <th className="px-4 py-2 text-right">STATUS</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-[8px] font-bold text-slate-900">
-                          {chunk.map(({ player, data }) => {
-                            const avg = data ? (data.fatigue + data.sleep + data.mood) / 3 : 0;
-                            const isSano = !data?.illness_symptoms || data.illness_symptoms.length === 0;
-                            const hasPain = data?.soreness_areas && data.soreness_areas.length > 0;
-                            const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
-
-                            return (
-                              <tr key={player.id} className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}>
-                                <td className="px-4 py-0.5 text-left">
-                                   <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
-                                   <ClubBadge 
-                                     clubName={player.club_name || player.club} 
-                                     idClub={player.id_club}
-                                     clubs={clubs}
-                                     className="mt-0.5"
-                                     logoSize="w-2.5 h-2.5"
-                                     showName={true}
-                                   />
-                                </td>
-                                <td className="px-1 py-0.5">
-                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.fatigue)}`}>{data.fatigue}</span> : '-'}
-                                </td>
-                                <td className="px-1 py-0.5">
-                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.sleep)}`}>{data.sleep}</span> : '-'}
-                                </td>
-                                <td className="px-1 py-0.5">
-                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.soreness)}`}>{data.soreness}</span> : '-'}
-                                </td>
-                                <td className="px-1 py-0.5">
-                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.stress)}`}>{data.stress}</span> : '-'}
-                                </td>
-                                <td className="px-1 py-0.5">
-                                  {data ? <span className={`w-4 h-4 flex items-center justify-center mx-auto rounded-full text-white text-[7px] font-black shadow-sm ${getScoreColor(data.mood)}`}>{data.mood}</span> : '-'}
-                                </td>
-                                <td className="px-1 py-0.5 text-[8px] font-black italic text-[#0b1220]">{avg ? avg.toFixed(1) : '-'}</td>
-                                <td className="px-2 py-0.5">
-                                  <span className={`text-[6px] font-black italic uppercase px-1.5 py-0.5 rounded-full ${hasPain ? 'text-amber-600 bg-amber-50 border border-amber-100' : 'text-slate-300'}`}>
-                                    {hasPain ? data?.soreness_areas?.join(', ') : 'SIN DOLOR'}
-                                  </span>
-                                </td>
-                                <td className="px-2 py-0.5">
-                                  <span className={`text-[6px] font-black italic uppercase px-1.5 py-0.5 rounded-full ${isSano ? 'text-emerald-600 bg-emerald-50 border border-emerald-100' : 'text-amber-600 bg-amber-50 border border-amber-100'}`}>
-                                    {isSano ? 'SANO' : data?.illness_symptoms?.join(', ')}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-0.5 text-right">
-                                  <div className="flex items-center justify-end gap-1 text-emerald-500 font-black italic">
-                                    <div className="w-3 h-3 bg-emerald-50 rounded-full flex items-center justify-center">
-                                      <i className="fa-solid fa-check text-[6px]"></i>
-                                    </div>
-                                    <span className="text-[7px] uppercase tracking-widest">OK</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          {/* FILA DE PROMEDIOS */}
-                          {chunkIdx === wellnessChunks.length - 1 && reportData.wellAvg && (
-                            <tr className="bg-[#0b1220] text-white font-black italic h-8">
-                              <td className="px-4 py-0.5 text-left uppercase tracking-[0.2em] text-[8px]">Promedio Grupal</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.fatigue.toFixed(1)}</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.sleep.toFixed(1)}</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.soreness.toFixed(1)}</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.stress.toFixed(1)}</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-sm">{reportData.wellAvg.mood.toFixed(1)}</td>
-                              <td className="px-1 py-0.5 text-red-500 text-base">
-                                {((reportData.wellAvg.fatigue + reportData.wellAvg.sleep + reportData.wellAvg.mood) / 3).toFixed(1)}
-                              </td>
-                              <td colSpan={3} className="bg-[#0b1220]"></td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                <>
+                  {/* HOJA 1: PORTADA */}
+                  <div className="print-page-section flex flex-col justify-between items-center text-center bg-[#0b1220] border border-slate-850 text-white p-12 min-h-[170mm] print:h-[200mm]">
+                    <div className="w-full flex justify-between items-center opacity-80">
+                      <span className="text-[10px] font-black tracking-[0.25em] text-red-500 uppercase">LA ROJA PERFORMANCE HUB</span>
+                      <span className="text-[10px] font-black tracking-widest text-[#02428c] uppercase bg-white/15 px-3 py-1 rounded-full">CONFIDENCIAL</span>
                     </div>
-                  </section>
-                  <PrintFooter page={currentPageNum} />
-                </div>
-              );
-            })}
 
-            {/* PÁGINAS DE CARGA INTERNA (Chunked) */}
-            {loadChunks.map((chunk, chunkIdx) => {
-              currentPageNum++;
-              return (
-                <div key={`load-${chunkIdx}`} className="print-page-section">
-                  <PrintHeader 
-                    selectedDate={selectedDate} 
-                    selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
-                    activeMicrocycle={activeMicrocycle} 
-                    page={currentPageNum} 
-                    total={totalPages} 
-                  />
-                  <section>
-                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-[#0b1220] pl-4 mb-3 uppercase tracking-widest italic">
-                      3. CONTROL DE CARGA INTERNA {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}
-                    </h3>
-                    <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
-                      <table className="w-full text-center border-collapse bg-white">
-                        <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.2em]">
-                          <tr>
-                            <th className="px-4 py-2 text-left">ATLETA</th>
-                            <th className="px-2 py-2">SESIONES</th>
-                            <th className="px-2 py-2">RPE MEDIA</th>
-                            <th className="px-2 py-2">MINUTOS TOT</th>
-                            <th className="px-2 py-2">CARGA (UA)</th>
-                            <th className="px-2 py-2">MOLESTIAS</th>
-                            <th className="px-2 py-2">ENFERMEDAD</th>
-                            <th className="px-4 py-2 text-right">ESTADO</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-[8px] font-bold text-slate-900">
-                          {chunk.map(({ player, sessions }) => {
-                            const rpeAvg = sessions.length ? sessions.reduce((acc, c) => acc + c.rpe, 0) / sessions.length : 0;
-                            const totalMin = sessions.reduce((acc, c) => acc + c.duration, 0);
-                            const totalLoad = sessions.reduce((acc, c) => acc + c.load, 0);
-                            const status = getLoadStatus(totalLoad);
-                            const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
-                            
-                            // Aggregated molestias and illness from sessions
-                            const allMolestias = Array.from(new Set(sessions.map(s => s.molestias).filter(m => m && m.trim() !== ''))).join(', ');
-                            const allEnfermedad = Array.from(new Set(sessions.map(s => s.enfermedad).filter(e => e && e.trim() !== ''))).join(', ');
+                    <div className="my-auto space-y-10 max-w-3xl">
+                      <div className="w-32 h-32 bg-white p-4 rounded-full shadow-2xl mx-auto flex items-center justify-center border-4 border-red-650">
+                        <img 
+                          src={getDriveDirectLink(FEDERATION_LOGO)} 
+                          alt="Federation Logo" 
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
 
-                            return (
-                              <tr key={player.id} className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}>
-                                <td className="px-4 py-0.5 text-left">
-                                   <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{player.name}</span>
-                                   <ClubBadge 
-                                     clubName={player.club_name || player.club} 
-                                     idClub={player.id_club}
-                                     clubs={clubs}
-                                     className="mt-0.5"
-                                     logoSize="w-2.5 h-2.5"
-                                     showName={true}
-                                   />
-                                </td>
-                                <td className="px-2 py-0.5 text-slate-400 font-black italic text-[8px]">{sessions.length}</td>
-                                <td className="px-2 py-0.5 font-black text-[10px] italic text-[#0b1220]">{rpeAvg ? rpeAvg.toFixed(1) : '—'}</td>
-                                <td className="px-2 py-0.5 text-slate-500 font-black italic text-[8px]">{totalMin}'</td>
-                                <td className="px-2 py-0.5 font-black text-[10px] italic text-red-600">{totalLoad}</td>
-                                <td className="px-2 py-0.5">
-                                  {allMolestias ? (
-                                    <span className="text-[6px] font-black italic uppercase px-1.5 py-0.5 rounded-full text-amber-600 bg-amber-50 border border-amber-100 uppercase truncate max-w-[80px] block mx-auto">
-                                      {allMolestias}
-                                    </span>
-                                  ) : <span className="text-slate-300">-</span>}
-                                </td>
-                                <td className="px-2 py-0.5">
-                                  {allEnfermedad ? (
-                                    <span className="text-[6px] font-black italic uppercase px-1.5 py-0.5 rounded-full text-red-600 bg-red-50 border border-red-100 uppercase truncate max-w-[80px] block mx-auto">
-                                      {allEnfermedad}
-                                    </span>
-                                  ) : <span className="text-slate-300">-</span>}
-                                </td>
-                                <td className="px-4 py-0.5 text-right">
-                                  <span className={`px-1.5 py-0.5 rounded-full text-[6px] font-black italic tracking-widest border ${status.color.replace('text-', 'border-').replace('600', '200')} ${status.color.replace('text-', 'bg-').replace('600', '50')} ${status.color}`}>
-                                    {status.label}
-                                  </span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          {/* FILA DE PROMEDIOS */}
-                          {chunkIdx === loadChunks.length - 1 && reportData.loadAvg && (
-                            <tr className="bg-[#0b1220] text-white font-black italic h-8">
-                              <td className="px-4 py-0.5 text-left uppercase tracking-[0.2em] text-[8px]">Promedio Grupal</td>
-                              <td className="px-2 py-0.5">—</td>
-                              <td className="px-2 py-0.5 text-emerald-400 text-sm">{reportData.loadAvg.rpe.toFixed(1)}</td>
-                              <td className="px-2 py-0.5 text-emerald-400 text-xs">{reportData.loadAvg.duration.toFixed(0)}'</td>
-                              <td className="px-2 py-0.5 text-red-500 text-sm">{reportData.loadAvg.load.toFixed(0)}</td>
-                              <td colSpan={2} className="bg-[#0b1220]"></td>
-                              <td className="px-4 py-0.5 text-right text-slate-400 text-[7px] tracking-widest bg-[#0b1220]">UA TOTAL</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                      <div className="space-y-4">
+                        <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter italic text-white font-['Bebas_Neue']">
+                          REPORTE TÉCNICO DE RENDIMIENTO
+                        </h1>
+                        <p className="text-sm font-bold text-slate-400 uppercase tracking-[0.25em] mt-2">
+                          MONITOREO CIENTÍFICO Y CONTROL DE CARGAS
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-6 pt-10 border-t border-slate-800">
+                        <div className="text-center">
+                          <span className="text-[9px] font-black text-slate-500 tracking-widest block uppercase">FECHA REPORTE</span>
+                          <span className="text-sm font-black text-white uppercase italic mt-2 block">
+                            {new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          </span>
+                        </div>
+                        <div className="text-center border-x border-slate-800 px-4">
+                          <span className="text-[9px] font-black text-slate-500 tracking-widest block uppercase">CATEGORÍA OFICIAL</span>
+                          <span className="text-sm font-black text-red-500 uppercase italic mt-2 block truncate">
+                            {selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories.map(c => c.replace('SUB_', 'SUB ')).join(', ').toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="text-center">
+                          <span className="text-[9px] font-black text-slate-500 tracking-widest block uppercase">MICROCICLO ACTIVO</span>
+                          <span className="text-sm font-black text-white uppercase italic mt-2 block truncate">
+                            {activeMicrocycle?.nombre_display || (activeMicrocycle ? `MICROCICLO #${activeMicrocycle.micro_number || activeMicrocycle.id}` : 'SIN MICROCICLO ACTIVO')}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </section>
-                  <PrintFooter page={currentPageNum} />
-                </div>
-              );
-            })}
 
-            {/* PÁGINAS DE GPS (Chunked) */}
-            {gpsChunks.map((chunk, chunkIdx) => {
-              currentPageNum++;
-              return (
-                <div key={`gps-${chunkIdx}`} className="print-page-section">
-                  <PrintHeader 
-                    selectedDate={selectedDate} 
-                    selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
-                    activeMicrocycle={activeMicrocycle} 
-                    page={currentPageNum} 
-                    total={totalPages} 
-                  />
-                  <section>
-                    <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-red-600 pl-4 mb-3 uppercase tracking-widest italic">
-                      4. RENDIMIENTO INDIVIDUAL GPS {chunkIdx > 0 ? '(CONTINUACIÓN)' : ''}
-                    </h3>
-                    <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
-                      <table className="w-full text-center border-collapse bg-white">
-                        <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.2em]">
-                          <tr>
-                            <th className="px-4 py-2 text-left">ATLETA</th>
-                            <th className="px-1 py-2">CATEGORÍA</th>
-                            <th className="px-1 py-2">MIN</th>
-                            <th className="px-1 py-2">DIST (M)</th>
-                            <th className="px-1 py-2">M/MIN</th>
-                            <th className="px-1 py-2">HSR</th>
-                            <th className="px-1 py-2">AI</th>
-                            <th className="px-1 py-2">SPRINT</th>
-                            <th className="px-1 py-2">VEL MAX</th>
-                            <th className="px-1 py-2">ACC/DECC</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-[8px] font-mono font-black text-slate-900">
-                          {chunk.map((row) => {
-                            const player = row.players;
-                            const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim() : `ID: ${row.player_id}`;
-                            const isOwnPlayer = player && normalizeClub(player.club_name || player.club || '') === normalizeClub(userClub || '');
-                            
-                            // Use stored IFR if available, otherwise calculate it
-                            const ifrValue = row.ifr !== undefined && row.ifr !== null ? row.ifr : calcularIFR(row, player);
-                            const ifrColor = row.ifr_color || (ifrValue !== null ? getIFRColor(ifrValue) : null);
-                            
-                            return (
-                              <tr 
-                                key={row.id} 
-                                className={`border-b border-slate-50 h-10 hover:bg-slate-50/50 transition-colors ${isOwnPlayer ? 'bg-slate-100/50' : ''}`}
-                                style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}
-                              >
-                                <td className="px-4 py-0.5 text-left font-sans" style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>
-                                   {player?.player_id ? (
-                                      <span 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          sessionStorage.setItem('selectedPlayerIdForProfile', String(player.player_id));
-                                          window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: player.player_id } }));
-                                        }}
-                                        className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220] hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200"
-                                        title={`Ver perfil de ${playerName}`}
-                                      >
-                                        {playerName}
-                                      </span>
-                                    ) : (
-                                      <span className="text-[8px] font-black italic uppercase block leading-none text-[#0b1220]">{playerName}</span>
-                                    )}
-                                   <ClubBadge 
-                                     clubName={player?.club_name || player?.club} 
-                                     idClub={player?.id_club}
-                                     clubs={clubs}
-                                     className="mt-0.5"
-                                     logoSize="w-2.5 h-2.5"
-                                     showName={true}
-                                   />
-                                </td>
-                                <td className="px-1 py-0.5 text-slate-500 text-[8px] uppercase font-bold text-center">
-                                  {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
-                                </td>
-                                <td className="px-1 py-0.5 text-slate-400 italic text-[8px]">{row.minutos?.toFixed(0) || '0'}</td>
-                                <td className="px-1 py-0.5 text-[#0b1220] italic text-[8px]">{row.dist_total_m?.toFixed(0) || '0'}</td>
-                                <td className="px-1 py-0.5">
-                                  <span className={`px-1 py-0.5 rounded-full text-[7px] ${getIntensityStyle(row.m_por_min || 0)}`}>
-                                    {row.m_por_min?.toFixed(1) || '0.0'}
-                                  </span>
-                                </td>
-                                <td className="px-1 py-0.5 text-slate-500 italic text-[8px]">{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
-                                <td className="px-1 py-0.5 text-slate-500 italic text-[8px]">{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
-                                <td className="px-1 py-0.5 text-blue-600 italic text-[8px]">{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
-                                <td className="px-1 py-0.5 text-red-600 text-[10px] italic">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
-                                <td className="px-1 py-0.5 text-[#0b1220] italic text-[8px]">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
-                              </tr>
-                            );
-                          })}
-                          {/* FILA DE PROMEDIOS */}
-                          {chunkIdx === gpsChunks.length - 1 && reportData.gpsAvg && (
-                            <tr className="bg-[#0b1220] text-white font-black italic h-8">
-                              <td className="px-4 py-0.5 text-left uppercase font-sans tracking-[0.2em] text-[8px]">Promedio Grupal</td>
-                              <td className="px-1 py-0.5 text-emerald-400/50 text-[8px]">-</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.minutos.toFixed(0)}</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.dist.toFixed(0)}</td>
-                              <td className="px-1 py-0.5 text-red-500 text-sm">{reportData.gpsAvg.mpm.toFixed(1)}</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.hsr.toFixed(0)}</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.ai.toFixed(0)}</td>
-                              <td className="px-1 py-0.5 text-emerald-400 text-xs">{reportData.gpsAvg.sprint.toFixed(0)}</td>
-                              <td className="px-1 py-0.5 text-red-500 text-sm">{reportData.gpsAvg.vmax.toFixed(1)}</td>
-                              <td className="px-4 py-0.5 text-right text-emerald-400 text-xs bg-[#0b1220]">{reportData.gpsAvg.acc.toFixed(1)}</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                    <div className="w-full flex justify-between items-center text-[8px] font-black tracking-widest text-slate-600 uppercase border-t border-slate-850 pt-4">
+                      <span>ELITE FOOTBALL PERFORMANCE PRO • AMB</span>
+                      <span>HOJA 1 / 6</span>
                     </div>
-                  </section>
-                  <PrintFooter page={currentPageNum} />
-                </div>
+                  </div>
+
+                  {/* HOJA 2: CHECK IN (WELLNESS) */}
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      {/* Cabecera Oficial Selección Nacional - Estilo Wellness Menu */}
+                      <div className="flex items-center h-14 bg-[#0b1220] rounded-xl overflow-hidden relative shadow-md mb-2 text-white w-full">
+                        {/* Blue Segment */}
+                        <div className="bg-[#02428c] h-full flex items-center px-6 relative z-20 min-w-[260px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
+                          <span className="text-xs font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
+                            REPORTE BIENESTAR FISIOLÓGICO
+                          </span>
+                        </div>
+                        
+                        {/* Red Segment */}
+                        <div className="bg-[#e2231a] h-full w-16 -ml-8 relative z-10 shadow-lg" style={{ clipPath: 'polygon(25% 0, 100% 0, 75% 100%, 0% 100%)' }}></div>
+                        
+                        {/* Logo & Identity */}
+                        <div className="flex-1 flex items-center justify-end gap-3 relative z-30 pr-6">
+                          <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center p-0.5 bg-white rounded-full shadow-sm">
+                            <img 
+                              src={getDriveDirectLink(FEDERATION_LOGO)} 
+                              alt="Logo" 
+                              className="w-full h-full object-contain"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                          <div className="h-6 w-[1px] bg-slate-700"></div>
+                          <div className="flex flex-col text-right">
+                            <h2 className="text-[9.5px] font-black text-white uppercase tracking-tighter leading-tight font-sans">
+                              SELECCIÓN NACIONAL
+                            </h2>
+                            <span className="text-[8.5px] font-black text-red-500 uppercase tracking-tighter leading-none mt-0.5">
+                              {selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories.map(c => c.replace('SUB_', 'SUB ')).join(', ').toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Grid de Metadatos del Microciclo */}
+                      <div className="grid grid-cols-3 gap-2.5 mb-2.5">
+                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
+                          <div className="w-1 h-1 rounded-full bg-[#02428c]"></div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">PROCESO / MICROCICLO</span>
+                            <span className="text-[8.5px] font-black text-slate-800 uppercase tracking-tight mt-1 truncate">
+                              {activeMicrocycle?.nombre_display || (activeMicrocycle ? `MICROCICLO #${activeMicrocycle.micro_number || activeMicrocycle.id}` : 'SIN MICROCICLO ACTIVO')}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
+                          <div className="w-1 h-1 rounded-full bg-red-650"></div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">FECHA DEL REPORTE</span>
+                            <span className="text-[8.5px] font-black text-slate-800 tracking-tight mt-1">
+                              {new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
+                          <div className="w-1 h-1 rounded-full bg-emerald-500"></div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">CIUDAD / UBICACIÓN</span>
+                            <span className="text-[8.5px] font-black text-slate-800 uppercase tracking-tight mt-1 truncate">
+                              {activeMicrocycle?.city ? `${activeMicrocycle.city}, ${activeMicrocycle.country || 'CHILE'}` : 'SANTIAGO, CHILE'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Grid de KPIs / Estadísticas Clave */}
+                      <div className="grid grid-cols-4 gap-2.5 mb-3">
+                        {/* KPI 1: Check-ins */}
+                        <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-between shadow-xs">
+                          <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                            CHECK-IN COMPLETADOS
+                          </span>
+                          <div className="my-1 flex items-baseline gap-0.5">
+                            <span className="text-xs font-black text-[#02428c] leading-none">
+                              {stats.checkInDone}
+                            </span>
+                            <span className="text-[8px] font-bold text-slate-400">
+                              / {currentCitadosPlayers.length}
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-205 rounded-full h-1 overflow-hidden">
+                            <div 
+                              className="bg-[#02428c] h-full rounded-full transition-all duration-500" 
+                              style={{ width: `${currentCitadosPlayers.length > 0 ? (stats.checkInDone / currentCitadosPlayers.length) * 100 : 0}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        {/* KPI 2: Alertas Dolor */}
+                        <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-between shadow-xs">
+                          <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">ALERTAS DOLOR MUSCULAR</span>
+                          <div className="my-1 flex items-baseline gap-0.5">
+                            <span className={`text-xs font-black leading-none ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-800'}`}>
+                              {stats.sorenessAlerts}
+                            </span>
+                            <span className="text-[8px] font-bold text-slate-400 ml-1">alertas</span>
+                          </div>
+                          <span className={`text-[6px] font-black uppercase ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                            {stats.sorenessAlerts > 0 ? 'Requieren fisioterapia' : 'Sin sobrecargas clínicas'}
+                          </span>
+                        </div>
+
+                        {/* KPI 3: Alertas Salud */}
+                        <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-between shadow-xs">
+                          <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">ALERTAS ESTADO SALUD</span>
+                          <div className="my-1 flex items-baseline gap-0.5">
+                            <span className={`text-xs font-black leading-none ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-800'}`}>
+                              {stats.healthAlerts}
+                            </span>
+                            <span className="text-[8px] font-bold text-slate-400 ml-1">alertas</span>
+                          </div>
+                          <span className={`text-[6px] font-black uppercase ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
+                            {stats.healthAlerts > 0 ? 'Evaluación médica' : 'Plantel en óptimo estado'}
+                          </span>
+                        </div>
+
+                        {/* KPI 4: Promedio Bienestar */}
+                        <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-between shadow-xs">
+                          <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">PROMEDIO BIENESTAR JORNADA</span>
+                          <div className="my-1 flex items-baseline gap-0.5">
+                            <span className="text-xs font-black text-emerald-600 leading-none">
+                              {wellnessDayAvg}
+                            </span>
+                            <span className="text-[8px] font-bold text-slate-400 ml-1">/ 5.0</span>
+                          </div>
+                          <span className="text-[6px] text-slate-400 font-bold uppercase tracking-wider leading-none">
+                            Puntuación general del día
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Tablas lado-a-lado */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Left Wellness Table */}
+                        <div className="overflow-hidden rounded-xl border border-slate-100 shadow-sm">
+                          <table className="w-full text-center border-collapse bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[6.5px] font-black uppercase tracking-[0.05em]">
+                              <tr>
+                                <th className="px-2 py-1 text-left">ATLETA</th>
+                                <th className="px-0.5 py-1">FAT</th>
+                                <th className="px-0.5 py-1">SUE</th>
+                                <th className="px-0.5 py-1">DOL</th>
+                                <th className="px-0.5 py-1">EST</th>
+                                <th className="px-0.5 py-1">ÁNI</th>
+                                <th className="px-0.5 py-1">PROM</th>
+                                <th className="px-2 py-1 text-left">ZONA MOLESTIA / SÍNTOMAS</th>
+                                <th className="px-0.5 py-1">ESTADO</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[7px] font-bold text-slate-900">
+                              {leftWellness.map(({ player, data }: any, idx: number) => {
+                                const avg = data ? (data.fatigue + data.sleep + data.mood) / 3 : 0;
+                                const hasPain = data?.soreness_areas && data.soreness_areas.length > 0;
+                                const painText = hasPain ? data.soreness_areas.join(', ') : 'SIN DOLOR';
+                                const isSano = !data?.illness_symptoms || data.illness_symptoms.length === 0;
+                                const illnessText = !isSano ? data.illness_symptoms.join(', ') : 'SANO';
+                                const detailText = `${painText} | ${illnessText}`.toUpperCase();
+                                const hasAlert = hasPain || !isSano;
+                                const isPending = !data;
+
+                                return (
+                                  <tr key={`lwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 h-[25px] hover:bg-slate-50/50">
+                                    <td className="px-2 py-0.5 text-left">
+                                      <span className="block font-black text-[#0b1220] text-[7px] uppercase truncate max-w-[85px] leading-tight">{player.name}</span>
+                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-wider truncate max-w-[85px] leading-none mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.fatigue)}`}>
+                                          {data.fatigue}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.sleep)}`}>
+                                          {data.sleep}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.soreness)}`}>
+                                          {data.soreness}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.stress || data.stres || 0)}`}>
+                                          {data.stress || data.stres || 0}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.mood || data.ani || 0)}`}>
+                                          {data.mood || data.ani || 0}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center text-[7.5px] font-black text-[#0b1220] font-mono">
+                                      {avg ? avg.toFixed(1) : '-'}
+                                    </td>
+                                    <td className="px-2 py-0.5 text-left truncate max-w-[120px]">
+                                      {isPending ? (
+                                        <span className="text-slate-300 font-bold">—</span>
+                                      ) : hasAlert ? (
+                                        <span className="text-red-500 font-extrabold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {isPending ? (
+                                        <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5.5px] font-black border border-amber-100 uppercase">PEND</span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-sm text-[5.5px] font-black border border-emerald-100 uppercase">OK</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Right Wellness Table */}
+                        <div className="overflow-hidden rounded-xl border border-slate-100 shadow-sm">
+                          <table className="w-full text-center border-collapse bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[6.5px] font-black uppercase tracking-[0.05em]">
+                              <tr>
+                                <th className="px-2 py-1 text-left">ATLETA</th>
+                                <th className="px-0.5 py-1">FAT</th>
+                                <th className="px-0.5 py-1">SUE</th>
+                                <th className="px-0.5 py-1">DOL</th>
+                                <th className="px-0.5 py-1">EST</th>
+                                <th className="px-0.5 py-1">ÁNI</th>
+                                <th className="px-0.5 py-1">PROM</th>
+                                <th className="px-2 py-1 text-left">ZONA MOLESTIA / SÍNTOMAS</th>
+                                <th className="px-0.5 py-1">ESTADO</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[7px] font-bold text-slate-900">
+                              {rightWellness.map(({ player, data }: any, idx: number) => {
+                                const avg = data ? (data.fatigue + data.sleep + data.mood) / 3 : 0;
+                                const hasPain = data?.soreness_areas && data.soreness_areas.length > 0;
+                                const painText = hasPain ? data.soreness_areas.join(', ') : 'SIN DOLOR';
+                                const isSano = !data?.illness_symptoms || data.illness_symptoms.length === 0;
+                                const illnessText = !isSano ? data.illness_symptoms.join(', ') : 'SANO';
+                                const detailText = `${painText} | ${illnessText}`.toUpperCase();
+                                const hasAlert = hasPain || !isSano;
+                                const isPending = !data;
+
+                                return (
+                                  <tr key={`rwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 h-[25px] hover:bg-slate-50/50">
+                                    <td className="px-2 py-0.5 text-left">
+                                      <span className="block font-black text-[#0b1220] text-[7px] uppercase truncate max-w-[85px] leading-tight">{player.name}</span>
+                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-wider truncate max-w-[85px] leading-none mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.fatigue)}`}>
+                                          {data.fatigue}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.sleep)}`}>
+                                          {data.sleep}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.soreness)}`}>
+                                          {data.soreness}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.stress || data.stres || 0)}`}>
+                                          {data.stress || data.stres || 0}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {data ? (
+                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.mood || data.ani || 0)}`}>
+                                          {data.mood || data.ani || 0}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center text-[7.5px] font-black text-[#0b1220] font-mono">
+                                      {avg ? avg.toFixed(1) : '-'}
+                                    </td>
+                                    <td className="px-2 py-0.5 text-left truncate max-w-[120px]">
+                                      {isPending ? (
+                                        <span className="text-slate-300 font-bold">—</span>
+                                      ) : hasAlert ? (
+                                        <span className="text-red-500 font-extrabold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-bold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-0.5 py-0.5 text-center">
+                                      {isPending ? (
+                                        <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5.5px] font-black border border-amber-100 uppercase">PEND</span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-sm text-[5.5px] font-black border border-emerald-100 uppercase">OK</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                    <PrintFooter page={2} />
+                  </div>
+
+                  {/* HOJA 3: CHECK OUT (PSE) */}
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      <PrintHeader 
+                        selectedDate={selectedDate} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={3} 
+                        total={6} 
+                      />
+                      
+                      <section className="mt-4">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-655 pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
+                          <span>3._ CONTROL DE CARGA INTERNA DE LA SESIÓN (CHECK-OUT PSE)</span>
+                          {reportData.loadAvg && (
+                            <span className="bg-red-600 text-white text-[10px] font-black tracking-widest px-3 py-1 rounded-full font-mono">
+                              DURACIÓN PROM: {reportData.loadAvg.duration.toFixed(0)} MIN | CARGA HISTÓRICA PROM: {reportData.loadAvg.load.toFixed(0)} u.a.
+                            </span>
+                          )}
+                        </h3>
+
+                        <div className="grid grid-cols-2 gap-6">
+                          {/* Left loads table */}
+                          <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
+                            <table className="w-full text-center border-collapse bg-white">
+                              <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
+                                <tr>
+                                  <th className="px-3 py-2 text-left">ATLETA</th>
+                                  <th className="px-1 py-2">SESIONES</th>
+                                  <th className="px-1 py-2">RPE PROMEDIO</th>
+                                  <th className="px-1 py-2">DURACIÓN (MIN)</th>
+                                  <th className="px-1 py-2">CARGA (U.A.)</th>
+                                  <th className="px-2 py-2">SITUACIÓN CLÍNICA / DETALLE</th>
+                                </tr>
+                              </thead>
+                              <tbody className="text-[8px] font-bold text-slate-900">
+                                {leftLoads.map(({ player, sessions }: any, idx: number) => {
+                                  const rpeAvg = sessions.length ? sessions.reduce((acc: any, c: any) => acc + c.rpe, 0) / sessions.length : 0;
+                                  const totalMin = sessions.reduce((acc: any, c: any) => acc + c.duration, 0);
+                                  const totalLoad = sessions.reduce((acc: any, c: any) => acc + c.load, 0);
+                                  const allMolestias = Array.from(new Set(sessions.map((s: any) => s.molestias).filter((m: any) => m && m.trim() !== ''))).join(', ');
+                                  const allEnfermedad = Array.from(new Set(sessions.map((s: any) => s.enfermedad).filter((e: any) => e && e.trim() !== ''))).join(', ');
+                                  const loadDetails = [allMolestias, allEnfermedad].filter(Boolean).join(' | ');
+
+                                  return (
+                                    <tr key={`lload-${player.player_id}-${idx}`} className="border-b border-slate-50 h-[30px] hover:bg-slate-50/50">
+                                      <td className="px-3 py-1 text-left font-black text-[#0b1220] truncate max-w-[120px]">{player.name}</td>
+                                      <td className="px-1 py-1 text-slate-400 italic font-black font-mono">{sessions.length}</td>
+                                      <td className="px-1 py-1 text-[#0b1220] font-black text-[9px] font-mono">{rpeAvg ? rpeAvg.toFixed(1) : '—'}</td>
+                                      <td className="px-1 py-1 text-slate-500 italic font-black font-mono">{totalMin}'</td>
+                                      <td className="px-1 py-1 text-red-650 font-extrabold text-[9px] font-mono">{totalLoad}</td>
+                                      <td className="px-2 py-1 truncate text-[7px] max-w-[124px]" title={loadDetails}>
+                                        {loadDetails ? (
+                                          <span className="text-red-500 font-bold bg-amber-50 px-1 border border-amber-100 rounded text-[6.5px] tracking-tight">{loadDetails.toUpperCase()}</span>
+                                        ) : (
+                                          <span className="text-slate-300">-</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Right loads table */}
+                          <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
+                            <table className="w-full text-center border-collapse bg-white">
+                              <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
+                                <tr>
+                                  <th className="px-3 py-2 text-left">ATLETA</th>
+                                  <th className="px-1 py-2">SESIONES</th>
+                                  <th className="px-1 py-2">RPE PROMEDIO</th>
+                                  <th className="px-1 py-2">DURACIÓN (MIN)</th>
+                                  <th className="px-1 py-2">CARGA (U.A.)</th>
+                                  <th className="px-2 py-2">SITUACIÓN CLÍNICA / DETALLE</th>
+                                </tr>
+                              </thead>
+                              <tbody className="text-[8px] font-bold text-slate-900">
+                                {rightLoads.map(({ player, sessions }: any, idx: number) => {
+                                  const rpeAvg = sessions.length ? sessions.reduce((acc: any, c: any) => acc + c.rpe, 0) / sessions.length : 0;
+                                  const totalMin = sessions.reduce((acc: any, c: any) => acc + c.duration, 0);
+                                  const totalLoad = sessions.reduce((acc: any, c: any) => acc + c.load, 0);
+                                  const allMolestias = Array.from(new Set(sessions.map((s: any) => s.molestias).filter((m: any) => m && m.trim() !== ''))).join(', ');
+                                  const allEnfermedad = Array.from(new Set(sessions.map((s: any) => s.enfermedad).filter((e: any) => e && e.trim() !== ''))).join(', ');
+                                  const loadDetails = [allMolestias, allEnfermedad].filter(Boolean).join(' | ');
+
+                                  return (
+                                    <tr key={`rload-${player.player_id}-${idx}`} className="border-b border-slate-50 h-[30px] hover:bg-slate-50/50">
+                                      <td className="px-3 py-1 text-left font-black text-[#0b1220] truncate max-w-[120px]">{player.name}</td>
+                                      <td className="px-1 py-1 text-slate-400 italic font-black font-mono">{sessions.length}</td>
+                                      <td className="px-1 py-1 text-[#0b1220] font-black text-[9px] font-mono">{rpeAvg ? rpeAvg.toFixed(1) : '—'}</td>
+                                      <td className="px-1 py-1 text-slate-500 italic font-black font-mono">{totalMin}'</td>
+                                      <td className="px-1 py-1 text-red-655 font-extrabold text-[9px] font-mono">{totalLoad}</td>
+                                      <td className="px-2 py-1 truncate text-[7px] max-w-[124px]" title={loadDetails}>
+                                        {loadDetails ? (
+                                          <span className="text-red-500 font-bold bg-amber-50 px-1 border border-amber-100 rounded text-[6.5px] tracking-tight">{loadDetails.toUpperCase()}</span>
+                                        ) : (
+                                          <span className="text-slate-300">-</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                    <PrintFooter page={3} />
+                  </div>
+
+                  {/* HOJA 4: DATOS GPS */}
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      <PrintHeader 
+                        selectedDate={selectedDate} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={4} 
+                        total={6} 
+                      />
+                      
+                      <section className="mt-4">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-[#02428c] pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
+                          <span>4._ DESEMPEÑO GPS COMPLETO DE LA JORNADA (TOTAL DE CARGA EXTERNA)</span>
+                          {reportData.gpsAvg && (
+                            <span className="bg-[#02428c] text-white text-[10px] font-black tracking-widest px-3 py-1 rounded-full font-mono">
+                              DIST. PROMEDIO: {reportData.gpsAvg.dist.toFixed(0)}m | m/min HISTÓRICO: {reportData.gpsAvg.mpm.toFixed(1)}
+                            </span>
+                          )}
+                        </h3>
+
+                        <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm max-h-[120mm]">
+                          <table className="w-full text-center border-collapse bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
+                              <tr>
+                                <th className="px-4 py-2 text-left bg-[#0b1220] min-w-[140px]">ATLETA</th>
+                                <th className="px-1 py-2">CATEGORÍA</th>
+                                <th className="px-1 py-2">DURACIÓN (MIN)</th>
+                                <th className="px-1 py-2">DIST. TOTAL (M)</th>
+                                <th className="px-1 py-2">M/MIN</th>
+                                <th className="px-1 py-2">DIST. HSR (&gt;20)</th>
+                                <th className="px-1 py-2">DIST. AI (&gt;15)</th>
+                                <th className="px-1 py-2">DIST. SPRINT (&gt;25)</th>
+                                <th className="px-1 py-2">VEL. MÁX (KM/H)</th>
+                                <th className="px-1 py-2">ACC/DECC AI</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[8px] font-mono font-black text-slate-900 italic">
+                              {reportData.gpsImportReport.map((row: any, idx: number) => {
+                                const player = row.players;
+                                const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim() : `ID: ${row.player_id}`;
+
+                                return (
+                                  <tr key={`gps-rep-${idx}`} className="border-b border-slate-50 h-[28px] hover:bg-slate-50/50 font-black">
+                                    <td className="px-4 py-0.5 text-left font-sans font-black text-[#0b1220] truncate max-w-[140px]">{playerName}</td>
+                                    <td className="px-1 py-0.5 text-slate-500 font-sans font-bold text-center">
+                                      {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
+                                    </td>
+                                    <td className="px-1 py-0.5 text-slate-400 font-bold">{row.minutos?.toFixed(0) || '0'}</td>
+                                    <td className="px-1 py-0.5 text-[#0b1220] font-bold">{row.dist_total_m?.toFixed(0) || '0'}</td>
+                                    <td className="px-1 py-0.5 text-[#02428c] font-black bg-blue-50/30 font-mono">
+                                      {row.m_por_min?.toFixed(1) || '0.0'}
+                                    </td>
+                                    <td className="px-1 py-0.5 text-slate-500 font-bold font-mono">{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
+                                    <td className="px-1 py-0.5 text-slate-500 font-bold font-mono">{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
+                                    <td className="px-1 py-0.5 text-blue-600 font-bold font-mono">{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
+                                    <td className="px-1 py-0.5 text-red-655 font-extrabold font-mono">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
+                                    <td className="px-1 py-0.5 text-[#0b1220] font-bold font-mono">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
+                                  </tr>
+                                );
+                              })}
+                              
+                              {/* FILA DE PROMEDIOS GRUPALES */}
+                              {reportData.gpsAvg && (
+                                <tr className="bg-[#0b1220] text-emerald-400 font-black italic h-[32px] sticky bottom-0">
+                                  <td className="px-4 py-1 text-left font-sans uppercase tracking-[0.1em] text-[8px] text-white">Promedio Grupal</td>
+                                  <td className="px-1 py-1 text-[8px] font-sans text-slate-500">-</td>
+                                  <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.minutos.toFixed(0)}'</td>
+                                  <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.dist.toFixed(0)}m</td>
+                                  <td className="px-1 py-1 text-sm text-red-500 bg-[#0c1930] font-mono">{reportData.gpsAvg.mpm.toFixed(1)}</td>
+                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.hsr.toFixed(0)}m</td>
+                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.ai.toFixed(0)}m</td>
+                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.sprint.toFixed(0)}m</td>
+                                  <td className="px-1 py-1 text-sm text-red-500 font-mono">{reportData.gpsAvg.vmax.toFixed(1)}</td>
+                                  <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.acc.toFixed(1)}</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+                    <PrintFooter page={4} />
+                  </div>
+
+                  {/* HOJA 5: PRONÓSTICO DE CARGA (3 COLUMNAS) */}
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      <PrintHeader 
+                        selectedDate={selectedDate} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={5} 
+                        total={6} 
+                      />
+                      
+                      <section className="mt-4 text-slate-900">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-650 pl-3 mb-4 uppercase tracking-widest italic">
+                          5._ COMPARATIVA CLASIFICATORIA: PRONÓSTICO DE CARGA (PREDICTIVO VS REAL)
+                        </h3>
+                        
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-6">
+                          * Tabla de contraste estructurada estrictamente en 3 columnas para validar la planificación predictiva versus la realidad física cuantificada.
+                        </p>
+
+                        <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm max-w-4xl mx-auto">
+                          <table className="w-full text-center border-collapse bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[9px] font-black uppercase tracking-[0.15em] h-12">
+                              <tr>
+                                <th className="px-6 py-3 text-left w-2/5">PARÁMETRO</th>
+                                <th className="px-6 py-3 border-x border-slate-800 w-1/3">PRONÓSTICO</th>
+                                <th className="px-6 py-3 w-1/4">VALORES (PROMEDIOS REALES)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[11px] font-black uppercase text-slate-800">
+                              {gpsParameters.map((param, index) => (
+                                <tr key={`param-p5-${index}`} className="border-b border-slate-100 h-13 hover:bg-slate-50/50">
+                                  <td className="px-6 py-3 text-left text-slate-900 font-bold">{param.name}</td>
+                                  {/* Columna Pronóstico en blanco para poder escribir */}
+                                  <td className="px-6 py-3 border-x border-slate-100 bg-slate-50/20"></td>
+                                  <td className="px-6 py-3 text-[#02428c] font-black italic bg-blue-50/20 font-mono">{param.value}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+                    <PrintFooter page={5} />
+                  </div>
+
+                  {/* HOJA 6: PLANILLA DE PRONÓSTICO (2 COLUMNAS) */}
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      <PrintHeader 
+                        selectedDate={selectedDate} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={6} 
+                        total={6} 
+                      />
+                      
+                      <section className="mt-4 text-slate-900">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-slate-900 pl-3 mb-4 uppercase tracking-widest italic">
+                          6._ PLANILLA DE ESTIMACIONES GPS (DOS COLUMNAS EN BLANCO)
+                        </h3>
+                        
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-6">
+                          * Ficha técnica de planificación para ser completada con lápiz de forma manual por el cuerpo de preparadores físicos antes de iniciar la jornada de entrenamiento.
+                        </p>
+
+                        <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm max-w-3xl mx-auto">
+                          <table className="w-full text-center border-collapse bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[9px] font-black uppercase tracking-[0.15em] h-12">
+                              <tr>
+                                <th className="px-6 py-3 text-left w-1/2">PARAMETROS GPS</th>
+                                <th className="px-6 py-3 w-1/2">PRONOSTICO</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[11px] font-black uppercase text-slate-800">
+                              {gpsParameters.map((param, index) => (
+                                <tr key={`param-p6-${index}`} className="border-b border-slate-100 h-[52px] hover:bg-slate-50/50">
+                                  <td className="px-6 py-3 text-left text-slate-900 font-bold">{param.name}</td>
+                                  {/* Resto vacío para poder escribir */}
+                                  <td className="px-6 py-3 bg-slate-50/10"></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+                    <PrintFooter page={6} />
+                  </div>
+                </>
               );
-            })}
-
-            {/* PÁGINA FINAL: TAREAS Y FIRMAS */}
-            <div className="print-page-section">
-              {(() => { currentPageNum++; return null; })()}
-              <PrintHeader 
-                selectedDate={selectedDate} 
-                selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
-                activeMicrocycle={activeMicrocycle} 
-                page={currentPageNum} 
-                total={totalPages} 
-              />
-              <section className="mb-6">
-                <h3 className="text-[10px] font-black text-slate-900 border-l-4 border-blue-500 pl-4 mb-3 uppercase tracking-widest italic">5. ANÁLISIS DE INTENSIDAD POR TAREA (MIN / AVG / MAX)</h3>
-                <div className="overflow-hidden rounded-[30px] border border-slate-100 shadow-sm">
-                  <table className="w-full text-center border-collapse bg-white">
-                    <thead className="bg-[#0b1220] text-white text-[6px] font-black uppercase tracking-[0.1em]">
-                      <tr>
-                        <th className="px-4 py-2 text-left">TAREA / BLOQUE</th>
-                        <th className="px-2 py-2">DISTANCIA (m)</th>
-                        <th className="px-2 py-2">INTENSIDAD (m/min)</th>
-                        <th className="px-2 py-2">HSR (&gt;20 km/h)</th>
-                        <th className="px-2 py-2">VEL MAX (km/h)</th>
-                        <th className="px-4 py-2 text-right">ACC/DECC AI</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-[7px] font-bold text-slate-900 italic uppercase">
-                      {reportData.taskSummary.map((task, idx) => (
-                        <tr key={idx} className="border-b border-slate-50 h-9">
-                          <td className="px-4 py-1 text-left font-black bg-slate-50/50 text-[#0b1220]">{task.name}</td>
-                          <td className="px-2 py-1">
-                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.dist.min.toFixed(0)}</span><span>{task.dist.max.toFixed(0)}</span></div>
-                            <div className="text-[9px] font-black">{task.dist.avg.toFixed(0)}</div>
-                          </td>
-                          <td className="px-2 py-1">
-                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.mpm.min.toFixed(1)}</span><span>{task.mpm.max.toFixed(1)}</span></div>
-                            <div className={`text-[8px] font-black px-2 py-0.5 rounded-full inline-block shadow-sm ${getIntensityStyle(task.mpm.avg)}`}>{task.mpm.avg.toFixed(1)}</div>
-                          </td>
-                          <td className="px-2 py-1">
-                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.hsr.min.toFixed(0)}</span><span>{task.hsr.max.toFixed(0)}</span></div>
-                            <div className="text-[9px] font-black">{task.hsr.avg.toFixed(0)}</div>
-                          </td>
-                          <td className="px-2 py-1">
-                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.vmax.min.toFixed(1)}</span><span>{task.vmax.max.toFixed(1)}</span></div>
-                            <div className="text-[9px] font-black text-red-600">{task.vmax.avg.toFixed(1)}</div>
-                          </td>
-                          <td className="px-4 py-1 text-right">
-                            <div className="flex justify-between text-[5px] opacity-40 px-1"><span>{task.acc.min.toFixed(1)}</span><span>{task.acc.max.toFixed(1)}</span></div>
-                            <div className="text-[9px] font-black">{task.acc.avg.toFixed(1)}</div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-
-              <section className="mt-20 pt-10 border-t-2 border-slate-100">
-                <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center mb-16">VALIDEZ TÉCNICA Y FIRMAS</h4>
-                <div className="grid grid-cols-2 gap-20 px-10 mb-12">
-                  <div className="text-center">
-                     <div className="h-px bg-slate-900 mb-4"></div>
-                     <p className="text-[10px] font-black uppercase text-slate-900 tracking-tighter">PREPARADOR FÍSICO</p>
-                     <p className="text-[8px] text-slate-400 uppercase">Área de Rendimiento La Roja</p>
-                  </div>
-                  <div className="text-center">
-                     <div className="h-px bg-slate-900 mb-4"></div>
-                     <p className="text-[10px] font-black uppercase text-slate-900 tracking-tighter">DIRECTOR TÉCNICO</p>
-                     <p className="text-[8px] text-slate-400 uppercase">Selección Nacional de Fútbol</p>
-                  </div>
-                </div>
-
-                {specialNote.trim() && (
-                  <div className="bg-slate-50 border-2 border-slate-100 rounded-3xl p-8 relative overflow-hidden mb-8">
-                     <div className="absolute top-0 right-0 w-24 h-24 bg-red-600/5 rotate-45 translate-x-12 -translate-y-12"></div>
-                     <h4 className="text-xs font-black text-[#02428c] uppercase tracking-widest mb-4 flex items-center gap-2">
-                       <i className="fa-solid fa-note-sticky text-red-600"></i> OBSERVACIONES DEL ÁREA DE RENDIMIENTO
-                     </h4>
-                     <p className="text-sm font-bold text-slate-700 leading-relaxed whitespace-pre-wrap italic">
-                       "{specialNote}"
-                     </p>
-                  </div>
-                )}
-              </section>
-              <PrintFooter page={currentPageNum} />
-            </div>
+            })()}
           </div>
         </div>
       )}
 
       {/* ESTILOS GLOBALES DE IMPRESIÓN */}
       <style>{`
+        @media screen {
+          .print-page-section {
+            width: 100% !important;
+            max-width: 1122px !important; /* Ancho de un A4 Landscape */
+            aspect-ratio: 297 / 210 !important; /* Proporción horizontal exacta de A4 */
+            margin: 0 auto 24px auto !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06) !important;
+            border-radius: 20px !important;
+            box-sizing: border-box !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            padding: 32px !important;
+            background-color: white;
+            overflow: hidden !important;
+            position: relative !important;
+          }
+          .print-page-section.bg-\\[\\#0b1220\\] {
+            background-color: #0b1220 !important;
+          }
+        }
+
         @media print {
           body { background: white !important; margin: 0; padding: 0; overflow: visible !important; }
           aside, nav, header, footer, .sidebar, .navbar, .ai-chat-button, .print\\:hidden { display: none !important; }
@@ -2561,18 +3295,21 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             padding: 0 !important;
             margin: 0 !important;
           }
-
+          
           .print-page-section {
             break-inside: avoid !important;
+            page-break-inside: avoid !important;
             position: relative !important;
-            min-height: 270mm !important;
-            width: 190mm !important;
+            height: 210mm !important; /* Alto completo de A4 */
+            width: 297mm !important;  /* Ancho completo de A4 */
             margin: 0 auto !important;
-            padding: 5mm 5mm !important;
+            padding: 10mm !important;
             background: white !important;
             border: none !important;
             box-sizing: border-box !important;
-            display: block !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
           }
 
           table { page-break-inside: avoid !important; }
@@ -2585,7 +3322,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }
           
           @page { 
-            size: A4 portrait; 
+            size: A4 landscape; 
             margin: 0; 
           }
         }
