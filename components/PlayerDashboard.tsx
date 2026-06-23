@@ -346,8 +346,97 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         saveError = err;
       }
 
-      // Si el error indica que la columna 'session_index' no existe, caemos a un upsert sin ese campo
-      if (saveError && (
+      // Si el error es por restricción única antigua en player_id y session_date
+      const isUniqueConstraintViolation = saveError && (
+        String(saveError.code) === '23505' ||
+        saveError.message?.includes('internal_load_player_id_session_date_key') ||
+        saveError.details?.includes('internal_load_player_id_session_date_key') ||
+        saveError.message?.includes('duplicate key value violates unique constraint') ||
+        JSON.stringify(saveError).includes('internal_load_player_id_session_date_key')
+      );
+
+      if (isUniqueConstraintViolation) {
+        console.warn("⚠️ Detectada restricción única antigua (player_id, session_date). Consolidando sesión de doble jornada...");
+        try {
+          // Obtener la carga existente del día
+          const { data: existingLoad, error: fetchErr } = await supabase
+            .from('internal_load')
+            .select('*')
+            .eq('player_id', player.player_id)
+            .eq('session_date', today)
+            .maybeSingle();
+
+          if (fetchErr) throw fetchErr;
+
+          if (existingLoad) {
+            // Consolidación inteligente de doble jornada (Sports Science sRPE ponderado)
+            const rpe1 = existingLoad.rpe || 0;
+            const dur1 = existingLoad.duration_min || 0;
+            const rpe2 = data.rpe || 0;
+            const dur2 = data.duration || 0;
+
+            const totalDuration = dur1 + dur2;
+            const totalSRPE = (rpe1 * dur1) + (rpe2 * dur2);
+            const consolidatedRPE = totalDuration > 0 ? Math.round(totalSRPE / totalDuration) : rpe2;
+
+            // Combinar molestias sin duplicados
+            const molestiasSet = new Set<string>();
+            if (existingLoad.molestias) {
+              existingLoad.molestias.split(',').forEach((m: string) => {
+                const trimmed = m.trim();
+                if (trimmed) molestiasSet.add(trimmed);
+              });
+            }
+            data.sorenessAreas.forEach((m: string) => {
+              const trimmed = m.trim();
+              if (trimmed) molestiasSet.add(trimmed);
+            });
+            const combinedMolestias = Array.from(molestiasSet).join(', ');
+
+            // Combinar enfermedad sin duplicados
+            const enfermedadSet = new Set<string>();
+            if (existingLoad.enfermedad) {
+              existingLoad.enfermedad.split(',').forEach((e: string) => {
+                const trimmed = e.trim();
+                if (trimmed) enfermedadSet.add(trimmed);
+              });
+            }
+            data.illnessSymptoms.forEach((e: string) => {
+              const trimmed = e.trim();
+              if (trimmed) enfermedadSet.add(trimmed);
+            });
+            const combinedEnfermedad = Array.from(enfermedadSet).join(', ');
+
+            // Actualizar la fila única existente
+            const { error: updateErr } = await supabase
+              .from('internal_load')
+              .update({
+                rpe: consolidatedRPE,
+                duration_min: totalDuration,
+                srpe: totalSRPE,
+                molestias: combinedMolestias || null,
+                enfermedad: combinedEnfermedad || null,
+                session_index: 1, // Mantenemos 1 para compatibilidad
+              })
+              .eq('id', existingLoad.id);
+
+            if (updateErr) throw updateErr;
+            saveError = null; // Error resuelto con éxito
+            console.log("✅ Carga consolidada con éxito en registro único existente para doble jornada.");
+          } else {
+            // Si por alguna razón no se encontró, intentamos un upsert simple reemplazando
+            const { error: upsertErr } = await supabase
+              .from('internal_load')
+              .upsert(payloadWithoutIndex, { onConflict: 'player_id,session_date' });
+            if (upsertErr) throw upsertErr;
+            saveError = null;
+          }
+        } catch (consolidationErr: any) {
+          console.error("Error consolidando doble jornada:", consolidationErr);
+          // Si falla la consolidación, lanzamos el error original
+          throw saveError;
+        }
+      } else if (saveError && (
         saveError.message?.includes('session_index') || 
         saveError.details?.includes('session_index') ||
         JSON.stringify(saveError).includes('session_index')
@@ -455,11 +544,54 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           }
 
           if (internalLoadErr) {
-            // Fallback sin session_index si choca la estructura
-            const { error: err2 } = await supabase
-              .from('internal_load')
-              .upsert(fallbackPayloadWithoutIndex, { onConflict: 'player_id,session_date' });
-            if (err2) throw err2;
+            // Si el error es por restricción única de player_id, session_date
+            const isMatchUniqueViolation = (
+              String(internalLoadErr.code) === '23505' ||
+              internalLoadErr.message?.includes('internal_load_player_id_session_date_key') ||
+              internalLoadErr.details?.includes('internal_load_player_id_session_date_key') ||
+              internalLoadErr.message?.includes('duplicate key value violates unique constraint') ||
+              JSON.stringify(internalLoadErr).includes('internal_load_player_id_session_date_key')
+            );
+
+            if (isMatchUniqueViolation) {
+              console.warn("⚠️ Detectada restricción única antigua en fallback de MATCH. Sobrescribiendo/actualizando fila existente para el partido...");
+              try {
+                const { data: extLd } = await supabase
+                  .from('internal_load')
+                  .select('*')
+                  .eq('player_id', player.player_id)
+                  .eq('session_date', selectedDate)
+                  .maybeSingle();
+
+                if (extLd) {
+                  const { error: updErr } = await supabase
+                    .from('internal_load')
+                    .update({
+                      rpe: fallbackPayload.rpe,
+                      duration_min: fallbackPayload.duration_min,
+                      type: 'MATCH',
+                      molestias: fallbackPayload.molestias,
+                      enfermedad: fallbackPayload.enfermedad
+                    })
+                    .eq('id', extLd.id);
+                  if (updErr) throw updErr;
+                } else {
+                  const { error: upsertErr } = await supabase
+                    .from('internal_load')
+                    .upsert(fallbackPayloadWithoutIndex, { onConflict: 'player_id,session_date' });
+                  if (upsertErr) throw upsertErr;
+                }
+              } catch (e: any) {
+                console.error("Error en consolidación fallback de MATCH:", e);
+                throw internalLoadErr;
+              }
+            } else {
+              // Fallback sin session_index si choca la estructura por otra razón (e.g. columna session_index ausente)
+              const { error: err2 } = await supabase
+                .from('internal_load')
+                .upsert(fallbackPayloadWithoutIndex, { onConflict: 'player_id,session_date' });
+              if (err2) throw err2;
+            }
           }
         } else {
           throw saveError;
