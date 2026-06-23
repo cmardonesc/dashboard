@@ -528,6 +528,42 @@ export default function App() {
     };
   }, []);
 
+  const handleSignOut = async () => {
+    console.log("Cerrando sesión, limpiando datos...");
+    try {
+      localStorage.removeItem('lr-performance-auth-session');
+    } catch (e) {
+      console.error("Error al limpiar localStorage:", e);
+    }
+    setSessionUser(null);
+    setRole(null);
+    setUserClub(null);
+    setUserClubId(null);
+    setLinkedPlayerId(null);
+    setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
+    setActiveMenu('inicio');
+    
+    await supabase.auth.signOut().catch((err: any) => console.warn("Supabase auth signOut error:", err));
+  };
+
+  // Sincronizar sesión activa a localStorage en cada cambio de variables críticas
+  useEffect(() => {
+    if (sessionUser && role) {
+      try {
+        const customSession = {
+          sessionUser,
+          role,
+          userClub,
+          userClubId,
+          linkedPlayerId
+        };
+        localStorage.setItem('lr-performance-auth-session', JSON.stringify(customSession));
+      } catch (e) {
+        console.error("Error guardando sesión en localStorage:", e);
+      }
+    }
+  }, [sessionUser, role, userClub, userClubId, linkedPlayerId]);
+
   useEffect(() => {
     let isMounted = true
     
@@ -544,46 +580,82 @@ export default function App() {
         // Cargar jugadores en segundo plano
         fetchRealPlayers().catch(err => console.error("Error cargando jugadores:", err));
         
+        let hasRestored = false;
+        try {
+          const stored = localStorage.getItem('lr-performance-auth-session');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed && parsed.sessionUser) {
+              setSessionUser(parsed.sessionUser);
+              setRole(parsed.role);
+              setUserClub(parsed.userClub);
+              if (parsed.userClubId) setUserClubId(parsed.userClubId);
+              setLinkedPlayerId(parsed.linkedPlayerId);
+              hasRestored = true;
+              console.log("Sesión restaurada desde localStorage con rol:", parsed.role);
+              
+              // Cargar de inmediato los datos correspondientes en segundo plano
+              fetchPerformanceData(parsed.role, parsed.linkedPlayerId).catch(e => console.error("Error cargando datos de rendimiento restaurados:", e));
+            }
+          }
+        } catch (e) {
+          console.error("Error restaurando sesión desde localStorage:", e);
+        }
+
         const { data, error } = await supabase.auth.getSession()
         if (error) {
           console.error("Error obteniendo sesión de Supabase:", error.message);
           throw error;
         }
 
-        console.log("Sesión obtenida:", data?.session ? "Activa" : "Ninguna");
+        console.log("Sesión obtenida de Supabase:", data?.session ? "Activa" : "Ninguna");
 
         if (!isMounted) return
         const session = data?.session
         if (session) {
-          setSessionUser(session.user)
-          let userData = await fetchUserData(session.user.id)
-          
-          // RECOVERY: Si el perfil no tiene ID pero el metadata sí (común si el upsert falló por RLS en el registro)
-          if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
-            const recoveredId = Number(session.user.user_metadata.player_id);
-            console.log("Recuperando player_id desde metadata:", recoveredId);
-            await supabase.from('profiles').upsert({
-              id: session.user.id,
-              player_id: recoveredId,
-              role: 'player',
-              email: session.user.email || null,
-              club_name: userData.club_name
-            });
-            userData.player_id = recoveredId;
-          }
-
-          if (isMounted) {
-            setRole(userData.role)
-            setUserClub(userData.club_name)
-            setLinkedPlayerId(userData.player_id)
+          // Si no habíamos restaurado, o si la sesión de Supabase contiene un id diferente, actualizamos
+          if (!hasRestored || session.user.id !== sessionUser?.id) {
+            setSessionUser(session.user)
+            let userData = await fetchUserData(session.user.id)
             
-            // Si tenemos club_name pero no ID, intentamos recuperarlo de la tabla clubes
-            if (userData.club_name) {
-              supabase.from('clubes').select('id_club').eq('nombre', userData.club_name).maybeSingle()
-                .then(({data}) => { if (data) setUserClubId(data.id_club); });
+            // RECOVERY: Si el perfil no tiene ID pero el metadata sí
+            if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
+              const recoveredId = Number(session.user.user_metadata.player_id);
+              console.log("Recuperando player_id desde metadata:", recoveredId);
+              await supabase.from('profiles').upsert({
+                id: session.user.id,
+                player_id: recoveredId,
+                role: 'player',
+                email: session.user.email || null,
+                club_name: userData.club_name
+              });
+              userData.player_id = recoveredId;
             }
 
-            fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error("Error cargando datos de rendimiento:", e));
+            if (isMounted) {
+              setRole(userData.role)
+              setUserClub(userData.club_name)
+              setLinkedPlayerId(userData.player_id)
+              
+              // Si tenemos club_name pero no ID, intentamos recuperarlo de la tabla clubes
+              if (userData.club_name) {
+                supabase.from('clubes').select('id_club').eq('nombre', userData.club_name).maybeSingle()
+                  .then(({data}) => { if (data) setUserClubId(data.id_club); });
+              }
+
+              fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error("Error cargando datos de rendimiento:", e));
+            }
+          }
+        } else {
+          // Si no hay sesión de Supabase, pero teníamos una sesión restaurada, la protegemos. 
+          // Si no teníamos sesión restaurada, nos aseguramos de que todo esté limpio.
+          if (!hasRestored) {
+            setSessionUser(null)
+            setRole(null)
+            setUserClub(null)
+            setUserClubId(null)
+            setLinkedPlayerId(null)
+            setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
           }
         }
       } catch (err) {
@@ -598,8 +670,25 @@ export default function App() {
 
     initialize()
     
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return
+
+      if (event === 'SIGNED_OUT') {
+        try {
+          localStorage.removeItem('lr-performance-auth-session');
+        } catch (e) {
+          console.error(e);
+        }
+        setSessionUser(null)
+        setRole(null)
+        setUserClub(null)
+        setUserClubId(null)
+        setLinkedPlayerId(null)
+        setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
+        setActiveMenu('inicio');
+        return;
+      }
+
       if (session) {
         setSessionUser(session.user)
 
@@ -636,12 +725,16 @@ export default function App() {
           fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error(e));
         }
       } else {
-        setSessionUser(null)
-        setRole(null)
-        setUserClub(null)
-        setLinkedPlayerId(null)
-        setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
-        setActiveMenu('inicio');
+        // Solo limpiar si no hay una sesión restaurada/iniciada previamente
+        const stored = localStorage.getItem('lr-performance-auth-session');
+        if (!stored) {
+          setSessionUser(null)
+          setRole(null)
+          setUserClub(null)
+          setLinkedPlayerId(null)
+          setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
+          setActiveMenu('inicio');
+        }
       }
     })
 
@@ -1130,7 +1223,7 @@ export default function App() {
               >
                 <i className={`fa-solid fa-arrows-rotate ${refreshing ? 'animate-spin' : ''}`}></i>
               </button>
-              <button onClick={async () => { await supabase.auth.signOut() }} className="text-slate-500 hover:text-red-500 transition-colors p-2 text-xl">
+              <button onClick={handleSignOut} className="text-slate-500 hover:text-red-500 transition-colors p-2 text-xl" title="Cerrar sesión">
                 <i className="fa-solid fa-arrow-right-from-bracket"></i>
               </button>
             </div>
@@ -1178,6 +1271,7 @@ export default function App() {
           nutrition={currentPlayerRecord.nutrition}
           onRefresh={handleManualRefresh}
           refreshing={refreshing}
+          onSignOut={handleSignOut}
         />
       ) : (
         <div className="min-h-screen flex items-center justify-center p-6">

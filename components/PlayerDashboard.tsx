@@ -31,6 +31,7 @@ interface PlayerDashboardProps {
   nutrition?: any[]
   onRefresh?: () => void
   refreshing?: boolean
+  onSignOut?: () => void
 }
 
 type AthleteView = 'menu' | 'wellness' | 'load' | 'match' | 'nutrition'
@@ -48,7 +49,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   gps = [],
   nutrition = [],
   onRefresh,
-  refreshing
+  refreshing,
+  onSignOut
 }) => {
   const [activeMenu, setActiveMenu] = useState<PlayerMenuId>('inicio')
   const [visitedMenus, setVisitedMenus] = useState<Record<string, boolean>>({
@@ -1085,7 +1087,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                 <i className={`fa-solid fa-arrows-rotate ${refreshing ? 'animate-spin' : ''}`}></i>
               </button>
             )}
-            <button onClick={async () => { await supabase.auth.signOut() }} className="text-slate-500 hover:text-red-500 transition-colors p-2 text-xl">
+            <button onClick={async () => { if (onSignOut) { onSignOut(); } else { await supabase.auth.signOut(); } }} className="text-slate-500 hover:text-red-500 transition-colors p-2 text-xl" title="Cerrar sesión">
               <i className="fa-solid fa-arrow-right-from-bracket"></i>
             </button>
           </div>
