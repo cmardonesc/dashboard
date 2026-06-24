@@ -323,7 +323,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         .gte('end_date', today)
         .maybeSingle();
 
-      const payloadWithoutIndex = {
+      const payloadWithoutIndex: any = {
         player_id: player.player_id,
         microcycle_id: activeMC?.id || null,
         session_date: today,
@@ -335,19 +335,31 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         created_by: user?.id
       };
 
-      const payloadWithIndex = {
+      const payloadWithIndex: any = {
         ...payloadWithoutIndex,
         session_index: data.session_index || 1
       };
 
       let saveError;
       let wasConsolidated = false;
+      let isSrpeColumnGenerated = false;
       
       try {
         // Primero intentamos con session_index (requerido por la especificación más reciente)
-        const { error } = await supabase
+        let { error } = await supabase
           .from('internal_load')
           .upsert(payloadWithIndex, { onConflict: 'player_id,session_date,session_index' });
+        
+        if (error && (error.message?.includes('srpe') || error.message?.includes('non-DEFAULT value') || JSON.stringify(error).includes('srpe'))) {
+          console.warn("⚠️ Error de columna generada 'srpe' detectado. Reintentando insertar sin 'srpe'...");
+          isSrpeColumnGenerated = true;
+          delete payloadWithIndex.srpe;
+          delete payloadWithoutIndex.srpe;
+          const { error: retryError } = await supabase
+            .from('internal_load')
+            .upsert(payloadWithIndex, { onConflict: 'player_id,session_date,session_index' });
+          error = retryError;
+        }
         
         saveError = error;
       } catch (err: any) {
@@ -417,26 +429,54 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             const combinedEnfermedad = Array.from(enfermedadSet).join(', ');
 
             // Actualizar la fila única existente
-            const { error: updateErr } = await supabase
+            const updatePayload: any = {
+              rpe: consolidatedRPE,
+              duration_min: totalDuration,
+              molestias: combinedMolestias || null,
+              enfermedad: combinedEnfermedad || null,
+              session_index: 1, // Mantenemos 1 para compatibilidad
+            };
+
+            if (!isSrpeColumnGenerated) {
+              updatePayload.srpe = totalSRPE;
+            }
+
+            // Actualizar la fila única existente
+            let { error: updateErr } = await supabase
               .from('internal_load')
-              .update({
-                rpe: consolidatedRPE,
-                duration_min: totalDuration,
-                srpe: totalSRPE,
-                molestias: combinedMolestias || null,
-                enfermedad: combinedEnfermedad || null,
-                session_index: 1, // Mantenemos 1 para compatibilidad
-              })
+              .update(updatePayload)
               .eq('id', existingLoad.id);
+
+            if (updateErr && (updateErr.message?.includes('srpe') || updateErr.message?.includes('non-DEFAULT value') || JSON.stringify(updateErr).includes('srpe'))) {
+              console.warn("⚠️ Reintentando actualizar sin la columna 'srpe' debido a restricción de columna generada...");
+              isSrpeColumnGenerated = true;
+              delete updatePayload.srpe;
+              const { error: retryUpdateErr } = await supabase
+                .from('internal_load')
+                .update(updatePayload)
+                .eq('id', existingLoad.id);
+              updateErr = retryUpdateErr;
+            }
 
             if (updateErr) throw updateErr;
             saveError = null; // Error resuelto con éxito
             console.log("✅ Carga consolidada con éxito en registro único existente para doble jornada.");
           } else {
             // Si por alguna razón no se encontró, intentamos un upsert simple reemplazando
-            const { error: upsertErr } = await supabase
+            let { error: upsertErr } = await supabase
               .from('internal_load')
               .upsert(payloadWithoutIndex, { onConflict: 'player_id,session_date' });
+            
+            if (upsertErr && (upsertErr.message?.includes('srpe') || upsertErr.message?.includes('non-DEFAULT value') || JSON.stringify(upsertErr).includes('srpe'))) {
+              console.warn("⚠️ Error de columna generada 'srpe' en upsert de consolidación. Reintentando sin 'srpe'...");
+              isSrpeColumnGenerated = true;
+              delete payloadWithoutIndex.srpe;
+              const { error: retryUpsertErr } = await supabase
+                .from('internal_load')
+                .upsert(payloadWithoutIndex, { onConflict: 'player_id,session_date' });
+              upsertErr = retryUpsertErr;
+            }
+
             if (upsertErr) throw upsertErr;
             saveError = null;
           }
@@ -451,10 +491,20 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         JSON.stringify(saveError).includes('session_index')
       )) {
         console.warn("⚠️ Columna 'session_index' no encontrada en base de datos. Cayendo en modo compatible (sin session_index)...");
-        const { error: retryError } = await supabase
+        let { error: retryError } = await supabase
           .from('internal_load')
           .upsert(payloadWithoutIndex, { onConflict: 'player_id,session_date' });
         
+        if (retryError && (retryError.message?.includes('srpe') || retryError.message?.includes('non-DEFAULT value') || JSON.stringify(retryError).includes('srpe'))) {
+          console.warn("⚠️ Error de columna generada 'srpe' detectado en reintento compatible. Reintentando sin 'srpe'...");
+          isSrpeColumnGenerated = true;
+          delete payloadWithoutIndex.srpe;
+          const { error: retryError2 } = await supabase
+            .from('internal_load')
+            .upsert(payloadWithoutIndex, { onConflict: 'player_id,session_date' });
+          retryError = retryError2;
+        }
+
         if (retryError) throw retryError;
       } else if (saveError) {
         throw saveError;
