@@ -1278,7 +1278,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             isPending ? 'PENDIENTE' : 'OK'
           ];
         } else {
-          const isPending = !r.hasReported;
+          const isPending = !r.wellness;
           const playerAvg = r.wellness ? ((r.wellness.fatigue + r.wellness.sleep + r.wellness.mood) / 3).toFixed(1) : '-';
           
           let painText = 'Sin Dolor';
@@ -2026,7 +2026,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               </thead>
               <tbody className="">
                 {unifiedList.map((row, idx) => {
-                  const isPending = !row.hasReported;
+                  const isPending = view === 'wellness' 
+                    ? !row.wellness 
+                    : view === 'pse' 
+                      ? !row.load 
+                      : !row.hasReported;
                   const avg = row.wellness ? (row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3 : 0;
                   
                   const isHighlighted = highlightPlayerId && Number(row.player.player_id) === Number(highlightPlayerId);
@@ -2347,7 +2351,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {leftWellnessList.map((row, idx) => {
-                        const isPending = view === 'pse' ? !row.load : !row.hasReported;
+                        const isPending = view === 'pse' ? !row.load : !row.wellness;
                         const avgValue = row.wellness ? ((row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3).toFixed(1) : '-';
                         return (
                           <tr key={`left-well-${idx}`} className={`hover:bg-slate-50/50 transition-all ${isPending ? 'opacity-40' : ''}`}>
@@ -2478,7 +2482,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {rightWellnessList.map((row, idx) => {
-                        const isPending = view === 'pse' ? !row.load : !row.hasReported;
+                        const isPending = view === 'pse' ? !row.load : !row.wellness;
                         const avgValue = row.wellness ? ((row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3).toFixed(1) : '-';
                         return (
                           <tr key={`right-well-${idx}`} className={`hover:bg-slate-50/50 transition-all ${isPending ? 'opacity-40' : ''}`}>
