@@ -181,6 +181,9 @@ create table if not exists public.internal_load (
   unique(player_id, session_date, session_index)
 );
 
+-- Drop old constraint if exists to support multiple daily sessions
+alter table public.internal_load drop constraint if exists internal_load_player_id_session_date_key;
+
 -- Create antropometria table
 create table if not exists public.antropometria (
   id uuid default gen_random_uuid() primary key,
@@ -304,8 +307,21 @@ create table if not exists public.gps_import (
   vel_max_kmh float8,
   acc_decc_ai_n float8,
   jugador text,
-  unique(player_id, fecha)
+  nombre_sesion text default 'Sesión',
+  catapult_sync_id text,
+  session_index int default 1,
+  unique(player_id, fecha, nombre_sesion)
 );
+
+-- Drop old constraint if exists to support multiple daily sessions
+alter table public.gps_import drop constraint if exists gps_import_player_id_fecha_key;
+alter table public.gps_import add column if not exists nombre_sesion text default 'Sesión';
+alter table public.gps_import add column if not exists catapult_sync_id text;
+alter table public.gps_import add column if not exists session_index int default 1;
+alter table public.gps_import drop constraint if exists gps_import_player_id_fecha_nombre_sesion_key;
+-- To prevent conflict on existing nulls, update them first before adding unique constraint
+update public.gps_import set nombre_sesion = 'Sesión' where nombre_sesion is null;
+alter table public.gps_import add constraint gps_import_player_id_fecha_nombre_sesion_key unique(player_id, fecha, nombre_sesion);
 
 alter table public.gps_import enable row level security;
 create policy "Enable all access for gps_import" on public.gps_import for all using (true) with check (true);

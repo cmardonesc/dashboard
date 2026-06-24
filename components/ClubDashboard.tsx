@@ -22,7 +22,12 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
   const [activeSection, setActiveSection] = useState<ClubSection>('carga');
   const [subSection, setSubSection] = useState<string>('wellness');
   const [selectedClub, setSelectedClub] = useState<string>(userClub || 'Chile');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  });
 
   // IFR Hook and References
   const { fetchReference, calcularIFR } = useIFR();

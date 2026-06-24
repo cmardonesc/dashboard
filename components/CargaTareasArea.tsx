@@ -54,7 +54,12 @@ interface CargaTareasAreaProps {
 export default function CargaTareasArea({ performanceRecords, userRole, userClub, userClubId, clubs = [] }: CargaTareasAreaProps) {
   const [data, setData] = useState<GpsTarea[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  });
   const [selectedTask, setSelectedTask] = useState<string>('TODAS');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>({

@@ -57,6 +57,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // NUEVO: Estado de Ordenamiento
   const [sortField, setSortField] = useState<string>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  
+  // NUEVO: Filtro de Sesión para Doble Jornada
+  const [selectedSessionFilter, setSelectedSessionFilter] = useState<string>('all');
+  // NUEVO: Unificación de sesiones para evitar distorsión de registros/pendientes
+  const [unifySessions, setUnifySessions] = useState<boolean>(true);
 
   const [dailyTaskGps, setDailyTaskGps] = useState<any[]>([]);
   const [specialNote, setSpecialNote] = useState('');
@@ -539,7 +544,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   };
 
   // DERIVED DATA
-  const currentCitadosPlayers = useMemo(() => {
+  const rawCitadosPlayers = useMemo(() => {
     // 1. Jugadores citados (siempre visibles, para club de forma anonimizada)
     const cited = performanceRecords.filter(r => r.player.player_id && citedPlayerIds.includes(r.player.player_id));
     
@@ -585,7 +590,40 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     }
 
     return cited;
-  }, [performanceRecords, citedPlayerIds, userRole, userClub, selectedCategories]);
+  }, [performanceRecords, citedPlayerIds, userRole, userClub, selectedCategories, userClubId]);
+
+  const currentCitadosPlayers = useMemo(() => {
+    // Verificar si algún jugador reportó más de una sesión en el día seleccionado
+    const hasAnyDoubleSession = rawCitadosPlayers.some(record => {
+      const dayLoads = record.loads.filter(l => l.date === selectedDate);
+      return dayLoads.length > 1;
+    });
+
+    if (hasAnyDoubleSession) {
+      // Si realmente hay jornada doble registrada, respetamos los índices tal cual
+      return rawCitadosPlayers;
+    }
+
+    // Si no hay jornada doble (ningún jugador tiene más de un registro de carga hoy),
+    // normalizamos todas las cargas del día para que se muestren en la Sesión 1
+    return rawCitadosPlayers.map(record => {
+      const hasLoadsOnDate = record.loads.some(l => l.date === selectedDate);
+      if (!hasLoadsOnDate) return record;
+
+      return {
+        ...record,
+        loads: record.loads.map(l => {
+          if (l.date === selectedDate) {
+            return {
+              ...l,
+              session_index: 1 // Forzar a sesión 1
+            };
+          }
+          return l;
+        })
+      };
+    });
+  }, [rawCitadosPlayers, selectedDate]);
 
   const reportData = useMemo(() => {
     const filteredRecords = currentCitadosPlayers.filter(r => selectedPlayersReport.has(r.player.player_id!));
@@ -762,12 +800,29 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
   const totalPages = wellnessChunks.length + loadChunks.length + gpsChunks.length + 1;
 
+  const availableSessionIndexes = useMemo(() => {
+    const indexes = new Set<number>([1]); // Default always includes Session 1
+    currentCitadosPlayers.forEach(record => {
+      record.loads.forEach(l => {
+        if (l.date === selectedDate && l.session_index) {
+          indexes.add(l.session_index);
+        }
+      });
+    });
+    return Array.from(indexes).sort((a, b) => a - b);
+  }, [currentCitadosPlayers, selectedDate]);
+
   const stats = useMemo(() => {
     let checkInDone = 0;
-    let checkOutDone = 0;
     let sorenessAlerts = 0;
     let healthAlerts = 0;
+    let checkOutDoneUnified = 0;
     
+    const checkOutsBySession: Record<number, number> = {};
+    availableSessionIndexes.forEach(idx => {
+      checkOutsBySession[idx] = 0;
+    });
+
     currentCitadosPlayers.forEach(record => {
       const dayWellness = record.wellness.find(w => w.date === selectedDate);
       const dayLoads = record.loads.filter(l => l.date === selectedDate);
@@ -782,20 +837,31 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           healthAlerts++;
         }
       }
+      
       if (dayLoads.length > 0) {
-        checkOutDone++;
+        checkOutDoneUnified++;
       }
+      
+      dayLoads.forEach(l => {
+        const sIdx = l.session_index || 1;
+        checkOutsBySession[sIdx] = (checkOutsBySession[sIdx] || 0) + 1;
+      });
     });
+
+    // Para compatibilidad hacia atrás
+    const primarySessionIdx = availableSessionIndexes[0] || 1;
+    const checkOutDone = unifySessions ? checkOutDoneUnified : (checkOutsBySession[primarySessionIdx] || 0);
 
     return {
       checkInDone,
       checkInPending: currentCitadosPlayers.length - checkInDone,
       checkOutDone,
       checkOutPending: currentCitadosPlayers.length - checkOutDone,
+      checkOutsBySession,
       sorenessAlerts,
       healthAlerts
     };
-  }, [currentCitadosPlayers, selectedDate]);
+  }, [currentCitadosPlayers, selectedDate, availableSessionIndexes, unifySessions]);
 
   const { reported, pending, unifiedList } = useMemo(() => {
     const reportedList: any[] = [];
@@ -808,20 +874,67 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       const matchesSearch = record.player.name.toLowerCase().includes(athleteSearch.toLowerCase());
       if (!matchesSearch) return;
 
-      if (dayLoads.length > 0) {
-        dayLoads.forEach((load, index) => {
-          const item = { player: record.player, wellness: dayWellness, load: load, sessionIndex: index + 1, hasReported: true };
+      if (unifySessions) {
+        // Modo Unificado: cada jugador se muestra exactamente una vez
+        if (dayLoads.length > 0) {
+          // Tomar la primera sesión o la que tenga datos. Si hay doble jornada, tomamos la primera de hoy.
+          const matchingLoad = dayLoads[0];
+          const item = { 
+            player: record.player, 
+            wellness: dayWellness, 
+            load: matchingLoad, 
+            sessionIndex: matchingLoad.session_index || 1, 
+            sessionCount: dayLoads.length,
+            allSessionIndexes: dayLoads.map(l => l.session_index || 1),
+            hasReported: true 
+          };
           reportedList.push(item);
           fullList.push(item);
-        });
-      } else if (dayWellness) {
-        const item = { player: record.player, wellness: dayWellness, load: null, sessionIndex: 1, hasReported: true };
-        reportedList.push(item);
-        fullList.push(item);
+        } else {
+          // No ha reportado ninguna sesión hoy
+          const item = { 
+            player: record.player, 
+            wellness: dayWellness, 
+            load: null, 
+            sessionIndex: 1, 
+            sessionCount: 0,
+            allSessionIndexes: [],
+            hasReported: false 
+          };
+          if (!dayWellness) {
+            pendingList.push(record);
+          }
+          fullList.push(item);
+        }
       } else {
-        const item = { player: record.player, wellness: null, load: null, sessionIndex: 1, hasReported: false };
-        pendingList.push(record);
-        fullList.push(item);
+        // Modo Desglosado: iterar por índices de sesión para separar registros
+        availableSessionIndexes.forEach(sIdx => {
+          const matchingLoad = dayLoads.find(l => (l.session_index || 1) === sIdx);
+          if (matchingLoad) {
+            const item = { 
+              player: record.player, 
+              wellness: dayWellness, 
+              load: matchingLoad, 
+              sessionIndex: sIdx, 
+              hasReported: true 
+            };
+            reportedList.push(item);
+            fullList.push(item);
+          } else {
+            // No ha reportado para esta sesión
+            const item = { 
+              player: record.player, 
+              wellness: dayWellness, 
+              load: null, 
+              sessionIndex: sIdx, 
+              hasReported: false 
+            };
+            if (!dayWellness) {
+              pendingList.push(record);
+            }
+            fullList.push(item);
+          }
+        });
       }
     });
 
@@ -878,6 +991,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           valA = a.load?.rpe ?? -1;
           valB = b.load?.rpe ?? -1;
           break;
+        case 'duration':
+          valA = a.load?.duration ?? -1;
+          valB = b.load?.duration ?? -1;
+          break;
         case 'load':
           valA = a.load?.load ?? -1;
           valB = b.load?.load ?? -1;
@@ -891,7 +1008,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           valB = b.load?.enfermedad?.toLowerCase() || '';
           break;
         default:
-          return 0;
+          valA = '';
+          valB = '';
       }
 
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
@@ -899,8 +1017,14 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       return 0;
     });
 
+    // NUEVO: Filtrar por sesión seleccionada
+    if (selectedSessionFilter !== 'all') {
+      const filterIndex = Number(selectedSessionFilter);
+      sortedFullList = sortedFullList.filter(item => item.sessionIndex === filterIndex);
+    }
+
     return { reported: reportedList, pending: pendingList, unifiedList: sortedFullList };
-  }, [currentCitadosPlayers, selectedDate, athleteSearch, sortField, sortDirection]);
+  }, [currentCitadosPlayers, selectedDate, athleteSearch, sortField, sortDirection, availableSessionIndexes, selectedSessionFilter, unifySessions]);
 
   const gpsRows = useMemo(() => {
     const rows: any[] = [];
@@ -1616,14 +1740,49 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 </div>
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Check-out</p>
-                  <p className="text-xl font-black text-slate-900 italic uppercase tracking-tighter">
-                    {stats.checkOutDone} / {currentCitadosPlayers.length}
-                  </p>
+                  {availableSessionIndexes.length > 1 && !unifySessions ? (
+                    <div className="flex flex-col gap-1.5 mt-1 text-xs font-black text-slate-900 italic uppercase tracking-tighter">
+                      {availableSessionIndexes.map(sIdx => {
+                        const done = stats.checkOutsBySession[sIdx] || 0;
+                        return (
+                          <div key={sIdx} className="flex items-center gap-1.5">
+                            <span className="text-[8px] bg-blue-100 text-blue-700 font-bold px-1 rounded uppercase tracking-wider">S{sIdx}</span>
+                            <span>{done} / {currentCitadosPlayers.length}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xl font-black text-slate-900 italic uppercase tracking-tighter">
+                        {stats.checkOutDone} / {currentCitadosPlayers.length}
+                      </p>
+                      {availableSessionIndexes.length > 1 && unifySessions && (
+                        <p className="text-[8px] text-slate-400 font-bold mt-0.5 tracking-wider uppercase">
+                          S1: {stats.checkOutsBySession[1] || 0} • S2: {stats.checkOutsBySession[2] || 0}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="text-right">
                 <p className="text-[8px] font-black text-blue-600 uppercase tracking-widest mb-1">Pendientes</p>
-                <p className="text-lg font-black text-slate-300 italic leading-none">{stats.checkOutPending}</p>
+                {availableSessionIndexes.length > 1 && !unifySessions ? (
+                  <div className="flex flex-col gap-1.5 mt-1 text-sm font-black text-slate-300 italic leading-none">
+                    {availableSessionIndexes.map(sIdx => {
+                      const done = stats.checkOutsBySession[sIdx] || 0;
+                      const pending = currentCitadosPlayers.length - done;
+                      return (
+                        <div key={sIdx} className="h-[15px] flex items-center justify-end">
+                          <span>{pending}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-lg font-black text-slate-300 italic leading-none">{stats.checkOutPending}</p>
+                )}
               </div>
             </div>
 
@@ -1665,9 +1824,51 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 gap-4">
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] italic flex items-center gap-2">
-              <i className="fa-solid fa-clipboard-list text-red-600"></i> CONTROL DETALLADO ({unifiedList.length})
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] italic flex items-center gap-2">
+                <i className="fa-solid fa-clipboard-list text-red-600"></i> CONTROL DETALLADO ({unifiedList.length})
+              </h3>
+              {availableSessionIndexes.length > 1 && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex bg-slate-100 p-1 rounded-xl max-w-fit print:hidden">
+                    <button
+                      onClick={() => !unifySessions && setSelectedSessionFilter('all')}
+                      disabled={unifySessions}
+                      className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${unifySessions ? 'opacity-40 cursor-not-allowed text-slate-400' : selectedSessionFilter === 'all' ? 'bg-[#0b1220] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                      title={unifySessions ? "Desactiva 'Unificar Jornada' para filtrar por sesión" : "Ver todas las sesiones desglosadas"}
+                    >
+                      Todas
+                    </button>
+                    {availableSessionIndexes.map(sIdx => (
+                      <button
+                        key={sIdx}
+                        onClick={() => !unifySessions && setSelectedSessionFilter(sIdx.toString())}
+                        disabled={unifySessions}
+                        className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${unifySessions ? 'opacity-40 cursor-not-allowed text-slate-400' : selectedSessionFilter === sIdx.toString() ? 'bg-[#0b1220] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        title={unifySessions ? "Desactiva 'Unificar Jornada' para filtrar por sesión" : `Ver Sesión ${sIdx}`}
+                      >
+                        Sesión {sIdx}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label className="flex items-center gap-1.5 bg-red-50 text-red-700 border border-red-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-red-100 cursor-pointer transition-all select-none print:hidden shadow-sm">
+                    <input
+                      type="checkbox"
+                      checked={unifySessions}
+                      onChange={(e) => {
+                        setUnifySessions(e.target.checked);
+                        if (e.target.checked) {
+                          setSelectedSessionFilter('all');
+                        }
+                      }}
+                      className="rounded border-red-300 text-red-600 focus:ring-red-500 w-3 h-3 cursor-pointer"
+                    />
+                    <span>Unificar Jornada</span>
+                  </label>
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-2 print:hidden">
               <button
                 type="button"
@@ -1834,7 +2035,16 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     <tr key={idx} className={`transition-all font-black uppercase italic text-[8px] md:text-xs shadow-sm hover:scale-[1.01] hover:shadow-md ${isHighlighted ? 'bg-blue-50 ring-2 ring-blue-500' : isPending ? 'bg-slate-50/50 text-slate-300' : (row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '') ? 'bg-slate-100/80 hover:bg-slate-100' : 'bg-white hover:bg-slate-50 text-slate-900')} rounded-2xl overflow-hidden`}>
                       <td className={`px-2 md:px-8 py-3 md:py-5 text-left rounded-l-2xl ${isHighlighted ? 'bg-blue-50' : ''}`}>
                         <div className="flex flex-col min-w-[70px]">
-                          <span className="truncate max-w-[80px] md:max-w-none">{row.player.name}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate max-w-[80px] md:max-w-none">{row.player.name}</span>
+                            {availableSessionIndexes.length > 1 && (
+                              <span className="bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded text-[7px] md:text-[8px] uppercase tracking-wider leading-none">
+                                {unifySessions && row.sessionCount > 1 
+                                  ? `S${row.allSessionIndexes.join('+')}` 
+                                  : `S${row.sessionIndex}`}
+                              </span>
+                            )}
+                          </div>
                           <div className="hidden md:block">
                             <ClubBadge 
                               clubName={row.player.club_name || row.player.club} 

@@ -43,6 +43,12 @@ interface StaffDashboardProps {
   clubs?: any[];
 }
 
+const getLocalDateString = (d: Date = new Date()) => {
+  const offset = d.getTimezoneOffset();
+  const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+  return localDate.toISOString().split('T')[0];
+};
+
 const StaffDashboard: React.FC<StaffDashboardProps> = ({ 
   performanceRecords, 
   players,
@@ -66,7 +72,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
   const [selectedJornada, setSelectedJornada] = useState<'AM' | 'PM'>('AM');
-  const [selectedScheduleDate, setSelectedScheduleDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [selectedScheduleDate, setSelectedScheduleDate] = useState<string>(() => getLocalDateString());
   
   const [visitedMenus, setVisitedMenus] = useState<Record<string, boolean>>({
     inicio: true,
@@ -150,11 +156,11 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
     setVisibleWidgets(newWidgets);
   };
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => getLocalDateString(), []);
 
   const playerToCategory = useMemo(() => {
     const map = new Map();
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     
     // Solo citaciones de microciclos que están ACTIVOS hoy
     citData.forEach((c: any) => {
@@ -406,7 +412,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   }, [dailyActivities, selectedCategoryId, realMicrocycles]);
 
   const activeWeekDays = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
     const activeMc = realMicrocycles.find(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
     
     let baseStartDate = new Date();
@@ -470,7 +476,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       menuId,
       performanceRecords: performanceRecords.length
     });
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
     const activeMicrocycles = realMicrocycles.filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
 
   const renderPlayerName = (p: any, id?: number) => {
@@ -873,14 +879,14 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
               <div>
                 <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] italic">Cronograma del Día</h3>
                 <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                  {selectedScheduleDate === new Date().toISOString().split('T')[0] ? 'Hoy' : new Date(selectedScheduleDate + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
+                  {selectedScheduleDate === getLocalDateString() ? 'Hoy' : new Date(selectedScheduleDate + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {selectedScheduleDate !== new Date().toISOString().split('T')[0] && (
+              {selectedScheduleDate !== getLocalDateString() && (
                 <button 
-                  onClick={(e) => { e.stopPropagation(); setSelectedScheduleDate(new Date().toISOString().split('T')[0]); }} 
+                  onClick={(e) => { e.stopPropagation(); setSelectedScheduleDate(getLocalDateString()); }} 
                   className="text-[8.5px] font-black uppercase tracking-wider text-red-500 bg-red-50 px-2.5 py-1 rounded-full hover:bg-red-100 transition-all border border-red-100/50 flex items-center gap-1"
                 >
                   <i className="fa-solid fa-reply text-[7px]" /> Hoy
@@ -899,7 +905,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
           <div className="grid grid-cols-7 gap-1 bg-slate-50 p-1 rounded-2xl border border-slate-100/80 mb-5 relative z-10 shadow-inner">
             {activeWeekDays.map((day) => {
               const isSelected = day.dateStr === selectedScheduleDate;
-              const isToday = day.dateStr === new Date().toISOString().split('T')[0];
+              const isToday = day.dateStr === getLocalDateString();
               return (
                 <button
                   key={day.dateStr}
@@ -937,7 +943,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
               </div>
             ) : (
               activitiesOfSelectedDay.map((act, i) => {
-                const isToday = act.fecha === new Date().toISOString().split('T')[0];
+                const isToday = act.fecha === getLocalDateString();
                 return (
                   <div key={i} className={`flex items-center gap-4 p-3 rounded-2xl border transition-all duration-200 group ${isToday ? 'bg-red-50/60 border-red-100 shadow-sm' : 'bg-slate-50 border-slate-100/60 hover:bg-slate-100'}`}>
                     <div className={`flex flex-col items-center justify-center min-w-[50px] py-1 border-r ${isToday ? 'border-red-200' : 'border-slate-200'}`}>

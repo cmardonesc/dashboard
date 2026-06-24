@@ -42,6 +42,12 @@ import AITrainer from './AITrainer'
 import PlayerProfileArea from './PlayerProfileArea'
 import { triggerPushNotification } from '../lib/notifications'
 
+const getLocalDateString = (d: Date = new Date()) => {
+  const offset = d.getTimezoneOffset();
+  const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+  return localDate.toISOString().split('T')[0];
+};
+
 const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   player,
   wellness = [],
@@ -80,7 +86,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   const [realActivities, setRealActivities] = useState<any[]>([])
   const [loadingActivities, setLoadingActivities] = useState(false)
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => getLocalDateString(), []);
   const todayWellness = useMemo(() => wellness.find(w => w.date === todayStr), [wellness, todayStr]);
   const todayLoads = useMemo(() => loads.filter(l => l.date === todayStr), [loads, todayStr]);
   const todayLoadS1 = useMemo(() => todayLoads.find(l => l.session_index === 1), [todayLoads]);
@@ -223,7 +229,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     if (!player?.category) return;
     setLoadingActivities(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
       const { data, error } = await supabase
         .from('anual_activities')
         .select('*')
@@ -249,7 +255,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     setSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
 
       const { data: activeMC } = await supabase
         .from('microcycles')
@@ -308,7 +314,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     setSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
 
       const { data: activeMC } = await supabase
         .from('microcycles')
@@ -323,6 +329,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         session_date: today,
         rpe: data.rpe,
         duration_min: data.duration,
+        srpe: Number(data.rpe) * Number(data.duration),
         molestias: data.sorenessAreas.join(', '),
         enfermedad: data.illnessSymptoms.join(', '),
         created_by: user?.id
@@ -334,6 +341,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       };
 
       let saveError;
+      let wasConsolidated = false;
       
       try {
         // Primero intentamos con session_index (requerido por la especificación más reciente)
@@ -357,6 +365,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       if (isUniqueConstraintViolation) {
         console.warn("⚠️ Detectada restricción única antigua (player_id, session_date). Consolidando sesión de doble jornada...");
+        wasConsolidated = true;
         try {
           // Obtener la carga existente del día
           const { data: existingLoad, error: fetchErr } = await supabase
@@ -460,11 +469,19 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         url: '/fisica_pse'
       }).catch(err => console.error("Error disparando notificación:", err));
 
-      setSuccessModalConfig({
-        show: true,
-        title: 'Reporte Listo',
-        subtitle: 'Tu información ha sido sincronizada correctamente.'
-      });
+      if (wasConsolidated) {
+        setSuccessModalConfig({
+          show: true,
+          title: 'Reporte Consolidado',
+          subtitle: 'Se ha unificado tu esfuerzo en un único registro diario debido a una restricción antigua en la base de datos. Para registrar las sesiones de manera independiente, solicita al administrador de Supabase ejecutar la actualización de base de datos.'
+        });
+      } else {
+        setSuccessModalConfig({
+          show: true,
+          title: 'Reporte Listo',
+          subtitle: `Tu Sesión ${data.session_index || 1} ha sido sincronizada correctamente.`
+        });
+      }
       if (onRefresh) onRefresh();
     } catch (err: any) {
       alert("❌ Error al guardar: " + err.message);
@@ -481,7 +498,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     setSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const selectedDate = data.date || new Date().toISOString().split('T')[0];
+      const selectedDate = data.date || getLocalDateString();
 
       const matchResultValue = data.resultado || data.result || 'GANÓ';
       const matchMinutesValue = data.minutos !== undefined ? data.minutos : (data.minutes !== undefined ? data.minutes : 90);

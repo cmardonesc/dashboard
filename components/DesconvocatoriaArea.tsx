@@ -308,6 +308,7 @@ export default function DesconvocatoriaArea({
 
       const mappedGps = (gpsRaw || []).map(g => ({
         date: g.fecha,
+        nombre_sesion: g.nombre_sesion || '',
         minutos: g.minutos || 0,
         dist_total_m: g.dist_total_m || 0,
         m_por_min: g.m_por_min || 0,
@@ -373,6 +374,25 @@ export default function DesconvocatoriaArea({
     setProcessingBajaAtleta(player);
     setBajaReasonInput(''); // Reset reason
     setShowBajaModal(true);
+  };
+
+  const handleIndividualReportClick = async (player: User) => {
+    if (!selectedMicro) return;
+    setLoading(true);
+    setProcessingBajaAtleta(player);
+    const existingReason = bajaReasonsMap[player.player_id!] || 'Desgarro Isquiotibial izquierdo';
+    setBajaReason(existingReason);
+    setBajaReasonInput(existingReason);
+    try {
+      const history = await fetchAthleteHistory(player.player_id!, selectedMicro.start_date, selectedMicro.end_date);
+      setHistoricalData(history);
+      setViewMode('report');
+    } catch (err) {
+      console.error(err);
+      alert("Error al cargar la historia del atleta.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const confirmDesconvocatoria = async () => {
@@ -742,7 +762,10 @@ export default function DesconvocatoriaArea({
     return (
       <div className="flex flex-col font-sans text-slate-900 player-report-sheet">
         {/* PÁGINA 1: WELLNESS & FATIGA/DOLOR */}
-        <div className="bg-white p-12 min-h-[297mm] flex flex-col break-after-page shadow-sm mb-8 print:shadow-none print:mb-0 player-report-page">
+        <div 
+          id={`player-report-page-1-${player.id}`}
+          className="bg-white p-12 min-h-[297mm] flex flex-col break-after-page shadow-sm mb-8 print:shadow-none print:mb-0 player-report-page"
+        >
           <Header />
 
           {/* Atleta Info */}
@@ -797,53 +820,52 @@ export default function DesconvocatoriaArea({
             <h3 className="text-[9px] font-black text-[#0b1220] uppercase tracking-widest mb-4 flex items-center gap-2">
               <i className="fa-solid fa-chart-line text-[#CF1B2B]"></i> EVOLUCIÓN FATIGA Y DOLOR
             </h3>
-            <div className="h-64 w-full bg-slate-50/50 rounded-[32px] p-8">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={wellnessChartData} margin={{ top: 30, right: 40, left: 20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} />
-                  <YAxis domain={[1, 5]} ticks={[1,2,3,4,5]} axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} padding={{ top: 20 }} />
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" align="center" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', paddingTop: '20px' }} />
-                  <Line isAnimationActive={false} type="monotone" name="Dolor" dataKey="dolor" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }} activeDot={{ r: 6 }}>
-                    <LabelList dataKey="dolor" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0038A8' }} />
-                  </Line>
-                  <Line isAnimationActive={false} type="monotone" name="Fatiga" dataKey="fatiga" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }} activeDot={{ r: 6 }}>
-                    <LabelList dataKey="fatiga" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#CF1B2B' }} />
-                  </Line>
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="h-64 w-full bg-slate-50/50 rounded-[32px] p-8 flex items-center justify-center overflow-hidden">
+              <LineChart width={700} height={200} data={wellnessChartData} margin={{ top: 30, right: 40, left: 20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} />
+                <YAxis domain={[1, 5]} ticks={[1,2,3,4,5]} axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} padding={{ top: 20 }} />
+                <Tooltip />
+                <Legend verticalAlign="bottom" align="center" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', paddingTop: '20px' }} />
+                <Line isAnimationActive={false} type="monotone" name="Dolor" dataKey="dolor" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }} activeDot={{ r: 6 }}>
+                  <LabelList dataKey="dolor" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0038A8' }} />
+                </Line>
+                <Line isAnimationActive={false} type="monotone" name="Fatiga" dataKey="fatiga" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }} activeDot={{ r: 6 }}>
+                  <LabelList dataKey="fatiga" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#CF1B2B' }} />
+                </Line>
+              </LineChart>
             </div>
           </div>
         </div>
 
         {/* PÁGINA 2: PERFIL PSICO-EMOCIONAL & PSE */}
-        <div className="bg-white p-12 min-h-[297mm] flex flex-col break-after-page shadow-sm mb-8 print:shadow-none print:mb-0 player-report-page">
+        <div 
+          id={`player-report-page-2-${player.id}`}
+          className="bg-white p-12 min-h-[297mm] flex flex-col shadow-sm print:shadow-none player-report-page"
+        >
           <Header />
           
           <div className="mb-12">
             <h3 className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
               <i className="fa-solid fa-brain text-[#CF1B2B]"></i> PERFIL PSICO-EMOCIONAL
             </h3>
-            <div className="h-64 w-full bg-slate-50/50 rounded-[32px] p-8">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={wellnessChartData} margin={{ top: 30, right: 40, left: 20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} />
-                  <YAxis domain={[1, 5]} ticks={[1,2,3,4,5]} axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} padding={{ top: 20 }} />
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" align="center" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', paddingTop: '20px' }} />
-                  <Line isAnimationActive={false} type="monotone" name="Estrés" dataKey="estres" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }}>
-                    <LabelList dataKey="estres" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#CF1B2B' }} />
-                  </Line>
-                  <Line isAnimationActive={false} type="monotone" name="Sueño" dataKey="sueno" stroke="#10b981" strokeWidth={4} dot={{ r: 4, fill: '#10b981' }}>
-                    <LabelList dataKey="sueno" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#10b981' }} />
-                  </Line>
-                  <Line isAnimationActive={false} type="monotone" name="Ánimo" dataKey="animo" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }}>
-                    <LabelList dataKey="animo" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0038A8' }} />
-                  </Line>
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="h-64 w-full bg-slate-50/50 rounded-[32px] p-8 flex items-center justify-center overflow-hidden">
+              <LineChart width={700} height={200} data={wellnessChartData} margin={{ top: 30, right: 40, left: 20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} />
+                <YAxis domain={[1, 5]} ticks={[1,2,3,4,5]} axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#94a3b8'}} padding={{ top: 20 }} />
+                <Tooltip />
+                <Legend verticalAlign="bottom" align="center" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', paddingTop: '20px' }} />
+                <Line isAnimationActive={false} type="monotone" name="Estrés" dataKey="estres" stroke="#CF1B2B" strokeWidth={4} dot={{ r: 4, fill: '#CF1B2B' }}>
+                  <LabelList dataKey="estres" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#CF1B2B' }} />
+                </Line>
+                <Line isAnimationActive={false} type="monotone" name="Sueño" dataKey="sueno" stroke="#10b981" strokeWidth={4} dot={{ r: 4, fill: '#10b981' }}>
+                  <LabelList dataKey="sueno" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#10b981' }} />
+                </Line>
+                <Line isAnimationActive={false} type="monotone" name="Ánimo" dataKey="animo" stroke="#0038A8" strokeWidth={4} dot={{ r: 4, fill: '#0038A8' }}>
+                  <LabelList dataKey="animo" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0038A8' }} />
+                </Line>
+              </LineChart>
             </div>
           </div>
 
@@ -879,186 +901,17 @@ export default function DesconvocatoriaArea({
             <h3 className="text-[9px] font-black text-[#0b1220] uppercase tracking-widest mb-4 flex items-center gap-2">
               <i className="fa-solid fa-chart-area text-[#0b1220]"></i> DINÁMICA DE CARGA (UA)
             </h3>
-            <div className="h-64 w-full bg-slate-50/50 rounded-[32px] p-8">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={loadChartData} margin={{ top: 30, right: 40, left: 20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                  <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#475569'}} />
-                  <YAxis hide />
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', paddingTop: '20px' }} />
-                  <Line isAnimationActive={false} type="monotone" name="Carga (UA)" dataKey="srpe" stroke="#0b1220" strokeWidth={4} dot={{ r: 4, fill: '#0b1220' }} activeDot={{ r: 6 }}>
-                    <LabelList dataKey="srpe" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0b1220' }} />
-                  </Line>
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* PÁGINA 3: CARGA EXTERNA (GPS) */}
-        <div className="bg-white p-12 min-h-[297mm] flex flex-col break-after-page shadow-sm mb-8 print:shadow-none print:mb-0 player-report-page">
-          <Header />
-
-          <div className="space-y-6 mb-8">
-            <h3 className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.3em] flex items-center gap-2">
-              <i className="fa-solid fa-satellite-dish text-[#CF1B2B]"></i> CARGA EXTERNA ( G P S )
-            </h3>
-            <div className="rounded-[24px] overflow-hidden border border-slate-100 shadow-sm">
-                <table className="w-full text-center text-[8px] border-collapse">
-                  <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest">
-                    <tr>
-                      <th className="px-2 py-3 text-left pl-4">FECHA</th>
-                      <th className="px-1 py-3">MIN</th>
-                      <th className="px-1 py-3">TOT DIST (M)</th>
-                      <th className="px-1 py-3">M/MIN</th>
-                      <th className="px-1 py-3">AINT {">"}15</th>
-                      <th className="px-1 py-3">MAINT {">"}20</th>
-                      <th className="px-1 py-3">SPR {">"}25</th>
-                      <th className="px-1 py-3"># SP</th>
-                      <th className="px-1 py-3">VEL MAX</th>
-                      <th className="px-1 py-3 pr-4">#ACC+DEC AI</th>
-                    </tr>
-                  </thead>
-                  <tbody className="font-black text-slate-700 uppercase italic">
-                    {history.gps.map((g, idx) => (
-                      <tr key={idx} className="border-b border-slate-50">
-                        <td className="px-2 py-2 text-left pl-4 font-bold">{formatDateShort(g.date)}</td>
-                        <td className="px-1 py-2">{formatNum(g.minutos)}</td>
-                        <td className="px-1 py-2 font-bold">{formatNum(g.dist_total_m)}</td>
-                        <td className="px-1 py-2">{formatNum(g.m_por_min)}</td>
-                        <td className="px-1 py-2">{formatNum(g.dist_ai_m_15_kmh)}</td>
-                        <td className="px-1 py-2">{formatNum(g.dist_mai_m_20_kmh)}</td>
-                        <td className="px-1 py-2">{formatNum(g.dist_sprint_m_25_kmh)}</td>
-                        <td className="px-1 py-2">{formatNum(g.sprints_n)}</td>
-                        <td className="px-1 py-2">{formatNum(g.vel_max_kmh)}</td>
-                        <td className="px-1 py-2 pr-4">{formatNum(g.acc_decc_ai_n)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 mt-auto">
-            {/* Chart 1: Total Distance (Line) & Distances >15 and >20 (Bars) */}
-            <div className="h-52 w-full bg-slate-50/50 rounded-[32px] p-6">
-              <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 px-2">VOLUMEN E INTENSIDAD (TOT DIST, &gt;15, &gt;20 KM/H)</h4>
-              <ResponsiveContainer width="100%" height="85%">
-                <ComposedChart data={gpsChartData} margin={{ top: 25, right: 30, left: 10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                  <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} width={40} />
-                  <Tooltip />
-                  <Legend verticalAlign="top" align="right" height={30} iconType="square" wrapperStyle={{ fontSize: '7px', fontWeight: '900', textTransform: 'uppercase', paddingBottom: '10px' }} />
-                  <Bar isAnimationActive={false} name="Dist. >15 km/h" dataKey="dist_15" fill="#CF1B2B" radius={[4, 4, 0, 0]} barSize={12}>
-                    <LabelList dataKey="dist_15" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#CF1B2B' }} />
-                  </Bar>
-                  <Bar isAnimationActive={false} name="Dist. >20 km/h" dataKey="dist_20" fill="#0038A8" radius={[4, 4, 0, 0]} barSize={12}>
-                    <LabelList dataKey="dist_20" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#0038A8' }} />
-                  </Bar>
-                  <Line isAnimationActive={false} type="monotone" name="Dist. Total (m)" dataKey="dist_total" stroke="#0038A8" strokeWidth={3} dot={{ r: 3, fill: '#0038A8' }}>
-                    <LabelList dataKey="dist_total" position="top" offset={10} formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#0038A8' }} />
-                  </Line>
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Chart 2: Dist >25, Acc+Dec (Bars) and Efforts >25 (Line) */}
-            <div className="h-52 w-full bg-slate-50/50 rounded-[32px] p-6">
-              <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 px-2">ALTA VELOCIDAD Y ACCIONES EXPLOSIVAS (&gt;25 KM/H, ACC+DEC)</h4>
-              <ResponsiveContainer width="100%" height="85%">
-                <ComposedChart data={gpsChartData} margin={{ top: 25, right: 30, left: 10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                  <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} />
-                  <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} width={35} />
-                  <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{fontSize: 7, fontWeight: 900, fill: '#475569'}} width={35} />
-                  <Tooltip />
-                  <Legend verticalAlign="top" align="right" height={30} iconType="square" wrapperStyle={{ fontSize: '7px', fontWeight: '900', textTransform: 'uppercase', paddingBottom: '10px' }} />
-                  <Bar isAnimationActive={false} yAxisId="left" name="Dist. >25 km/h" dataKey="dist_25" fill="#CF1B2B" radius={[4, 4, 0, 0]} barSize={12}>
-                    <LabelList dataKey="dist_25" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#CF1B2B' }} />
-                  </Bar>
-                  <Bar isAnimationActive={false} yAxisId="left" name="Acc + Dec (AI)" dataKey="acc_dec" fill="#0038A8" radius={[4, 4, 0, 0]} barSize={12}>
-                    <LabelList dataKey="acc_dec" position="top" formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#0038A8' }} />
-                  </Bar>
-                  <Line isAnimationActive={false} yAxisId="right" type="monotone" name="Esfuerzos >25 km/h" dataKey="sprints" stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981' }}>
-                    <LabelList dataKey="sprints" position="top" offset={10} formatter={formatNum} style={{ fontSize: '6px', fontWeight: '900', fill: '#10b981' }} />
-                  </Line>
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* PÁGINA 4: FIRMAS */}
-        <div className="bg-white p-12 min-h-[297mm] flex flex-col shadow-sm print:shadow-none player-report-page">
-          <Header />
-          
-          <div className="mb-8">
-            <h3 className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.3em] mb-4 flex items-center gap-2">
-              <i className="fa-solid fa-stethoscope text-[#CF1B2B]"></i> INFORME MÉDICO INSTITUCIONAL
-            </h3>
-            <div className="bg-slate-50 p-8 rounded-[32px] border border-slate-100 italic relative overflow-hidden">
-               {/* Decorative background element */}
-               <div className="absolute top-0 right-0 p-4 opacity-[0.03]">
-                 <i className="fa-solid fa-staff-aesculapius text-8xl"></i>
-               </div>
-               
-               <p className="text-[10px] font-bold text-slate-800 leading-relaxed relative z-10">
-                 Se certifica que el deportista <span className="text-[#0b1220] font-black">{player.name}</span> ha sido sometido a seguimiento clínico y fisioterapéutico permanente durante el transcurso del actual periodo de citación. 
-                 Basado en el registro diario del Área Médica y el Departamento de Ciencias del Deporte, se informa lo siguiente:
-               </p>
-               
-               <div className="mt-4 pt-4 border-t border-slate-200 relative z-10">
-                 {history.medical && history.medical.length > 0 ? (
-                   <div className="space-y-3">
-                     {history.medical.map((m: any, idx: number) => (
-                       <div key={idx} className="flex gap-4">
-                         <div className="text-[9px] font-black text-slate-400 shrink-0 mt-0.5">{formatDateShort(m.date)}</div>
-                         <div>
-                           <p className="text-[11px] font-black text-[#0b1220] leading-none mb-1">
-                             {m.diagnosis || 'CONTROL CLÍNICO RUTINARIO'}
-                           </p>
-                           <p className="text-[10px] font-medium text-slate-600">
-                             {m.observation}
-                           </p>
-                         </div>
-                       </div>
-                     ))}
-                   </div>
-                 ) : (
-                   <p className="text-xs font-black text-[#0b1220] uppercase tracking-tight">
-                     "EL DEPORTISTA COMPLETÓ EL MICROCICLO DE ENTRENAMIENTO SIN PRESENTAR HALLAZGOS CLÍNICOS DE SIGNIFICANCIA, NOVEDADES MÉDICAS NI LIMITACIONES FÍSICAS QUE CONDICIONEN SU RENDIMIENTO DEPORTIVO HABITUAL O REQUIERAN TRATAMIENTO ESPECÍFICO POST-CONVOCATORIA."
-                   </p>
-                 )}
-               </div>
-            </div>
-          </div>
-
-          <div className="flex-1 flex flex-col justify-center py-2">
-            {/* Justificación técnica eliminada por solicitud */}
-          </div>
-
-          <div className="mt-auto">
-            <div className="grid grid-cols-2 gap-24 mb-20">
-               <div className="text-center">
-                  <div className="h-px bg-slate-300 mb-6"></div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-900">F I R M A J E F E T É C N I C O</p>
-               </div>
-               <div className="text-center">
-                  <div className="h-px bg-slate-300 mb-6"></div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-900">F I R M A Á R E A M É D I C A</p>
-               </div>
-            </div>
-            
-            <div className="text-center border-t border-slate-100 pt-8 relative">
-               <p className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.6em] mb-2">L A R O J A P E R F O R M A N C E H U B</p>
-               <p className="text-[8px] font-bold text-slate-300 uppercase italic">FEDERACIÓN DE FÚTBOL DE CHILE</p>
-               
-               {/* Watermark */}
-               <div className="absolute bottom-0 right-0 text-[8px] font-black text-slate-200 italic tracking-widest">
-                 CMSPORTECH.COM
-               </div>
+            <div className="h-64 w-full bg-slate-50/50 rounded-[32px] p-8 flex items-center justify-center overflow-hidden">
+              <LineChart width={700} height={200} data={loadChartData} margin={{ top: 30, right: 40, left: 20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 900, fill: '#475569'}} />
+                <YAxis hide />
+                <Tooltip />
+                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', paddingTop: '20px' }} />
+                <Line isAnimationActive={false} type="monotone" name="Carga (UA)" dataKey="srpe" stroke="#0b1220" strokeWidth={4} dot={{ r: 4, fill: '#0b1220' }} activeDot={{ r: 6 }}>
+                  <LabelList dataKey="srpe" position="top" offset={10} formatter={formatNum} style={{ fontSize: '8px', fontWeight: '900', fill: '#0b1220' }} />
+                </Line>
+              </LineChart>
             </div>
           </div>
         </div>
@@ -1220,7 +1073,7 @@ export default function DesconvocatoriaArea({
                >
                  {loading ? <><i className="fa-solid fa-spinner fa-spin"></i> ...</> : <><i className="fa-solid fa-download"></i> DESCARGAR PDF</>}
                </button>
-               <button onClick={confirmDesconvocatoria} className="bg-red-600 text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700">OFICIALIZAR BAJA</button>
+               <button onClick={() => { setShowBajaModal(true); }} className="bg-red-600 text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700">OFICIALIZAR BAJA</button>
                <button onClick={() => setViewMode('details')} className="bg-slate-100 text-slate-400 px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest">VOLVER</button>
             </div>
           </div>
@@ -1271,7 +1124,12 @@ export default function DesconvocatoriaArea({
                         <p className="text-sm font-black text-slate-900 uppercase italic leading-none mb-1">{p.name}</p>
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{p.position} | {p.club}</p>
                       </div>
-                      <button onClick={() => handleBajaClick(p)} className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-[9px] font-black uppercase shadow-sm hover:scale-105 active:scale-95 transition-all">Reportar Baja</button>
+                      <button 
+                        onClick={() => handleIndividualReportClick(p)} 
+                        className="px-5 py-2.5 bg-[#0b1220] text-white rounded-xl text-[9px] font-black uppercase shadow-sm hover:bg-red-600 transition-all flex items-center gap-2 active:scale-95 transform"
+                      >
+                        <i className="fa-solid fa-file-pdf"></i> DESCONVOCATORIA
+                      </button>
                     </div>
                   ))}
                 </div>

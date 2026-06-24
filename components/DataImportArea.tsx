@@ -22,10 +22,11 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'gps_import',
     icon: 'fa-solid fa-satellite-dish',
     description: 'Carga de datos GPS acumulados por sesión.',
-    conflictColumns: ['player_id', 'fecha'],
+    conflictColumns: ['player_id', 'fecha', 'nombre_sesion'],
     fields: [
       { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Date', required: true, type: 'date' },
+      { key: 'nombre_sesion', label: 'Nombre Sesión', required: false, type: 'string' },
       { key: 'minutos', label: 'Min', required: false, type: 'number' },
       { key: 'dist_total_m', label: 'Total Distance (m)', required: false, type: 'number' },
       { key: 'm_por_min', label: 'Metros/min', required: false, type: 'number' },
@@ -746,11 +747,24 @@ export default function DataImportArea() {
       }
 
       // NUEVO: Agregación de Sesiones para GPS Totales (Opción A)
-      // Si el archivo contiene múltiples filas por jugador/fecha, las sumamos antes de upsert
+      // Si el archivo contiene múltiples filas por jugador/fecha/sesión, las sumamos antes de upsert
       if (selectedType === 'gps_totales') {
         const aggregatedMap = new Map<string, any>();
+        
+        // Asignar nombre_sesion incremental si hay varias filas para el mismo jugador y fecha en el archivo sin nombre
+        const counts = new Map<string, number>();
+        
         dataToInsert.forEach(item => {
-          const key = `${item.player_id}-${item.fecha}`;
+          const dayKey = `${item.player_id}-${item.fecha}`;
+          let sName = item.nombre_sesion;
+          if (!sName) {
+            const currentIdx = (counts.get(dayKey) || 0) + 1;
+            counts.set(dayKey, currentIdx);
+            sName = currentIdx > 1 ? `Sesión ${currentIdx}` : 'Sesión';
+          }
+          item.nombre_sesion = sName;
+          
+          const key = `${item.player_id}-${item.fecha}-${sName}`;
           if (aggregatedMap.has(key)) {
             const existing = aggregatedMap.get(key);
             existing.minutos = (existing.minutos || 0) + (item.minutos || 0);
@@ -769,8 +783,8 @@ export default function DataImportArea() {
           }
         });
         
-        // NUEVO: Contrastamos con lo que YA existe en la base de datos para SUMAR (no sobrescribir)
-        // Esto permite que si cargan la sesión AM ahora y la PM después en archivos distintos, se acumulen correctamente.
+        // NOTA: Para permitir sesiones independientes, NO las sumamos con los registros de la DB si corresponden a sesiones con nombres distintos.
+        // Solo sumamos si el registro en DB tiene exactamente el MISMO nombre de sesión.
         const playerIds = Array.from(new Set(dataToInsert.map(d => d.player_id)));
         const dates = Array.from(new Set(dataToInsert.map(d => d.fecha)));
 
@@ -782,10 +796,11 @@ export default function DataImportArea() {
 
         if (dbRecords && dbRecords.length > 0) {
           dbRecords.forEach(dbRow => {
-            const key = `${dbRow.player_id}-${dbRow.fecha}`;
+            const dbSessionName = dbRow.nombre_sesion || 'Sesión';
+            const key = `${dbRow.player_id}-${dbRow.fecha}-${dbSessionName}`;
             if (aggregatedMap.has(key)) {
               const current = aggregatedMap.get(key);
-              // Sumamos lo de la DB a lo que estamos cargando (Opción A)
+              // Solo sumamos si es exactamente el mismo nombre de sesión que el que estamos cargando en este lote.
               current.minutos = (current.minutos || 0) + (dbRow.minutos || 0);
               current.dist_total_m = (current.dist_total_m || 0) + (dbRow.dist_total_m || 0);
               current.dist_ai_m_15_kmh = (current.dist_ai_m_15_kmh || 0) + (dbRow.dist_ai_m_15_kmh || 0);
@@ -1447,7 +1462,12 @@ export default function DataImportArea() {
       // ✅ NUEVO: Extraer datos de sesión
       const sessionDate = selectedActivity.startTime 
         ? selectedActivity.startTime.split('T')[0] 
-        : new Date().toISOString().split('T')[0];
+        : (() => {
+            const d = new Date();
+            const offset = d.getTimezoneOffset();
+            const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+            return localDate.toISOString().split('T')[0];
+          })();
       
       const sessionName = selectedActivity.name || 'Sesión sin nombre';
       const catapultId = selectedActivity.id || null;
@@ -1502,35 +1522,12 @@ export default function DataImportArea() {
         }
       });
 
-      // Sumar con DB (sesiones AM + PM)
-      if (existingDBRecords) {
-        existingDBRecords.forEach(dbRow => {
-          if (aggregatedMap.has(dbRow.player_id)) {
-            const current = aggregatedMap.get(dbRow.player_id);
-            // Solo sumar si DISTINTO catapult_sync_id
-            if (dbRow.catapult_sync_id !== catapultId) {
-              current.minutos = (current.minutos || 0) + (dbRow.minutos || 0);
-              current.dist_total_m = (current.dist_total_m || 0) + (dbRow.dist_total_m || 0);
-              current.dist_ai_m_15_kmh = (current.dist_ai_m_15_kmh || 0) + (dbRow.dist_ai_m_15_kmh || 0);
-              current.dist_mai_m_20_kmh = (current.dist_mai_m_20_kmh || 0) + (dbRow.dist_mai_m_20_kmh || 0);
-              current.dist_sprint_m_25_kmh = (current.dist_sprint_m_25_kmh || 0) + (dbRow.dist_sprint_m_25_kmh || 0);
-              current.sprints_n = (current.sprints_n || 0) + (dbRow.sprints_n || 0);
-              current.acc_decc_ai_n = (current.acc_decc_ai_n || 0) + (dbRow.acc_decc_ai_n || 0);
-              current.vel_max_kmh = Math.max(current.vel_max_kmh || 0, dbRow.vel_max_kmh || 0);
-              if (current.minutos > 0) {
-                current.m_por_min = current.dist_total_m / current.minutos;
-              }
-            }
-          }
-        });
-      }
-
       recordsToInsert = Array.from(aggregatedMap.values());
 
       let uploadError = null;
       try {
         const { error } = await supabase.from('gps_import').upsert(recordsToInsert, {
-          onConflict: 'player_id,fecha'
+          onConflict: 'player_id,fecha,nombre_sesion'
         });
         if (error) {
           uploadError = error;
@@ -1543,7 +1540,7 @@ export default function DataImportArea() {
         console.warn("⚠️ Native upsert for gps_import failed, attempting custom self-healing merge fallback...", uploadError);
         try {
           const tableName = 'gps_import';
-          const conflictCols = ['player_id', 'fecha'];
+          const conflictCols = ['player_id', 'fecha', 'nombre_sesion'];
           
           const validPlayerIds = Array.from(new Set(
             recordsToInsert

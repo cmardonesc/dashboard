@@ -15,7 +15,12 @@ interface NutricionResumenGrupalProps {
 
 const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ performanceRecords, userRole, userClub, clubs = [] }) => {
   const [startDate, setStartDate] = useState<string>('2020-01-01');
-  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState<string>(() => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  });
   const [selectedClubs, setSelectedClubs] = useState<string[]>(
     userRole === 'club' && userClub ? [userClub] : []
   );

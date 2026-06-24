@@ -15,6 +15,25 @@ import { FALLBACK_CLUBS } from './lib/fallback_clubs'
 
 type Role = 'player' | 'staff' | 'admin' | 'club' | null
 
+const normalizeDateStr = (raw: string): string => {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  // Si ya es una cadena limpia de formato YYYY-MM-DD, retornarla directamente.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  
+  // De lo contrario, intentar parsearlo con soporte de zona horaria local
+  const d = new Date(trimmed);
+  if (isNaN(d.getTime())) {
+    return trimmed.includes('T') ? trimmed.split('T')[0] : trimmed.split(' ')[0];
+  }
+  
+  const offset = d.getTimezoneOffset();
+  const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+  return localDate.toISOString().split('T')[0];
+};
+
 export default function App() {
   const [loading, setLoading] = useState(true)
   const [playersLoading, setPlayersLoading] = useState(true)
@@ -127,7 +146,7 @@ export default function App() {
 
       const mappedWellness = (wellnessRes.data || []).map((w: any) => {
         const rawDate = w.checkin_date || w.checkin_dat || w.fecha || '';
-        const normalizedDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate.split(' ')[0];
+        const normalizedDate = normalizeDateStr(rawDate);
         
         // Resolver club si es ID
         let resolvedClub = w.club || w.club_name ||'';
@@ -158,7 +177,7 @@ export default function App() {
 
       const mappedLoads = (loadsRes.data || []).map((l: any) => {
         const rawDate = l.session_date || l.fecha || '';
-        const normalizedDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate.split(' ')[0];
+        const normalizedDate = normalizeDateStr(rawDate);
         const rpe = l.rpe || l.esfuerzo || 0;
         const duration = l.duration_min || l.duracion || l.minutos || 0;
 
@@ -191,7 +210,7 @@ export default function App() {
 
       const mappedGps = (gpsRes.data || []).map((g: any) => {
         const rawDate = g.fecha || g.session_date || '';
-        const normalizedDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate.split(' ')[0];
+        const normalizedDate = normalizeDateStr(rawDate);
         const duration = Number(g.minutos || g.duration || 0);
 
         // Resolver club si es ID
