@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react'
-import { User, WellnessData, TrainingLoadData, GPSData, Category } from '../types'
+import { User, WellnessData, TrainingLoadData, GPSData, Category, CATEGORY_ID_MAP } from '../types'
 import { supabase } from '../lib/supabase'
 import { logActivity } from '../lib/activityLogger'
 import WellnessForm from './WellnessForm'
@@ -257,9 +257,40 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
       const today = getLocalDateString();
 
+      const playerCategory = player?.category || (player as any)?.categoria || Category.SUB_17;
+      let categoryId = 5; // Default to Sub 17
+      if (playerCategory) {
+        if (typeof playerCategory === 'number') {
+          categoryId = playerCategory;
+        } else if (typeof playerCategory === 'string') {
+          const lowerCat = playerCategory.toLowerCase().trim().replace(' ', '_');
+          if (CATEGORY_ID_MAP[playerCategory as Category] !== undefined) {
+            categoryId = CATEGORY_ID_MAP[playerCategory as Category];
+          } else {
+            const matchedKey = Object.values(Category).find(catVal => catVal.toLowerCase() === lowerCat);
+            if (matchedKey && CATEGORY_ID_MAP[matchedKey] !== undefined) {
+              categoryId = CATEGORY_ID_MAP[matchedKey];
+            } else {
+              const match = playerCategory.match(/\d+/);
+              if (match) {
+                const num = parseInt(match[0]);
+                const foundCatVal = Object.values(Category).find(catVal => {
+                  const valMatch = catVal.match(/\d+/);
+                  return valMatch && parseInt(valMatch[0]) === num;
+                });
+                if (foundCatVal && CATEGORY_ID_MAP[foundCatVal] !== undefined) {
+                  categoryId = CATEGORY_ID_MAP[foundCatVal];
+                }
+              }
+            }
+          }
+        }
+      }
+
       const { data: activeMC } = await supabase
         .from('microcycles')
         .select('id')
+        .eq('category_id', categoryId)
         .lte('start_date', today)
         .gte('end_date', today)
         .maybeSingle();
@@ -316,9 +347,40 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
       const today = getLocalDateString();
 
+      const playerCategory = player?.category || (player as any)?.categoria || Category.SUB_17;
+      let categoryId = 5; // Default to Sub 17
+      if (playerCategory) {
+        if (typeof playerCategory === 'number') {
+          categoryId = playerCategory;
+        } else if (typeof playerCategory === 'string') {
+          const lowerCat = playerCategory.toLowerCase().trim().replace(' ', '_');
+          if (CATEGORY_ID_MAP[playerCategory as Category] !== undefined) {
+            categoryId = CATEGORY_ID_MAP[playerCategory as Category];
+          } else {
+            const matchedKey = Object.values(Category).find(catVal => catVal.toLowerCase() === lowerCat);
+            if (matchedKey && CATEGORY_ID_MAP[matchedKey] !== undefined) {
+              categoryId = CATEGORY_ID_MAP[matchedKey];
+            } else {
+              const match = playerCategory.match(/\d+/);
+              if (match) {
+                const num = parseInt(match[0]);
+                const foundCatVal = Object.values(Category).find(catVal => {
+                  const valMatch = catVal.match(/\d+/);
+                  return valMatch && parseInt(valMatch[0]) === num;
+                });
+                if (foundCatVal && CATEGORY_ID_MAP[foundCatVal] !== undefined) {
+                  categoryId = CATEGORY_ID_MAP[foundCatVal];
+                }
+              }
+            }
+          }
+        }
+      }
+
       const { data: activeMC } = await supabase
         .from('microcycles')
         .select('id')
+        .eq('category_id', categoryId)
         .lte('start_date', today)
         .gte('end_date', today)
         .maybeSingle();
