@@ -3,8 +3,11 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AthletePerformanceRecord, NutritionData } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
-import { normalizeClub } from '../lib/utils';
+import { normalizeClub, getDriveDirectLink } from '../lib/utils';
 import ClubBadge from './ClubBadge';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { FEDERATION_LOGO } from '../constants';
 
 interface NutricionResumenGrupalProps {
   performanceRecords: AthletePerformanceRecord[];
@@ -40,6 +43,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   const [playerQuery, setPlayerQuery] = useState('');
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showOnlyLatest, setShowOnlyLatest] = useState<boolean>(false);
   const hasInitializedDates = useRef(false);
 
   // Sorting States
@@ -305,20 +309,49 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     const names = new Set<string>();
     performanceRecords.forEach(record => {
       if (record.player.name && record.nutrition && record.nutrition.length > 0) {
-        const isMyClub = userRole !== 'club' || (userClub && normalizeClub(record.player.club || '') === normalizeClub(userClub));
-        const nameToUse = isMyClub ? record.player.name : `Jugador [${record.player.player_id || record.player.id || 'Anon'}]`;
-        names.add(nameToUse);
+        const hasMatchingNutrition = record.nutrition.some(n => {
+          const date = new Date(n.fecha_medicion);
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          const matchesDate = date >= start && date <= end;
+          
+          const matchesClub = selectedClubs.length === 0 || selectedClubs.some(sc => 
+            (record.player.club && normalizeClub(record.player.club) === normalizeClub(sc)) ||
+            (record.player.club_name && normalizeClub(record.player.club_name) === normalizeClub(sc))
+          );
+          
+          const matchesCategory = selectedCategories.length === 0 || selectedCategories.some(sc =>
+            record.player.anio?.toString() === sc
+          );
+
+          const matchesPosition = selectedPositions.length === 0 || selectedPositions.some(sp =>
+            record.player.position?.toString() === sp
+          );
+
+          const matchesObjective = selectedObjectives.length === 0 || selectedObjectives.some(so => {
+            const need = getNutritionalNeed(n.masa_muscular_pct || 0, n.masa_adiposa_pct || 0, record.player.anio || 0);
+            return need.label === so;
+          });
+
+          return matchesDate && matchesClub && matchesCategory && matchesPosition && matchesObjective;
+        });
+
+        if (hasMatchingNutrition) {
+          const isMyClub = userRole !== 'club' || (userClub && normalizeClub(record.player.club || '') === normalizeClub(userClub));
+          const nameToUse = isMyClub ? record.player.name : `Jugador [${record.player.player_id || record.player.id || 'Anon'}]`;
+          names.add(nameToUse);
+        }
       }
     });
     return Array.from(names).sort();
-  }, [performanceRecords, userRole, userClub]);
+  }, [performanceRecords, userRole, userClub, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives]);
 
   const filteredPlayersBySearch = useMemo(() => {
     if (!playerQuery) return availablePlayers;
     return availablePlayers.filter(p => p.toLowerCase().includes(playerQuery.toLowerCase()));
   }, [availablePlayers, playerQuery]);
 
-  const filteredData = useMemo(() => {
+  const allFilteredData = useMemo(() => {
     return performanceRecords.flatMap(record => {
       if (!record.nutrition) return [];
       return record.nutrition
@@ -360,6 +393,35 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
         }));
     });
   }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives, selectedPlayers, userRole, userClub]);
+
+  const filteredData = useMemo(() => {
+    if (!showOnlyLatest) return allFilteredData;
+
+    const latestMap = new Map<string, typeof allFilteredData[0]>();
+    
+    allFilteredData.forEach(item => {
+      const playerKey = String(item.player.id || item.player.player_id || item.player.name || '');
+      const existing = latestMap.get(playerKey);
+      
+      if (!existing || new Date(item.data.fecha_medicion) > new Date(existing.data.fecha_medicion)) {
+        latestMap.set(playerKey, item);
+      }
+    });
+
+    return Array.from(latestMap.values());
+  }, [allFilteredData, showOnlyLatest]);
+
+  const hasDuplicatePlayers = useMemo(() => {
+    const seen = new Set<string>();
+    for (const item of allFilteredData) {
+      const playerKey = String(item.player.id || item.player.player_id || item.player.name || '');
+      if (seen.has(playerKey)) {
+        return true;
+      }
+      seen.add(playerKey);
+    }
+    return false;
+  }, [allFilteredData]);
 
   const sortedFilteredData = useMemo(() => {
     const data = [...filteredData];
@@ -529,6 +591,489 @@ La composición tisular grupal cumple robustamente con los estándares internaci
         {`${value} (${(percent * 100).toFixed(0)}%)`}
       </text>
     );
+  };
+
+  const parseTailwindColor = (colorClass: string): { bg: [number, number, number], text: [number, number, number] } => {
+    if (colorClass.includes('emerald-100') || colorClass.includes('emerald-50')) {
+      return { bg: [209, 250, 229], text: [4, 120, 87] };
+    }
+    if (colorClass.includes('amber-100') || colorClass.includes('amber-50')) {
+      return { bg: [254, 243, 199], text: [180, 83, 9] };
+    }
+    if (colorClass.includes('red-100') || colorClass.includes('rose-100') || colorClass.includes('rose-50')) {
+      return { bg: [254, 226, 226], text: [185, 28, 28] };
+    }
+    return { bg: [255, 255, 255], text: [30, 41, 59] };
+  };
+
+  const parseObjectiveColor = (label: string): { bg: [number, number, number], text: [number, number, number] } => {
+    const cleanLabel = label.toLowerCase();
+    if (cleanLabel.includes('recomposición')) {
+      return { bg: [255, 251, 235], text: [146, 64, 14] };
+    }
+    if (cleanLabel.includes('aumento')) {
+      return { bg: [239, 246, 255], text: [30, 64, 175] };
+    }
+    if (cleanLabel.includes('reducción')) {
+      return { bg: [255, 241, 242], text: [159, 18, 57] };
+    }
+    if (cleanLabel.includes('optimizar') || cleanLabel.includes('mantener')) {
+      return { bg: [236, 253, 245], text: [6, 95, 70] };
+    }
+    return { bg: [255, 255, 255], text: [30, 41, 59] };
+  };
+
+  const downloadPdfReport = () => {
+    if (sortedFilteredData.length === 0) return;
+
+    try {
+      const doc = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const primaryColor = [11, 18, 32] as [number, number, number]; // #0b1220
+      const secondaryColor = [220, 38, 38] as [number, number, number]; // #dc2626
+      const margin = 15;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      // Top Decorative Lines
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(1.5);
+      doc.line(margin, 10, pageWidth - margin, 10);
+      
+      doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.setLineWidth(0.5);
+      doc.line(margin, 11.5, pageWidth - margin, 11.5);
+
+      // Logo
+      const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+      try {
+        doc.addImage(logoUrl, 'PNG', margin, 15, 20, 20);
+      } catch (e) {
+        console.warn("Could not add logo to PDF", e);
+      }
+
+      // Title & Subtitle
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text("LA ROJA PERFORMANCE HUB", 38, 22);
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text("REPORTE DE COMPOSICIÓN CORPORAL GRUPAL", 38, 27);
+
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.text("ÁREA DE NUTRICIÓN DEPORTIVA", 38, 32);
+
+      // Draw Separator Line
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.5);
+      doc.line(margin, 38, pageWidth - margin, 38);
+
+      const totalCount = sortedFilteredData.length;
+      const avgMuscular = totalCount > 0 ? (sortedFilteredData.reduce((acc, curr) => acc + (curr.data.masa_muscular_pct || 0), 0) / totalCount) : 0;
+      const avgAdiposa = totalCount > 0 ? (sortedFilteredData.reduce((acc, curr) => acc + (curr.data.masa_adiposa_pct || 0), 0) / totalCount) : 0;
+      const avgPliegues = totalCount > 0 ? (sortedFilteredData.reduce((acc, curr) => acc + (curr.data.sum_pliegues_6_mm || 0), 0) / totalCount) : 0;
+      const avgImo = totalCount > 0 ? (sortedFilteredData.reduce((acc, curr) => {
+        const imoVal = (curr.data.indice_imo && Number(curr.data.indice_imo) > 0)
+          ? Number(curr.data.indice_imo)
+          : (curr.data.masa_muscular_kg && curr.data.masa_osea_kg && Number(curr.data.masa_osea_kg) > 0)
+            ? (Number(curr.data.masa_muscular_kg) / Number(curr.data.masa_osea_kg))
+            : 0;
+        return acc + imoVal;
+      }, 0) / totalCount) : 0;
+
+      // Stats Cards Configuration
+      const cardWidth = 42;
+      const cardHeight = 18;
+      const cardY = 42;
+      const spacing = 4;
+
+      // Card 1: Total Evaluados
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin, cardY, cardWidth, cardHeight, 2, 2, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("TOTAL EVALUADOS", margin + 4, cardY + 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(11, 18, 32);
+      doc.text(`${totalCount} JUGADORES`, margin + 4, cardY + 13);
+
+      // Card 2: Prom. Masa Muscular
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin + cardWidth + spacing, cardY, cardWidth, cardHeight, 2, 2, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("PROM. MASA MUSCULAR", margin + cardWidth + spacing + 4, cardY + 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(11, 18, 32);
+      doc.text(`${avgMuscular.toFixed(1)}%`, margin + cardWidth + spacing + 4, cardY + 13);
+
+      // Card 3: Prom. Masa Grasa
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin + (cardWidth + spacing) * 2, cardY, cardWidth, cardHeight, 2, 2, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("PROM. MASA GRASA", margin + (cardWidth + spacing) * 2 + 4, cardY + 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(11, 18, 32);
+      doc.text(`${avgAdiposa.toFixed(1)}%`, margin + (cardWidth + spacing) * 2 + 4, cardY + 13);
+
+      // Card 4: Prom. 6 Pliegues
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin + (cardWidth + spacing) * 3, cardY, cardWidth, cardHeight, 2, 2, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("PROM. 6 PLIEGUES / IMO", margin + (cardWidth + spacing) * 3 + 4, cardY + 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(11, 18, 32);
+      doc.text(`${avgPliegues.toFixed(1)}mm / ${avgImo > 0 ? avgImo.toFixed(2) : 'N/A'}`, margin + (cardWidth + spacing) * 3 + 4, cardY + 13);
+
+      // Filters list
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      
+      const filterText = [
+        `RANGO: ${new Date(startDate).toLocaleDateString('es-CL')} AL ${new Date(endDate).toLocaleDateString('es-CL')}`,
+        `CLUBES: ${selectedClubs.length > 0 ? selectedClubs.join(', ') : 'TODOS'}`,
+        `CATEGORÍAS: ${selectedCategories.length > 0 ? selectedCategories.join(', ') : 'TODAS'}`,
+        `POSICIONES: ${selectedPositions.length > 0 ? selectedPositions.join(', ') : 'TODAS'}`
+      ].join('  |  ');
+      
+      doc.text(filterText.toUpperCase(), margin, 66);
+
+      // Draw Separator Line
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.5);
+      doc.line(margin, 70, pageWidth - margin, 70);
+
+      // Calculate Chart Data Counts dynamically
+      const mCounts = { Green: 0, Amber: 0, Red: 0 };
+      const fCounts = { Green: 0, Amber: 0, Red: 0 };
+      const pCounts = { Green: 0, Amber: 0, Red: 0 };
+
+      sortedFilteredData.forEach(d => {
+        const birthYear = d.player.anio || 0;
+        const mColor = getCellColor(d.data.masa_muscular_pct || 0, 'muscular', birthYear);
+        const fColor = getCellColor(d.data.masa_adiposa_pct || 0, 'adiposa', birthYear);
+        const pColor = getCellColor(d.data.sum_pliegues_6_mm || 0, 'pliegues', birthYear);
+
+        if (mColor.includes('emerald')) mCounts.Green++;
+        else if (mColor.includes('amber')) mCounts.Amber++;
+        else if (mColor.includes('red')) mCounts.Red++;
+
+        if (fColor.includes('emerald')) fCounts.Green++;
+        else if (fColor.includes('amber')) fCounts.Amber++;
+        else if (fColor.includes('red')) fCounts.Red++;
+
+        if (pColor.includes('emerald')) pCounts.Green++;
+        else if (pColor.includes('amber')) pCounts.Amber++;
+        else if (pColor.includes('red')) pCounts.Red++;
+      });
+
+      // Helper function to draw a chart card with donut chart and legend inside the PDF
+      const drawChartCard = (
+        x: number,
+        y: number,
+        title: string,
+        counts: { Green: number; Amber: number; Red: number },
+        labels: string[]
+      ) => {
+        const cardWidth = 56;
+        const cardHeight = 48;
+
+        // Draw card border & background
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(241, 245, 249); // slate-100 border
+        doc.setLineWidth(0.4);
+        doc.roundedRect(x, y, cardWidth, cardHeight, 4, 4, 'FD');
+
+        // Draw title
+        const cx = x + cardWidth / 2;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(15, 23, 42); // slate-900
+        doc.text(title, cx, y + 6, { align: 'center' });
+
+        // Donut parameters
+        const cy = y + 21;
+        const rOuter = 9;
+        const rInner = 6;
+        const total = counts.Green + counts.Amber + counts.Red;
+
+        // Segments array
+        const segments = [
+          { value: counts.Green, rgb: [16, 185, 129] as [number, number, number] }, // Green
+          { value: counts.Amber, rgb: [245, 158, 11] as [number, number, number] }, // Amber
+          { value: counts.Red, rgb: [239, 68, 68] as [number, number, number] }    // Red
+        ];
+
+        if (total === 0) {
+          doc.setFillColor(241, 245, 249); // slate-100
+          doc.ellipse(cx, cy, rOuter, rOuter, 'F');
+          doc.setFillColor(255, 255, 255);
+          doc.ellipse(cx, cy, rInner, rInner, 'F');
+          
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(148, 163, 184); // slate-400
+          doc.text("0", cx, cy + 1, { align: 'center' });
+        } else {
+          let currentAngle = 0;
+          segments.forEach(seg => {
+            if (seg.value === 0) return;
+            const sliceAngle = (seg.value / total) * 360;
+            const startAngle = currentAngle;
+            const endAngle = currentAngle + sliceAngle;
+
+            const step = 1;
+            doc.setFillColor(seg.rgb[0], seg.rgb[1], seg.rgb[2]);
+            
+            for (let a = startAngle; a < endAngle; a += step) {
+              const currentStep = Math.min(step, endAngle - a);
+              const r1 = (a - 90) * Math.PI / 180;
+              const r2 = (a + currentStep - 90) * Math.PI / 180;
+
+              const x1 = cx;
+              const y1 = cy;
+              const x2 = cx + rOuter * Math.cos(r1);
+              const y2 = cy + rOuter * Math.sin(r1);
+              const x3 = cx + rOuter * Math.cos(r2);
+              const y3 = cy + rOuter * Math.sin(r2);
+
+              doc.triangle(x1, y1, x2, y2, x3, y3, 'F');
+            }
+
+            currentAngle = endAngle;
+          });
+
+          // Draw inner circle to make it a donut
+          doc.setFillColor(255, 255, 255);
+          doc.ellipse(cx, cy, rInner, rInner, 'F');
+
+          // Center text (Total evaluated count)
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(15, 23, 42);
+          doc.text(`${total}`, cx, cy + 1.2, { align: 'center' });
+        }
+
+        // Draw legend
+        const legendItems = [
+          { count: counts.Green, rgb: [16, 185, 129], label: labels[0] },
+          { count: counts.Amber, rgb: [245, 158, 11], label: labels[1] },
+          { count: counts.Red, rgb: [239, 68, 68], label: labels[2] }
+        ];
+
+        let legendY = y + 35;
+        legendItems.forEach(item => {
+          const itemPct = total > 0 ? Math.round((item.count / total) * 100) : 0;
+          
+          // Draw colored dot
+          doc.setFillColor(item.rgb[0], item.rgb[1], item.rgb[2]);
+          doc.ellipse(x + 6, legendY - 0.8, 0.9, 0.9, 'F');
+
+          // Draw label
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5);
+          doc.setTextColor(100, 116, 139); // slate-500
+          doc.text(item.label, x + 9, legendY);
+
+          // Draw count and percentage (right aligned)
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5);
+          doc.setTextColor(15, 23, 42); // slate-900
+          doc.text(`${item.count} (${itemPct}%)`, x + cardWidth - 6, legendY, { align: 'right' });
+
+          legendY += 3.8;
+        });
+      };
+
+      // Draw the 3 beautiful chart cards side-by-side
+      drawChartCard(margin, 73, "MASA MUSCULAR", mCounts, ['EXCELENTE / ALTO', 'NORMAL / ALERTA', 'BAJO / CRÍTICO']);
+      drawChartCard(margin + 56 + 6, 73, "MASA GRASA", fCounts, ['EXCELENTE / BAJO', 'NORMAL / ALERTA', 'ELEVADO / CRÍTICO']);
+      drawChartCard(margin + (56 + 6) * 2, 73, "6 PLIEGUES", pCounts, ['EXCELENTE / MAGRO', 'NORMAL / ALERTA', 'ELEVADO / CRÍTICO']);
+
+      // Draw separator line under charts
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.5);
+      doc.line(margin, 125, pageWidth - margin, 125);
+
+      // Section Title under charts
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(11, 18, 32);
+      doc.text("LISTADO DE EVALUACIONES ANTROPOMÉTRICAS SELECCIONADAS", margin, 131);
+
+      // AutoTable Data
+      const tableData = sortedFilteredData.map((item, i) => {
+        const isMyClub = userRole !== 'club' || (userClub && normalizeClub(item.player.club || '') === normalizeClub(userClub));
+        const displayName = isMyClub ? item.player.name : `Jugador [${item.player.player_id || item.player.id || 'Anon'}]`;
+        const displayClub = isMyClub ? (item.player.club || 'S/C') : 'OTRO CLUB';
+        const position = item.player.position || 'N/A';
+        const fecha = new Date(item.data.fecha_medicion).toLocaleDateString('es-CL');
+        const mPct = `${item.data.masa_muscular_pct?.toFixed(1)}%`;
+        const fPct = `${item.data.masa_adiposa_pct?.toFixed(1)}%`;
+        
+        const imoVal = (item.data.indice_imo && Number(item.data.indice_imo) > 0)
+          ? Number(item.data.indice_imo)
+          : (item.data.masa_muscular_kg && item.data.masa_osea_kg && Number(item.data.masa_osea_kg) > 0)
+            ? (Number(item.data.masa_muscular_kg) / Number(item.data.masa_osea_kg))
+            : 0;
+        const imoStr = imoVal > 0 ? imoVal.toFixed(2) : 'N/A';
+        
+        const pliegues = `${item.data.sum_pliegues_6_mm?.toFixed(1)}mm`;
+        const need = getNutritionalNeed(item.data.masa_muscular_pct || 0, item.data.masa_adiposa_pct || 0, item.player.anio || 0);
+
+        return [
+          displayName.toUpperCase(),
+          `${displayClub.toUpperCase()} (CAT ${item.player.anio})`,
+          position.toUpperCase(),
+          fecha,
+          mPct,
+          fPct,
+          imoStr,
+          pliegues,
+          need.label.toUpperCase()
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 135,
+        margin: { left: margin, right: margin },
+        head: [[
+          'JUGADOR',
+          'CLUB / CATEGORÍA',
+          'POSICIÓN',
+          'FECHA',
+          'M. MUSC %',
+          'M. GRASA %',
+          'IMO',
+          '6 PLIEGUES',
+          'OBJETIVO NUTR.'
+        ]],
+        body: tableData,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [11, 18, 32],
+          textColor: [255, 255, 255],
+          fontSize: 7,
+          fontStyle: 'bold',
+          halign: 'center',
+          valign: 'middle'
+        },
+        bodyStyles: {
+          fontSize: 7,
+          textColor: [30, 41, 59],
+          halign: 'center',
+          valign: 'middle'
+        },
+        columnStyles: {
+          0: { halign: 'left', fontStyle: 'bold' },
+          1: { halign: 'left' },
+          2: { halign: 'left' },
+          3: { halign: 'center' },
+          4: { halign: 'center' },
+          5: { halign: 'center' },
+          6: { halign: 'center' },
+          7: { halign: 'center' },
+          8: { halign: 'center', fontStyle: 'bold' }
+        },
+        styles: {
+          cellPadding: 2,
+          font: 'helvetica'
+        },
+        didParseCell: function(data) {
+          if (data.section === 'body') {
+            const rowIndex = data.row.index;
+            const colIndex = data.column.index;
+            const item = sortedFilteredData[rowIndex];
+            if (!item) return;
+
+            const birthYear = item.player.anio || 0;
+
+            if (colIndex === 4) {
+              const val = item.data.masa_muscular_pct || 0;
+              const colorClass = getCellColor(val, 'muscular', birthYear);
+              const colors = parseTailwindColor(colorClass);
+              data.cell.styles.fillColor = colors.bg;
+              data.cell.styles.textColor = colors.text;
+              data.cell.styles.fontStyle = 'bold';
+            } else if (colIndex === 5) {
+              const val = item.data.masa_adiposa_pct || 0;
+              const colorClass = getCellColor(val, 'adiposa', birthYear);
+              const colors = parseTailwindColor(colorClass);
+              data.cell.styles.fillColor = colors.bg;
+              data.cell.styles.textColor = colors.text;
+              data.cell.styles.fontStyle = 'bold';
+            } else if (colIndex === 6) {
+              const imoVal = (item.data.indice_imo && Number(item.data.indice_imo) > 0)
+                ? Number(item.data.indice_imo)
+                : (item.data.masa_muscular_kg && item.data.masa_osea_kg && Number(item.data.masa_osea_kg) > 0)
+                  ? (Number(item.data.masa_muscular_kg) / Number(item.data.masa_osea_kg))
+                  : 0;
+              const colorClass = getCellColor(imoVal, 'imo', birthYear);
+              const colors = parseTailwindColor(colorClass);
+              data.cell.styles.fillColor = colors.bg;
+              data.cell.styles.textColor = colors.text;
+              data.cell.styles.fontStyle = 'bold';
+            } else if (colIndex === 7) {
+              const val = item.data.sum_pliegues_6_mm || 0;
+              const colorClass = getCellColor(val, 'pliegues', birthYear);
+              const colors = parseTailwindColor(colorClass);
+              data.cell.styles.fillColor = colors.bg;
+              data.cell.styles.textColor = colors.text;
+              data.cell.styles.fontStyle = 'bold';
+            } else if (colIndex === 8) {
+              const need = getNutritionalNeed(item.data.masa_muscular_pct || 0, item.data.masa_adiposa_pct || 0, birthYear);
+              const colors = parseObjectiveColor(need.label);
+              data.cell.styles.fillColor = colors.bg;
+              data.cell.styles.textColor = colors.text;
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        }
+      });
+
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        
+        // Footer
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`Página ${i} de ${totalPages}`, pageWidth - margin - 20, pageHeight - 10);
+        doc.text("LA ROJA PERFORMANCE HUB - INFORME ANTROPOMÉTRICO GRUPAL (S/I)", margin, pageHeight - 10);
+      }
+
+      let clubSuffix = "Grupal";
+      if (selectedClubs.length > 0) {
+        clubSuffix = selectedClubs.map(c => c.trim().replace(/[^a-zA-Z0-9]/g, '_')).join('_');
+      }
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      doc.save(`Reporte_Nutricion_${clubSuffix}_${dateStr}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("Hubo un error al generar el PDF del reporte.");
+    }
   };
 
   return (
@@ -1046,12 +1591,54 @@ La composición tisular grupal cumple robustamente con los estándares internaci
             </div>
           </div>
         </div>
+
+        {/* Check to show only latest evaluation */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-slate-100">
+          <label className="relative flex items-start sm:items-center gap-3 cursor-pointer group select-none">
+            <input
+              type="checkbox"
+              id="show-latest-evaluation-checkbox"
+              checked={showOnlyLatest}
+              onChange={(e) => setShowOnlyLatest(e.target.checked)}
+              className="w-4 h-4 mt-0.5 sm:mt-0 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer accent-red-600"
+            />
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-slate-800 group-hover:text-red-600 transition-colors">
+                Mostrar solo la última evaluación de cada jugador
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">
+                Si un jugador tiene múltiples mediciones en el rango de fechas, conserva solo la más reciente.
+              </span>
+            </div>
+          </label>
+          
+          {hasDuplicatePlayers && !showOnlyLatest && (
+            <span className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-1.5 rounded-2xl text-[10px] font-bold animate-pulse">
+              <i className="fa-solid fa-circle-exclamation text-xs"></i>
+              Hay jugadores con evaluaciones repetidas
+            </span>
+          )}
+          {showOnlyLatest && (
+            <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-2xl text-[10px] font-bold">
+              <i className="fa-solid fa-check-double text-xs"></i>
+              Única evaluación más reciente por jugador
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Data Table */}
       <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+        <div className="p-8 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-sm font-black text-slate-900 uppercase italic tracking-tighter">Listado de Evaluaciones ({filteredData.length})</h3>
+          <button
+            type="button"
+            onClick={downloadPdfReport}
+            className="flex items-center justify-center gap-2 bg-[#0b1220] hover:bg-red-600 active:scale-95 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md hover:shadow-lg focus:outline-none cursor-pointer"
+          >
+            <i className="fa-solid fa-file-pdf text-xs"></i>
+            Descargar PDF (Sin IA)
+          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
