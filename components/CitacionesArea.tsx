@@ -582,6 +582,47 @@ export default function CitacionesArea({
         }
       }
         
+      // FALLBACK DE SEGURIDAD PARA RLS (42501): Intentar usar la función rpc security definer
+      if (error && (error.code === '42501' || error.message?.includes('row-level security') || error.message?.includes('security policy'))) {
+        console.warn("⚠️ Error de RLS detectado (42501). Intentando creación usando la función rpc 'create_microcycle_safe'...");
+        try {
+          const { error: rpcError } = await supabase.rpc('create_microcycle_safe', {
+            p_category_id: catId,
+            p_type: `${newMicroForm.type} (${newMicroForm.city})`,
+            p_start_date: newMicroForm.start_date,
+            p_end_date: newMicroForm.end_date,
+            p_city: newMicroForm.city,
+            p_country: newMicroForm.country,
+            p_created_by: session?.user?.id || null
+          });
+
+          if (!rpcError) {
+            console.log("✅ Creación de microciclo exitosa mediante RPC!");
+            const { data: fetchNew, error: fetchError } = await supabase
+              .from('microcycles')
+              .select('*')
+              .eq('category_id', catId)
+              .eq('start_date', newMicroForm.start_date)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (!fetchError && fetchNew) {
+              newMicro = fetchNew;
+              error = null;
+            } else {
+              console.error("Error al recuperar el microciclo creado por RPC:", fetchError);
+              error = fetchError || new Error("No se pudo recuperar el microciclo creado");
+            }
+          } else {
+            console.error("❌ Falló la creación por RPC:", rpcError);
+            error = rpcError;
+          }
+        } catch (rpcCatch) {
+          console.error("❌ Excepción al intentar llamar al RPC:", rpcCatch);
+        }
+      }
+
       // FALLBACK AGRESIVO: Si sigue fallando por duplicado o columnas inexistentes
       if (error && (
         error.code === '23505' || 
@@ -624,7 +665,12 @@ export default function CitacionesArea({
         }
       }
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '42501' || error.message?.includes('row-level security') || error.message?.includes('security policy')) {
+          throw new Error("Error de seguridad RLS en Supabase. Asegúrese de que las políticas de seguridad (RLS) en su panel de Supabase permitan la inserción de datos en la tabla 'microcycles' para usuarios autenticados/anon, o ejecute el script sql de configuración.");
+        }
+        throw error;
+      }
 
       // Disparar notificación push
       if (newMicro) {

@@ -26,15 +26,98 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   );
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
+  const [selectedObjectives, setSelectedObjectives] = useState<string[]>([]);
   const [isClubDropdownOpen, setIsClubDropdownOpen] = useState(false);
   const [clubQuery, setClubQuery] = useState('');
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [categoryQuery, setCategoryQuery] = useState('');
   const [isPositionDropdownOpen, setIsPositionDropdownOpen] = useState(false);
   const [positionQuery, setPositionQuery] = useState('');
+  const [isObjectiveDropdownOpen, setIsObjectiveDropdownOpen] = useState(false);
+  const [objectiveQuery, setObjectiveQuery] = useState('');
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const hasInitializedDates = useRef(false);
+
+  // Sorting States
+  const [sortConfig, setSortConfig] = useState<{
+    key: string;
+    direction: 'asc' | 'desc';
+  } | null>({ key: 'fecha', direction: 'desc' }); // default sorting by evaluation date desc
+
+  const getNutritionalNeed = (muscle: number, fat: number, birthYear: number) => {
+    const isOlder = birthYear < 2008 && birthYear > 0;
+    const muscleThreshold = isOlder ? 54 : 52;
+    const fatThreshold = isOlder ? 17 : 18;
+
+    const needsMuscle = muscle < muscleThreshold;
+    const needsFatLoss = fat > fatThreshold;
+
+    if (needsMuscle && needsFatLoss) {
+      return {
+        label: 'Recomposición Corporal',
+        sublabel: 'Subir Masa Muscular & Bajar Grasa',
+        color: 'bg-amber-50 text-amber-800 border-amber-200'
+      };
+    }
+    if (needsMuscle) {
+      return {
+        label: 'Aumento Muscular',
+        sublabel: 'Subir Masa Muscular',
+        color: 'bg-blue-50 text-blue-800 border-blue-200'
+      };
+    }
+    if (needsFatLoss) {
+      return {
+        label: 'Reducción de Grasa',
+        sublabel: 'Bajar Masa Grasa',
+        color: 'bg-rose-50 text-rose-800 border-rose-200'
+      };
+    }
+    return {
+      label: 'Optimizar / Mantener',
+      sublabel: 'Composición Óptima',
+      color: 'bg-emerald-50 text-emerald-800 border-emerald-200'
+    };
+  };
+
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key) {
+      if (sortConfig.direction === 'asc') {
+        direction = 'desc';
+      } else {
+        setSortConfig(null);
+        return;
+      }
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (key: string) => {
+    if (!sortConfig || sortConfig.key !== key) {
+      return (
+        <span className="inline-flex flex-col ml-1.5 align-middle opacity-30 group-hover:opacity-100 transition-opacity">
+          <i className="fa-solid fa-caret-up text-[9px] leading-[6px]"></i>
+          <i className="fa-solid fa-caret-down text-[9px] leading-[6px] -mt-[1px]"></i>
+        </span>
+      );
+    }
+    if (sortConfig.direction === 'asc') {
+      return (
+        <span className="inline-flex flex-col ml-1.5 align-middle text-red-600">
+          <i className="fa-solid fa-caret-up text-[9px] leading-[6px]"></i>
+          <i className="fa-solid fa-caret-down text-[9px] leading-[6px] -mt-[1px] opacity-25"></i>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex flex-col ml-1.5 align-middle text-red-600">
+        <i className="fa-solid fa-caret-up text-[9px] leading-[6px] opacity-25"></i>
+        <i className="fa-solid fa-caret-down text-[9px] leading-[6px] -mt-[1px]"></i>
+      </span>
+    );
+  };
 
   const handleTogglePosition = (posName: string) => {
     setSelectedPositions(prev => {
@@ -63,6 +146,16 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
         return prev.filter(c => c !== catName);
       } else {
         return [...prev, catName];
+      }
+    });
+  };
+
+  const handleToggleObjective = (objName: string) => {
+    setSelectedObjectives(prev => {
+      if (prev.includes(objName)) {
+        return prev.filter(o => o !== objName);
+      } else {
+        return [...prev, objName];
       }
     });
   };
@@ -183,6 +276,18 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     return positions.filter(pos => pos.toLowerCase().includes(positionQuery.toLowerCase()));
   }, [positions, positionQuery]);
 
+  const objectivesList = useMemo(() => [
+    'Recomposición Corporal',
+    'Aumento Muscular',
+    'Reducción de Grasa',
+    'Optimizar / Mantener'
+  ], []);
+
+  const filteredObjectivesBySearch = useMemo(() => {
+    if (!objectiveQuery) return objectivesList;
+    return objectivesList.filter(obj => obj.toLowerCase().includes(objectiveQuery.toLowerCase()));
+  }, [objectivesList, objectiveQuery]);
+
   const filteredData = useMemo(() => {
     return performanceRecords.flatMap(record => {
       if (!record.nutrition) return [];
@@ -208,14 +313,82 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
             record.player.position?.toString() === sp
           );
 
-          return matchesDate && matchesClub && matchesCategory && matchesPosition;
+          const matchesObjective = selectedObjectives.length === 0 || selectedObjectives.some(so => {
+            const need = getNutritionalNeed(n.masa_muscular_pct || 0, n.masa_adiposa_pct || 0, record.player.anio || 0);
+            return need.label === so;
+          });
+
+          return matchesDate && matchesClub && matchesCategory && matchesPosition && matchesObjective;
         })
         .map(n => ({
           player: record.player,
           data: n
         }));
     });
-  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions]);
+  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives]);
+
+  const sortedFilteredData = useMemo(() => {
+    const data = [...filteredData];
+    if (!sortConfig) return data;
+
+    data.sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
+
+      switch (sortConfig.key) {
+        case 'player':
+          aVal = a.player.name || '';
+          bVal = b.player.name || '';
+          break;
+        case 'position':
+          aVal = a.player.position || '';
+          bVal = b.player.position || '';
+          break;
+        case 'fecha':
+          aVal = a.data.fecha_medicion || '';
+          bVal = b.data.fecha_medicion || '';
+          break;
+        case 'muscular':
+          aVal = a.data.masa_muscular_pct || 0;
+          bVal = b.data.masa_muscular_pct || 0;
+          break;
+        case 'adiposa':
+          aVal = a.data.masa_adiposa_pct || 0;
+          bVal = b.data.masa_adiposa_pct || 0;
+          break;
+        case 'imo':
+          const aImo = (a.data.indice_imo && Number(a.data.indice_imo) > 0)
+            ? Number(a.data.indice_imo)
+            : (a.data.masa_muscular_kg && a.data.masa_osea_kg && Number(a.data.masa_osea_kg) > 0)
+              ? (Number(a.data.masa_muscular_kg) / Number(a.data.masa_osea_kg))
+              : 0;
+          const bImo = (b.data.indice_imo && Number(b.data.indice_imo) > 0)
+            ? Number(b.data.indice_imo)
+            : (b.data.masa_muscular_kg && b.data.masa_osea_kg && Number(b.data.masa_osea_kg) > 0)
+              ? (Number(b.data.masa_muscular_kg) / Number(b.data.masa_osea_kg))
+              : 0;
+          aVal = aImo;
+          bVal = bImo;
+          break;
+        case 'pliegues':
+          aVal = a.data.sum_pliegues_6_mm || 0;
+          bVal = b.data.sum_pliegues_6_mm || 0;
+          break;
+        case 'objetivo':
+          aVal = getNutritionalNeed(a.data.masa_muscular_pct || 0, a.data.masa_adiposa_pct || 0, a.player.anio || 0).label;
+          bVal = getNutritionalNeed(b.data.masa_muscular_pct || 0, b.data.masa_adiposa_pct || 0, b.player.anio || 0).label;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return data;
+  }, [filteredData, sortConfig]);
 
   const chartData = useMemo(() => {
     if (filteredData.length === 0) return null;
@@ -344,7 +517,7 @@ La composición tisular grupal cumple robustamente con los estándares internaci
 
       {/* Filters Bar */}
       <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
           {/* Date Range Filter */}
           <div className="lg:col-span-2 space-y-2">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Rango de Fechas (Evaluaciones)</label>
@@ -658,6 +831,97 @@ La composición tisular grupal cumple robustamente con los estándares internaci
               )}
             </div>
           </div>
+
+          {/* Objetivo Filter */}
+          <div className="space-y-2 relative">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Objetivo</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsObjectiveDropdownOpen(!isObjectiveDropdownOpen)}
+                className="w-full bg-slate-50 hover:bg-slate-100/70 text-slate-800 border-none rounded-2xl px-6 py-4 text-xs font-bold transition-all flex items-center justify-between gap-3 focus:outline-none"
+              >
+                <span className="truncate">
+                  {selectedObjectives.length === 0
+                    ? 'Todos los Objetivos'
+                    : selectedObjectives.length === 1
+                      ? selectedObjectives[0]
+                      : `${selectedObjectives.length} Obj. Seleccionados`}
+                </span>
+                <div className="flex items-center gap-2 bg-slate-200/60 text-slate-700 px-2.5 py-1 rounded-xl text-[9px] font-black italic">
+                  {selectedObjectives.length > 0 ? selectedObjectives.length : 'TODOS'}
+                  <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${isObjectiveDropdownOpen ? 'rotate-180' : ''}`}></i>
+                </div>
+              </button>
+
+              {isObjectiveDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10 cursor-default" onClick={() => setIsObjectiveDropdownOpen(false)} />
+                  <div className="origin-top-right absolute right-0 mt-2 w-full min-w-[280px] rounded-3xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20 p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                      <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Listado de Objetivos</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedObjectives(objectivesList)}
+                          className="px-2.5 py-1 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Todos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedObjectives([])}
+                          className="px-2.5 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                    </div>
+
+                    {objectivesList.length > 5 && (
+                      <div className="relative mb-3">
+                        <input
+                          type="text"
+                          placeholder="Buscar objetivo..."
+                          className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-red-500/20 outline-none"
+                          onChange={(e) => setObjectiveQuery(e.target.value)}
+                          value={objectiveQuery}
+                        />
+                        <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                      </div>
+                    )}
+
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
+                      {filteredObjectivesBySearch.map(obj => {
+                        const isChecked = selectedObjectives.includes(obj);
+                        return (
+                          <label
+                            key={obj}
+                            className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-all rounded-xl hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
+                              isChecked ? 'bg-red-50/30 text-red-900 font-extrabold' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => handleToggleObjective(obj)}
+                                className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                              />
+                              <span className="uppercase tracking-wider">{obj}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                      {filteredObjectivesBySearch.length === 0 && (
+                        <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron objetivos</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -670,22 +934,55 @@ La composición tisular grupal cumple robustamente con los estándares internaci
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100">
-                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
-                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
-                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
-                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Masa Muscular %</th>
-                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Masa Grasa %</th>
-                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">IMO</th>
-                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">6 Pliegues (mm)</th>
+                <th onClick={() => requestSort('player')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors">
+                  <div className="flex items-center">
+                    Jugador {getSortIcon('player')}
+                  </div>
+                </th>
+                <th onClick={() => requestSort('position')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors">
+                  <div className="flex items-center">
+                    Posición {getSortIcon('position')}
+                  </div>
+                </th>
+                <th onClick={() => requestSort('fecha')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors">
+                  <div className="flex items-center">
+                    Fecha {getSortIcon('fecha')}
+                  </div>
+                </th>
+                <th onClick={() => requestSort('muscular')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors text-center">
+                  <div className="flex items-center justify-center">
+                    Masa Muscular % {getSortIcon('muscular')}
+                  </div>
+                </th>
+                <th onClick={() => requestSort('adiposa')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors text-center">
+                  <div className="flex items-center justify-center">
+                    Masa Grasa % {getSortIcon('adiposa')}
+                  </div>
+                </th>
+                <th onClick={() => requestSort('imo')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors text-center">
+                  <div className="flex items-center justify-center">
+                    IMO {getSortIcon('imo')}
+                  </div>
+                </th>
+                <th onClick={() => requestSort('pliegues')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors text-center">
+                  <div className="flex items-center justify-center">
+                    6 Pliegues (mm) {getSortIcon('pliegues')}
+                  </div>
+                </th>
+                <th onClick={() => requestSort('necesidad')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors text-center">
+                  <div className="flex items-center justify-center">
+                    Necesidad {getSortIcon('necesidad')}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredData.length === 0 ? (
+              {sortedFilteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-8 py-20 text-center text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">No se encontraron registros para los filtros seleccionados</td>
+                  <td colSpan={8} className="px-8 py-20 text-center text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">No se encontraron registros para los filtros seleccionados</td>
                 </tr>
               ) : (
-                filteredData.map((item, i) => {
+                sortedFilteredData.map((item, i) => {
                   const isMyClub = userRole !== 'club' || (userClub && normalizeClub(item.player.club || '') === normalizeClub(userClub));
                   const displayName = isMyClub ? item.player.name : `Jugador [${item.player.player_id || i}]`;
                   const displayClub = isMyClub ? (item.player.club || 'S/C') : 'OTRO CLUB';
@@ -706,38 +1003,51 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                       <td className="px-8 py-4">
                         <span className="text-[10px] font-bold text-slate-500">{new Date(item.data.fecha_medicion).toLocaleDateString('es-CL')}</span>
                       </td>
-                    <td className="px-8 py-4 text-center">
-                      <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_muscular_pct || 0, 'muscular', item.player.anio || 0)}`}>
-                        {item.data.masa_muscular_pct?.toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="px-8 py-4 text-center">
-                      <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_adiposa_pct || 0, 'adiposa', item.player.anio || 0)}`}>
-                        {item.data.masa_adiposa_pct?.toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="px-8 py-4 text-center">
-                      {(() => {
-                        const imoVal = (item.data.indice_imo && Number(item.data.indice_imo) > 0)
-                          ? Number(item.data.indice_imo)
-                          : (item.data.masa_muscular_kg && item.data.masa_osea_kg && Number(item.data.masa_osea_kg) > 0)
-                            ? (Number(item.data.masa_muscular_kg) / Number(item.data.masa_osea_kg))
-                            : 0;
-                        return (
-                          <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(imoVal, 'imo', item.player.anio || 0)}`}>
-                            {imoVal > 0 ? imoVal.toFixed(2) : 'N/A'}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-8 py-4 text-center">
-                      <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.sum_pliegues_6_mm || 0, 'pliegues', item.player.anio || 0)}`}>
-                        {item.data.sum_pliegues_6_mm?.toFixed(1)}mm
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })
+                      <td className="px-8 py-4 text-center">
+                        <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_muscular_pct || 0, 'muscular', item.player.anio || 0)}`}>
+                          {item.data.masa_muscular_pct?.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="px-8 py-4 text-center">
+                        <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_adiposa_pct || 0, 'adiposa', item.player.anio || 0)}`}>
+                          {item.data.masa_adiposa_pct?.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="px-8 py-4 text-center">
+                        {(() => {
+                          const imoVal = (item.data.indice_imo && Number(item.data.indice_imo) > 0)
+                            ? Number(item.data.indice_imo)
+                            : (item.data.masa_muscular_kg && item.data.masa_osea_kg && Number(item.data.masa_osea_kg) > 0)
+                              ? (Number(item.data.masa_muscular_kg) / Number(item.data.masa_osea_kg))
+                              : 0;
+                          return (
+                            <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(imoVal, 'imo', item.player.anio || 0)}`}>
+                              {imoVal > 0 ? imoVal.toFixed(2) : 'N/A'}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-8 py-4 text-center">
+                        <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.sum_pliegues_6_mm || 0, 'pliegues', item.player.anio || 0)}`}>
+                          {item.data.sum_pliegues_6_mm?.toFixed(1)}mm
+                        </span>
+                      </td>
+                      <td className="px-8 py-4 text-center">
+                        {(() => {
+                          const need = getNutritionalNeed(item.data.masa_muscular_pct || 0, item.data.masa_adiposa_pct || 0, item.player.anio || 0);
+                          return (
+                            <div className="flex flex-col items-center justify-center">
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase border ${need.color}`}>
+                                {need.label}
+                              </span>
+                              <span className="text-[8px] text-slate-400 font-bold uppercase mt-0.5 tracking-wider">{need.sublabel}</span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
