@@ -27,6 +27,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [selectedObjectives, setSelectedObjectives] = useState<string[]>([]);
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [isClubDropdownOpen, setIsClubDropdownOpen] = useState(false);
   const [clubQuery, setClubQuery] = useState('');
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
@@ -35,6 +36,8 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   const [positionQuery, setPositionQuery] = useState('');
   const [isObjectiveDropdownOpen, setIsObjectiveDropdownOpen] = useState(false);
   const [objectiveQuery, setObjectiveQuery] = useState('');
+  const [isPlayerDropdownOpen, setIsPlayerDropdownOpen] = useState(false);
+  const [playerQuery, setPlayerQuery] = useState('');
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const hasInitializedDates = useRef(false);
@@ -156,6 +159,16 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
         return prev.filter(o => o !== objName);
       } else {
         return [...prev, objName];
+      }
+    });
+  };
+
+  const handleTogglePlayer = (playerName: string) => {
+    setSelectedPlayers(prev => {
+      if (prev.includes(playerName)) {
+        return prev.filter(p => p !== playerName);
+      } else {
+        return [...prev, playerName];
       }
     });
   };
@@ -288,6 +301,23 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     return objectivesList.filter(obj => obj.toLowerCase().includes(objectiveQuery.toLowerCase()));
   }, [objectivesList, objectiveQuery]);
 
+  const availablePlayers = useMemo(() => {
+    const names = new Set<string>();
+    performanceRecords.forEach(record => {
+      if (record.player.name && record.nutrition && record.nutrition.length > 0) {
+        const isMyClub = userRole !== 'club' || (userClub && normalizeClub(record.player.club || '') === normalizeClub(userClub));
+        const nameToUse = isMyClub ? record.player.name : `Jugador [${record.player.player_id || record.player.id || 'Anon'}]`;
+        names.add(nameToUse);
+      }
+    });
+    return Array.from(names).sort();
+  }, [performanceRecords, userRole, userClub]);
+
+  const filteredPlayersBySearch = useMemo(() => {
+    if (!playerQuery) return availablePlayers;
+    return availablePlayers.filter(p => p.toLowerCase().includes(playerQuery.toLowerCase()));
+  }, [availablePlayers, playerQuery]);
+
   const filteredData = useMemo(() => {
     return performanceRecords.flatMap(record => {
       if (!record.nutrition) return [];
@@ -318,14 +348,18 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
             return need.label === so;
           });
 
-          return matchesDate && matchesClub && matchesCategory && matchesPosition && matchesObjective;
+          const isMyClub = userRole !== 'club' || (userClub && normalizeClub(record.player.club || '') === normalizeClub(userClub));
+          const displayName = isMyClub ? record.player.name : `Jugador [${record.player.player_id || record.player.id || 'Anon'}]`;
+          const matchesPlayer = selectedPlayers.length === 0 || selectedPlayers.includes(displayName);
+
+          return matchesDate && matchesClub && matchesCategory && matchesPosition && matchesObjective && matchesPlayer;
         })
         .map(n => ({
           player: record.player,
           data: n
         }));
     });
-  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives]);
+  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives, selectedPlayers, userRole, userClub]);
 
   const sortedFilteredData = useMemo(() => {
     const data = [...filteredData];
@@ -922,6 +956,95 @@ La composición tisular grupal cumple robustamente con los estándares internaci
               )}
             </div>
           </div>
+
+          {/* Player Name Filter */}
+          <div className="space-y-2 relative">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Jugador</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsPlayerDropdownOpen(!isPlayerDropdownOpen)}
+                className="w-full bg-slate-50 hover:bg-slate-100/70 text-slate-800 border-none rounded-2xl px-6 py-4 text-xs font-bold transition-all flex items-center justify-between gap-3 focus:outline-none"
+              >
+                <span className="truncate">
+                  {selectedPlayers.length === 0
+                    ? 'Todos los Jugadores'
+                    : selectedPlayers.length === 1
+                      ? selectedPlayers[0]
+                      : `${selectedPlayers.length} Jug. Seleccionados`}
+                </span>
+                <div className="flex items-center gap-2 bg-slate-200/60 text-slate-700 px-2.5 py-1 rounded-xl text-[9px] font-black italic">
+                  {selectedPlayers.length > 0 ? selectedPlayers.length : 'TODOS'}
+                  <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${isPlayerDropdownOpen ? 'rotate-180' : ''}`}></i>
+                </div>
+              </button>
+
+              {isPlayerDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10 cursor-default" onClick={() => setIsPlayerDropdownOpen(false)} />
+                  <div className="origin-top-right absolute right-0 mt-2 w-full min-w-[280px] rounded-3xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20 p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                      <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Listado de Jugadores</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPlayers(availablePlayers)}
+                          className="px-2.5 py-1 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Todos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPlayers([])}
+                          className="px-2.5 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="relative mb-3">
+                      <input
+                        type="text"
+                        placeholder="Buscar jugador..."
+                        className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-red-500/20 outline-none"
+                        onChange={(e) => setPlayerQuery(e.target.value)}
+                        value={playerQuery}
+                      />
+                      <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
+                      {filteredPlayersBySearch.map(player => {
+                        const isChecked = selectedPlayers.includes(player);
+                        return (
+                          <label
+                            key={player}
+                            className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-all rounded-xl hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
+                              isChecked ? 'bg-red-50/30 text-red-900 font-extrabold' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => handleTogglePlayer(player)}
+                                className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                              />
+                              <span className="uppercase tracking-wider">{player}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                      {filteredPlayersBySearch.length === 0 && (
+                        <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron jugadores</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -969,9 +1092,9 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                     6 Pliegues (mm) {getSortIcon('pliegues')}
                   </div>
                 </th>
-                <th onClick={() => requestSort('necesidad')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors text-center">
+                <th onClick={() => requestSort('objetivo')} className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none group hover:text-slate-700 transition-colors text-center">
                   <div className="flex items-center justify-center">
-                    Necesidad {getSortIcon('necesidad')}
+                    Objetivo {getSortIcon('objetivo')}
                   </div>
                 </th>
               </tr>
@@ -984,7 +1107,7 @@ La composición tisular grupal cumple robustamente con los estándares internaci
               ) : (
                 sortedFilteredData.map((item, i) => {
                   const isMyClub = userRole !== 'club' || (userClub && normalizeClub(item.player.club || '') === normalizeClub(userClub));
-                  const displayName = isMyClub ? item.player.name : `Jugador [${item.player.player_id || i}]`;
+                  const displayName = isMyClub ? item.player.name : `Jugador [${item.player.player_id || item.player.id || 'Anon'}]`;
                   const displayClub = isMyClub ? (item.player.club || 'S/C') : 'OTRO CLUB';
 
                   return (
