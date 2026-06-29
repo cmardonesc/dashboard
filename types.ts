@@ -83,6 +83,7 @@ export interface User {
 
 export type MenuId =
   | 'inicio'
+  | 'dinamicas'
   | 'planificacion_anual'
   | 'planificacion_semanal'
   | 'tecnica'

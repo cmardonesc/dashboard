@@ -25,6 +25,7 @@ import GPSIntelligenceDashboard from './GPSIntelligenceDashboard'
 import PronosticoCargas from './PronosticoCargas'
 import ClubDashboard from './ClubDashboard'
 import PlayerProfileArea from './PlayerProfileArea'
+import DinamicasArea from './DinamicasArea'
 import { logActivity } from '../lib/activityLogger'
 import { getPerformanceInsights, getWeatherForecast, queryCoachAssistant, WeatherData } from '../services/geminiService'
 import { AreaChart, Area, XAxis, ResponsiveContainer, Tooltip, BarChart, Bar, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
@@ -1320,6 +1321,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
             </div>
           </div>
         );
+      case 'dinamicas':
+        return <DinamicasArea />;
       case 'fisica_wellness':
         return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} />;
       case 'fisica_pse':
