@@ -621,7 +621,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         rival: data.rival,
         resultado: matchResultValue,
         minutos_jugados: matchMinutesValue,
-        rpe: (data.rpe === 0 || data.rpe === null || data.rpe === undefined) ? null : Number(data.rpe),
+        rpe: data.rpe,
         molestias: data.sorenessAreas.join(', '),
         enfermedad: data.illnessSymptoms.join(', '),
         created_by: user?.id,
@@ -643,19 +643,13 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       if (saveError) {
         const errorMsg = saveError.message || JSON.stringify(saveError);
         // Si no se encuentra la tabla match_reports o falta en cache, hacemos fallback a internal_load de tipo MATCH
-        const isTableMissing = (
-          errorMsg.includes('match_reports') || 
-          errorMsg.includes('schema cache') || 
-          errorMsg.includes('relation "public.match_reports" does not exist')
-        ) && !errorMsg.includes('check constraint');
-
-        if (isTableMissing) {
+        if (errorMsg.includes('match_reports') || errorMsg.includes('schema cache') || errorMsg.includes('relation "public.match_reports" does not exist')) {
           console.warn("⚠️ Tabla 'match_reports' no encontrada. Utilizando fallback robusto en 'internal_load'...");
           
           const fallbackPayload = {
             player_id: player.player_id,
             session_date: selectedDate,
-            rpe: (data.rpe === 0 || data.rpe === null || data.rpe === undefined) ? null : Number(data.rpe),
+            rpe: data.rpe,
             duration_min: Number(matchMinutesValue) || 90,
             type: 'MATCH',
             molestias: `[Partido vs ${data.rival || 'Desconocido'} - Resultado: ${matchResultValue || 'Titular'}] | ` + (data.sorenessAreas.join(', ') || 'Sin molestias'),
