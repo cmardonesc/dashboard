@@ -256,7 +256,7 @@ export default function DinamicasArea() {
       try {
         const { data: tData } = await supabase
           .from('tareas')
-          .select('id, nombre, dinamica, link_video, link_foto');
+          .select('id, nombre, dinamica, link_video');
         if (tData) {
           setTareas(tData);
         }
@@ -605,19 +605,6 @@ export default function DinamicasArea() {
     return url;
   }, [matchedTarea]);
 
-  const imageUrl = useMemo(() => {
-    if (!matchedTarea || !matchedTarea.link_foto) return null;
-    const url = matchedTarea.link_foto;
-    // Si es un link de Google Drive, extraemos el id para usar el render de alta velocidad lh3
-    if (url.includes('drive.google.com')) {
-      const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
-      if (match && match[1]) {
-        return `https://lh3.googleusercontent.com/d/${match[1]}`;
-      }
-    }
-    return url;
-  }, [matchedTarea]);
-
   // Estadísticas globales de resumen
   const stats = useMemo(() => {
     if (filteredData.length === 0) {
@@ -926,57 +913,6 @@ export default function DinamicasArea() {
               </div>
               <p className="text-xs font-black uppercase tracking-widest text-slate-400">Sin video disponible</p>
               <p className="text-[10px] font-medium text-slate-400 mt-1">No hay un enlace de Google Drive registrado en la biblioteca de tareas para la dinámica "{selectedDrill}".</p>
-            </div>
-          )}
-
-          {/* Foto de la Tarea / Medidas de la Cancha */}
-          {imageUrl ? (
-            <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100 mt-6 space-y-4">
-              <div className="flex items-center gap-3 pb-2">
-                <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-600/10">
-                  <i className="fa-solid fa-map text-xs"></i>
-                </div>
-                <div>
-                  <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">
-                    Cancha y Medidas de la Tarea / Dinámica
-                  </h5>
-                  <p className="text-sm font-black italic text-slate-900 uppercase tracking-tight">
-                    Dimensiones y Organización Espacial
-                  </p>
-                </div>
-              </div>
-
-              <div className="relative w-full max-w-4xl mx-auto rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-xl p-2">
-                <img
-                  src={imageUrl}
-                  alt={`Cancha y Medidas: ${matchedTarea?.nombre}`}
-                  className="w-full h-auto rounded-2xl max-h-[550px] object-contain mx-auto"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    if (matchedTarea?.link_foto) {
-                      const parent = target.parentElement;
-                      if (parent) {
-                        parent.innerHTML = `
-                          <iframe 
-                            src="${matchedTarea.link_foto.replace('/view?usp=drive_link', '/preview').replace('/view', '/preview')}" 
-                            class="w-full h-[450px] border-0 rounded-2xl"
-                            allow="autoplay"
-                          ></iframe>
-                        `;
-                      }
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          ) : selectedDrill !== 'TODAS' && (
-            <div className="bg-slate-50/50 p-6 rounded-[32px] border border-dashed border-slate-200 mt-6 flex flex-col items-center justify-center text-center py-8">
-              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
-                <i className="fa-solid fa-image-slash text-base"></i>
-              </div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-400">Sin gráfico de dimensiones disponible</p>
-              <p className="text-[10px] font-medium text-slate-400 mt-1">No hay un gráfico o foto de la cancha cargado para la dinámica "{selectedDrill}".</p>
             </div>
           )}
         </div>
