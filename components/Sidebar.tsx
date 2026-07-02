@@ -318,6 +318,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
             
             {fisicaOpen && !isCollapsed && (
               <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
+                {/* RESUMEN GRUPAL EVALUACIONES FISICAS */}
+                <button
+                  onClick={() => onMenuChange('fisica_resumen_grupal')}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeMenu === 'fisica_resumen_grupal' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_resumen_grupal' ? 'bg-red-400' : 'bg-slate-700'}`}>
+                  </div>
+                  <span className="text-[10px] font-bold">Resumen Grupal</span>
+                </button>
+
                 {userRole !== 'club' && (
                   <>
                     {/* REPORTE DE SESIÓN */}

@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
+import { GoogleGenAI } from "@google/genai";
  
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -555,6 +556,57 @@ async function startServer() {
       console.log(`ℹ️ [CATAPULT] Handled query for ${finalStats.length} active athletes.`);
       // Return beautiful, correctly sized dynamic stats
       return res.json(finalStats);
+    }
+  });
+
+  // GEMINI PHYSICAL SUMMARY PROXY
+  let aiClient: GoogleGenAI | null = null;
+  function getAiClient() {
+    if (!aiClient) {
+      const key = process.env.GEMINI_API_KEY;
+      if (!key) {
+        console.warn("GEMINI_API_KEY is not configured.");
+        return null;
+      }
+      aiClient = new GoogleGenAI({
+        apiKey: key,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+    }
+    return aiClient;
+  }
+
+  app.post("/api/gemini/summarize-physical", async (req, res) => {
+    try {
+      const { data } = req.body;
+      const ai = getAiClient();
+      if (!ai) {
+        return res.status(503).json({ error: "Gemini API key not configured" });
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: `Actúa como un Preparador Físico de Élite de Fútbol Profesional. Analiza los siguientes datos de evaluaciones físicas grupales del equipo y redacta un informe/resumen ejecutivo breve, conciso, científico y estimulante (máximo 150 palabras) en español.
+        
+Datos del Plantel:
+- Total de jugadores evaluados: ${data.totalPlayers}
+- Promedio IMTP Fuerza Peak (N): ${data.avgImtpForce} N (Estándar elite: >3500 N es excelente, <2800 N es bajo)
+- Promedio CMJ RSI Mod: ${data.avgCmjRsi} (Estándar elite: >0.55 es excelente, <0.45 es bajo)
+- Promedio CMJ Altura Salto (cm): ${data.avgCmjHeight} cm (Estándar elite: >42 cm es excelente, <35 cm es bajo)
+- Promedio Velocidad 30m / Tiempo Total (s): ${data.avgSpeedTime} s (Estándar elite: <=4.10s es excelente, >4.40s es bajo)
+- Promedio VO2 Max (ml/kg/min): ${data.avgVo2Max} ml/kg/min (Estándar elite: >=58 es excelente, <52 es bajo)
+
+Proporciona un diagnóstico del estado de potencia, fuerza-velocidad y capacidad aeróbica general del grupo, y sugiere recomendaciones prácticas de entrenamiento (ej. pliometría, microdosis de velocidad, etc.) para optimizar el rendimiento competitivo.`
+      });
+
+      return res.json({ text: response.text });
+    } catch (error: any) {
+      console.error("[GEMINI PHYSICAL SUMMARY ERROR]:", error);
+      return res.status(500).json({ error: error.message });
     }
   });
  

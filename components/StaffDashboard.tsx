@@ -14,6 +14,7 @@ import PlanificacionAnual from './PlanificacionAnual'
 import UserManagementArea from './UserManagementArea'
 import MatchManagementArea from './MatchManagementArea'
 import NutricionResumenGrupal from './NutricionResumenGrupal'
+import FisicaResumenGrupal from './FisicaResumenGrupal'
 import LogisticaJugadores from './LogisticaJugadores'
 import ContactosClubesArea from './ContactosClubesArea'
 import ActivityLogArea from './ActivityLogArea'
@@ -1349,6 +1350,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         return <PronosticoCargas clubs={clubs} />;
       case 'nutricion_resumen_grupal':
         return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
+      case 'fisica_resumen_grupal':
+        return <FisicaResumenGrupal userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'nutricion_comparativo':
       case 'nutricion_individual':
         return <NutricionArea performanceRecords={performanceRecords} players={players || performanceRecords.map(r => r.player)} initialTab="individual" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;

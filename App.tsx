@@ -440,21 +440,36 @@ export default function App() {
   }, [role, linkedPlayerId, fetchPerformanceData, refreshing, fetchRealPlayers]);
 
   const fetchUserData = async (
-    userId: string
+    userId: string,
+    email?: string | null
   ): Promise<{ role: Role; player_id: number | null; club_name: string | null; email: string | null }> => {
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('profiles')
-        .select('role, player_id, club_name')
+        .select('role, player_id, club_name, email')
         .eq('id', userId)
         .maybeSingle()
+
+      if ((error || !data) && email) {
+        console.log(`fetchUserData: Perfil no encontrado por id (${userId}). Reintentando por email (${email})...`);
+        const { data: emailData, error: emailErr } = await supabase
+          .from('profiles')
+          .select('role, player_id, club_name, email')
+          .eq('email', email.toLowerCase().trim())
+          .maybeSingle();
+        
+        if (emailData && !emailErr) {
+          data = emailData;
+          error = null;
+        }
+      }
 
       if (error || !data) return { role: null, player_id: null, club_name: null, email: null }
       return {
         role: (data.role as Role) ?? null,
         player_id: data.player_id ? Number(data.player_id) : null,
         club_name: data.club_name || null,
-        email: null // El email se obtiene de la sesión de auth, no de profiles
+        email: data.email || null
       }
     } catch (err) {
       return { role: null, player_id: null, club_name: null, email: null }
@@ -635,7 +650,7 @@ export default function App() {
           // Si no habíamos restaurado, o si la sesión de Supabase contiene un id diferente, actualizamos
           if (!hasRestored || session.user.id !== sessionUser?.id) {
             setSessionUser(session.user)
-            let userData = await fetchUserData(session.user.id)
+            let userData = await fetchUserData(session.user.id, session.user.email)
             
             // RECOVERY: Si el perfil no tiene ID pero el metadata sí
             if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
@@ -736,7 +751,7 @@ export default function App() {
           return;
         }
 
-        const userData = await fetchUserData(session.user.id)
+        const userData = await fetchUserData(session.user.id, session.user.email)
         if (isMounted) {
           setRole(userData.role)
           setUserClub(userData.club_name)
@@ -828,7 +843,7 @@ export default function App() {
     }
     
     try {
-      let userData = await fetchUserData(session.user.id);
+      let userData = await fetchUserData(session.user.id, session.user.email);
       console.log("Datos de usuario obtenidos:", userData);
       
       // AUTO-POBLAR EMAIL si falta en la tabla profiles
@@ -1417,7 +1432,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
           role: 'authenticated',
           user_metadata: {
             role: mode === 'signup' ? signupRole : (isOfficialStaff ? 'staff' : 'player'), 
-            player_id: (mode === 'signup' && signupRole === 'player') ? (parseInt(playerId) || null) : null,
+            player_id: (mode === 'signup' && signupRole === 'player') ? (parseInt(playerId) || null) : (LEGACY_EMAIL_MAPPING[emailLower] || null),
             club_name: mode === 'signup' && signupRole === 'club' ? selectedClub : null
           }
         }
@@ -1570,7 +1585,8 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
               id: data.user.id,
               role: signupRole,
               player_id: verifiedPlayerId,
-              club_name: signupRole === 'club' ? selectedClub : null
+              club_name: signupRole === 'club' ? selectedClub : null,
+              email: email.toLowerCase().trim()
             });
           } catch (e) {
             console.error("Error creando perfil:", e);
@@ -1580,6 +1596,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
             setMsg('¡REGISTRO EXITOSO! Revisa tu bandeja. Si el correo no llega en 1 minuto, entra directamente usando la clave de respaldo "laroja2026".');
           } else {
             setMsg('¡REGISTRO COMPLETO!');
+            onLoginSuccess(data.session);
           }
         }
       }

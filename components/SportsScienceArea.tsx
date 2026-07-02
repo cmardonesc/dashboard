@@ -1202,6 +1202,10 @@ const AthleteHuella = ({
   allPlayers: PlayerData[],
   clubs: any[]
 }) => {
+  const [comparisonTarget, setComparisonTarget] = useState<'category' | '2010plus'>('category');
+  const [excludeOutliers, setExcludeOutliers] = useState(false);
+
+  // Dummy state & functions for the hidden AI block
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
   const [aiTab, setAiTab] = useState<'perfil' | 'mejoras' | 'chat'>('perfil');
@@ -1209,17 +1213,9 @@ const AthleteHuella = ({
   const [chatQuery, setChatQuery] = useState('');
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
   const [chatSending, setChatSending] = useState(false);
-  const [comparisonTarget, setComparisonTarget] = useState<'category' | '2010plus'>('category');
-  const [excludeOutliers, setExcludeOutliers] = useState(false);
 
-  useEffect(() => {
-    if (player) {
-      generateAiSummary();
-      setGoalStatuses({});
-      setChatHistory([]);
-      setAiTab('perfil');
-    }
-  }, [player]);
+  const generateAiSummary = async () => {};
+  const handleConsultAssistant = async (customQuery?: string) => {};
 
   // Pre-process antropometria and allAntro arrays to calculate IMO dynamically if empty or 0
   const processedAntro = useMemo(() => {
@@ -1320,57 +1316,7 @@ const AthleteHuella = ({
     return count;
   }, [activeComparisonPlayerIds, allImtp, allSpeed, allVo2, processedAllAntro]);
 
-  const generateAiSummary = async () => {
-    if (!player) return;
-    setLoadingAi(true);
-    try {
-      const metrics = {
-        imtp: imtp.slice(-1)[0],
-        speed: speed.slice(-1)[0],
-        antropometria: antropometria.slice(-1)[0],
-        vo2max: vo2max.slice(-1)[0],
-        recentMedical: medicalReports.slice(-3),
-        recentLoads: internalLoads.slice(-7)
-      };
-      const summary = await getAthleteFootprintSummary(player, metrics);
-      setAiSummary(summary);
-    } catch (err) {
-      console.error("Error generating AI summary:", err);
-    } finally {
-      setLoadingAi(false);
-    }
-  };
 
-  const handleConsultAssistant = async (customQuery?: string) => {
-    const query = customQuery || chatQuery;
-    if (!query.trim() || !player) return;
-
-    setChatSending(true);
-    if (!customQuery) {
-      setChatQuery('');
-    }
-    
-    const userMessage = { role: 'user' as const, text: query };
-    setChatHistory(prev => [...prev, userMessage]);
-
-    try {
-      const metrics = {
-        imtp: imtp.slice(-1)[0],
-        speed: speed.slice(-1)[0],
-        antropometria: antropometria.slice(-1)[0],
-        vo2max: vo2max.slice(-1)[0],
-        recentLoads: internalLoads.slice(-5)
-      };
-      const currentHist = chatHistory.length > 0 ? chatHistory : [];
-      const response = await askAthleteAiAssistant(player, metrics, query, [...currentHist, userMessage]);
-      setChatHistory(prev => [...prev, { role: 'model' as const, text: response }]);
-    } catch (err) {
-      console.error("Error asking athlete AI assistant:", err);
-      setChatHistory(prev => [...prev, { role: 'model' as const, text: "Error de conexión con la base del Director de Ciencias. Reintente." }]);
-    } finally {
-      setChatSending(false);
-    }
-  };
 
 
   if (!player) return (
@@ -2061,8 +2007,8 @@ const AthleteHuella = ({
         </div>
       </div>
 
-      {/* AI INSIGHTS BENTO - REDESIGNED TO TAKE FULL WIDTH */}
-      <div className="w-full space-y-8 mb-8">
+      {/* AI INSIGHTS BENTO - REMOVED */}
+      <div className="hidden">
         <div className="bg-[#0b1220] rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col min-h-[480px]">
           {/* Top Glowing Header bar */}
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-red-600 via-amber-500 to-red-600"></div>
@@ -4513,12 +4459,12 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
                           {performanceStyle ? (
                             <div className="flex items-center gap-2">
                               <span className={`px-2 py-1 rounded-md min-w-[45px] text-center text-[9px] font-black uppercase tracking-tighter ${performanceStyle.bg} ${performanceStyle.text}`}>
-                                {value !== undefined && value !== null && !isNaN(Number(value)) ? value : '-'}
+                                {value !== undefined && value !== null && value !== '' ? String(value) : '-'}
                               </span>
                               <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter w-6">{performanceStyle.label}</span>
                             </div>
                           ) : (
-                            row[col.key] !== undefined && row[col.key] !== null && !isNaN(Number(row[col.key])) ? row[col.key] : '-'
+                            row[col.key] !== undefined && row[col.key] !== null && row[col.key] !== '' ? String(row[col.key]) : '-'
                           )}
                         </td>
                       );

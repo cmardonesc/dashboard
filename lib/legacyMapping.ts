@@ -1,6 +1,8 @@
 
 export const LEGACY_EMAIL_MAPPING: Record<string, number> = {
   "a.preezolmos@gmail.com": 697,
+  "a.pereezolmos@gmail.com": 697,
+  "a.perezolmos@gmail.com": 697,
   "aagustin.olguin@gmail.com": 477,
   "agustinhidalgovaldes@gmail.com": 704,
   "alanlucho6@gmail.com": 463,

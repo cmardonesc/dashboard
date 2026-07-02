@@ -1579,6 +1579,84 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     }
   };
 
+  const averages = useMemo(() => {
+    let fatigueSum = 0, fatigueCount = 0;
+    let sleepSum = 0, sleepCount = 0;
+    let sorenessSum = 0, sorenessCount = 0;
+    let stressSum = 0, stressCount = 0;
+    let moodSum = 0, moodCount = 0;
+    let avgSum = 0, avgCount = 0;
+    
+    let durationSum = 0, durationCount = 0;
+    let rpeSum = 0, rpeCount = 0;
+    let loadSum = 0, loadCount = 0;
+
+    unifiedList.forEach(row => {
+      if (row.wellness) {
+        const fatVal = Number(row.wellness.fatigue);
+        if (!isNaN(fatVal) && row.wellness.fatigue !== null && row.wellness.fatigue !== undefined) {
+          fatigueSum += fatVal;
+          fatigueCount++;
+        }
+        const sleepVal = Number(row.wellness.sleep);
+        if (!isNaN(sleepVal) && row.wellness.sleep !== null && row.wellness.sleep !== undefined) {
+          sleepSum += sleepVal;
+          sleepCount++;
+        }
+        const soreVal = Number(row.wellness.soreness);
+        if (!isNaN(soreVal) && row.wellness.soreness !== null && row.wellness.soreness !== undefined) {
+          sorenessSum += soreVal;
+          sorenessCount++;
+        }
+        const stressVal = Number(row.wellness.stress);
+        if (!isNaN(stressVal) && row.wellness.stress !== null && row.wellness.stress !== undefined) {
+          stressSum += stressVal;
+          stressCount++;
+        }
+        const moodVal = Number(row.wellness.mood);
+        if (!isNaN(moodVal) && row.wellness.mood !== null && row.wellness.mood !== undefined) {
+          moodSum += moodVal;
+          moodCount++;
+        }
+        if (!isNaN(fatVal) && !isNaN(sleepVal) && !isNaN(moodVal)) {
+          const rowAvg = (fatVal + sleepVal + moodVal) / 3;
+          avgSum += rowAvg;
+          avgCount++;
+        }
+      }
+
+      if (row.load) {
+        const durVal = Number(row.load.duration);
+        if (!isNaN(durVal) && durVal > 0 && row.load.duration !== null && row.load.duration !== undefined) {
+          durationSum += durVal;
+          durationCount++;
+        }
+        const rpeVal = Number(row.load.rpe);
+        if (!isNaN(rpeVal) && rpeVal > 0 && row.load.rpe !== null && row.load.rpe !== undefined) {
+          rpeSum += rpeVal;
+          rpeCount++;
+        }
+        const loadVal = Number(row.load.load);
+        if (!isNaN(loadVal) && loadVal > 0 && row.load.load !== null && row.load.load !== undefined) {
+          loadSum += loadVal;
+          loadCount++;
+        }
+      }
+    });
+
+    return {
+      fatigueNum: fatigueCount > 0 ? fatigueSum / fatigueCount : null,
+      sleepNum: sleepCount > 0 ? sleepSum / sleepCount : null,
+      sorenessNum: sorenessCount > 0 ? sorenessSum / sorenessCount : null,
+      stressNum: stressCount > 0 ? stressSum / stressCount : null,
+      moodNum: moodCount > 0 ? moodSum / moodCount : null,
+      avgNum: avgCount > 0 ? avgSum / avgCount : null,
+      durationNum: durationCount > 0 ? Math.round(durationSum / durationCount) : null,
+      rpeNum: rpeCount > 0 ? rpeSum / rpeCount : null,
+      loadNum: loadCount > 0 ? Math.round(loadSum / loadCount) : null,
+    };
+  }, [unifiedList]);
+
   let currentPageNum = 0;
 
   return (
@@ -2157,6 +2235,109 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     </tr>
                   );
                 })}
+
+                {/* FILA DE PROMEDIO GRUPAL */}
+                {unifiedList.length > 0 && (
+                  <tr className="transition-all font-black uppercase italic text-[8px] md:text-xs bg-[#0b1220] text-white rounded-2xl overflow-hidden border-2 border-red-500 shadow-md">
+                    <td className="px-2 md:px-8 py-4 md:py-6 text-left rounded-l-2xl">
+                      <div className="flex flex-col min-w-[70px]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-red-500 text-[10px] md:text-sm font-black tracking-wider">PROMEDIO</span>
+                        </div>
+                        <div className="text-[7px] md:text-[9px] text-slate-400 font-bold not-italic normal-case">
+                          Columnas Respondidas
+                        </div>
+                      </div>
+                    </td>
+
+                    {(view === 'wellness' || view === 'report') && (
+                      <>
+                        <td className="px-1 py-3 md:py-5">
+                          {averages.fatigueNum !== null ? (
+                            <span className="w-6 md:w-8 h-6 md:h-8 flex items-center justify-center mx-auto rounded-lg text-[8px] md:text-xs bg-slate-800 text-white font-black">
+                              {averages.fatigueNum.toFixed(1)}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-1 py-3 md:py-5">
+                          {averages.sleepNum !== null ? (
+                            <span className="w-6 md:w-8 h-6 md:h-8 flex items-center justify-center mx-auto rounded-lg text-[8px] md:text-xs bg-slate-800 text-white font-black">
+                              {averages.sleepNum.toFixed(1)}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-1 py-3 md:py-5">
+                          {averages.sorenessNum !== null ? (
+                            <span className="w-6 md:w-8 h-6 md:h-8 flex items-center justify-center mx-auto rounded-lg text-[8px] md:text-xs bg-slate-800 text-white font-black">
+                              {averages.sorenessNum.toFixed(1)}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-1 py-3 md:py-5 hidden sm:table-cell">
+                          {averages.stressNum !== null ? (
+                            <span className="w-8 h-8 flex items-center justify-center mx-auto rounded-lg bg-slate-800 text-white font-black text-xs">
+                              {averages.stressNum.toFixed(1)}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-1 py-3 md:py-5 hidden sm:table-cell">
+                          {averages.moodNum !== null ? (
+                            <span className="w-8 h-8 flex items-center justify-center mx-auto rounded-lg bg-slate-800 text-white font-black text-xs">
+                              {averages.moodNum.toFixed(1)}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-1 py-3 md:py-5">
+                          {averages.avgNum !== null ? (
+                            <span className="font-black text-red-400 text-xs md:text-sm">
+                              {averages.avgNum.toFixed(1)}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-1 py-3 md:py-5 hidden lg:table-cell text-slate-400">-</td>
+                        <td className="px-1 py-3 md:py-5 hidden lg:table-cell text-slate-400">-</td>
+                      </>
+                    )}
+
+                    {(view === 'pse' || view === 'report') && (
+                      <>
+                        <td className="px-1 py-3 md:py-5 hidden sm:table-cell text-center">
+                          {averages.durationNum !== null ? (
+                            <span className="font-black text-white text-xs md:text-sm">
+                              {averages.durationNum} <span className="text-[8px] font-normal text-slate-400">min</span>
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-1 py-3 md:py-5 text-center">
+                          {averages.rpeNum !== null ? (
+                            <span 
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-full shadow-sm text-xs md:text-sm text-white font-black"
+                              style={getRpeStyle(averages.rpeNum)}
+                            >
+                              {averages.rpeNum.toFixed(1)}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-1 py-3 md:py-5 text-center">
+                          {averages.loadNum !== null ? (
+                            <span 
+                              className="inline-flex items-center justify-center px-3 py-1.5 min-w-[54px] rounded-lg shadow-sm text-[10px] md:text-xs text-white font-black"
+                              style={getCargaStyle(averages.loadNum)}
+                            >
+                              {averages.loadNum}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-1 py-3 md:py-5 hidden lg:table-cell text-slate-400">-</td>
+                        <td className="px-1 py-3 md:py-5 hidden lg:table-cell text-slate-400">-</td>
+                      </>
+                    )}
+
+                    <td className="px-2 md:px-8 py-3 md:py-5 text-right rounded-r-2xl text-slate-400">
+                      -
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

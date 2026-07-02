@@ -98,6 +98,7 @@ export type MenuId =
   | 'fisica_gps_intelligence'
   | 'fisica_reporte'
   | 'fisica_pronostico'
+  | 'fisica_resumen_grupal'
   | 'medica'
   | 'nutricion_resumen_grupal'
   | 'nutricion_comparativo'

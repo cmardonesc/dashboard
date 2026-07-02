@@ -176,6 +176,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [searchTermBiblioteca, setSearchTermBiblioteca] = useState('');
   const [specialNote, setSpecialNote] = useState('');
+  const [activityToDelete, setActivityToDelete] = useState<{ dateKey: string; activity: any } | null>(null);
 
   const [activityForm, setActivityForm] = useState({
     time: '08:00',
@@ -835,14 +836,19 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     }
   };
 
-  const removeActivity = async (dateKey: string, activity: any) => {
+  const removeActivity = (dateKey: string, activity: any) => {
+    setActivityToDelete({ dateKey, activity });
+  };
+
+  const confirmRemoveActivity = async () => {
+    if (!activityToDelete) return;
+    const { dateKey, activity } = activityToDelete;
     const idToDelete = activity.db_id || activity.id;
     if (!idToDelete) {
       console.error("No se encontró el ID de la actividad para eliminar:", activity);
+      setActivityToDelete(null);
       return;
     }
-
-    if (!window.confirm("¿Estás seguro de que quieres eliminar esta actividad?")) return;
     
     try {
       const { error } = await supabase
@@ -868,6 +874,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     } catch (err: any) {
       console.error("Error al eliminar de Supabase:", err);
       alert("Error al eliminar: " + err.message);
+    } finally {
+      setActivityToDelete(null);
     }
   };
 
@@ -2455,6 +2463,36 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                 {savingActivity ? 'Guardando...' : (editingActivityId ? 'Actualizar Actividad' : 'Confirmar y Agendar')}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {activityToDelete && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-6 bg-[#0b1220]/90 backdrop-blur-sm transform-gpu animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 transform-gpu p-8 text-center">
+            <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-md">
+              <i className="fa-solid fa-triangle-exclamation text-3xl"></i>
+            </div>
+            <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter mb-2">¿Eliminar Actividad?</h3>
+            <p className="text-slate-500 text-xs font-medium mb-8 uppercase tracking-widest leading-relaxed">
+              ¿Estás seguro de que deseas eliminar la actividad <span className="text-red-600 font-black italic">"{activityToDelete.activity.type}"</span> programada a las {activityToDelete.activity.time}? Esta acción no se puede deshacer.
+            </p>
+            <div className="flex gap-4">
+              <button 
+                type="button"
+                onClick={() => setActivityToDelete(null)} 
+                className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                onClick={confirmRemoveActivity} 
+                className="flex-1 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-600/25 cursor-pointer"
+              >
+                Confirmar y Eliminar
+              </button>
+            </div>
           </div>
         </div>
       )}
