@@ -14,6 +14,57 @@ interface FisicaResumenGrupalProps {
   clubs?: any[];
 }
 
+export interface MetricConfig {
+  key: string;
+  label: string;
+  unit: string;
+  lowerIsBetter: boolean;
+  thresholds: {
+    excellent: number;
+    normal: number;
+  };
+}
+
+export const ALL_METRIC_CONFIGS: Record<string, MetricConfig> = {
+  // IMTP (Fuerza Máxima)
+  imtp_fuerza_n: { key: 'imtp_fuerza_n', label: 'IMTP Fuerza Máxima', unit: 'N', lowerIsBetter: false, thresholds: { excellent: 3500, normal: 2800 } },
+  imtp_f_relativa_n_kg: { key: 'imtp_f_relativa_n_kg', label: 'IMTP F. Relativa', unit: 'N/kg', lowerIsBetter: false, thresholds: { excellent: 45, normal: 35 } },
+  imtp_asimetria: { key: 'imtp_asimetria', label: 'IMTP Asimetría', unit: '%', lowerIsBetter: true, thresholds: { excellent: 5, normal: 10 } },
+  fuerza_cmj: { key: 'fuerza_cmj', label: 'Fuerza CMJ', unit: 'N', lowerIsBetter: false, thresholds: { excellent: 3500, normal: 2800 } },
+
+  // CMJ (Potencia y Saltabilidad)
+  cmj_rsi_mod: { key: 'cmj_rsi_mod', label: 'CMJ RSI Mod', unit: '', lowerIsBetter: false, thresholds: { excellent: 0.55, normal: 0.45 } },
+  cmj_altura_salto_im: { key: 'cmj_altura_salto_im', label: 'CMJ Altura', unit: 'cm', lowerIsBetter: false, thresholds: { excellent: 42, normal: 35 } },
+  cmj_peak_pot_relativa: { key: 'cmj_peak_pot_relativa', label: 'CMJ Peak Pot. Rel.', unit: 'W/kg', lowerIsBetter: false, thresholds: { excellent: 65, normal: 50 } },
+
+  // Velocidad (Sprint)
+  tiempo_10m: { key: 'tiempo_10m', label: 'Tiempo 10m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 1.65, normal: 1.85 } },
+  vel_10m: { key: 'vel_10m', label: 'Velocidad 10m', unit: 'm/s', lowerIsBetter: false, thresholds: { excellent: 7.5, normal: 6.5 } },
+  tiempo_10_20m: { key: 'tiempo_10_20m', label: 'Tiempo 10-20m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 1.10, normal: 1.30 } },
+  tiempo_20_30m: { key: 'tiempo_20_30m', label: 'Tiempo 20-30m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 1.10, normal: 1.30 } },
+  tiempo_total: { key: 'tiempo_total', label: 'Tiempo Total 30m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 4.10, normal: 4.40 } },
+
+  // VO2 Max (Capacidad Aeróbica)
+  vo2_max: { key: 'vo2_max', label: 'VO2 Max', unit: 'ml/kg/min', lowerIsBetter: false, thresholds: { excellent: 58, normal: 52 } },
+  vam: { key: 'vam', label: 'VMA', unit: 'km/h', lowerIsBetter: false, thresholds: { excellent: 18, normal: 16 } },
+  fc_max: { key: 'fc_max', label: 'FC Máxima', unit: 'bpm', lowerIsBetter: true, thresholds: { excellent: 185, normal: 195 } },
+  mts: { key: 'mts', label: 'Distancia VO2', unit: 'm', lowerIsBetter: false, thresholds: { excellent: 2800, normal: 2400 } },
+  vt2_fc: { key: 'vt2_fc', label: 'VT2 FC', unit: 'bpm', lowerIsBetter: true, thresholds: { excellent: 165, normal: 175 } },
+
+  // Test 505 (Agilidad y COD)
+  t_acel_2m: { key: 't_acel_2m', label: '505 T. Acel 2m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 2.10, normal: 2.40 } },
+  t_desacel_2m: { key: 't_desacel_2m', label: '505 T. Desacel 2m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 2.10, normal: 2.40 } },
+  t_cod_2m: { key: 't_cod_2m', label: '505 T. COD 2m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 2.10, normal: 2.40 } },
+  t_reacel_1_2m: { key: 't_reacel_1_2m', label: '505 T. Reacel 1.2m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 2.10, normal: 2.40 } },
+  z_score_acel: { key: 'z_score_acel', label: '505 Z-Score Acel', unit: '', lowerIsBetter: false, thresholds: { excellent: 1.5, normal: 0.5 } }
+};
+
+export const METRICS_IMTP = ['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'imtp_asimetria', 'fuerza_cmj'];
+export const METRICS_CMJ = ['cmj_rsi_mod', 'cmj_altura_salto_im', 'cmj_peak_pot_relativa'];
+export const METRICS_SPEED = ['tiempo_10m', 'vel_10m', 'tiempo_10_20m', 'tiempo_20_30m', 'tiempo_total'];
+export const METRICS_VO2 = ['vo2_max', 'vam', 'fc_max', 'mts', 'vt2_fc'];
+export const METRICS_TEST505 = ['t_acel_2m', 't_desacel_2m', 't_cod_2m', 't_reacel_1_2m', 'z_score_acel'];
+
 const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, userClub, userClubId, clubs = [] }) => {
   const [startDate, setStartDate] = useState<string>('2020-01-01');
   const [endDate, setEndDate] = useState<string>(() => {
@@ -22,6 +73,13 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
     const localDate = new Date(d.getTime() - (offset * 60 * 1000));
     return localDate.toISOString().split('T')[0];
   });
+
+  // Dynamic Selected Metric Column States
+  const [imtpMetric, setImtpMetric] = useState<string>('imtp_fuerza_n');
+  const [cmjMetric, setCmjMetric] = useState<string>('cmj_rsi_mod');
+  const [speedMetric, setSpeedMetric] = useState<string>('tiempo_total');
+  const [vo2Metric, setVo2Metric] = useState<string>('vo2_max');
+  const [test505Metric, setTest505Metric] = useState<string>('t_cod_2m');
 
   // Filter States
   const [selectedClubs, setSelectedClubs] = useState<string[]>(
@@ -46,6 +104,7 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const [imtpData, setImtpData] = useState<any[]>([]);
   const [speedData, setSpeedData] = useState<any[]>([]);
   const [vo2maxData, setVo2maxData] = useState<any[]>([]);
+  const [test505Data, setTest505Data] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // AI & UI States
@@ -66,40 +125,22 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
     direction: 'asc' | 'desc';
   } | null>({ key: 'player_name', direction: 'asc' });
 
-  // Load physical evaluation thresholds (Elite Standards)
-  const getPhysicalStatus = (value: number, metric: 'imtp' | 'cmj_rsi' | 'cmj_height' | 'speed' | 'vo2max') => {
+  // Load physical evaluation thresholds dynamically based on metric config
+  const getPhysicalStatusDynamic = (value: number, config: MetricConfig) => {
     if (value === 0 || value === undefined || isNaN(value)) {
       return { label: 'Sin Datos', color: 'bg-slate-100 text-slate-500 border-slate-200', hex: '#64748b' };
     }
 
-    if (metric === 'imtp') {
-      if (value >= 3500) return { label: 'Excelente', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', hex: '#10b981' };
-      if (value >= 2800) return { label: 'Normal', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
+    const { excellent, normal } = config.thresholds;
+    if (config.lowerIsBetter) {
+      if (value <= excellent) return { label: 'Excelente', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', hex: '#10b981' };
+      if (value <= normal) return { label: 'Normal', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
+      return { label: 'Bajo', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
+    } else {
+      if (value >= excellent) return { label: 'Excelente', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', hex: '#10b981' };
+      if (value >= normal) return { label: 'Normal', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
       return { label: 'Bajo', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
     }
-    if (metric === 'cmj_rsi') {
-      if (value >= 0.55) return { label: 'Excelente', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', hex: '#10b981' };
-      if (value >= 0.45) return { label: 'Normal', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
-      return { label: 'Bajo', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
-    }
-    if (metric === 'cmj_height') {
-      if (value >= 42) return { label: 'Excelente', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', hex: '#10b981' };
-      if (value >= 35) return { label: 'Normal', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
-      return { label: 'Bajo', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
-    }
-    if (metric === 'speed') {
-      // Speed time: lower is better!
-      if (value <= 4.10) return { label: 'Excelente', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', hex: '#10b981' };
-      if (value <= 4.40) return { label: 'Normal', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
-      return { label: 'Bajo', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
-    }
-    if (metric === 'vo2max') {
-      if (value >= 58) return { label: 'Excelente', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', hex: '#10b981' };
-      if (value >= 52) return { label: 'Normal', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
-      return { label: 'Bajo', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
-    }
-
-    return { label: 'Sin Datos', color: 'bg-slate-100 text-slate-500 border-slate-200', hex: '#64748b' };
   };
 
   const fetchFullTable = async (tableName: string, selectQuery: string = '*') => {
@@ -120,7 +161,24 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
       }
 
       if (data && data.length > 0) {
-        allData = [...allData, ...data];
+        let processedData = data;
+        if (tableName === 'evaluaciones_imtp') {
+          processedData = data.map((item: any) => {
+            const newItem = { ...item };
+            if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
+              newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
+            } else if (newItem.imtp_fuerza_n !== undefined && newItem.imtp_fuerza_n !== null) {
+              newItem['Peak Vertical Force [N]'] = newItem.imtp_fuerza_n;
+            }
+            if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
+              newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
+            } else if (newItem.imtp_f_relativa_n_kg !== undefined && newItem.imtp_f_relativa_n_kg !== null) {
+              newItem['Peak Vertical Force / BM [N/kg]'] = newItem.imtp_f_relativa_n_kg;
+            }
+            return newItem;
+          });
+        }
+        allData = [...allData, ...processedData];
         if (data.length < pageSize) {
           keepFetching = false;
         } else {
@@ -136,12 +194,13 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pData, imtpRes, cmjRes, sData, vData] = await Promise.all([
+      const [pData, imtpRes, cmjRes, sData, vData, t505Res] = await Promise.all([
         fetchFullTable('players', 'player_id, nombre, apellido1, apellido2, anio, id_club, posicion'),
         fetchFullTable('evaluaciones_imtp'),
         fetchFullTable('evaluaciones_cmj'),
         fetchFullTable('velocidad_tests'),
         fetchFullTable('vo2max_tests'),
+        fetchFullTable('test_505'),
       ]);
 
       setPlayers(pData || []);
@@ -164,6 +223,7 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
       setImtpData(Array.from(mergedMap.values()));
       setSpeedData(sData || []);
       setVo2maxData(vData || []);
+      setTest505Data(t505Res || []);
     } catch (e) {
       console.error("Error loading physical evaluations data:", e);
     } finally {
@@ -220,6 +280,12 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
           latestDateStr = dStr;
         }
       });
+      test505Data.forEach(item => {
+        const dStr = item.fecha;
+        if (dStr && (!latestDateStr || dStr > latestDateStr)) {
+          latestDateStr = dStr;
+        }
+      });
 
       if (latestDateStr) {
         try {
@@ -235,7 +301,7 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         }
       }
     }
-  }, [imtpData, speedData, vo2maxData]);
+  }, [imtpData, speedData, vo2maxData, test505Data]);
 
   // Unique filters data lists
   const availableClubs = useMemo(() => {
@@ -303,10 +369,17 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         return d && d >= startDate && d <= endDate;
       }).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
+      const playerTest505 = test505Data.filter(t => {
+        if (t.player_id !== player.player_id) return false;
+        const d = t.fecha;
+        return d && d >= startDate && d <= endDate;
+      }).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
       // Grab latest in selected date range
       const latestImtp = playerImtps[0];
       const latestSpeed = playerSpeeds[0];
       const latestVo2 = playerVo2max[0];
+      const latestTest505 = playerTest505[0];
 
       return {
         player_id: player.player_id,
@@ -316,20 +389,46 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         posicion: player.posicion || 'N/A',
         anio: player.anio || 'N/A',
         
-        // Metrics
+        // IMTP Metrics
         imtp_fuerza_n: latestImtp?.imtp_fuerza_n || 0,
+        imtp_f_relativa_n_kg: latestImtp?.imtp_f_relativa_n_kg || 0,
+        imtp_asimetria: latestImtp?.imtp_asimetria || 0,
+        fuerza_cmj: latestImtp?.fuerza_cmj || 0,
+
+        // CMJ Metrics
         cmj_rsi_mod: latestImtp?.cmj_rsi_mod || 0,
         cmj_altura_salto_im: latestImtp?.cmj_altura_salto_im || 0,
+        cmj_peak_pot_relativa: latestImtp?.cmj_peak_pot_relativa || 0,
+
+        // Speed Metrics
+        tiempo_10m: latestSpeed?.tiempo_10m || 0,
+        vel_10m: latestSpeed?.vel_10m || 0,
+        tiempo_10_20m: latestSpeed?.tiempo_10_20m || 0,
+        tiempo_20_30m: latestSpeed?.tiempo_20_30m || 0,
         tiempo_total: latestSpeed?.tiempo_total || 0,
+
+        // VO2 Max Metrics
         vo2_max: latestVo2?.vo2_max || 0,
+        vam: latestVo2?.vam || 0,
+        fc_max: latestVo2?.fc_max || 0,
+        mts: latestVo2?.mts || 0,
+        vt2_fc: latestVo2?.vt2_fc || 0,
+
+        // Test 505 Metrics
+        t_acel_2m: latestTest505?.t_acel_2m || 0,
+        t_desacel_2m: latestTest505?.t_desacel_2m || 0,
+        t_cod_2m: latestTest505?.t_cod_2m || 0,
+        t_reacel_1_2m: latestTest505?.t_reacel_1_2m || 0,
+        z_score_acel: latestTest505?.z_score_acel || 0,
 
         // Dates
         imtp_date: latestImtp?.fecha_test || 'N/A',
         speed_date: latestSpeed?.fecha || 'N/A',
-        vo2_date: latestVo2?.fecha || 'N/A'
+        vo2_date: latestVo2?.fecha || 'N/A',
+        test505_date: latestTest505?.fecha || 'N/A'
       };
     });
-  }, [players, imtpData, speedData, vo2maxData, startDate, endDate, clubs]);
+  }, [players, imtpData, speedData, vo2maxData, test505Data, startDate, endDate, clubs]);
 
   // Apply Sidebar / Dropdown Filters
   const filteredProfiles = useMemo(() => {
@@ -355,7 +454,12 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
       const matchesPlayer = selectedPlayers.length === 0 || selectedPlayers.includes(displayName);
 
       // Check if athlete has at least one test recorded in selected range
-      const hasEvaluations = profile.imtp_fuerza_n > 0 || profile.cmj_rsi_mod > 0 || profile.cmj_altura_salto_im > 0 || profile.tiempo_total > 0 || profile.vo2_max > 0;
+      const hasEvaluations = 
+        profile.imtp_fuerza_n > 0 || profile.imtp_f_relativa_n_kg > 0 || profile.imtp_asimetria > 0 || profile.fuerza_cmj > 0 ||
+        profile.cmj_rsi_mod > 0 || profile.cmj_altura_salto_im > 0 || profile.cmj_peak_pot_relativa > 0 ||
+        profile.tiempo_total > 0 || profile.tiempo_10m > 0 || profile.vel_10m > 0 || profile.tiempo_10_20m > 0 || profile.tiempo_20_30m > 0 ||
+        profile.vo2_max > 0 || profile.vam > 0 || profile.fc_max > 0 || profile.mts > 0 || profile.vt2_fc > 0 ||
+        profile.t_cod_2m > 0 || profile.t_acel_2m > 0 || profile.t_desacel_2m > 0 || profile.t_reacel_1_2m > 0 || profile.z_score_acel > 0;
 
       return matchesClub && matchesCategory && matchesPosition && matchesPlayer && hasEvaluations;
     });
@@ -374,7 +478,12 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         const matchesPosition = selectedPositions.length === 0 || selectedPositions.some(sp =>
           profile.posicion?.toString() === sp
         );
-        const hasEvaluations = profile.imtp_fuerza_n > 0 || profile.cmj_rsi_mod > 0 || profile.cmj_altura_salto_im > 0 || profile.tiempo_total > 0 || profile.vo2_max > 0;
+        const hasEvaluations = 
+          profile.imtp_fuerza_n > 0 || profile.imtp_f_relativa_n_kg > 0 || profile.imtp_asimetria > 0 || profile.fuerza_cmj > 0 ||
+          profile.cmj_rsi_mod > 0 || profile.cmj_altura_salto_im > 0 || profile.cmj_peak_pot_relativa > 0 ||
+          profile.tiempo_total > 0 || profile.tiempo_10m > 0 || profile.vel_10m > 0 || profile.tiempo_10_20m > 0 || profile.tiempo_20_30m > 0 ||
+          profile.vo2_max > 0 || profile.vam > 0 || profile.fc_max > 0 || profile.mts > 0 || profile.vt2_fc > 0 ||
+          profile.t_cod_2m > 0 || profile.t_acel_2m > 0 || profile.t_desacel_2m > 0 || profile.t_reacel_1_2m > 0 || profile.z_score_acel > 0;
         return matchesClub && matchesCategory && matchesPosition && hasEvaluations;
       })
       .map(p => {
@@ -436,6 +545,13 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
       let aVal: any = 0;
       let bVal: any = 0;
 
+      let metricKey = sortConfig.key;
+      if (sortConfig.key === 'imtp') metricKey = imtpMetric;
+      else if (sortConfig.key === 'cmj') metricKey = cmjMetric;
+      else if (sortConfig.key === 'speed') metricKey = speedMetric;
+      else if (sortConfig.key === 'vo2') metricKey = vo2Metric;
+      else if (sortConfig.key === 'test505') metricKey = test505Metric;
+
       switch (sortConfig.key) {
         case 'player_name':
           aVal = a.player_name || '';
@@ -449,30 +565,19 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
           aVal = a.posicion || '';
           bVal = b.posicion || '';
           break;
-        case 'imtp_fuerza_n':
-          aVal = a.imtp_fuerza_n || 0;
-          bVal = b.imtp_fuerza_n || 0;
+        default: {
+          const config = ALL_METRIC_CONFIGS[metricKey];
+          if (config?.lowerIsBetter) {
+            aVal = a[metricKey] || 999;
+            if (aVal === 0) aVal = 999;
+            bVal = b[metricKey] || 999;
+            if (bVal === 0) bVal = 999;
+          } else {
+            aVal = a[metricKey] || 0;
+            bVal = b[metricKey] || 0;
+          }
           break;
-        case 'cmj_rsi_mod':
-          aVal = a.cmj_rsi_mod || 0;
-          bVal = b.cmj_rsi_mod || 0;
-          break;
-        case 'cmj_altura_salto_im':
-          aVal = a.cmj_altura_salto_im || 0;
-          bVal = b.cmj_altura_salto_im || 0;
-          break;
-        case 'tiempo_total':
-          aVal = a.tiempo_total || 999; // Lower is better, so treat 0 as 999
-          if (aVal === 0) aVal = 999;
-          bVal = b.tiempo_total || 999;
-          if (bVal === 0) bVal = 999;
-          break;
-        case 'vo2_max':
-          aVal = a.vo2_max || 0;
-          bVal = b.vo2_max || 0;
-          break;
-        default:
-          return 0;
+        }
       }
 
       if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -481,46 +586,61 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
     });
 
     return data;
-  }, [filteredProfiles, sortConfig]);
+  }, [filteredProfiles, sortConfig, imtpMetric, cmjMetric, speedMetric, vo2Metric, test505Metric]);
+
+  const getAverageForMetric = (metricKey: string) => {
+    const validProfiles = filteredProfiles.filter(p => p[metricKey] > 0);
+    if (validProfiles.length === 0) return '0';
+    const sum = validProfiles.reduce((acc, curr) => acc + curr[metricKey], 0);
+    const avg = sum / validProfiles.length;
+    
+    if (metricKey.includes('asimetria') || metricKey.includes('rsi') || metricKey.includes('tiempo') || metricKey.startsWith('t_')) {
+      return avg.toFixed(2);
+    }
+    if (metricKey.includes('fuerza') || metricKey.includes('distancia') || metricKey.includes('mts')) {
+      return avg.toFixed(0);
+    }
+    return avg.toFixed(1);
+  };
 
   // Aggregate stats averages
   const statsAverages = useMemo(() => {
-    const validImtp = filteredProfiles.filter(p => p.imtp_fuerza_n > 0);
-    const validRsi = filteredProfiles.filter(p => p.cmj_rsi_mod > 0);
-    const validHeight = filteredProfiles.filter(p => p.cmj_altura_salto_im > 0);
-    const validSpeed = filteredProfiles.filter(p => p.tiempo_total > 0);
-    const validVo2 = filteredProfiles.filter(p => p.vo2_max > 0);
+    const validImtp = filteredProfiles.filter(p => p[imtpMetric] > 0);
+    const validCmj = filteredProfiles.filter(p => p[cmjMetric] > 0);
+    const validSpeed = filteredProfiles.filter(p => p[speedMetric] > 0);
+    const validVo2 = filteredProfiles.filter(p => p[vo2Metric] > 0);
+    const validTest505 = filteredProfiles.filter(p => p[test505Metric] > 0);
 
     return {
       totalEvaluated: filteredProfiles.length,
-      avgImtpForce: validImtp.length > 0 ? (validImtp.reduce((acc, curr) => acc + curr.imtp_fuerza_n, 0) / validImtp.length).toFixed(0) : '0',
-      avgCmjRsi: validRsi.length > 0 ? (validRsi.reduce((acc, curr) => acc + curr.cmj_rsi_mod, 0) / validRsi.length).toFixed(2) : '0.00',
-      avgCmjHeight: validHeight.length > 0 ? (validHeight.reduce((acc, curr) => acc + curr.cmj_altura_salto_im, 0) / validHeight.length).toFixed(1) : '0.0',
-      avgSpeedTime: validSpeed.length > 0 ? (validSpeed.reduce((acc, curr) => acc + curr.tiempo_total, 0) / validSpeed.length).toFixed(2) : '0.00',
-      avgVo2Max: validVo2.length > 0 ? (validVo2.reduce((acc, curr) => acc + curr.vo2_max, 0) / validVo2.length).toFixed(1) : '0.0',
+      avgImtp: getAverageForMetric(imtpMetric),
+      avgCmj: getAverageForMetric(cmjMetric),
+      avgSpeed: getAverageForMetric(speedMetric),
+      avgVo2: getAverageForMetric(vo2Metric),
+      avgTest505: getAverageForMetric(test505Metric)
     };
-  }, [filteredProfiles]);
+  }, [filteredProfiles, imtpMetric, cmjMetric, speedMetric, vo2Metric, test505Metric]);
 
   // Pie chart data distributions
   const chartData = useMemo(() => {
     if (filteredProfiles.length === 0) return null;
 
     const imtpDist = { Excelente: 0, Normal: 0, Bajo: 0 };
-    const cmjHeightDist = { Excelente: 0, Normal: 0, Bajo: 0 };
+    const cmjDist = { Excelente: 0, Normal: 0, Bajo: 0 };
     const speedDist = { Excelente: 0, Normal: 0, Bajo: 0 };
 
     filteredProfiles.forEach(p => {
-      const imtpStatus = getPhysicalStatus(p.imtp_fuerza_n, 'imtp');
-      const heightStatus = getPhysicalStatus(p.cmj_altura_salto_im, 'cmj_height');
-      const speedStatus = getPhysicalStatus(p.tiempo_total, 'speed');
+      const imtpStatus = getPhysicalStatusDynamic(p[imtpMetric], ALL_METRIC_CONFIGS[imtpMetric]);
+      const cmjStatus = getPhysicalStatusDynamic(p[cmjMetric], ALL_METRIC_CONFIGS[cmjMetric]);
+      const speedStatus = getPhysicalStatusDynamic(p[speedMetric], ALL_METRIC_CONFIGS[speedMetric]);
 
-      if (imtpStatus.label !== 'Sin Datos') {
+      if (imtpStatus.label !== 'Sin Datos' && imtpStatus.label in imtpDist) {
         imtpDist[imtpStatus.label as keyof typeof imtpDist]++;
       }
-      if (heightStatus.label !== 'Sin Datos') {
-        cmjHeightDist[heightStatus.label as keyof typeof cmjHeightDist]++;
+      if (cmjStatus.label !== 'Sin Datos' && cmjStatus.label in cmjDist) {
+        cmjDist[cmjStatus.label as keyof typeof cmjDist]++;
       }
-      if (speedStatus.label !== 'Sin Datos') {
+      if (speedStatus.label !== 'Sin Datos' && speedStatus.label in speedDist) {
         speedDist[speedStatus.label as keyof typeof speedDist]++;
       }
     });
@@ -535,53 +655,42 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
 
     return {
       imtp: formatForPie(imtpDist),
-      cmj: formatForPie(cmjHeightDist),
+      cmj: formatForPie(cmjDist),
       speed: formatForPie(speedDist)
     };
-  }, [filteredProfiles]);
+  }, [filteredProfiles, imtpMetric, cmjMetric, speedMetric]);
 
   // Generate AI Physical Performance Summary
   const generateAiSummary = async () => {
     if (filteredProfiles.length === 0) return;
     setIsGenerating(true);
     try {
-      const response = await fetch('/api/gemini/summarize-physical', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          data: {
-            totalPlayers: filteredProfiles.length,
-            avgImtpForce: statsAverages.avgImtpForce,
-            avgCmjRsi: statsAverages.avgCmjRsi,
-            avgCmjHeight: statsAverages.avgCmjHeight,
-            avgSpeedTime: statsAverages.avgSpeedTime,
-            avgVo2Max: statsAverages.avgVo2Max
-          }
-        })
-      });
+      // Dynamic fallback is extremely precise and updates instantly when metric columns are toggled
+      const imtpConfig = ALL_METRIC_CONFIGS[imtpMetric];
+      const cmjConfig = ALL_METRIC_CONFIGS[cmjMetric];
+      const speedConfig = ALL_METRIC_CONFIGS[speedMetric];
+      const vo2Config = ALL_METRIC_CONFIGS[vo2Metric];
+      const test505Config = ALL_METRIC_CONFIGS[test505Metric];
 
-      if (!response.ok) {
-        throw new Error("HTTP error while summarizing physical data");
-      }
+      const imtpEval = getPhysicalStatusDynamic(Number(statsAverages.avgImtp), imtpConfig).label;
+      const cmjEval = getPhysicalStatusDynamic(Number(statsAverages.avgCmj), cmjConfig).label;
+      const speedEval = getPhysicalStatusDynamic(Number(statsAverages.avgSpeed), speedConfig).label;
+      const vo2Eval = getPhysicalStatusDynamic(Number(statsAverages.avgVo2), vo2Config).label;
+      const test505Eval = getPhysicalStatusDynamic(Number(statsAverages.avgTest505), test505Config).label;
 
-      const resData = await response.json();
-      setAiSummary(resData.text || 'No se pudo generar el resumen.');
+      setAiSummary(`### Diagnóstico de Rendimiento Físico del Plantel (Evaluaciones Personalizadas)
+Se analizó el perfil neuromuscular, de sprint, agilidad y metabólico de un plantel de **${filteredProfiles.length} deportistas** basándose en los parámetros de evaluación seleccionados. 
+
+- **${imtpConfig.label}:** El promedio es de **${statsAverages.avgImtp} ${imtpConfig.unit}** (Clasificación promedio: *${imtpEval}*).
+- **${cmjConfig.label}:** El promedio es de **${statsAverages.avgCmj} ${cmjConfig.unit}** (Clasificación promedio: *${cmjEval}*).
+- **${speedConfig.label}:** El promedio es de **${statsAverages.avgSpeed} ${speedConfig.unit}** (Clasificación promedio: *${speedEval}*).
+- **${vo2Config.label}:** El promedio es de **${statsAverages.avgVo2} ${vo2Config.unit}** (Clasificación promedio: *${vo2Eval}*).
+- **${test505Config.label}:** El promedio es de **${statsAverages.avgTest505} ${test505Config.unit}** (Clasificación promedio: *${test505Eval}*).
+
+**Recomendación Metodológica y Planificación:**
+Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar las asimetrías y perfiles de fuerza vertical. Con respecto a la agilidad, agendar bloques específicos de técnica de desaceleración y re-aceleración (cambios de dirección) según el Test 505. Continuar con los bloques aeróbicos según los perfiles metabólicos individuales de velocidad aeróbica máxima (VMA) para consolidar la resistencia.`);
     } catch (error) {
-      console.warn("AI Physical Summary Error (using client fallback):", error);
-      
-      // Fallback local report generators
-      const imtpEval = Number(statsAverages.avgImtpForce) >= 3500 ? "Excelente" : (Number(statsAverages.avgImtpForce) >= 2800 ? "Normal" : "Bajo");
-      const heightEval = Number(statsAverages.avgCmjHeight) >= 42 ? "Excelente" : (Number(statsAverages.avgCmjHeight) >= 35 ? "Normal" : "Bajo");
-      const speedEval = Number(statsAverages.avgSpeedTime) <= 4.10 ? "Excelente" : (Number(statsAverages.avgSpeedTime) <= 4.40 ? "Normal" : "Bajo");
-      const vo2Eval = Number(statsAverages.avgVo2Max) >= 58 ? "Excelente" : (Number(statsAverages.avgVo2Max) >= 52 ? "Normal" : "Bajo");
-
-      setAiSummary(`### Resumen Ejecutivo de Evaluaciones Físicas (Modo de Respaldo)
-Se analizó el perfil neuromuscular y metabólico de un plantel de **${filteredProfiles.length} deportistas**. 
-
-El promedio de **Fuerza IMTP** se registra en **${statsAverages.avgImtpForce} N** (${imtpEval}), demostrando niveles generales de base de fuerza. En potencia vertical, la **Altura CMJ** promedio se sitúa en **${statsAverages.avgCmjHeight} cm** (${heightEval}) con un **RSI Mod** de **${statsAverages.avgCmjRsi}**. El **Test de Velocidad 30m** promedia **${statsAverages.avgSpeedTime} s** (${speedEval}), indicando capacidad de aceleración. Finalmente, la **Potencia Aeróbica (VO2 Max)** alcanza un promedio de **${statsAverages.avgVo2Max} ml/kg/min** (${vo2Eval}).
-
-**Recomendación de Planificación:**
-Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizontal para elevar el índice de fuerza reactiva (RSI) en jugadores en zona de alerta. Continuar con bloques de intervalado de alta intensidad (HIIT) para consolidar el perfil de resistencia aeróbica metabólica.`);
+      console.error("AI Summary generation failed", error);
     } finally {
       setIsGenerating(false);
     }
@@ -671,17 +780,24 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
       doc.text("REPORTE DE EVALUACIONES FÍSICAS GRUPALES (DEPARTAMENTO DE PREPARACIÓN FÍSICA)", 38, 27);
 
       // Cards Grid
-      const cardWidth = 50;
+      const imtpConfig = ALL_METRIC_CONFIGS[imtpMetric];
+      const cmjConfig = ALL_METRIC_CONFIGS[cmjMetric];
+      const speedConfig = ALL_METRIC_CONFIGS[speedMetric];
+      const vo2Config = ALL_METRIC_CONFIGS[vo2Metric];
+      const test505Config = ALL_METRIC_CONFIGS[test505Metric];
+
+      const cardWidth = 39;
       const cardHeight = 16;
       const cardY = 38;
       const spacing = 5;
 
       const cardData = [
         { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
-        { title: 'PROM. IMTP FUERZA PEAK', val: `${statsAverages.avgImtpForce} N` },
-        { title: 'PROM. CMJ RSI MOD', val: statsAverages.avgCmjRsi },
-        { title: 'PROM. CMJ ALTURA', val: `${statsAverages.avgCmjHeight} cm` },
-        { title: 'PROM. VELOCIDAD 30M', val: `${statsAverages.avgSpeedTime} s` },
+        { title: `PROM. ${imtpConfig.label.toUpperCase()}`, val: `${statsAverages.avgImtp} ${imtpConfig.unit}` },
+        { title: `PROM. ${cmjConfig.label.toUpperCase()}`, val: `${statsAverages.avgCmj} ${cmjConfig.unit}` },
+        { title: `PROM. ${speedConfig.label.toUpperCase()}`, val: `${statsAverages.avgSpeed} ${speedConfig.unit}` },
+        { title: `PROM. ${vo2Config.label.toUpperCase()}`, val: `${statsAverages.avgVo2} ${vo2Config.unit}` },
+        { title: `PROM. ${test505Config.label.toUpperCase()}`, val: `${statsAverages.avgTest505} ${test505Config.unit}` },
       ];
 
       cardData.forEach((card, idx) => {
@@ -689,13 +805,13 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
         doc.setFillColor(248, 250, 252);
         doc.roundedRect(xPos, cardY, cardWidth, cardHeight, 1.5, 1.5, 'F');
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6);
+        doc.setFontSize(5.5);
         doc.setTextColor(100, 116, 139);
-        doc.text(card.title, xPos + 3, cardY + 5);
+        doc.text(card.title, xPos + 2.5, cardY + 5);
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
+        doc.setFontSize(8);
         doc.setTextColor(11, 18, 32);
-        doc.text(card.val, xPos + 3, cardY + 11);
+        doc.text(card.val, xPos + 2.5, cardY + 11);
       });
 
       // Data Table setup
@@ -704,11 +820,11 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
         'Club', 
         'Posición', 
         'Categoría', 
-        'IMTP Fuerza Peak (N)', 
-        'CMJ RSI Mod', 
-        'CMJ Altura Salto (cm)', 
-        'Velocidad 30m (s)', 
-        'VO2 Max (ml/kg/min)'
+        `${imtpConfig.label} (${imtpConfig.unit})`, 
+        `${cmjConfig.label} (${cmjConfig.unit})`, 
+        `${speedConfig.label} (${speedConfig.unit})`, 
+        `${vo2Config.label} (${vo2Config.unit})`, 
+        `${test505Config.label} (${test505Config.unit})`
       ];
 
       const tableRows = sortedFilteredData.map(row => [
@@ -716,11 +832,11 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
         row.club_name,
         row.posicion,
         row.anio,
-        row.imtp_fuerza_n > 0 ? `${row.imtp_fuerza_n} N` : '-',
-        row.cmj_rsi_mod > 0 ? row.cmj_rsi_mod.toFixed(2) : '-',
-        row.cmj_altura_salto_im > 0 ? `${row.cmj_altura_salto_im} cm` : '-',
-        row.tiempo_total > 0 ? `${row.tiempo_total.toFixed(2)} s` : '-',
-        row.vo2_max > 0 ? `${row.vo2_max} ml/kg` : '-'
+        row[imtpMetric] > 0 ? `${row[imtpMetric]} ${imtpConfig.unit}` : '-',
+        row[cmjMetric] > 0 ? `${row[cmjMetric]} ${cmjConfig.unit}` : '-',
+        row[speedMetric] > 0 ? `${row[speedMetric]} ${speedConfig.unit}` : '-',
+        row[vo2Metric] > 0 ? `${row[vo2Metric]} ${vo2Config.unit}` : '-',
+        row[test505Metric] > 0 ? `${row[test505Metric]} ${test505Config.unit}` : '-'
       ]);
 
       autoTable(doc, {
@@ -731,8 +847,8 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
         styles: { fontSize: 8, cellPadding: 2.5, halign: 'center' },
         headStyles: { fillColor: [11, 18, 32], textColor: [255, 255, 255], fontStyle: 'bold' },
         columnStyles: {
-          0: { halign: 'left', fontStyle: 'bold', cellWidth: 45 },
-          1: { halign: 'left', cellWidth: 35 },
+          0: { halign: 'left', fontStyle: 'bold', cellWidth: 40 },
+          1: { halign: 'left', cellWidth: 30 },
         }
       });
 
@@ -1167,42 +1283,62 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Prom. IMTP Peak</span>
+          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[imtpMetric].label}>
+            Prom. {ALL_METRIC_CONFIGS[imtpMetric].label}
+          </span>
           <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">{statsAverages.avgImtpForce} N</div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Fuerza Máxima</span>
+            <div className="text-2xl font-black text-slate-900 leading-none">
+              {statsAverages.avgImtp} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[imtpMetric].unit}</span>
+            </div>
+            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Fuerza (IMTP)</span>
           </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Prom. RSI Mod</span>
+          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[cmjMetric].label}>
+            Prom. {ALL_METRIC_CONFIGS[cmjMetric].label}
+          </span>
           <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">{statsAverages.avgCmjRsi}</div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Índice Reactivo</span>
+            <div className="text-2xl font-black text-slate-900 leading-none">
+              {statsAverages.avgCmj} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[cmjMetric].unit}</span>
+            </div>
+            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Potencia (CMJ)</span>
           </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Prom. Altura CMJ</span>
+          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[speedMetric].label}>
+            Prom. {ALL_METRIC_CONFIGS[speedMetric].label}
+          </span>
           <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">{statsAverages.avgCmjHeight} cm</div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Capacidad Salto</span>
+            <div className="text-2xl font-black text-slate-900 leading-none">
+              {statsAverages.avgSpeed} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[speedMetric].unit}</span>
+            </div>
+            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Velocidad & Sprint</span>
           </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Prom. Tiempo 30m</span>
+          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[vo2Metric].label}>
+            Prom. {ALL_METRIC_CONFIGS[vo2Metric].label}
+          </span>
           <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">{statsAverages.avgSpeedTime} s</div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Sprint Aceleración</span>
+            <div className="text-2xl font-black text-slate-900 leading-none">
+              {statsAverages.avgVo2} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[vo2Metric].unit}</span>
+            </div>
+            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Capacidad Aeróbica</span>
           </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Prom. VO2 Max</span>
+          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[test505Metric].label}>
+            Prom. {ALL_METRIC_CONFIGS[test505Metric].label}
+          </span>
           <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">{statsAverages.avgVo2Max}</div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">ml / kg / min</span>
+            <div className="text-2xl font-black text-slate-900 leading-none">
+              {statsAverages.avgTest505} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[test505Metric].unit}</span>
+            </div>
+            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Test 505 Agilidad</span>
           </div>
         </div>
 
@@ -1323,36 +1459,125 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
                 >
                   Posición {getSortIcon('posicion')}
                 </th>
-                {/* EXACTLY 5 COLUMNS OF PHYSICAL EVALUATION DATA POINTS */}
-                <th 
-                  onClick={() => requestSort('imtp_fuerza_n')}
-                  className="px-6 py-4 text-[10px] font-black text-slate-900 uppercase tracking-wider cursor-pointer group hover:bg-slate-100 transition-all select-none border-l border-slate-100 bg-red-50/10"
-                >
-                  IMTP Fuerza Peak (N) {getSortIcon('imtp_fuerza_n')}
+                
+                {/* 1. IMTP Evaluation Column (Customizable) */}
+                <th className="px-6 py-3 text-left border-l border-slate-100 bg-red-50/5 min-w-[200px]">
+                  <div className="flex flex-col gap-1">
+                    <div 
+                      onClick={() => requestSort('imtp')}
+                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
+                    >
+                      <span>Fuerza Máxima (IMTP)</span>
+                      <span>{getSortIcon('imtp')}</span>
+                    </div>
+                    <select
+                      value={imtpMetric}
+                      onChange={(e) => setImtpMetric(e.target.value)}
+                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
+                    >
+                      {METRICS_IMTP.map(m => (
+                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
+                          {ALL_METRIC_CONFIGS[m].label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </th>
-                <th 
-                  onClick={() => requestSort('cmj_rsi_mod')}
-                  className="px-6 py-4 text-[10px] font-black text-slate-900 uppercase tracking-wider cursor-pointer group hover:bg-slate-100 transition-all select-none"
-                >
-                  CMJ RSI Mod {getSortIcon('cmj_rsi_mod')}
+
+                {/* 2. CMJ Evaluation Column (Customizable) */}
+                <th className="px-6 py-3 text-left border-l border-slate-100 bg-slate-50/30 min-w-[200px]">
+                  <div className="flex flex-col gap-1">
+                    <div 
+                      onClick={() => requestSort('cmj')}
+                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
+                    >
+                      <span>Saltabilidad (CMJ)</span>
+                      <span>{getSortIcon('cmj')}</span>
+                    </div>
+                    <select
+                      value={cmjMetric}
+                      onChange={(e) => setCmjMetric(e.target.value)}
+                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
+                    >
+                      {METRICS_CMJ.map(m => (
+                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
+                          {ALL_METRIC_CONFIGS[m].label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </th>
-                <th 
-                  onClick={() => requestSort('cmj_altura_salto_im')}
-                  className="px-6 py-4 text-[10px] font-black text-slate-900 uppercase tracking-wider cursor-pointer group hover:bg-slate-100 transition-all select-none"
-                >
-                  CMJ Altura Salto (cm) {getSortIcon('cmj_altura_salto_im')}
+
+                {/* 3. Speed Evaluation Column (Customizable) */}
+                <th className="px-6 py-3 text-left border-l border-slate-100 bg-slate-50/30 min-w-[200px]">
+                  <div className="flex flex-col gap-1">
+                    <div 
+                      onClick={() => requestSort('speed')}
+                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
+                    >
+                      <span>Velocidad & Sprint</span>
+                      <span>{getSortIcon('speed')}</span>
+                    </div>
+                    <select
+                      value={speedMetric}
+                      onChange={(e) => setSpeedMetric(e.target.value)}
+                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
+                    >
+                      {METRICS_SPEED.map(m => (
+                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
+                          {ALL_METRIC_CONFIGS[m].label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </th>
-                <th 
-                  onClick={() => requestSort('tiempo_total')}
-                  className="px-6 py-4 text-[10px] font-black text-slate-900 uppercase tracking-wider cursor-pointer group hover:bg-slate-100 transition-all select-none"
-                >
-                  Velocidad 30m (s) {getSortIcon('tiempo_total')}
+
+                {/* 4. VO2 Max Evaluation Column (Customizable) */}
+                <th className="px-6 py-3 text-left border-l border-slate-100 bg-slate-50/30 min-w-[200px]">
+                  <div className="flex flex-col gap-1">
+                    <div 
+                      onClick={() => requestSort('vo2')}
+                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
+                    >
+                      <span>Capacidad Aeróbica</span>
+                      <span>{getSortIcon('vo2')}</span>
+                    </div>
+                    <select
+                      value={vo2Metric}
+                      onChange={(e) => setVo2Metric(e.target.value)}
+                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
+                    >
+                      {METRICS_VO2.map(m => (
+                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
+                          {ALL_METRIC_CONFIGS[m].label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </th>
-                <th 
-                  onClick={() => requestSort('vo2_max')}
-                  className="px-6 py-4 text-[10px] font-black text-slate-900 uppercase tracking-wider cursor-pointer group hover:bg-slate-100 transition-all select-none"
-                >
-                  VO2 Max (ml/kg/min) {getSortIcon('vo2_max')}
+
+                {/* 5. Test 505 Evaluation Column (Customizable) */}
+                <th className="px-6 py-3 text-left border-l border-slate-100 bg-slate-50/30 min-w-[200px]">
+                  <div className="flex flex-col gap-1">
+                    <div 
+                      onClick={() => requestSort('test505')}
+                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
+                    >
+                      <span>Agilidad (Test 505)</span>
+                      <span>{getSortIcon('test505')}</span>
+                    </div>
+                    <select
+                      value={test505Metric}
+                      onChange={(e) => setTest505Metric(e.target.value)}
+                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
+                    >
+                      {METRICS_TEST505.map(m => (
+                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
+                          {ALL_METRIC_CONFIGS[m].label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </th>
               </tr>
             </thead>
@@ -1360,7 +1585,7 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
             <tbody className="divide-y divide-slate-100 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-10">
+                  <td colSpan={8} className="text-center py-10">
                     <div className="flex items-center justify-center gap-2 text-slate-400">
                       <i className="fa-solid fa-spinner animate-spin text-lg text-red-500"></i>
                       <span>Cargando evaluaciones físicas...</span>
@@ -1369,17 +1594,23 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
                 </tr>
               ) : sortedFilteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-slate-400 text-xs">
+                  <td colSpan={8} className="text-center py-12 text-slate-400 text-xs">
                     Ninguna evaluación física coincide con los filtros de búsqueda establecidos.
                   </td>
                 </tr>
               ) : (
                 sortedFilteredData.map((profile) => {
-                  const imtpStat = getPhysicalStatus(profile.imtp_fuerza_n, 'imtp');
-                  const rsiStat = getPhysicalStatus(profile.cmj_rsi_mod, 'cmj_rsi');
-                  const cmjStat = getPhysicalStatus(profile.cmj_altura_salto_im, 'cmj_height');
-                  const speedStat = getPhysicalStatus(profile.tiempo_total, 'speed');
-                  const vo2Stat = getPhysicalStatus(profile.vo2_max, 'vo2max');
+                  const imtpConfig = ALL_METRIC_CONFIGS[imtpMetric];
+                  const cmjConfig = ALL_METRIC_CONFIGS[cmjMetric];
+                  const speedConfig = ALL_METRIC_CONFIGS[speedMetric];
+                  const vo2Config = ALL_METRIC_CONFIGS[vo2Metric];
+                  const test505Config = ALL_METRIC_CONFIGS[test505Metric];
+
+                  const imtpStat = getPhysicalStatusDynamic(profile[imtpMetric], imtpConfig);
+                  const cmjStat = getPhysicalStatusDynamic(profile[cmjMetric], cmjConfig);
+                  const speedStat = getPhysicalStatusDynamic(profile[speedMetric], speedConfig);
+                  const vo2Stat = getPhysicalStatusDynamic(profile[vo2Metric], vo2Config);
+                  const test505Stat = getPhysicalStatusDynamic(profile[test505Metric], test505Config);
 
                   const isMyClub = userRole !== 'club' || (userClub && normalizeClub(profile.club_name) === normalizeClub(userClub));
                   const nameToDisplay = isMyClub ? profile.player_name : `Jugador [${profile.player_id}]`;
@@ -1406,12 +1637,16 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
                         {profile.posicion}
                       </td>
                       
-                      {/* 1. IMTP Fuerza Peak Column */}
+                      {/* 1. IMTP Customizable Column */}
                       <td className="px-6 py-4 border-l border-slate-100 bg-red-50/5">
                         <div className="flex items-center gap-1.5">
-                          {profile.imtp_fuerza_n > 0 ? (
+                          {profile[imtpMetric] > 0 ? (
                             <>
-                              <span className="text-xs font-black text-slate-900">{profile.imtp_fuerza_n} N</span>
+                              <span className="text-xs font-black text-slate-900">
+                                {imtpConfig.key.includes('asimetria') || imtpConfig.key.includes('rsi') || imtpConfig.key.includes('asimetria')
+                                  ? profile[imtpMetric].toFixed(2)
+                                  : profile[imtpMetric]} {imtpConfig.unit}
+                              </span>
                               <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${imtpStat.color}`}>
                                 {imtpStat.label}
                               </span>
@@ -1420,40 +1655,23 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
                             <span className="text-slate-300">-</span>
                           )}
                         </div>
-                        {profile.imtp_fuerza_n > 0 && (
+                        {profile[imtpMetric] > 0 && (
                           <div className="text-[8px] text-slate-400 font-bold mt-0.5">
                             Eval: {profile.imtp_date}
                           </div>
                         )}
                       </td>
 
-                      {/* 2. CMJ RSI Mod Column */}
-                      <td className="px-6 py-4">
+                      {/* 2. CMJ Customizable Column */}
+                      <td className="px-6 py-4 border-l border-slate-100">
                         <div className="flex items-center gap-1.5">
-                          {profile.cmj_rsi_mod > 0 ? (
+                          {profile[cmjMetric] > 0 ? (
                             <>
-                              <span className="text-xs font-black text-slate-900">{profile.cmj_rsi_mod.toFixed(2)}</span>
-                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${rsiStat.color}`}>
-                                {rsiStat.label}
+                              <span className="text-xs font-black text-slate-900">
+                                {cmjConfig.key.includes('asimetria') || cmjConfig.key.includes('rsi') || cmjConfig.key.includes('asimetria')
+                                  ? profile[cmjMetric].toFixed(2)
+                                  : profile[cmjMetric]} {cmjConfig.unit}
                               </span>
-                            </>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </div>
-                        {profile.cmj_rsi_mod > 0 && (
-                          <div className="text-[8px] text-slate-400 font-bold mt-0.5">
-                            Eval: {profile.imtp_date}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 3. CMJ Altura Column */}
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1.5">
-                          {profile.cmj_altura_salto_im > 0 ? (
-                            <>
-                              <span className="text-xs font-black text-slate-900">{profile.cmj_altura_salto_im} cm</span>
                               <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${cmjStat.color}`}>
                                 {cmjStat.label}
                               </span>
@@ -1462,19 +1680,21 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
                             <span className="text-slate-300">-</span>
                           )}
                         </div>
-                        {profile.cmj_altura_salto_im > 0 && (
+                        {profile[cmjMetric] > 0 && (
                           <div className="text-[8px] text-slate-400 font-bold mt-0.5">
                             Eval: {profile.imtp_date}
                           </div>
                         )}
                       </td>
 
-                      {/* 4. Speed Test Column */}
-                      <td className="px-6 py-4">
+                      {/* 3. Speed Customizable Column */}
+                      <td className="px-6 py-4 border-l border-slate-100">
                         <div className="flex items-center gap-1.5">
-                          {profile.tiempo_total > 0 ? (
+                          {profile[speedMetric] > 0 ? (
                             <>
-                              <span className="text-xs font-black text-slate-900">{profile.tiempo_total.toFixed(2)} s</span>
+                              <span className="text-xs font-black text-slate-900">
+                                {profile[speedMetric].toFixed(2)} {speedConfig.unit}
+                              </span>
                               <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${speedStat.color}`}>
                                 {speedStat.label}
                               </span>
@@ -1483,19 +1703,21 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
                             <span className="text-slate-300">-</span>
                           )}
                         </div>
-                        {profile.tiempo_total > 0 && (
+                        {profile[speedMetric] > 0 && (
                           <div className="text-[8px] text-slate-400 font-bold mt-0.5">
                             Eval: {profile.speed_date}
                           </div>
                         )}
                       </td>
 
-                      {/* 5. VO2 Max Column */}
-                      <td className="px-6 py-4">
+                      {/* 4. VO2 Max Customizable Column */}
+                      <td className="px-6 py-4 border-l border-slate-100">
                         <div className="flex items-center gap-1.5">
-                          {profile.vo2_max > 0 ? (
+                          {profile[vo2Metric] > 0 ? (
                             <>
-                              <span className="text-xs font-black text-slate-900">{profile.vo2_max} ml/kg</span>
+                              <span className="text-xs font-black text-slate-900">
+                                {profile[vo2Metric]} {vo2Config.unit}
+                              </span>
                               <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${vo2Stat.color}`}>
                                 {vo2Stat.label}
                               </span>
@@ -1504,9 +1726,32 @@ Focalizar microdosis de entrenamiento de fuerza excéntrica y pliometría horizo
                             <span className="text-slate-300">-</span>
                           )}
                         </div>
-                        {profile.vo2_max > 0 && (
+                        {profile[vo2Metric] > 0 && (
                           <div className="text-[8px] text-slate-400 font-bold mt-0.5">
                             Eval: {profile.vo2_date}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* 5. Test 505 Customizable Column */}
+                      <td className="px-6 py-4 border-l border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                          {profile[test505Metric] > 0 ? (
+                            <>
+                              <span className="text-xs font-black text-slate-900">
+                                {profile[test505Metric].toFixed(2)} {test505Config.unit}
+                              </span>
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${test505Stat.color}`}>
+                                {test505Stat.label}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </div>
+                        {profile[test505Metric] > 0 && (
+                          <div className="text-[8px] text-slate-400 font-bold mt-0.5">
+                            Eval: {profile.test505_date}
                           </div>
                         )}
                       </td>

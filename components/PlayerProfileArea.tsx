@@ -219,7 +219,21 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
       // Combine IMTP and CMJ data by date
       const mergedMap = new Map<string, any>();
-      (imtpRes.data || []).forEach((item: any) => {
+      const processedImtpData = (imtpRes.data || []).map((item: any) => {
+        const newItem = { ...item };
+        if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
+          newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
+        } else if (newItem.imtp_fuerza_n !== undefined && newItem.imtp_fuerza_n !== null) {
+          newItem['Peak Vertical Force [N]'] = newItem.imtp_fuerza_n;
+        }
+        if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
+          newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
+        } else if (newItem.imtp_f_relativa_n_kg !== undefined && newItem.imtp_f_relativa_n_kg !== null) {
+          newItem['Peak Vertical Force / BM [N/kg]'] = newItem.imtp_f_relativa_n_kg;
+        }
+        return newItem;
+      });
+      processedImtpData.forEach((item: any) => {
         mergedMap.set(item.fecha_test, { ...item });
       });
       (cmjRes.data || []).forEach((item: any) => {

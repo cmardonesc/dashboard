@@ -5,7 +5,7 @@ import { User } from '../types';
 
 import { fetchCatapultActivities, fetchCatapultActivityStats, fetchCatapultActivityDetail, testCatapultConnection } from '../services/catapultService';
 
-type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'cmj' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api';
+type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'cmj' | 'cmj_rebound' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api';
 
 interface ImportConfig {
   label: string;
@@ -22,7 +22,7 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'gps_import',
     icon: 'fa-solid fa-satellite-dish',
     description: 'Carga de datos GPS acumulados por sesión.',
-    conflictColumns: ['player_id', 'fecha', 'nombre_sesion'],
+    conflictColumns: ['player_id', 'fecha'],
     fields: [
       { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Date', required: true, type: 'date' },
@@ -105,8 +105,16 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'player_id', label: 'ID JUGADOR', required: true, type: 'number' },
       { key: 'fecha_test', label: 'FECHA TEST', required: true, type: 'date' },
       { key: 'peso', label: 'PESO (kg)', required: false, type: 'number' },
-      { key: 'imtp_fuerza_n', label: 'IMTP FUERZA (N)', required: true, type: 'number' },
-      { key: 'imtp_f_relativa_n_kg', label: 'IMTP F. RELATIVA (N/kg)', required: false, type: 'number' },
+      { key: 'Peak Vertical Force [N]', label: 'Peak Vertical Force (N)', required: true, type: 'number' },
+      { key: 'Peak Vertical Force / BM [N/kg]', label: 'Peak Vertical Force / BM (N/kg)', required: false, type: 'number' },
+      { key: 'Reps', label: 'Reps', required: false, type: 'number' },
+      { key: 'Force (Net of BW) at 50ms [N]', label: 'Force (Net of BW) at 50ms (N)', required: false, type: 'number' },
+      { key: 'Force (Net of BW) at 100ms [N]', label: 'Force (Net of BW) at 100ms (N)', required: false, type: 'number' },
+      { key: 'Force (Net of BW) at 150ms [N]', label: 'Force (Net of BW) at 150ms (N)', required: false, type: 'number' },
+      { key: 'Force (Net of BW) at 200ms [N]', label: 'Force (Net of BW) at 200ms (N)', required: false, type: 'number' },
+      { key: 'RFD - 100ms [N/s]', label: 'RFD - 100ms (N/s)', required: false, type: 'number' },
+      { key: 'RFD - 150ms [N/s]', label: 'RFD - 150ms (N/s)', required: false, type: 'number' },
+      { key: 'RFD - 200ms [N/s]', label: 'RFD - 200ms (N/s)', required: false, type: 'number' },
       { key: 'imtp_asimetria', label: 'IMTP ASIMETRIA (%)', required: false, type: 'number' },
       { key: 'imtp_debil', label: 'IMTP DEBIL', required: false, type: 'string' },
       { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
@@ -122,30 +130,35 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
       { key: 'player_id', label: 'ID JUGADOR', required: true, type: 'number' },
       { key: 'fecha_test', label: 'FECHA TEST', required: true, type: 'date' },
-      { key: 'peso', label: 'PESO (kg)', required: false, type: 'number' },
-      { key: 'fuerza_cmj', label: 'FUERZA CMJ', required: false, type: 'number' },
-      { key: 'cmj_rsi_mod', label: 'CMJ RSI MOD', required: false, type: 'number' },
-      { key: 'cmj_altura_salto_im', label: 'CMJ ALTURA IM (cm)', required: false, type: 'number' },
-      { key: 'cmj_salto_tv', label: 'CMJ SALTO TV', required: false, type: 'number' },
-      { key: 'cmj_peak_pot_relativa', label: 'CMJ POT. RELATIVA', required: false, type: 'number' },
-      { key: 'cmj_asimetria_aterrizaje', label: 'CMJ ASIM. ATERRIZAJE (%)', required: false, type: 'number' },
-      { key: 'landing_n', label: 'LANDING (N)', required: false, type: 'number' },
-      { key: 'landing_relativo', label: 'LANDING RELATIVO', required: false, type: 'number' },
-      { key: 'cmj_pierna_debil', label: 'CMJ PIERNA DEBIL', required: false, type: 'string' },
-      { key: 'dsi_valor', label: 'DSI VALOR', required: false, type: 'number' },
-      { key: 'avk_peak_pot_relativa', label: 'AVK POT. RELATIVA', required: false, type: 'number' },
-      { key: 'avk_indice_uso_brazos_tv', label: 'AVK INDICE BRAZOS TV', required: false, type: 'number' },
-      { key: 'avk_x_tv', label: 'AVK X TV', required: false, type: 'number' },
-      { key: 'avk_x_im', label: 'AVK X IM', required: false, type: 'number' },
-      { key: 'avk_indice_uso_brazos_im', label: 'AVK INDICE BRAZOS IM', required: false, type: 'number' },
-      { key: 'slcmj_izq_altura_im', label: 'SLCJ IZQ ALTURA IM', required: false, type: 'number' },
-      { key: 'slcmj_izq_altura_tv', label: 'SLCJ IZQ ALTURA TV', required: false, type: 'number' },
-      { key: 'slcmj_der_altura_im', label: 'SLCJ DER ALTURA IM', required: false, type: 'number' },
-      { key: 'slcmj_der_altura_tv', label: 'SLCJ DER ALTURA TV', required: false, type: 'number' },
-      { key: 'slcmj_diferencia_pct_im', label: 'SLCJ DIFERENCIA % IM', required: false, type: 'number' },
-      { key: 'slcmj_diferencia_pct_tv', label: 'SLCJ DIFERENCIA % TV', required: false, type: 'number' },
-      { key: 'deficit_bilateral', label: 'DEFICIT BILATERAL', required: false, type: 'number' },
-      { key: 'altura_x_rsi_mod', label: 'ALTURA X RSI MOD', required: false, type: 'number' },
+      { key: 'bw_kg', label: 'BW [KG]', required: false, type: 'number' },
+      { key: 'concentric_peak_force_n', label: 'Concentric Peak Force [N]', required: false, type: 'number' },
+      { key: 'rsi_modified_m_s', label: 'RSI-modified [m/s]', required: false, type: 'number' },
+      { key: 'jump_height_impmom_cm', label: 'Jump Height (Imp-Mom) [cm]', required: false, type: 'number' },
+      { key: 'peak_power_bm_w_kg', label: 'Peak Power / BM [W/kg]', required: false, type: 'number' },
+      { key: 'peak_power_w', label: 'Peak Power [W]', required: false, type: 'number' },
+      { key: 'countermovement_depth_cm', label: 'Countermovement Depth [cm]', required: false, type: 'number' },
+      { key: 'concentric_duration_ms', label: 'Concentric Duration [ms]', required: false, type: 'number' },
+      { key: 'concentric_impulse_ns', label: 'Concentric Impulse [N s]', required: false, type: 'number' },
+      { key: 'take_off_momentum_kg_m_s', label: 'Take-off Momentum [kg m/s]', required: false, type: 'number' },
+       { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
+    ]
+  },
+  cmj_rebound: {
+    label: 'CMJ Rebound',
+    table: 'evaluaciones_cmj_rebound',
+    icon: 'fa-solid fa-arrows-spin',
+    description: 'Countermovement Jump Rebound - Test de reactividad (RSI, tiempos de vuelo y contacto).',
+    conflictColumns: ['player_id', 'fecha_test'],
+    fields: [
+      { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
+      { key: 'player_id', label: 'ID JUGADOR', required: true, type: 'number' },
+      { key: 'fecha_test', label: 'FECHA TEST', required: true, type: 'date' },
+      { key: 'bw_kg', label: 'BW [KG]', required: false, type: 'number' },
+      { key: 'reps', label: 'Reps', required: false, type: 'number' },
+      { key: 'rebound_rsi', label: 'Rebound RSI (Flight Time / Contact Time)', required: false, type: 'number' },
+      { key: 'rebound_contact_time_ms', label: 'Rebound Contact Time [ms]', required: false, type: 'number' },
+      { key: 'rebound_flight_time_ms', label: 'Rebound Flight Time [ms]', required: false, type: 'number' },
+      { key: 'take_off_momentum_kg_m_s', label: 'Take-off Momentum [kg m/s]', required: false, type: 'number' },
       { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
     ]
   },
@@ -170,16 +183,25 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     ]
   },
   aceleracion: {
-    label: 'Aceleración',
-    table: 'physical_tests',
+    label: 'Test 505',
+    table: 'test_505',
     icon: 'fa-solid fa-gauge-high',
-    description: 'Tests de aceleración específica.',
-    conflictColumns: ['player_id', 'fecha', 'test_type'],
+    description: 'Test 505 de agilidad, aceleración y COD.',
+    conflictColumns: ['player_id', 'fecha'],
     fields: [
       { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
-      { key: 'value', label: 'Valor (m/s²)', required: true, type: 'number' },
-      { key: 'observation', label: 'Observación', required: false, type: 'string' },
+      { key: 't_acel_2m', label: 'T ACEL 2m (s)', required: true, type: 'number' },
+      { key: 'vel_acel_kmh', label: 'VEL ACEL (km/h)', required: false, type: 'number' },
+      { key: 't_desacel_2m', label: 'T DESACEL 2m (s)', required: false, type: 'number' },
+      { key: 'vel_desacel_kmh', label: 'VEL DESACEL (km/h)', required: false, type: 'number' },
+      { key: 't_cod_2m', label: 'T COD 2m (s)', required: false, type: 'number' },
+      { key: 'vel_cod_kmh', label: 'VEL COD (km/h)', required: false, type: 'number' },
+      { key: 't_reacel_1_2m', label: 'T REACEL 1 2m (s)', required: false, type: 'number' },
+      { key: 'vel_reacel_1_kmh', label: 'VEL REACEL 1 (km/h)', required: false, type: 'number' },
+      { key: 't_reacel_2_2m', label: 'T REACEL 2 2m (s)', required: false, type: 'number' },
+      { key: 'vel_reacel_2_kmh', label: 'VEL REACEL 2 (km/h)', required: false, type: 'number' },
+      { key: 'z_score_acel', label: 'Z-SCORE ACEL', required: false, type: 'number' },
     ]
   },
   vo2max: {
@@ -261,6 +283,7 @@ export default function DataImportArea() {
   const [csvData, setCsvData] = useState<any[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [manualDate, setManualDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [players, setPlayers] = useState<any[]>([]);
@@ -308,7 +331,12 @@ export default function DataImportArea() {
 
   const getRowName = useCallback((row: any) => {
     if (!row) return '';
-    const rawName = row[nameHeader || ''] || row['Name'] || row['Jugador'] || row['nombre'] || row['JUGADOR'] || row['athlete_name'] || '';
+    const keys = Object.keys(row || {});
+    const nameKey = nameHeader && keys.includes(nameHeader) ? nameHeader : keys.find(k => {
+      const l = k.toLowerCase();
+      return l === 'name' || l === 'jugador' || l === 'nombre' || l === 'atleta' || l === 'athlete_name' || l.includes('jugador') || l.includes('nombre');
+    });
+    const rawName = nameKey ? row[nameKey] : '';
     return ['gps_totales', 'gps_tareas'].includes(selectedType!) ? extractName(rawName) : rawName;
   }, [nameHeader, selectedType]);
 
@@ -541,15 +569,90 @@ export default function DataImportArea() {
                 setNameHeader(detectedNameHeader || null);
 
                 config.fields.forEach(field => {
-                  const match = results.meta.fields?.find(h => 
-                    h.toLowerCase().includes(field.key.toLowerCase()) || 
-                    h.toLowerCase().includes(field.label.toLowerCase())
-                  );
+                  const normalizeForMatch = (s: string) => {
+                    return s.toLowerCase()
+                      .replace(/[\s\r\n\t_()\-.,;]+/g, '')
+                      .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // remove accents
+                  };
+
+                  const fieldKeyNorm = normalizeForMatch(field.key);
+                  const fieldLabelNorm = normalizeForMatch(field.label);
+
+                  let match = results.meta.fields?.find(h => {
+                    const hNorm = normalizeForMatch(h);
+                    return hNorm.includes(fieldKeyNorm) || 
+                           hNorm.includes(fieldLabelNorm) || 
+                           fieldKeyNorm.includes(hNorm) || 
+                           fieldLabelNorm.includes(hNorm);
+                  });
+
+                  // Extra fallbacks for backward compatibility
+                   if (!match && field.key === 'Peak Vertical Force [N]') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn.includes('imtpfuerza') || hn.includes('peakforce') || hn.includes('peakverticalforce');
+                    });
+                  }
+                  if (!match && field.key === 'Peak Vertical Force / BM [N/kg]') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn.includes('frelativa') || hn.includes('forcebm') || hn.includes('verticalforcebm');
+                    });
+                  }
+                  if (!match && field.key === 'peso') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn.includes('bwkg') || hn.includes('bodyweight') || hn.includes('peso');
+                    });
+                  }
+                  if (!match && field.key === 'bw_kg') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn.includes('bwkg') || hn.includes('bodyweight') || hn.includes('peso');
+                    });
+                  }
+                  if (!match && field.key === 'fecha_test') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn === 'date' || hn === 'fecha' || hn === 'fechatest';
+                    });
+                  }
+                  if (!match && field.key === 'rebound_rsi') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn.includes('reboundrsi') || hn.includes('rsi') || hn.includes('flighttimecontacttime');
+                    });
+                  }
+                  if (!match && field.key === 'rebound_contact_time_ms') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn.includes('contacttime') || hn.includes('tiempocontacto');
+                    });
+                  }
+                  if (!match && field.key === 'rebound_flight_time_ms') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn.includes('flighttime') || hn.includes('tiempovuelo');
+                    });
+                  }
+                  if (!match && field.key === 'take_off_momentum_kg_m_s') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn.includes('takeoffmomentum') || hn.includes('momentum');
+                    });
+                  }
+                  if (!match && field.key === 'observaciones') {
+                    match = results.meta.fields?.find(h => {
+                      const hn = normalizeForMatch(h);
+                      return hn.includes('tags');
+                    });
+                  }
+
                   if (match) newMapping[field.key] = match;
                 });
 
                 // Special logic for name matching
-                const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'cmj', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
+                const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'cmj', 'cmj_rebound', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
                 
                 if (needsNameMatching && detectedNameHeader) {
                   const seenNames = new Set<string>();
@@ -663,9 +766,13 @@ export default function DataImportArea() {
 
           config.fields.forEach(field => {
             const csvHeader = mapping[field.key];
-            if (csvHeader && row[csvHeader] !== undefined && row[csvHeader] !== '') {
-              let val = row[csvHeader];
-              
+            let val = csvHeader ? row[csvHeader] : undefined;
+
+            if (field.type === 'date' && (val === undefined || val === null || val === '')) {
+              val = manualDate;
+            }
+
+            if (val !== undefined && val !== null && val !== '') {
               // Cleanup for Tarea
               if (selectedType === 'gps_tareas' && field.key === 'tarea' && typeof val === 'string' && val.includes(' - ')) {
                 val = val.split(' - ')[0].trim();
@@ -676,16 +783,23 @@ export default function DataImportArea() {
                 val = isNaN(numVal) ? null : numVal;
               }
               if (field.type === 'date') {
-                if (val.includes('/') || val.includes('-')) {
-                  const separator = val.includes('/') ? '/' : '-';
-                  const parts = val.split(separator);
+                const trimmedVal = String(val).trim();
+                if (trimmedVal.includes('/') || trimmedVal.includes('-')) {
+                  const separator = trimmedVal.includes('/') ? '/' : '-';
+                  const parts = trimmedVal.split(separator);
                   if (parts.length === 3) {
-                    const [d, m, y] = parts;
-                    const fullYear = y.length === 2 ? `20${y}` : y;
-                    val = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                    const d = parts[0];
+                    const m = parts[1];
+                    const y = parts[2];
+                    if (d.length === 4) {
+                      val = `${d}-${m.padStart(2, '0')}-${y.padStart(2, '0')}`;
+                    } else {
+                      const fullYear = y.length === 2 ? `20${y}` : y;
+                      val = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                    }
                   }
-                } else if (!isNaN(Number(val)) && Number(val) > 30000) {
-                  val = excelDateToJSDate(Number(val));
+                } else if (!isNaN(Number(trimmedVal)) && Number(trimmedVal) > 30000) {
+                  val = excelDateToJSDate(Number(trimmedVal));
                 }
               }
               item[field.key] = val;
@@ -711,8 +825,31 @@ export default function DataImportArea() {
           }
         }
 
-        if (config.table === 'physical_tests') {
+        if (config.table === 'physical_tests' && selectedType !== 'aceleracion') {
           item.test_type = selectedType.toUpperCase();
+        }
+
+        if (selectedType === 'imtp') {
+          const asymHeader = mapping['imtp_asimetria'] || headers.find(h => {
+            const low = h.toLowerCase();
+            return low.includes('asym') || low.includes('asimetria');
+          });
+          if (asymHeader) {
+            const rawAsym = row[asymHeader];
+            if (rawAsym !== undefined && rawAsym !== null && rawAsym !== '') {
+              const numVal = parseFloat(String(rawAsym).replace(',', '.'));
+              item.imtp_asimetria = isNaN(numVal) ? null : numVal;
+              
+              const strVal = String(rawAsym).toUpperCase();
+              if (strVal.includes('L') || strVal.includes('I')) {
+                item.imtp_debil = 'Izquierda';
+              } else if (strVal.includes('R') || strVal.includes('D')) {
+                item.imtp_debil = 'Derecha';
+              } else {
+                item.imtp_debil = null;
+              }
+            }
+          }
         }
 
         return item;
@@ -737,7 +874,7 @@ export default function DataImportArea() {
         dataToInsert = Array.from(uniqueMap.values());
       }
 
-      if (selectedType === 'imtp' || selectedType === 'cmj') {
+      if (selectedType === 'imtp' || selectedType === 'cmj' || selectedType === 'cmj_rebound') {
         const uniqueMap = new Map<string, any>();
         dataToInsert.forEach(item => {
           const key = `${item.player_id}-${item.fecha_test}`;
@@ -841,6 +978,27 @@ export default function DataImportArea() {
             cleanItem[cc] = item[cc];
           }
         });
+
+        // Omit columns that are known to be missing in the live DB for specific tables
+        if (config.table === 'velocidad_tests') {
+          delete cleanItem.vel_max_kmh;
+        }
+        if (config.table === 'gps_import') {
+          delete cleanItem.jugador;
+        }
+        if (config.table === 'evaluaciones_imtp') {
+          delete cleanItem.jugador;
+          delete cleanItem['Force (Net of BW) at 50ms [N]'];
+          delete cleanItem['Force (Net of BW) at 100ms [N]'];
+          delete cleanItem['Force (Net of BW) at 150ms [N]'];
+          delete cleanItem['Force (Net of BW) at 200ms [N]'];
+        }
+        if (config.table === 'evaluaciones_cmj') {
+          delete cleanItem.jugador;
+        }
+        if (config.table === 'vo2max_tests') {
+          delete cleanItem.jugador;
+        }
 
         return cleanItem;
       });
@@ -986,7 +1144,8 @@ export default function DataImportArea() {
       setResolvedIds({});
     } catch (err: any) {
       console.error("Error importing:", err);
-      setMessage({ type: 'error', text: `Error al importar: ${err.message}` });
+      const errStr = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+      setMessage({ type: 'error', text: `Error al importar: ${errStr}` });
     } finally {
       setImporting(false);
     }
@@ -2013,9 +2172,156 @@ export default function DataImportArea() {
 
           <div className="p-8">
             {message && (
-              <div className={`mb-8 p-4 rounded-2xl border flex items-center gap-4 ${message.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
-                <i className={`fa-solid ${message.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'} text-lg`}></i>
-                <p className="text-xs font-bold">{message.text}</p>
+              <div className="space-y-4 mb-8">
+                <div className={`p-4 rounded-2xl border flex items-center gap-4 ${message.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
+                  <i className={`fa-solid ${message.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'} text-lg`}></i>
+                  <p className="text-xs font-bold">{message.text}</p>
+                </div>
+
+                {message.type === 'error' && (
+                  message.text.includes('cmj_altura_salto_im') || 
+                  message.text.includes('evaluaciones_imtp_salto') || 
+                  message.text.includes('jugador') || 
+                  message.text.includes('trigger') ||
+                  message.text.includes('relation')
+                ) && (
+                  <div className="p-6 rounded-3xl border border-rose-100 bg-rose-50/40 space-y-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                        <i className="fa-solid fa-triangle-exclamation"></i>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1">Guía de Solución: Actualización de Supabase</h4>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Debes aplicar los cambios estructurales en tu panel de Supabase SQL Editor.</p>
+                      </div>
+                    </div>
+                    
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Este error de base de datos ocurre porque las tablas consolidadas o disparadores (triggers) en tu proyecto de Supabase no se han actualizado para sincronizar el nuevo formato de columnas. 
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Solución de CMJ */}
+                      <div className="p-4 bg-white rounded-2xl border border-slate-100 space-y-3 shadow-sm">
+                        <div className="flex items-center gap-2 text-rose-600">
+                          <i className="fa-solid fa-person-running"></i>
+                          <h5 className="text-[10px] font-black uppercase tracking-wider">Solución para CMJ (SALTOS)</h5>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-normal font-medium">Asegura las columnas <code className="bg-slate-100 px-1 py-0.5 rounded font-bold">cmj_altura_salto_im</code>, etc. y actualiza el trigger.</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => {
+                              const sql = `-- Asegurar que la tabla unificada "evaluaciones_imtp_salto" tenga todas las columnas del formato moderno de CMJ
+ALTER TABLE public.evaluaciones_imtp_salto ADD COLUMN IF NOT EXISTS cmj_altura_salto_im numeric;
+ALTER TABLE public.evaluaciones_imtp_salto ADD COLUMN IF NOT EXISTS cmj_salto_tv numeric;
+ALTER TABLE public.evaluaciones_imtp_salto ADD COLUMN IF NOT EXISTS cmj_asimetria_aterrizaje numeric;
+ALTER TABLE public.evaluaciones_imtp_salto ADD COLUMN IF NOT EXISTS avk_indice_uso_brazos_tv numeric;
+ALTER TABLE public.evaluaciones_imtp_salto ADD COLUMN IF NOT EXISTS avk_indice_brazos_im numeric;
+
+-- Crear o reemplazar la función de sincronización usando las nuevas columnas de CMJ
+CREATE OR REPLACE FUNCTION public.sync_cmj_to_salto()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_jugador text;
+BEGIN
+  SELECT COALESCE(nombre, '') || ' ' || COALESCE(apellido1, '') INTO v_jugador FROM public.players WHERE player_id = NEW.player_id;
+  IF v_jugador IS NULL OR trim(v_jugador) = '' THEN
+    v_jugador := 'Jugador ID ' || NEW.player_id;
+  END IF;
+
+  INSERT INTO public.evaluaciones_imtp_salto (
+    player_id, jugador, fecha_test, peso, fuerza_cmj, cmj_rsi_mod, cmj_altura_salto_im, cmj_peak_pot_relativa, observaciones
+  ) VALUES (
+    NEW.player_id, v_jugador, NEW.fecha_test, NEW.bw_kg, NEW.concentric_peak_force_n, NEW.rsi_modified_m_s, NEW.jump_height_impmom_cm, NEW.peak_power_bm_w_kg, NEW.observaciones
+  ) ON CONFLICT (player_id, fecha_test) DO UPDATE SET
+    jugador = EXCLUDED.jugador,
+    peso = COALESCE(EXCLUDED.peso, evaluaciones_imtp_salto.peso),
+    fuerza_cmj = EXCLUDED.fuerza_cmj,
+    cmj_rsi_mod = EXCLUDED.cmj_rsi_mod,
+    cmj_altura_salto_im = EXCLUDED.cmj_altura_salto_im,
+    cmj_peak_pot_relativa = EXCLUDED.cmj_peak_pot_relativa,
+    observaciones = COALESCE(EXCLUDED.observaciones, evaluaciones_imtp_salto.observaciones);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;`;
+                              navigator.clipboard.writeText(sql);
+                              alert('¡SQL de CMJ copiado! Pégalo en el SQL Editor de Supabase y haz clic en Run.');
+                            }}
+                            className="bg-slate-900 text-white hover:bg-slate-800 text-[9px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                          >
+                            <i className="fa-solid fa-copy mr-1"></i> Copiar SQL CMJ
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Solución de IMTP */}
+                      <div className="p-4 bg-white rounded-2xl border border-slate-100 space-y-3 shadow-sm">
+                        <div className="flex items-center gap-2 text-rose-600">
+                          <i className="fa-solid fa-dumbbell"></i>
+                          <h5 className="text-[10px] font-black uppercase tracking-wider">Solución para IMTP (FUERZA)</h5>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-normal font-medium">Soluciona restricción de <code className="bg-slate-100 px-1 py-0.5 rounded font-bold">jugador</code> NOT NULL y columnas de VALD.</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => {
+                              const sql = `-- Asegurar que la columna "observaciones" exista en la tabla consolidada
+ALTER TABLE public.evaluaciones_imtp_salto ADD COLUMN IF NOT EXISTS observaciones text;
+
+-- Crear o reemplazar la función de sincronización usando las nuevas columnas VALD
+CREATE OR REPLACE FUNCTION public.sync_imtp_vald_to_salto()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_jugador text;
+BEGIN
+  SELECT COALESCE(nombre, '') || ' ' || COALESCE(apellido1, '') INTO v_jugador FROM public.players WHERE player_id = NEW.player_id;
+  IF v_jugador IS NULL OR trim(v_jugador) = '' THEN
+    v_jugador := 'Jugador ID ' || NEW.player_id;
+  END IF;
+
+  INSERT INTO public.evaluaciones_imtp_salto (
+    player_id, jugador, fecha_test, peso, imtp_fuerza_n, imtp_f_relativa_n_kg, imtp_asimetria, imtp_debil, observaciones
+  ) VALUES (
+    NEW.player_id, v_jugador, NEW.fecha_test, NEW.peso, NEW."Peak Vertical Force [N]", NEW."Peak Vertical Force / BM [N/kg]", NEW.imtp_asimetria, NEW.imtp_debil, NEW.observaciones
+  ) ON CONFLICT (player_id, fecha_test) DO UPDATE SET
+    jugador = EXCLUDED.jugador,
+    peso = EXCLUDED.peso,
+    imtp_fuerza_n = EXCLUDED.imtp_fuerza_n,
+    imtp_f_relativa_n_kg = EXCLUDED.imtp_f_relativa_n_kg,
+    imtp_asimetria = EXCLUDED.imtp_asimetria,
+    imtp_debil = EXCLUDED.imtp_debil,
+    observaciones = EXCLUDED.observaciones;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;`;
+                              navigator.clipboard.writeText(sql);
+                              alert('¡SQL de IMTP copiado! Pégalo en el SQL Editor de Supabase y haz clic en Run.');
+                            }}
+                            className="bg-slate-900 text-white hover:bg-slate-800 text-[9px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                          >
+                            <i className="fa-solid fa-copy mr-1"></i> Copiar SQL IMTP
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-2">
+                      <a 
+                        href="/fix_cmj_trigger.sql" 
+                        download="fix_cmj_trigger.sql"
+                        className="bg-[#CF1B2B] text-white hover:bg-red-700 text-[10px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all flex items-center gap-2 shadow-sm"
+                      >
+                        <i className="fa-solid fa-download"></i> Descargar Script CMJ Completo
+                      </a>
+                      <a 
+                        href="/fix_imtp_trigger.sql" 
+                        download="fix_imtp_trigger.sql"
+                        className="bg-[#CF1B2B] text-white hover:bg-red-700 text-[10px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all flex items-center gap-2 shadow-sm"
+                      >
+                        <i className="fa-solid fa-download"></i> Descargar Script IMTP Completo
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2047,6 +2353,23 @@ export default function DataImportArea() {
                     <div className="w-1.5 h-6 bg-red-600 rounded-full"></div>
                     <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Mapeo de Columnas</h4>
                   </div>
+                  {IMPORT_CONFIGS[selectedType].fields.some(f => f.type === 'date') && (
+                    <div className="p-4 bg-red-50/30 rounded-2xl border border-red-100/50 flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <i className="fa-solid fa-calendar-day text-red-600 text-sm"></i>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-900 uppercase tracking-tight">Fecha de Registro / Test (Fallback)</p>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Se usará si el CSV no tiene o no se mapea una columna de fecha</p>
+                        </div>
+                      </div>
+                      <input
+                        type="date"
+                        value={manualDate}
+                        onChange={(e) => setManualDate(e.target.value)}
+                        className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-bold text-slate-900 outline-none focus:border-red-600 transition-all min-w-[200px]"
+                      />
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 gap-4">
                     {IMPORT_CONFIGS[selectedType].fields.map((field) => (
                       <div key={field.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">

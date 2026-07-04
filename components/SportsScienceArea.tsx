@@ -6,6 +6,7 @@ import { getChartSummary, getAthleteFootprintSummary, askAthleteAiAssistant } fr
 import { motion, AnimatePresence } from 'motion/react';
 import ClubBadge from './ClubBadge';
 import Markdown from 'react-markdown';
+import { ALL_METRIC_CONFIGS } from './FisicaResumenGrupal';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Cell, BarChart, Bar, LineChart, Line, Legend,
@@ -37,6 +38,8 @@ interface IMTPData {
   peso?: number;
   imtp_fuerza_n: number;
   imtp_f_relativa_n_kg?: number;
+  imtp_force_50ms?: number;
+  imtp_rfd_100ms?: number;
   imtp_asimetria?: number;
   imtp_debil?: string;
   fuerza_cmj?: number;
@@ -63,6 +66,31 @@ interface IMTPData {
   slcmj_diferencia_pct_tv?: number;
   deficit_bilateral?: number;
   altura_x_rsi_mod?: number;
+  concentric_peak_force_n?: number;
+  rsi_modified_m_s?: number;
+  jump_height_impmom_cm?: number;
+  peak_power_bm_w_kg?: number;
+  peak_power_w?: number;
+  observaciones?: string;
+  countermovement_depth_cm?: number;
+  concentric_duration_ms?: number;
+  concentric_impulse_ns?: number;
+  take_off_momentum_kg_m_s?: number;
+}
+
+interface CMJReboundData {
+  id?: string;
+  created_at?: string;
+  player_id: number;
+  jugador?: string;
+  fecha_test: string;
+  bw_kg?: number;
+  reps?: number;
+  rebound_rsi?: number;
+  rebound_contact_time_ms?: number;
+  rebound_flight_time_ms?: number;
+  take_off_momentum_kg_m_s?: number;
+  observaciones?: string;
 }
 
 interface SpeedTestData {
@@ -173,7 +201,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   const [highlightPlayerId, setHighlightPlayerId] = useState<number | null>(null);
 
   const [box1Metric, setBox1Metric] = useState<string>('imtp_fuerza_n');
-  const [box2Metric, setBox2Metric] = useState<string>('imtp_f_relativa_n_kg');
+  const [box2Metric, setBox2Metric] = useState<string>('concentric_peak_force_n');
   const [box3Metric, setBox3Metric] = useState<string>('tiempo_total');
   const [box4Metric, setBox4Metric] = useState<string>('vo2_max');
 
@@ -186,6 +214,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   const [gpsData, setGpsData] = useState<GPSData[]>([]);
   const [medicalReports, setMedicalReports] = useState<MedicalReport[]>([]);
   const [internalLoads, setInternalLoads] = useState<InternalLoadData[]>([]);
+  const [test505Data, setTest505Data] = useState<any[]>([]);
+  const [cmjReboundData, setCmjReboundData] = useState<CMJReboundData[]>([]);
   const [loading, setLoading] = useState(false);
   const [clubFilterMode, setClubFilterMode] = useState<'all' | 'club'>('all');
 
@@ -211,7 +241,59 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
       }
 
       if (data && data.length > 0) {
-        allData = [...allData, ...data];
+        let processedData = data;
+        if (tableName === 'evaluaciones_imtp') {
+          processedData = data.map((item: any) => {
+            const newItem = { ...item };
+            if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
+              newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
+            } else if (newItem.imtp_fuerza_n !== undefined && newItem.imtp_fuerza_n !== null) {
+              newItem['Peak Vertical Force [N]'] = newItem.imtp_fuerza_n;
+            }
+            if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
+              newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
+            } else if (newItem.imtp_f_relativa_n_kg !== undefined && newItem.imtp_f_relativa_n_kg !== null) {
+              newItem['Peak Vertical Force / BM [N/kg]'] = newItem.imtp_f_relativa_n_kg;
+            }
+            if (newItem['Force (Net of BW) at 50ms [N]'] !== undefined && newItem['Force (Net of BW) at 50ms [N]'] !== null) {
+              newItem.imtp_force_50ms = Number(newItem['Force (Net of BW) at 50ms [N]']);
+            } else if (newItem.imtp_force_50ms !== undefined && newItem.imtp_force_50ms !== null) {
+              newItem['Force (Net of BW) at 50ms [N]'] = newItem.imtp_force_50ms;
+            }
+            if (newItem['RFD - 100ms [N/s]'] !== undefined && newItem['RFD - 100ms [N/s]'] !== null) {
+              newItem.imtp_rfd_100ms = Number(newItem['RFD - 100ms [N/s]']);
+            } else if (newItem.imtp_rfd_100ms !== undefined && newItem.imtp_rfd_100ms !== null) {
+              newItem['RFD - 100ms [N/s]'] = newItem.imtp_rfd_100ms;
+            }
+            return newItem;
+          });
+        } else if (tableName === 'evaluaciones_cmj') {
+          processedData = data.map((item: any) => {
+            const newItem = { ...item };
+            if (newItem.concentric_peak_force_n !== undefined && newItem.concentric_peak_force_n !== null) {
+              newItem.fuerza_cmj = Number(newItem.concentric_peak_force_n);
+            } else if (newItem.fuerza_cmj !== undefined && newItem.fuerza_cmj !== null) {
+              newItem.concentric_peak_force_n = Number(newItem.fuerza_cmj);
+            }
+            if (newItem.rsi_modified_m_s !== undefined && newItem.rsi_modified_m_s !== null) {
+              newItem.cmj_rsi_mod = Number(newItem.rsi_modified_m_s);
+            } else if (newItem.cmj_rsi_mod !== undefined && newItem.cmj_rsi_mod !== null) {
+              newItem.rsi_modified_m_s = Number(newItem.cmj_rsi_mod);
+            }
+            if (newItem.jump_height_impmom_cm !== undefined && newItem.jump_height_impmom_cm !== null) {
+              newItem.cmj_altura_salto_im = Number(newItem.jump_height_impmom_cm);
+            } else if (newItem.cmj_altura_salto_im !== undefined && newItem.cmj_altura_salto_im !== null) {
+              newItem.jump_height_impmom_cm = Number(newItem.cmj_altura_salto_im);
+            }
+            if (newItem.peak_power_bm_w_kg !== undefined && newItem.peak_power_bm_w_kg !== null) {
+              newItem.cmj_peak_pot_relativa = Number(newItem.peak_power_bm_w_kg);
+            } else if (newItem.cmj_peak_pot_relativa !== undefined && newItem.cmj_peak_pot_relativa !== null) {
+              newItem.peak_power_bm_w_kg = Number(newItem.cmj_peak_pot_relativa);
+            }
+            return newItem;
+          });
+        }
+        allData = [...allData, ...processedData];
         if (data.length < pageSize) {
           keepFetching = false;
         } else {
@@ -237,7 +319,9 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         injData,
         gData,
         mData,
-        lData
+        lData,
+        t505Res,
+        reboundRes
       ] = await Promise.all([
         fetchFullTable('players', 'player_id, nombre, apellido1, apellido2, anio, id_club, posicion'),
         fetchFullTable('evaluaciones_imtp'),
@@ -248,7 +332,9 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         fetchFullTable('lesionados'),
         fetchFullTable('gps_import'),
         fetchFullTable('medical_daily_reports'),
-        fetchFullTable('internal_load')
+        fetchFullTable('internal_load'),
+        fetchFullTable('test_505'),
+        fetchFullTable('evaluaciones_cmj_rebound')
       ]);
 
       if (pData) {
@@ -297,6 +383,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
       if (gData) setGpsData(gData);
       if (mData) setMedicalReports(mData);
       if (lData) setInternalLoads(lData);
+      if (t505Res) setTest505Data(t505Res);
+      if (reboundRes) setCmjReboundData(reboundRes);
     } catch (err) {
       console.error("Error fetching sports science data:", err);
     } finally {
@@ -378,6 +466,21 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   const selectedPlayer = useMemo(() => 
     anonymizedPlayers.find(p => p.player_id === selectedPlayerId), 
   [anonymizedPlayers, selectedPlayerId]);
+
+  const selectablePlayers = useMemo(() => {
+    return filteredByClubScopePlayers.filter(p => {
+      const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
+      const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
+      return yearMatch && posMatch;
+    });
+  }, [filteredByClubScopePlayers, selectedAnios, selectedPosiciones]);
+
+  useEffect(() => {
+    if (selectedPlayerId !== null && !selectablePlayers.some(p => p.player_id === selectedPlayerId)) {
+      setSelectedPlayerId(null);
+    }
+  }, [selectedPlayerId, selectablePlayers]);
 
   return (
     <div className="space-y-8 pb-20 animate-in fade-in duration-500">
@@ -597,23 +700,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
               className="bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-red-500"
             >
               <option value="">Seleccionar Atleta</option>
-              {anonymizedPlayers
-                .filter(p => {
-                  const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
-                  const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
-                  const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
-                  
-                  if (userRole === 'club') {
-                    if (userClubId) {
-                      return yearMatch && posMatch && p.id_club === userClubId;
-                    } else if (userClub) {
-                      const uClubNorm = normalizeClub(userClub);
-                      const pClub = p.club || p.club_name || '';
-                      return yearMatch && posMatch && pClub && normalizeClub(pClub) === uClubNorm;
-                    }
-                  }
-                  return yearMatch && posMatch;
-                })
+              {selectablePlayers
+                .sort((a, b) => `${a.nombre} ${a.apellido1}`.localeCompare(`${b.nombre} ${b.apellido1}`))
                 .map(p => (
                   <option key={p.player_id} value={p.player_id}>{p.nombre} {p.apellido1} {p.apellido2 || ''}</option>
                 ))}
@@ -657,6 +745,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             speed={speedData.filter(d => d.player_id === selectedPlayerId)}
             antropometria={antropometria.filter(d => d.player_id === selectedPlayerId)}
             vo2max={vo2maxData.filter(d => d.player_id === selectedPlayerId)}
+            test505={test505Data.filter(d => d.player_id === selectedPlayerId)}
             medicalReports={medicalReports.filter(d => d.player_id === selectedPlayerId)}
             internalLoads={internalLoads.filter(d => d.player_id === selectedPlayerId)}
             gps={gpsData.filter(d => d.player_id === selectedPlayerId)}
@@ -664,8 +753,11 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             allSpeed={speedData}
             allAntro={antropometria}
             allVo2={vo2maxData}
+            allTest505={test505Data}
             allPlayers={anonymizedPlayers}
             clubs={clubs}
+            cmjRebound={cmjReboundData.filter(d => d.player_id === selectedPlayerId)}
+            allCmjRebound={cmjReboundData}
           />
         )}
         {activeTab === 'individual' && (
@@ -675,6 +767,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             speed={speedData.filter(d => d.player_id === selectedPlayerId)}
             antropometria={antropometria.filter(d => d.player_id === selectedPlayerId)}
             vo2max={vo2maxData.filter(d => d.player_id === selectedPlayerId)}
+            test505={test505Data.filter(d => d.player_id === selectedPlayerId)}
+            cmjRebound={cmjReboundData.filter(d => d.player_id === selectedPlayerId)}
             clubs={clubs}
           />
         )}
@@ -711,6 +805,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             antropometria={antropometria}
             selectedAnios={selectedAnios}
             selectedPosiciones={selectedPosiciones}
+            cmjReboundData={cmjReboundData}
+            test505Data={test505Data}
           />
         )}
         {activeTab === 'insights' && userRole !== 'club' && (
@@ -738,6 +834,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             speed={speedData} 
             vo2max={vo2maxData} 
             antropometria={antropometria}
+            test505={test505Data}
+            cmjRebound={cmjReboundData}
             players={filteredByClubScopePlayers} 
           />
         )}
@@ -748,6 +846,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             imtpData={imtpData}
             speedData={speedData}
             vo2maxData={vo2maxData}
+            cmjReboundData={cmjReboundData}
+            test505Data={test505Data}
             selectedAnios={selectedAnios}
             selectedPosiciones={selectedPosiciones}
             selectedClubId={selectedClubId}
@@ -778,31 +878,58 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
 // --- SUB-COMPONENTES ---
 
 const METRICS_OPTIONS = [
+  // IMTP (Fuerza Máxima)
   { label: 'IMTP Fuerza (N)', key: 'imtp_fuerza_n', table: 'imtp' },
   { label: 'IMTP F. Relativa', key: 'imtp_f_relativa_n_kg', table: 'imtp' },
+  { label: 'IMTP Fuerza 50ms (N)', key: 'imtp_force_50ms', table: 'imtp' },
+  { label: 'IMTP Fuerza 100ms (N)', key: 'imtp_force_100ms', table: 'imtp' },
+  { label: 'IMTP Fuerza 150ms (N)', key: 'imtp_force_150ms', table: 'imtp' },
+  { label: 'IMTP Fuerza 200ms (N)', key: 'imtp_force_200ms', table: 'imtp' },
+  { label: 'IMTP RFD 100ms (N/s)', key: 'imtp_rfd_100ms', table: 'imtp' },
+  { label: 'IMTP RFD 150ms (N/s)', key: 'imtp_rfd_150ms', table: 'imtp' },
+  { label: 'IMTP RFD 200ms (N/s)', key: 'imtp_rfd_200ms', table: 'imtp' },
   { label: 'IMTP Asimetría', key: 'imtp_asimetria', table: 'imtp' },
-  { label: 'DSI Valor', key: 'dsi_valor', table: 'imtp' },
+  { label: 'IMTP Débil', key: 'imtp_debil', table: 'imtp' },
+  { label: 'Peso (IMTP)', key: 'peso', table: 'imtp' },
+
+  // CMJ (Saltos)
   { label: 'Fuerza CMJ', key: 'fuerza_cmj', table: 'imtp' },
+  { label: 'CMJ Fuerza Pico Conc (N)', key: 'concentric_peak_force_n', table: 'imtp' },
   { label: 'CMJ RSI Mod', key: 'cmj_rsi_mod', table: 'imtp' },
+  { label: 'CMJ RSI Modificado', key: 'rsi_modified_m_s', table: 'imtp' },
   { label: 'CMJ Altura', key: 'cmj_altura_salto_im', table: 'imtp' },
-  { label: 'CMJ Salto TV', key: 'cmj_salto_tv', table: 'imtp' },
+  { label: 'CMJ Altura Salto (cm)', key: 'jump_height_impmom_cm', table: 'imtp' },
   { label: 'CMJ Peak Pot. Rel.', key: 'cmj_peak_pot_relativa', table: 'imtp' },
-  { label: 'CMJ Asim. Aterrizaje', key: 'cmj_asimetria_aterrizaje', table: 'imtp' },
-  { label: 'Landing (N)', key: 'landing_n', table: 'imtp' },
-  { label: 'Landing Relativo', key: 'landing_relativo', table: 'imtp' },
-  { label: 'AVK Peak Pot. Rel.', key: 'avk_peak_pot_relativa', table: 'imtp' },
-  { label: 'AVK Indice Brazos TV', key: 'avk_indice_uso_brazos_tv', table: 'imtp' },
-  { label: 'AVK X TV', key: 'avk_x_tv', table: 'imtp' },
-  { label: 'AVK X IM', key: 'avk_x_im', table: 'imtp' },
-  { label: 'AVK Indice Brazos IM', key: 'avk_indice_uso_brazos_im', table: 'imtp' },
-  { label: 'SLCMJ Izq Altura IM', key: 'slcmj_izq_altura_im', table: 'imtp' },
-  { label: 'SLCMJ Izq Altura TV', key: 'slcmj_izq_altura_tv', table: 'imtp' },
-  { label: 'SLCMJ Der Altura IM', key: 'slcmj_der_altura_im', table: 'imtp' },
-  { label: 'SLCMJ Der Altura TV', key: 'slcmj_der_altura_tv', table: 'imtp' },
-  { label: 'SLCMJ Dif % IM', key: 'slcmj_diferencia_pct_im', table: 'imtp' },
-  { label: 'SLCMJ Dif % TV', key: 'slcmj_diferencia_pct_tv', table: 'imtp' },
-  { label: 'Déficit Bilateral', key: 'deficit_bilateral', table: 'imtp' },
-  { label: 'Altura x RSI Mod', key: 'altura_x_rsi_mod', table: 'imtp' },
+  { label: 'CMJ Pot. Pico Rel (W/kg)', key: 'peak_power_bm_w_kg', table: 'imtp' },
+  { label: 'CMJ Pot. Pico Abs (W)', key: 'peak_power_w', table: 'imtp' },
+  { label: 'CMJ Profundidad (cm)', key: 'countermovement_depth_cm', table: 'imtp' },
+  { label: 'CMJ Duración Conc (ms)', key: 'concentric_duration_ms', table: 'imtp' },
+  { label: 'CMJ Impulso Conc (Ns)', key: 'concentric_impulse_ns', table: 'imtp' },
+  { label: 'CMJ Momento Despegue', key: 'take_off_momentum_kg_m_s', table: 'imtp' },
+  { label: 'Peso (CMJ)', key: 'bw_kg', table: 'imtp' },
+
+  // CMJ Rebound
+  { label: 'CMJ Rebound RSI', key: 'rebound_rsi', table: 'rebound' },
+  { label: 'T. Contacto Rebound (ms)', key: 'rebound_contact_time_ms', table: 'rebound' },
+  { label: 'T. Vuelo Rebound (ms)', key: 'rebound_flight_time_ms', table: 'rebound' },
+  { label: 'Peso Rebound (kg)', key: 'bw_kg', table: 'rebound' },
+  { label: 'Reps Rebound', key: 'reps', table: 'rebound' },
+  { label: 'Momento Despegue Rebound', key: 'take_off_momentum_kg_m_s', table: 'rebound' },
+
+  // Agilidad (Test 505)
+  { label: 'T. Acel 2m', key: 't_acel_2m', table: 'test505' },
+  { label: 'Vel Acel (km/h)', key: 'vel_acel_kmh', table: 'test505' },
+  { label: 'T. Desacel 2m', key: 't_desacel_2m', table: 'test505' },
+  { label: 'Vel Desacel (km/h)', key: 'vel_desacel_kmh', table: 'test505' },
+  { label: 'T. COD 2m', key: 't_cod_2m', table: 'test505' },
+  { label: 'Vel COD (km/h)', key: 'vel_cod_kmh', table: 'test505' },
+  { label: 'T. Reacel 1.2m', key: 't_reacel_1_2m', table: 'test505' },
+  { label: 'Vel Reacel 1 (km/h)', key: 'vel_reacel_1_kmh', table: 'test505' },
+  { label: 'T. Reacel 2.2m', key: 't_reacel_2_2m', table: 'test505' },
+  { label: 'Vel Reacel 2 (km/h)', key: 'vel_reacel_2_kmh', table: 'test505' },
+  { label: 'Z-Score Acel', key: 'z_score_acel', table: 'test505' },
+
+  // Velocidad (Sprint)
   { label: 'Tiempo 10m', key: 'tiempo_10m', table: 'speed' },
   { label: 'Velocidad 10m', key: 'vel_10m', table: 'speed' },
   { label: 'Tiempo 10-20m', key: 'tiempo_10_20m', table: 'speed' },
@@ -810,6 +937,8 @@ const METRICS_OPTIONS = [
   { label: 'Tiempo 20-30m', key: 'tiempo_20_30m', table: 'speed' },
   { label: 'Velocidad 20-30m', key: 'vel_20_30m', table: 'speed' },
   { label: 'Tiempo Total', key: 'tiempo_total', table: 'speed' },
+
+  // VO2 Max
   { label: 'VO2 Max', key: 'vo2_max', table: 'vo2max' },
   { label: 'VMA (km/h)', key: 'vam', table: 'vo2max' },
   { label: 'FC Máxima', key: 'fc_max', table: 'vo2max' },
@@ -823,6 +952,8 @@ const METRICS_OPTIONS = [
   { label: 'VT2 Vel', key: 'vt2_vel', table: 'vo2max' },
   { label: 'VT2 %', key: 'vt2_pct', table: 'vo2max' },
   { label: 'VT2 FC', key: 'vt2_fc', table: 'vo2max' },
+
+  // Antropometria
   { label: '% Grasa', key: 'masa_adiposa_pct', table: 'antropometria' },
   { label: 'Peso (kg)', key: 'masa_corporal_kg', table: 'antropometria' },
   { label: 'Talla (cm)', key: 'talla_cm', table: 'antropometria' },
@@ -1184,14 +1315,16 @@ const getLatestCompositeAntro = (records: any[], playerId: number): any => {
 };
 
 const AthleteHuella = ({ 
-  player, imtp, speed, antropometria, vo2max, medicalReports, internalLoads, gps,
-  allImtp, allSpeed, allAntro, allVo2, allPlayers, clubs 
+  player, imtp, speed, antropometria, vo2max, test505 = [], medicalReports, internalLoads, gps,
+  allImtp, allSpeed, allAntro, allVo2, allTest505 = [], allPlayers, clubs,
+  cmjRebound = [], allCmjRebound = []
 }: { 
   player?: PlayerData, 
   imtp: IMTPData[], 
   speed: SpeedTestData[], 
   antropometria: AntropometriaData[],
   vo2max: VO2MaxData[],
+  test505?: any[],
   medicalReports: MedicalReport[],
   internalLoads: InternalLoadData[],
   gps: GPSData[],
@@ -1199,8 +1332,11 @@ const AthleteHuella = ({
   allSpeed: SpeedTestData[],
   allAntro: AntropometriaData[],
   allVo2: VO2MaxData[],
+  allTest505?: any[],
   allPlayers: PlayerData[],
-  clubs: any[]
+  clubs: any[],
+  cmjRebound?: CMJReboundData[],
+  allCmjRebound?: CMJReboundData[]
 }) => {
   const [comparisonTarget, setComparisonTarget] = useState<'category' | '2010plus'>('category');
   const [excludeOutliers, setExcludeOutliers] = useState(false);
@@ -1307,6 +1443,7 @@ const AthleteHuella = ({
     count += getCohortOutliersCount(allSpeed, 'tiempo_total', true);
     count += getCohortOutliersCount(allImtp, 'cmj_rsi_mod');
     count += getCohortOutliersCount(allVo2, 'vo2_max');
+    count += getCohortOutliersCount(allCmjRebound, 'rebound_rsi');
     count += getCohortOutliersCount(processedAllAntro, 'masa_muscular_pct');
     count += getCohortOutliersCount(processedAllAntro, 'masa_muscular_kg');
     count += getCohortOutliersCount(processedAllAntro, 'masa_adiposa_pct', true);
@@ -1314,7 +1451,7 @@ const AthleteHuella = ({
     count += getCohortOutliersCount(processedAllAntro, 'sum_pliegues_6_mm', true);
     count += getCohortOutliersCount(processedAllAntro, 'indice_imo');
     return count;
-  }, [activeComparisonPlayerIds, allImtp, allSpeed, allVo2, processedAllAntro]);
+  }, [activeComparisonPlayerIds, allImtp, allSpeed, allVo2, allCmjRebound, processedAllAntro]);
 
 
 
@@ -1366,6 +1503,15 @@ const AthleteHuella = ({
     ? Math.max(...imtp.map(d => Number(d.cmj_rsi_mod)).filter(v => !isNaN(v) && v > 0))
     : 0;
   const bestCmjRsi = bestCmjRsiVal !== -Infinity && bestCmjRsiVal > 0 ? bestCmjRsiVal : 0;
+
+  const latestCmjRebound = cmjRebound && cmjRebound.length > 0
+    ? [...cmjRebound].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0]
+    : null;
+
+  const bestReboundRsiVal = cmjRebound && cmjRebound.length > 0
+    ? Math.max(...cmjRebound.map(d => Number(d.rebound_rsi)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestReboundRsi = bestReboundRsiVal !== -Infinity && bestReboundRsiVal > 0 ? bestReboundRsiVal : 0;
 
   const getAvg = (data: any[], key: string) => {
     let targetPlayerIds = activeComparisonPlayerIds;
@@ -1422,6 +1568,7 @@ const AthleteHuella = ({
   const avgImtpRelativo = getAvg(allImtp, 'imtp_f_relativa_n_kg');
   const avgSpeedTime = getAvg(allSpeed, 'tiempo_total');
   const avgCmjRsi = getAvg(allImtp, 'cmj_rsi_mod');
+  const avgReboundRsi = getAvg(allCmjRebound, 'rebound_rsi');
 
   const latestMasaMuscular = (latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct)))
     ? Number(latestAntro.masa_muscular_pct)
@@ -1612,25 +1759,121 @@ const AthleteHuella = ({
   const outlierSumPliegues6 = checkOutlier(valSumPliegues6, processedAllAntro, 'sum_pliegues_6_mm', true);
   const outlierIndiceImo = checkOutlier(valIndiceImo, processedAllAntro, 'indice_imo');
 
-  const radarData = [
-    { subject: 'Potencia', A: (bestImtpFuerza > 0) ? bestImtpFuerza : ((latestImtp?.imtp_fuerza_n != null && !isNaN(Number(latestImtp.imtp_fuerza_n))) ? Number(latestImtp.imtp_fuerza_n) : 0), B: avgImtpFuerza, fullMark: 5000 },
-    { subject: 'Velocidad', A: (bestSpeed > 0) ? bestSpeed : ((latestSpeed?.vel_10m != null && !isNaN(Number(latestSpeed.vel_10m))) ? Number(latestSpeed.vel_10m) : 0), B: avgSpeed, fullMark: 10 },
-    { subject: 'Resistencia', A: (bestVo2 > 0) ? bestVo2 : ((latestVo2?.vo2_max != null && !isNaN(Number(latestVo2.vo2_max))) ? Number(latestVo2.vo2_max) : 0), B: avgVo2, fullMark: 80 },
-    { subject: 'Masa Musc.', A: (latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct))) ? Number(latestAntro.masa_muscular_pct) : 0, B: getAvg(processedAllAntro, 'masa_muscular_pct'), fullMark: 60 },
-    { subject: 'Masa Grasa', A: (latestAntro?.masa_adiposa_pct != null && !isNaN(Number(latestAntro.masa_adiposa_pct))) ? 100 - Number(latestAntro.masa_adiposa_pct) : 0, B: 100 - getAvg(processedAllAntro, 'masa_adiposa_pct'), fullMark: 100 },
-  ];
+  const getGaugeData = (
+    metricKey: string,
+    dataList: any[],
+    lowerIsBetter: boolean = false,
+    title: string,
+    unit: string,
+    color: string,
+    fillColor: string,
+    fallbackMax: number = 100
+  ) => {
+    const values = (dataList || [])
+      .filter(d => Number(d.player_id) === Number(player?.player_id) && d[metricKey] != null && d[metricKey] !== '' && !isNaN(Number(d[metricKey])))
+      .map(d => Number(d[metricKey]));
+    
+    let bestValue = 0;
+    if (values.length > 0) {
+      bestValue = lowerIsBetter ? Math.min(...values) : Math.max(...values);
+    }
+    
+    const average = getAvg(dataList, metricKey);
+    const globalMax = getGlobalMax(dataList, metricKey);
+    const maxValue = Math.max(bestValue, average, globalMax, fallbackMax) * 1.1;
+    
+    const percentile = calculatePercentile(bestValue, dataList, metricKey, lowerIsBetter);
+    const outlier = checkOutlier(bestValue, dataList, metricKey, lowerIsBetter);
+    
+    return {
+      value: bestValue,
+      average,
+      maxValue,
+      title,
+      unit,
+      color,
+      fillColor,
+      lowerIsBetter,
+      percentile,
+      outlier: outlier as 'high' | 'low' | undefined
+    };
+  };
 
-  const normalizedRadarData = radarData.map(d => ({
-    subject: d.subject,
-    A: (d.A / d.fullMark) * 100,
-    B: (d.B / d.fullMark) * 100,
-  }));
+  const getTScore = (
+    playerValue: number,
+    data: any[],
+    key: string,
+    lowerIsBetter: boolean = false
+  ) => {
+    if (isNaN(playerValue) || playerValue <= 0) return 50;
+
+    let targetPlayerIds = activeComparisonPlayerIds;
+    let values = data
+      .filter(d => targetPlayerIds.includes(d.player_id) && d[key] != null && !isNaN(Number(d[key])))
+      .map(d => Number(d[key]));
+
+    if (values.length <= 1) {
+      values = data
+        .filter(d => d[key] != null && !isNaN(Number(d[key])))
+        .map(d => Number(d[key]));
+    }
+
+    if (excludeOutliers && values.length >= 4) {
+      const sorted = [...values].sort((a, b) => a - b);
+      const getQuantile = (q: number) => {
+        const pos = (sorted.length - 1) * q;
+        const base = Math.floor(pos);
+        const rest = pos - base;
+        return sorted[base + 1] !== undefined
+          ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+          : sorted[base];
+      };
+      const q1 = getQuantile(0.25);
+      const q3 = getQuantile(0.75);
+      const iqr = q3 - q1;
+      const low = q1 - 1.5 * iqr;
+      const high = q3 + 1.5 * iqr;
+      values = values.filter(v => v >= low && v <= high);
+    }
+
+    if (values.length === 0) return 50;
+
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+    const sd = Math.sqrt(variance);
+
+    if (sd === 0) return 50;
+
+    let z = (playerValue - mean) / sd;
+    if (lowerIsBetter) {
+      z = (mean - playerValue) / sd;
+    }
+
+    const t = 50 + 10 * z;
+    return Math.min(95, Math.max(5, t)); // Clip to standard [5, 95] to prevent overflow and keep standard aesthetic
+  };
+
+  const valPotencia = (bestImtpFuerza > 0) ? bestImtpFuerza : ((latestImtp?.imtp_fuerza_n != null && !isNaN(Number(latestImtp.imtp_fuerza_n))) ? Number(latestImtp.imtp_fuerza_n) : 0);
+  const valVelocidad = (bestSpeed > 0) ? bestSpeed : ((latestSpeed?.vel_10m != null && !isNaN(Number(latestSpeed.vel_10m))) ? Number(latestSpeed.vel_10m) : 0);
+  const valResistencia = (bestVo2 > 0) ? bestVo2 : ((latestVo2?.vo2_max != null && !isNaN(Number(latestVo2.vo2_max))) ? Number(latestVo2.vo2_max) : 0);
+  const valReactividad = (bestReboundRsi > 0) ? bestReboundRsi : ((latestCmjRebound?.rebound_rsi != null && !isNaN(Number(latestCmjRebound.rebound_rsi))) ? Number(latestCmjRebound.rebound_rsi) : 0);
+  const valMasaMusc = (latestAntro?.masa_muscular_pct != null && !isNaN(Number(latestAntro.masa_muscular_pct))) ? Number(latestAntro.masa_muscular_pct) : 0;
+  const valMasaGrasa = (latestAntro?.masa_adiposa_pct != null && !isNaN(Number(latestAntro.masa_adiposa_pct))) ? Number(latestAntro.masa_adiposa_pct) : 0;
+
+  const normalizedRadarData = [
+    { subject: 'Potencia', A: getTScore(valPotencia, allImtp, 'imtp_fuerza_n'), B: 50 },
+    { subject: 'Velocidad', A: getTScore(valVelocidad, allSpeed, 'vel_10m', true), B: 50 },
+    { subject: 'Resistencia', A: getTScore(valResistencia, allVo2, 'vo2_max'), B: 50 },
+    { subject: 'Reactividad', A: getTScore(valReactividad, allCmjRebound, 'rebound_rsi'), B: 50 },
+    { subject: 'Masa Musc.', A: getTScore(valMasaMusc, processedAllAntro, 'masa_muscular_pct'), B: 50 },
+    { subject: 'Masa Grasa', A: getTScore(valMasaGrasa, processedAllAntro, 'masa_adiposa_pct', true), B: 50 },
+  ];
 
   return (
     <div className="space-y-8">
       {/* HEADER BENTO STYLE */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-3 bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
+        <div className="lg:col-span-2 bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-red-50 rounded-full -mr-32 -mt-32 blur-3xl opacity-50"></div>
           <div className="w-40 h-40 bg-slate-900 rounded-[40px] flex items-center justify-center text-white border-4 border-white shadow-2xl relative z-10">
             <i className="fa-solid fa-user text-6xl opacity-20 absolute"></i>
@@ -1669,6 +1912,50 @@ const AthleteHuella = ({
           </div>
         </div>
 
+        {/* RADAR CHART BENTO CARD */}
+        <div className="lg:col-span-1 bg-white rounded-[40px] p-6 shadow-sm border border-slate-100 flex flex-col items-center justify-between relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-red-500"></div>
+          <div className="text-center w-full pb-2">
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Perfil de Rendimiento</p>
+            <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mt-0.5">Huella del Atleta</h4>
+          </div>
+          
+          <div className="w-full h-44 flex items-center justify-center">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart cx="50%" cy="50%" outerRadius="70%" data={normalizedRadarData}>
+                <PolarGrid stroke="#e2e8f0" />
+                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9, fontWeight: 900, fill: '#64748b' }} />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                <Radar 
+                  name="Atleta" 
+                  dataKey="A" 
+                  stroke="#dc2626" 
+                  fill="#dc2626" 
+                  fillOpacity={0.4}
+                />
+                <Radar 
+                  name="Media Cat" 
+                  dataKey="B" 
+                  stroke="#475569" 
+                  fill="#475569" 
+                  fillOpacity={0.1}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+          
+          <div className="flex items-center justify-center gap-4 text-[9px] font-black uppercase tracking-wider text-slate-500">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 bg-red-600 rounded-xs"></span>
+              <span>Jugador</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 bg-slate-500 rounded-xs"></span>
+              <span>Promedio</span>
+            </div>
+          </div>
+        </div>
+
         <div className="bg-emerald-600 rounded-[40px] p-8 text-white shadow-xl shadow-emerald-100 flex flex-col justify-between relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
           <div>
@@ -1687,118 +1974,206 @@ const AthleteHuella = ({
         </div>
       </div>
 
-      {/* TACHOMETERS FULL WIDTH ROW UNDER HEADER */}
-      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
-          <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-            <i className="fa-solid fa-gauge-high text-red-600"></i>
-            Mejores Valores de Evaluaciones vs Promedio {comparisonTarget === 'category' ? `Categoría (${playerYear})` : 'Grupo Seleccionado (2010+)'}
+      {/* PANEL DE CONTROL DE COMPARACIÓN */}
+      <div className="bg-[#0b1220] text-white rounded-[32px] p-6 shadow-md border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-white">
+            <i className="fa-solid fa-sliders text-red-500"></i>
+            Comparativa de Rendimiento Físico vs Grupo de Referencia
           </h3>
-          <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
-            {/* Outliers Filter Toggle */}
-            <button
-              onClick={() => setExcludeOutliers(!excludeOutliers)}
-              className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-xl border transition-all duration-200 flex items-center gap-2 ${
-                excludeOutliers
-                  ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-xs'
-                  : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
-              }`}
-              title={excludeOutliers ? "Haz clic para incluir valores atípicos" : "Haz clic para excluir valores atípicos"}
-            >
-              <i className={`fa-solid ${excludeOutliers ? 'fa-filter-circle-xmark text-amber-600' : 'fa-filter text-slate-400'}`}></i>
-              {excludeOutliers ? 'Sin Atípicos' : 'Con Atípicos'}
-              {totalCohortOutliers > 0 && (
-                <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black ${
-                  excludeOutliers 
-                    ? 'bg-amber-600 text-white animate-pulse' 
-                    : 'bg-slate-100 text-slate-600'
-                }`}>
-                  {totalCohortOutliers} Atípicos
-                </span>
-              )}
-            </button>
+          <p className="text-xs text-slate-400 font-semibold mt-1">
+            Filtra la cohorte de referencia y la inclusión de valores atípicos para todas las evaluaciones físicas.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Outliers Filter Toggle */}
+          <button
+            onClick={() => setExcludeOutliers(!excludeOutliers)}
+            className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl border transition-all duration-200 flex items-center gap-2 ${
+              excludeOutliers
+                ? 'bg-amber-500/10 border-amber-500 text-amber-400 shadow-sm'
+                : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white'
+            }`}
+            title={excludeOutliers ? "Haz clic para incluir valores atípicos" : "Haz clic para excluir valores atípicos"}
+          >
+            <i className={`fa-solid ${excludeOutliers ? 'fa-filter-circle-xmark text-amber-400' : 'fa-filter text-slate-400'}`}></i>
+            {excludeOutliers ? 'Sin Atípicos' : 'Con Atípicos'}
+            {totalCohortOutliers > 0 && (
+              <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black ${
+                excludeOutliers 
+                  ? 'bg-amber-500 text-white animate-pulse' 
+                  : 'bg-white/10 text-slate-300'
+              }`}>
+                {totalCohortOutliers} Atípicos
+              </span>
+            )}
+          </button>
 
-            <div className="bg-slate-50 p-1 rounded-xl border border-slate-150/60 flex items-center gap-1 shadow-inner">
-              <button
-                onClick={() => setComparisonTarget('category')}
-                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 ${
-                  comparisonTarget === 'category'
-                    ? 'bg-red-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Su Categoría ({playerYear})
-              </button>
-              <button
-                onClick={() => setComparisonTarget('2010plus')}
-                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 ${
-                  comparisonTarget === '2010plus'
-                    ? 'bg-red-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                2010 hacia arriba
-              </button>
-            </div>
+          <div className="bg-white/5 p-1 rounded-xl border border-white/10 flex items-center gap-1">
+            <button
+              onClick={() => setComparisonTarget('category')}
+              className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 ${
+                comparisonTarget === 'category'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Su Categoría ({playerYear})
+            </button>
+            <button
+              onClick={() => setComparisonTarget('2010plus')}
+              className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 ${
+                comparisonTarget === '2010plus'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              2010 hacia arriba
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 1. FUERZA MÁXIMA - IMTP */}
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+            <i className="fa-solid fa-dumbbell text-red-600 text-lg"></i>
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
+              Evaluación de Fuerza Máxima - IMTP
+            </h3>
+            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+              Valores pico e índices de fuerza isométrica y asimetría lateral
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <TachometerGauge {...getGaugeData('imtp_fuerza_n', allImtp, false, 'IMTP Fuerza Máxima', 'N', 'stroke-red-600', 'text-red-600', 5000)} />
+          <TachometerGauge {...getGaugeData('imtp_f_relativa_n_kg', allImtp, false, 'IMTP F. Relativa', 'N/kg', 'stroke-orange-500', 'text-orange-500', 100)} />
+          <TachometerGauge {...getGaugeData('imtp_force_50ms', allImtp, false, 'Fuerza Net a 50ms', 'N', 'stroke-amber-500', 'text-amber-500', 5000)} />
+          <TachometerGauge {...getGaugeData('imtp_rfd_100ms', allImtp, false, 'RFD a 100ms', 'N/s', 'stroke-indigo-600', 'text-indigo-600', 20000)} />
+        </div>
+      </div>
+
+      {/* 2. POTENCIA Y SALTABILIDAD - CMJ */}
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+            <i className="fa-solid fa-compress text-emerald-600 text-lg"></i>
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
+              Evaluación de Potencia y Saltabilidad - CMJ
+            </h3>
+            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+              Capacidad de salto vertical, reactividad y potencia de despegue
+            </p>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-          <TachometerGauge 
-            value={bestImtpFuerza} 
-            average={avgImtpFuerza} 
-            maxValue={maxScaleImtp > 0 ? maxScaleImtp : 5000} 
-            title="IMTP Máximo" 
-            unit="N" 
-            color="stroke-red-600"
-            fillColor="text-red-600"
-            percentile={pctImtp}
-            outlier={outlierImtp}
-          />
-          <TachometerGauge 
-            value={bestImtpRelativo} 
-            average={avgImtpRelativo} 
-            maxValue={maxScaleImtpRelativo > 0 ? maxScaleImtpRelativo : 100} 
-            title="IMTP Relativo" 
-            unit="N/kg" 
-            color="stroke-orange-500"
-            fillColor="text-orange-500"
-            percentile={pctImtpRelativo}
-            outlier={outlierImtpRelativo}
-          />
-          <TachometerGauge 
-            value={bestSpeedTime} 
-            average={avgSpeedTime} 
-            maxValue={maxScaleSpeedTime > 0 ? maxScaleSpeedTime : 6.0} 
-            title="Test de Velocidad (Tiempo Total)" 
-            unit="s" 
-            color="stroke-blue-600"
-            fillColor="text-blue-600"
-            lowerIsBetter={true}
-            percentile={pctSpeedTime}
-            outlier={outlierSpeedTime}
-          />
-          <TachometerGauge 
-            value={bestCmjRsi} 
-            average={avgCmjRsi} 
-            maxValue={maxScaleCmjRsi > 0 ? maxScaleCmjRsi : 2.0} 
-            title="RSI_mod CMJ" 
-            unit="" 
-            color="stroke-emerald-600"
-            fillColor="text-emerald-600"
-            percentile={pctCmjRsi}
-            outlier={outlierCmjRsi}
-          />
-          <TachometerGauge 
-            value={bestVo2} 
-            average={avgVo2} 
-            maxValue={maxScaleVo2 > 0 ? maxScaleVo2 : 80} 
-            title="Consumo de Oxígeno" 
-            unit="ml/kg/min" 
-            color="stroke-purple-600"
-            fillColor="text-purple-600"
-            percentile={pctVo2}
-            outlier={outlierVo2}
-          />
+          <TachometerGauge {...getGaugeData('concentric_peak_force_n', allImtp, false, 'Fuerza Pico Conc.', 'N', 'stroke-emerald-600', 'text-emerald-600', 5000)} />
+          <TachometerGauge {...getGaugeData('rsi_modified_m_s', allImtp, false, 'CMJ RSI Modificado', 'm/s', 'stroke-teal-600', 'text-teal-600', 2.0)} />
+          <TachometerGauge {...getGaugeData('jump_height_impmom_cm', allImtp, false, 'Altura Salto (Imp-Mom)', 'cm', 'stroke-cyan-600', 'text-cyan-600', 60)} />
+          <TachometerGauge {...getGaugeData('peak_power_bm_w_kg', allImtp, false, 'Pot. Pico Relativa', 'W/kg', 'stroke-sky-600', 'text-sky-600', 80)} />
+          <TachometerGauge {...getGaugeData('peak_power_w', allImtp, false, 'Pot. Pico Absoluta', 'W', 'stroke-violet-600', 'text-violet-600', 6000)} />
+        </div>
+      </div>
+
+      {/* 3. SPRINT Y ACELERACIÓN - VELOCIDAD */}
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+            <i className="fa-solid fa-gauge-high text-blue-600 text-lg"></i>
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
+              Evaluación de Velocidad y Sprint Lineal
+            </h3>
+            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+              Tiempos parciales, velocidades máximas y aceleración en sprint
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+          <TachometerGauge {...getGaugeData('tiempo_10m', allSpeed, true, 'Tiempo 10m', 's', 'stroke-blue-600', 'text-blue-600', 3.0)} />
+          <TachometerGauge {...getGaugeData('vel_10m', allSpeed, false, 'Velocidad 10m', 'm/s', 'stroke-indigo-600', 'text-indigo-600', 10.0)} />
+          <TachometerGauge {...getGaugeData('tiempo_10_20m', allSpeed, true, 'Tiempo 10-20m', 's', 'stroke-purple-600', 'text-purple-600', 3.0)} />
+          <TachometerGauge {...getGaugeData('tiempo_20_30m', allSpeed, true, 'Tiempo 20-30m', 's', 'stroke-fuchsia-600', 'text-fuchsia-600', 3.0)} />
+          <TachometerGauge {...getGaugeData('tiempo_total', allSpeed, true, 'Tiempo Total', 's', 'stroke-pink-600', 'text-pink-600', 6.0)} />
+        </div>
+      </div>
+
+      {/* 4. CAPACIDAD AERÓBICA - VO2 MÁX */}
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center">
+            <i className="fa-solid fa-heart-pulse text-purple-600 text-lg"></i>
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
+              Evaluación Aeróbica - VO2 Máx
+            </h3>
+            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+              Consumo máximo de oxígeno, velocidad de umbral anaeróbico y potencia aeróbica
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+          <TachometerGauge {...getGaugeData('vo2_max', allVo2, false, 'Consumo de Oxígeno', 'ml/kg/min', 'stroke-purple-600', 'text-purple-600', 80)} />
+          <TachometerGauge {...getGaugeData('vam', allVo2, false, 'VMA', 'km/h', 'stroke-fuchsia-600', 'text-fuchsia-600', 25)} />
+          <TachometerGauge {...getGaugeData('fc_max', allVo2, false, 'FC Máxima', 'bpm', 'stroke-rose-600', 'text-rose-600', 220)} />
+          <TachometerGauge {...getGaugeData('mts', allVo2, false, 'Distancia', 'm', 'stroke-emerald-600', 'text-emerald-600', 3000)} />
+          <TachometerGauge {...getGaugeData('vt2_fc', allVo2, false, 'VT2 FC', 'bpm', 'stroke-amber-600', 'text-amber-600', 200)} />
+        </div>
+      </div>
+
+      {/* 5. AGILIDAD Y COD - TEST 505 */}
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
+            <i className="fa-solid fa-person-running text-orange-500 text-lg"></i>
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
+              Evaluación de Cambio de Dirección - Test 505
+            </h3>
+            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+              Tiempos de aceleración, desaceleración, COD y re-aceleración en test 505
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+          <TachometerGauge {...getGaugeData('t_acel_2m', allTest505, true, '505 T. Acel 2m', 's', 'stroke-orange-500', 'text-orange-500', 5.0)} />
+          <TachometerGauge {...getGaugeData('t_desacel_2m', allTest505, true, '505 T. Desacel 2m', 's', 'stroke-amber-500', 'text-amber-500', 5.0)} />
+          <TachometerGauge {...getGaugeData('t_cod_2m', allTest505, true, '505 T. COD 2m', 's', 'stroke-red-500', 'text-red-500', 5.0)} />
+          <TachometerGauge {...getGaugeData('t_reacel_1_2m', allTest505, true, '505 T. Reacel 1 2m', 's', 'stroke-yellow-500', 'text-yellow-500', 5.0)} />
+          <TachometerGauge {...getGaugeData('z_score_acel', allTest505, false, '505 Z-Score Acel', '', 'stroke-lime-600', 'text-lime-600', 5.0)} />
+        </div>
+      </div>
+
+      {/* 6. REACTIVIDAD Y REBOTE - CMJ REBOUND */}
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
+            <i className="fa-solid fa-arrow-trend-up text-violet-600 text-lg"></i>
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
+              Evaluación de Reactividad y Rebote - CMJ Rebound
+            </h3>
+            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+              Reactividad neuromuscular, tiempos de contacto, vuelo y momentum de despegue
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+          <TachometerGauge {...getGaugeData('rebound_rsi', allCmjRebound, false, 'Rebound RSI', '', 'stroke-violet-600', 'text-violet-600', 3.0)} />
+          <TachometerGauge {...getGaugeData('rebound_contact_time_ms', allCmjRebound, true, 'Tiempo Contacto', 'ms', 'stroke-indigo-600', 'text-indigo-600', 400)} />
+          <TachometerGauge {...getGaugeData('rebound_flight_time_ms', allCmjRebound, false, 'Tiempo Vuelo', 'ms', 'stroke-purple-600', 'text-purple-600', 600)} />
+          <TachometerGauge {...getGaugeData('take_off_momentum_kg_m_s', allCmjRebound, false, 'Momentum Despegue', 'kg·m/s', 'stroke-fuchsia-600', 'text-fuchsia-600', 400)} />
+          <TachometerGauge {...getGaugeData('reps', allCmjRebound, false, 'Repeticiones', 'reps', 'stroke-pink-600', 'text-pink-600', 10)} />
         </div>
       </div>
 
@@ -2361,19 +2736,21 @@ const AthleteHuella = ({
 };
 
 const IndividualDashboard = ({ 
-  player, imtp, speed, antropometria, vo2max, clubs
+  player, imtp, speed, antropometria, vo2max, test505 = [], cmjRebound = [], clubs
 }: { 
   player?: PlayerData, 
   imtp: IMTPData[], 
   speed: SpeedTestData[], 
   antropometria: AntropometriaData[],
   vo2max: VO2MaxData[],
+  test505?: any[],
+  cmjRebound?: CMJReboundData[],
   clubs: any[]
 }) => {
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>([
     'imtp_fuerza_n',
     'imtp_f_relativa_n_kg',
-    'dsi_valor',
+    'cmj_rsi_mod',
     'fuerza_cmj'
   ]);
 
@@ -2398,17 +2775,52 @@ const IndividualDashboard = ({
     'masa_corporal_kg'
   ]);
 
+  const [selectedAgilityMetrics, setSelectedAgilityMetrics] = useState<string[]>([
+    't_cod_2m',
+    'vel_cod_kmh',
+    't_acel_2m',
+    't_desacel_2m'
+  ]);
+
+  const [selectedReboundMetrics, setSelectedReboundMetrics] = useState<string[]>([
+    'rebound_rsi',
+    'rebound_contact_time_ms',
+    'rebound_flight_time_ms',
+    'take_off_momentum_kg_m_s'
+  ]);
+
   const imtpMetrics = METRICS_OPTIONS.filter(m => m.table === 'imtp');
   const speedMetrics = METRICS_OPTIONS.filter(m => m.table === 'speed');
   const vo2Metrics = METRICS_OPTIONS.filter(m => m.table === 'vo2max');
   const antroMetrics = METRICS_OPTIONS.filter(m => m.table === 'antropometria');
+  const agilityMetrics = METRICS_OPTIONS.filter(m => m.table === 'test505');
+  const reboundMetrics = METRICS_OPTIONS.filter(m => m.table === 'rebound');
 
-  if (!player) return (
-    <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
-      <i className="fa-solid fa-user-magnifying-glass text-4xl text-slate-200 mb-4"></i>
-      <p className="text-slate-400 font-black uppercase text-xs tracking-widest">Selecciona un atleta para visualizar su huella digital</p>
-    </div>
-  );
+  const resolveMetricValue = (row: any, key: string): any => {
+    if (!row) return undefined;
+    let val = row[key];
+    if (val === undefined || val === null || val === '') {
+      if (key === 'imtp_fuerza_n') val = row['Peak Vertical Force [N]'];
+      if (key === 'imtp_f_relativa_n_kg') val = row['Peak Vertical Force / BM'] || row['Peak Vertical Force / BM [N/kg]'];
+      if (key === 'imtp_force_50ms') val = row['Force (Net of BW) at 50ms'] || row['Force (Net of BW) at 50ms [N]'];
+      if (key === 'imtp_force_100ms') val = row['Force (Net of BW) at 100ms'] || row['Force (Net of BW) at 100ms [N]'];
+      if (key === 'imtp_force_150ms') val = row['Force (Net of BW) at 150ms'] || row['Force (Net of BW) at 150ms [N]'];
+      if (key === 'imtp_force_200ms') val = row['Force (Net of BW) at 200ms'] || row['Force (Net of BW) at 200ms [N]'];
+      if (key === 'imtp_rfd_100ms') val = row['RFD - 100ms [N/s]'];
+      if (key === 'imtp_rfd_150ms') val = row['RFD - 150ms [N/s]'];
+      if (key === 'imtp_rfd_200ms') val = row['RFD - 200ms [N/s]'];
+
+      if (key === 'concentric_peak_force_n') val = row.fuerza_cmj;
+      if (key === 'fuerza_cmj') val = row.concentric_peak_force_n;
+      if (key === 'rsi_modified_m_s') val = row.cmj_rsi_mod;
+      if (key === 'cmj_rsi_mod') val = row.rsi_modified_m_s;
+      if (key === 'jump_height_impmom_cm') val = row.cmj_altura_salto_im;
+      if (key === 'cmj_altura_salto_im') val = row.jump_height_impmom_cm;
+      if (key === 'peak_power_bm_w_kg') val = row.cmj_peak_pot_relativa;
+      if (key === 'cmj_peak_pot_relativa') val = row.peak_power_bm_w_kg;
+    }
+    return val;
+  };
 
   const getMetricData = (metricKey: string) => {
     const config = METRICS_OPTIONS.find(m => m.key === metricKey);
@@ -2422,15 +2834,20 @@ const IndividualDashboard = ({
       case 'speed': sourceData = speed; dateKey = 'fecha'; break;
       case 'vo2max': sourceData = vo2max; dateKey = 'fecha'; break;
       case 'antropometria': sourceData = antropometria; dateKey = 'fecha_medicion'; break;
+      case 'rebound': sourceData = cmjRebound; dateKey = 'fecha_test'; break;
+      case 'test505': sourceData = test505; dateKey = 'fecha'; break;
     }
 
     return sourceData
-      .filter(d => d[metricKey] !== undefined && d[metricKey] !== null && !isNaN(Number(d[metricKey])))
-      .map(d => ({
-        date: new Date(d[dateKey]).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
-        value: d[metricKey],
-        fullDate: new Date(d[dateKey]).getTime()
-      }))
+      .map(d => {
+        const val = resolveMetricValue(d, metricKey);
+        return {
+          date: new Date(d[dateKey]).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+          value: val !== undefined && val !== null && val !== '' ? Number(val) : NaN,
+          fullDate: new Date(d[dateKey]).getTime()
+        };
+      })
+      .filter(d => !isNaN(d.value) && d.fullDate > 0)
       .sort((a, b) => a.fullDate - b.fullDate);
   };
 
@@ -2457,6 +2874,201 @@ const IndividualDashboard = ({
     newMetrics[index] = newKey;
     setSelectedAntroMetrics(newMetrics);
   };
+
+  const updateAgilityMetric = (index: number, newKey: string) => {
+    const newMetrics = [...selectedAgilityMetrics];
+    newMetrics[index] = newKey;
+    setSelectedAgilityMetrics(newMetrics);
+  };
+
+  const updateReboundMetric = (index: number, newKey: string) => {
+    const newMetrics = [...selectedReboundMetrics];
+    newMetrics[index] = newKey;
+    setSelectedReboundMetrics(newMetrics);
+  };
+
+  const getEvaluationCategory = (metricKey: string, val: number) => {
+    if (val === undefined || val === null || val === 0 || isNaN(val)) {
+      return { label: 'S/D', bg: 'bg-slate-50 border-slate-100', text: 'text-slate-400' };
+    }
+
+    const config = ALL_METRIC_CONFIGS[metricKey];
+    if (!config) {
+      if (metricKey === 'masa_adiposa_pct') {
+        if (val < 10) return { label: 'Excelente', bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' };
+        if (val <= 14) return { label: 'Normal', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600' };
+        return { label: 'Bajo', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
+      }
+      return { label: 'Valor', bg: 'bg-slate-50 border-slate-200', text: 'text-slate-700' };
+    }
+
+    const { excellent, normal } = config.thresholds;
+    if (config.lowerIsBetter) {
+      if (val <= excellent) return { label: 'Excelente', bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' };
+      if (val <= normal) return { label: 'Normal', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600' };
+      return { label: 'Bajo', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
+    } else {
+      if (val >= excellent) return { label: 'Excelente', bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' };
+      if (val >= normal) return { label: 'Normal', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600' };
+      return { label: 'Bajo', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
+    }
+  };
+
+  const parsedEvaluations = useMemo(() => {
+    const list: {
+      dateStr: string;
+      rawDate: Date;
+      area: string;
+      metrics: { key: string; label: string; value: number; unit: string }[];
+      observations: string;
+    }[] = [];
+
+    // IMTP & CMJ
+    imtp.forEach((d) => {
+      const dateVal = d.fecha_test ? new Date(d.fecha_test) : new Date();
+      const metricsList = [
+        { key: 'imtp_fuerza_n', label: 'Fuerza Máx IMTP', value: d.imtp_fuerza_n, unit: 'N' },
+        { key: 'imtp_f_relativa_n_kg', label: 'F. Relativa IMTP', value: d.imtp_f_relativa_n_kg, unit: 'N/kg' },
+        { key: 'fuerza_cmj', label: 'Fuerza CMJ', value: d.fuerza_cmj || d.concentric_peak_force_n, unit: 'N' },
+        { key: 'cmj_rsi_mod', label: 'CMJ RSI Mod', value: d.cmj_rsi_mod || d.rsi_modified_m_s, unit: '' },
+        { key: 'cmj_altura_salto_im', label: 'CMJ Altura', value: d.cmj_altura_salto_im || d.jump_height_impmom_cm, unit: 'cm' },
+        { key: 'cmj_peak_pot_relativa', label: 'CMJ Peak Pot. Rel.', value: d.cmj_peak_pot_relativa || d.peak_power_bm_w_kg, unit: 'W/kg' }
+      ].map(m => ({ ...m, value: m.value !== undefined ? Number(m.value) : NaN }))
+       .filter(m => !isNaN(m.value) && m.value > 0);
+
+      if (metricsList.length > 0) {
+        list.push({
+          dateStr: dateVal.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+          rawDate: dateVal,
+          area: 'Fuerza & Saltabilidad',
+          metrics: metricsList,
+          observations: d.observaciones || ''
+        });
+      }
+    });
+
+    // Speed (Sprint)
+    speed.forEach((d) => {
+      const dateVal = d.fecha ? new Date(d.fecha) : new Date();
+      const metricsList = [
+        { key: 'tiempo_10m', label: 'Tiempo 10m', value: d.tiempo_10m, unit: 's' },
+        { key: 'vel_10m', label: 'Velocidad 10m', value: d.vel_10m, unit: 'm/s' },
+        { key: 'tiempo_10_20m', label: 'Tiempo 10-20m', value: d.tiempo_10_20m, unit: 's' },
+        { key: 'tiempo_20_30m', label: 'Tiempo 20-30m', value: d.tiempo_20_30m, unit: 's' },
+        { key: 'tiempo_total', label: 'Tiempo Total 30m', value: d.tiempo_total, unit: 's' }
+      ].map(m => ({ ...m, value: m.value !== undefined ? Number(m.value) : NaN }))
+       .filter(m => !isNaN(m.value) && m.value > 0);
+
+      if (metricsList.length > 0) {
+        list.push({
+          dateStr: dateVal.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+          rawDate: dateVal,
+          area: 'Velocidad (Sprint)',
+          metrics: metricsList,
+          observations: d.observaciones || ''
+        });
+      }
+    });
+
+    // VO2 Max
+    vo2max.forEach((d) => {
+      const dateVal = d.fecha ? new Date(d.fecha) : new Date();
+      const metricsList = [
+        { key: 'vo2_max', label: 'VO2 Max', value: d.vo2_max, unit: 'ml/kg/min' },
+        { key: 'vam', label: 'VMA', value: d.vam, unit: 'km/h' },
+        { key: 'fc_max', label: 'FC Máxima', value: d.fc_max, unit: 'bpm' },
+        { key: 'mts', label: 'Distancia VO2', value: d.mts, unit: 'm' },
+        { key: 'vt2_fc', label: 'VT2 FC', value: d.vt2_fc, unit: 'bpm' }
+      ].map(m => ({ ...m, value: m.value !== undefined ? Number(m.value) : NaN }))
+       .filter(m => !isNaN(m.value) && m.value > 0);
+
+      if (metricsList.length > 0) {
+        list.push({
+          dateStr: dateVal.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+          rawDate: dateVal,
+          area: 'Capacidad Aeróbica (VO2 Max)',
+          metrics: metricsList,
+          observations: d.observaciones || ''
+        });
+      }
+    });
+
+    // Antropometría
+    antropometria.forEach((d) => {
+      const dateVal = d.fecha_medicion ? new Date(d.fecha_medicion) : new Date();
+      const metricsList = [
+        { key: 'masa_corporal_kg', label: 'Masa Corporal', value: d.masa_corporal_kg, unit: 'kg' },
+        { key: 'talla_cm', label: 'Talla', value: d.talla_cm, unit: 'cm' },
+        { key: 'masa_muscular_pct', label: 'Masa Muscular', value: d.masa_muscular_pct, unit: '%' },
+        { key: 'masa_adiposa_pct', label: 'Masa Adiposa', value: d.masa_adiposa_pct, unit: '%' },
+        { key: 'sum_pliegues_6_mm', label: 'Suma 6 Pliegues', value: d.sum_pliegues_6_mm, unit: 'mm' }
+      ].map(m => ({ ...m, value: m.value !== undefined ? Number(m.value) : NaN }))
+       .filter(m => !isNaN(m.value) && m.value > 0);
+
+      if (metricsList.length > 0) {
+        list.push({
+          dateStr: dateVal.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+          rawDate: dateVal,
+          area: 'Antropometría',
+          metrics: metricsList,
+          observations: ''
+        });
+      }
+    });
+
+    // Test 505 (Agility)
+    test505.forEach((d) => {
+      const dateVal = d.fecha ? new Date(d.fecha) : new Date();
+      const metricsList = [
+        { key: 't_acel_2m', label: '505 T. Acel 2m', value: d.t_acel_2m, unit: 's' },
+        { key: 't_desacel_2m', label: '505 T. Desacel 2m', value: d.t_desacel_2m, unit: 's' },
+        { key: 't_cod_2m', label: '505 T. COD 2m', value: d.t_cod_2m, unit: 's' },
+        { key: 't_reacel_1_2m', label: '505 T. Reacel 1.2m', value: d.t_reacel_1_2m, unit: 's' },
+        { key: 'z_score_acel', label: '505 Z-Score Acel', value: d.z_score_acel, unit: '' }
+      ].map(m => ({ ...m, value: m.value !== undefined ? Number(m.value) : NaN }))
+       .filter(m => !isNaN(m.value) && m.value > 0);
+
+      if (metricsList.length > 0) {
+        list.push({
+          dateStr: dateVal.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+          rawDate: dateVal,
+          area: 'Agilidad (Test 505)',
+          metrics: metricsList,
+          observations: d.observaciones || ''
+        });
+      }
+    });
+
+    // CMJ Rebound
+    cmjRebound.forEach((d) => {
+      const dateVal = d.fecha_test ? new Date(d.fecha_test) : new Date();
+      const metricsList = [
+        { key: 'rebound_rsi', label: 'RSI Rebound', value: d.rebound_rsi, unit: '' },
+        { key: 'rebound_contact_time_ms', label: 'T. Contacto Rebound', value: d.rebound_contact_time_ms, unit: 'ms' },
+        { key: 'rebound_flight_time_ms', label: 'T. Vuelo Rebound', value: d.rebound_flight_time_ms, unit: 'ms' }
+      ].map(m => ({ ...m, value: m.value !== undefined ? Number(m.value) : NaN }))
+       .filter(m => !isNaN(m.value) && m.value > 0);
+
+      if (metricsList.length > 0) {
+        list.push({
+          dateStr: dateVal.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+          rawDate: dateVal,
+          area: 'Fuerza Reactiva (Rebound)',
+          metrics: metricsList,
+          observations: d.observaciones || ''
+        });
+      }
+    });
+
+    return list.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+  }, [imtp, speed, vo2max, antropometria, test505, cmjRebound]);
+
+  if (!player) return (
+    <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
+      <i className="fa-solid fa-user-magnifying-glass text-4xl text-slate-200 mb-4"></i>
+      <p className="text-slate-400 font-black uppercase text-xs tracking-widest">Selecciona un atleta para visualizar su huella digital</p>
+    </div>
+  );
 
   return (
     <div className="space-y-8">
@@ -2493,10 +3105,81 @@ const IndividualDashboard = ({
         </div>
       </div>
 
+      {/* TABLA DE EVALUACIONES INDIVIDUALES */}
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Resumen de Evaluaciones y Categorías</h3>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">Listado de evaluaciones individuales con códigos de color de su categoría de rendimiento</p>
+          </div>
+          
+          <div className="flex gap-4 items-center">
+            <div className="flex gap-2 text-[9px] font-black uppercase tracking-wider bg-slate-50 p-2 rounded-2xl border border-slate-100">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>Excelente</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>Normal</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>Bajo</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto -mx-8 px-8 max-h-96 overflow-y-auto">
+          <table className="w-full text-left border-collapse min-w-[700px]">
+            <thead>
+              <tr className="border-b border-slate-100 pb-3">
+                <th className="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-3 w-32">Fecha</th>
+                <th className="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-3 w-48">Tipo de Evaluación</th>
+                <th className="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-3">Métricas Obtenidas & Categoría</th>
+                <th className="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-3 w-48">Observaciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {parsedEvaluations.length > 0 ? (
+                parsedEvaluations.map((row, idx) => (
+                  <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                    <td className="py-3 text-xs font-black text-slate-900 uppercase tracking-tight">{row.dateStr}</td>
+                    <td className="py-3">
+                      <span className="bg-slate-100 text-slate-800 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border border-slate-200">
+                        {row.area}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {row.metrics.map((m, mIdx) => {
+                          const status = getEvaluationCategory(m.key, m.value);
+                          return (
+                            <span 
+                              key={mIdx} 
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-xl text-[9px] font-black uppercase tracking-wider border ${status.bg} ${status.text}`}
+                              title={`${m.label}: ${m.value} ${m.unit} (${status.label})`}
+                            >
+                              <span className="opacity-70">{m.label}:</span>
+                              <span>{m.value}{m.unit}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="py-3 text-[10px] text-slate-500 font-bold truncate max-w-[200px]" title={row.observations}>
+                      {row.observations || '-'}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-slate-300 font-bold uppercase text-xs tracking-widest">
+                    No hay evaluaciones registradas para este atleta
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* BLOQUES DINÁMICOS IMTP */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Fuerza y Potencia</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Fuerza Máxima (IMTP) & Saltabilidad (CMJ)</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         
@@ -2560,7 +3243,7 @@ const IndividualDashboard = ({
       {/* BLOQUES DINÁMICOS VELOCIDAD */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Velocidad</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Velocidad (Sprint)</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         
@@ -2624,7 +3307,7 @@ const IndividualDashboard = ({
       {/* BLOQUES DINÁMICOS VO2 MAX */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Consumo de Oxígeno</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Capacidad Aeróbica (VO2 Max)</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         
@@ -2748,6 +3431,134 @@ const IndividualDashboard = ({
           })}
         </div>
       </div>
+
+      {/* BLOQUES DINÁMICOS AGILIDAD */}
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Agilidad & Cambios de Dirección (Test 505)</h3>
+          <div className="h-px flex-1 bg-slate-100"></div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {selectedAgilityMetrics.map((metricKey, idx) => {
+            const data = getMetricData(metricKey);
+            const metricLabel = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
+
+            return (
+              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+                <div className="flex justify-between items-center mb-8">
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
+                    <span className={`w-2 h-6 rounded-full ${idx % 2 === 0 ? 'bg-sky-500' : 'bg-indigo-500'}`}></span>
+                    {metricLabel}
+                  </h3>
+                  <select 
+                    value={metricKey}
+                    onChange={(e) => updateAgilityMetric(idx, e.target.value)}
+                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
+                  >
+                    {agilityMetrics.map(opt => (
+                      <option key={opt.key} value={opt.key}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="h-64">
+                  {data.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} />
+                        <YAxis stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                        <Tooltip 
+                          contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                          itemStyle={{ color: idx % 2 === 0 ? '#0ea5e9' : '#6366f1' }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="value" 
+                          stroke={idx % 2 === 0 ? '#0ea5e9' : '#6366f1'} 
+                          strokeWidth={4} 
+                          dot={{ r: 4, fill: idx % 2 === 0 ? '#0ea5e9' : '#6366f1', strokeWidth: 2, stroke: '#fff' }}
+                          activeDot={{ r: 6, strokeWidth: 0 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
+                      <i className="fa-solid fa-person-running text-3xl opacity-20"></i>
+                      <p className="text-[10px] font-black uppercase tracking-widest">Sin datos registrados</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* BLOQUES DINÁMICOS CMJ REBOUND */}
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Fuerza Reactiva (CMJ Rebound)</h3>
+          <div className="h-px flex-1 bg-slate-100"></div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {selectedReboundMetrics.map((metricKey, idx) => {
+            const data = getMetricData(metricKey);
+            const metricLabel = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
+
+            return (
+              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+                <div className="flex justify-between items-center mb-8">
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
+                    <span className={`w-2 h-6 rounded-full ${idx % 2 === 0 ? 'bg-red-500' : 'bg-rose-500'}`}></span>
+                    {metricLabel}
+                  </h3>
+                  <select 
+                    value={metricKey}
+                    onChange={(e) => updateReboundMetric(idx, e.target.value)}
+                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
+                  >
+                    {reboundMetrics.map(opt => (
+                      <option key={opt.key} value={opt.key}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="h-64">
+                  {data.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} />
+                        <YAxis stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                        <Tooltip 
+                          contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                          itemStyle={{ color: idx % 2 === 0 ? '#ef4444' : '#f43f5e' }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="value" 
+                          stroke={idx % 2 === 0 ? '#ef4444' : '#f43f5e'} 
+                          strokeWidth={4} 
+                          dot={{ r: 4, fill: idx % 2 === 0 ? '#ef4444' : '#f43f5e', strokeWidth: 2, stroke: '#fff' }}
+                          activeDot={{ r: 6, strokeWidth: 0 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
+                      <i className="fa-solid fa-arrows-up-down text-3xl opacity-20"></i>
+                      <p className="text-[10px] font-black uppercase tracking-widest">Sin datos registrados</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };
@@ -2840,7 +3651,7 @@ const ORDERED_POSITIONS = [
 ];
 
 const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, antropometria }: { anios: number[], posiciones: string[], players: PlayerData[], gps: GPSData[], speed: SpeedTestData[], imtp: IMTPData[], vo2max: VO2MaxData[], antropometria: AntropometriaData[] }) => {
-  const [selectedImtpMetrics, setSelectedImtpMetrics] = useState<string[]>(['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'dsi_valor', 'fuerza_cmj']);
+  const [selectedImtpMetrics, setSelectedImtpMetrics] = useState<string[]>(['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'cmj_rsi_mod', 'fuerza_cmj']);
   const [selectedSpeedMetrics, setSelectedSpeedMetrics] = useState<string[]>(['tiempo_total', 'vel_10m', 'tiempo_10m', 'tiempo_20_30m']);
   const [selectedVo2Metrics, setSelectedVo2Metrics] = useState<string[]>(['vo2_max', 'vam', 'fc_max', 'mts']);
   const [selectedAntroMetrics, setSelectedAntroMetrics] = useState<string[]>(['masa_adiposa_pct', 'masa_muscular_pct', 'sum_pliegues_6_mm', 'masa_corporal_kg']);
@@ -3492,17 +4303,206 @@ const CorrelationsInsights = ({ players, imtp, speed, vo2max, antropometria, sel
   );
 };
 
-const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios, selectedPosiciones }: { 
+const Categorias = ({ 
+  players, 
+  imtp, 
+  speed, 
+  vo2max, 
+  antropometria, 
+  selectedAnios, 
+  selectedPosiciones,
+  cmjReboundData = [],
+  test505Data = []
+}: { 
   players: PlayerData[], 
   imtp: IMTPData[], 
   speed: SpeedTestData[], 
   vo2max: VO2MaxData[], 
   antropometria: AntropometriaData[],
   selectedAnios: number[],
-  selectedPosiciones: string[]
+  selectedPosiciones: string[],
+  cmjReboundData?: CMJReboundData[],
+  test505Data?: any[]
 }) => {
   const [metric1, setMetric1] = useState('imtp_fuerza_n');
-  const [metric2, setMetric2] = useState('vel_10m');
+  const [metric2, setMetric2] = useState('concentric_peak_force_n');
+  const [metric3, setMetric3] = useState('tiempo_total');
+  const [metric4, setMetric4] = useState('vo2_max');
+  const [metric5, setMetric5] = useState('masa_adiposa_pct');
+
+  const [mode1, setMode1] = useState<'estadisticos' | 'percentiles'>('estadisticos');
+  const [mode2, setMode2] = useState<'estadisticos' | 'percentiles'>('estadisticos');
+  const [mode3, setMode3] = useState<'estadisticos' | 'percentiles'>('estadisticos');
+  const [mode4, setMode4] = useState<'estadisticos' | 'percentiles'>('estadisticos');
+  const [mode5, setMode5] = useState<'estadisticos' | 'percentiles'>('estadisticos');
+
+  const BOX1_METRICS = [
+    { label: 'IMTP Fuerza Máxima (N)', key: 'imtp_fuerza_n' },
+    { label: 'IMTP Fuerza Relativa (N/kg)', key: 'imtp_f_relativa_n_kg' },
+    { label: 'IMTP Fuerza neta 50ms (N)', key: 'imtp_force_50ms' },
+    { label: 'IMTP Fuerza neta 100ms (N)', key: 'imtp_force_100ms' },
+    { label: 'IMTP Fuerza neta 150ms (N)', key: 'imtp_force_150ms' },
+    { label: 'IMTP Fuerza neta 200ms (N)', key: 'imtp_force_200ms' },
+    { label: 'IMTP RFD 100ms (N/s)', key: 'imtp_rfd_100ms' },
+    { label: 'IMTP RFD 150ms (N/s)', key: 'imtp_rfd_150ms' },
+    { label: 'IMTP RFD 200ms (N/s)', key: 'imtp_rfd_200ms' },
+    { label: 'IMTP Asimetría (%)', key: 'imtp_asimetria', lowerIsBetter: true },
+    { label: 'IMTP Débil', key: 'imtp_debil' }
+  ];
+
+  const BOX2_METRICS = [
+    { label: 'CMJ Fuerza Pico Conc. (N)', key: 'concentric_peak_force_n' },
+    { label: 'CMJ RSI Modificado (m/s)', key: 'rsi_modified_m_s' },
+    { label: 'CMJ Altura Salto (cm)', key: 'jump_height_impmom_cm' },
+    { label: 'CMJ Pot. Pico Relativa (W/kg)', key: 'peak_power_bm_w_kg' },
+    { label: 'CMJ Profundidad (cm)', key: 'countermovement_depth_cm' },
+    { label: 'CMJ Duración Conc. (ms)', key: 'concentric_duration_ms', lowerIsBetter: true },
+    { label: 'CMJ Impulso Conc. (Ns)', key: 'concentric_impulse_ns' },
+    { label: 'CMJ Momento Despegue (kg·m/s)', key: 'take_off_momentum_kg_m_s' },
+    { label: 'CMJ Rebound RSI', key: 'rebound_rsi' },
+    { label: 'T. Contacto Rebound (ms)', key: 'rebound_contact_time_ms', lowerIsBetter: true },
+    { label: 'T. Vuelo Rebound (ms)', key: 'rebound_flight_time_ms' }
+  ];
+
+  const BOX3_METRICS = [
+    { label: 'Velocidad Tiempo Total (s)', key: 'tiempo_total', lowerIsBetter: true },
+    { label: 'Velocidad 10m Tiempo (s)', key: 'tiempo_10m', lowerIsBetter: true },
+    { label: 'Velocidad 10m Promedio (km/h)', key: 'vel_10m' },
+    { label: 'Velocidad 10-20m Tiempo (s)', key: 'tiempo_10_20m', lowerIsBetter: true },
+    { label: 'Velocidad 10-20m Promedio (km/h)', key: 'vel_10_20m' },
+    { label: 'Velocidad 20-30m Tiempo (s)', key: 'tiempo_20_30m', lowerIsBetter: true },
+    { label: 'Velocidad 20-30m Promedio (km/h)', key: 'vel_20_30m' },
+    { label: '505 Tiempo Acel. 2m (s)', key: 't_acel_2m', lowerIsBetter: true },
+    { label: '505 Vel. Acel. (km/h)', key: 'vel_acel_kmh' },
+    { label: '505 Tiempo Desacel. 2m (s)', key: 't_desacel_2m', lowerIsBetter: true },
+    { label: '505 Vel. Desacel. (km/h)', key: 'vel_desacel_kmh' },
+    { label: '505 Tiempo COD 2m (s)', key: 't_cod_2m', lowerIsBetter: true },
+    { label: '505 Vel. COD (km/h)', key: 'vel_cod_kmh' },
+    { label: '505 Tiempo Re-acel 1 (s)', key: 't_reacel_1_2m', lowerIsBetter: true },
+    { label: '505 Vel. Re-acel 1 (km/h)', key: 'vel_reacel_1_kmh' },
+    { label: '505 Tiempo Re-acel 2 (s)', key: 't_reacel_2_2m', lowerIsBetter: true },
+    { label: '505 Vel. Re-acel 2 (km/h)', key: 'vel_reacel_2_kmh' },
+    { label: '505 Z-Score Aceleración', key: 'z_score_acel' }
+  ];
+
+  const BOX4_METRICS = [
+    { label: 'Consumo Máx Oxígeno (VO2)', key: 'vo2_max' },
+    { label: 'Vel. Aeróbica Máx (VAM)', key: 'vam' },
+    { label: 'Velocidad VT1 (km/h)', key: 'vt1_vel' },
+    { label: 'Frec. Cardíaca VT1 (bpm)', key: 'vt1_fc' },
+    { label: 'Velocidad VT2 (km/h)', key: 'vt2_vel' },
+    { label: 'Frec. Cardíaca VT2 (bpm)', key: 'vt2_fc' },
+    { label: 'Frec. Cardíaca Máx (bpm)', key: 'fc_max' },
+    { label: 'Vel. Final de Prueba (VFA)', key: 'vfa' },
+    { label: 'Nivel Alcanzado', key: 'nivel' },
+    { label: 'Pasada Alcanzada', key: 'pasada' },
+    { label: 'Metros Recorridos (m)', key: 'mts' }
+  ];
+
+  const BOX5_METRICS = [
+    { label: '% Grasa Corporal', key: 'masa_adiposa_pct', lowerIsBetter: true },
+    { label: '% Masa Muscular', key: 'masa_muscular_pct' },
+    { label: '% Masa Ósea', key: 'masa_osea_pct' },
+    { label: 'Suma 6 Pliegues (mm)', key: 'sum_pliegues_6_mm', lowerIsBetter: true },
+    { label: 'Suma 8 Pliegues (mm)', key: 'sum_pliegues_8_mm', lowerIsBetter: true },
+    { label: 'Peso Corporal (kg)', key: 'masa_corporal_kg' },
+    { label: 'Talla (cm)', key: 'talla_cm' },
+    { label: 'Talla Sentado (cm)', key: 'talla_sentada_cm' },
+    { label: 'Masa Muscular (kg)', key: 'masa_muscular_kg' },
+    { label: 'Masa Adiposa (kg)', key: 'masa_adiposa_kg', lowerIsBetter: true },
+    { label: 'Masa Ósea (kg)', key: 'masa_osea_kg' },
+    { label: 'Índice IMO', key: 'indice_imo' },
+    { label: 'Índice IMC', key: 'indice_imc' },
+    { label: 'Somatotipo Endomorfo', key: 'somatotipo_endo' },
+    { label: 'Somatotipo Mesomorfo', key: 'somatotipo_meso' },
+    { label: 'Somatotipo Ectomorfo', key: 'somatotipo_ecto' },
+    { label: 'Maduración Media', key: 'maduracion_media' },
+    { label: 'PHV Media', key: 'phv_media' },
+    { label: 'Estatura Proyectada (cm)', key: 'estatura_proy_media_cm' }
+  ];
+
+  const ALL_METRICS_LIST = [...BOX1_METRICS, ...BOX2_METRICS, ...BOX3_METRICS, ...BOX4_METRICS, ...BOX5_METRICS];
+
+  const getValueForPlayer = (playerId: number, metricKey: string) => {
+    let records: any[] = [];
+    let dateField = 'fecha';
+
+    const isIMTP = [
+      'imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'imtp_asimetria', 'imtp_debil', 'imtp_force_50ms', 'imtp_force_100ms', 'imtp_force_150ms', 'imtp_force_200ms', 'imtp_rfd_100ms', 'imtp_rfd_150ms', 'imtp_rfd_200ms',
+      'fuerza_cmj', 'cmj_rsi_mod', 'cmj_altura_salto_im', 'cmj_peak_pot_relativa',
+      'concentric_peak_force_n', 'rsi_modified_m_s', 'jump_height_impmom_cm', 'peak_power_bm_w_kg', 'countermovement_depth_cm', 'concentric_duration_ms', 'concentric_impulse_ns', 'take_off_momentum_kg_m_s', 'peak_power_w'
+    ].includes(metricKey);
+
+    const isCmjRebound = [
+      'rebound_rsi', 'rebound_contact_time_ms', 'rebound_flight_time_ms'
+    ].includes(metricKey);
+
+    const isSpeed = [
+      'tiempo_10m', 'vel_10m', 'tiempo_10_20m', 'vel_10_20m', 'tiempo_20_30m', 'vel_20_30m', 'tiempo_total', 'vel_max_kmh'
+    ].includes(metricKey);
+
+    const is505 = [
+      't_acel_2m', 'vel_acel_kmh', 't_desacel_2m', 'vel_desacel_kmh', 't_cod_2m', 'vel_cod_kmh', 't_reacel_1_2m', 'vel_reacel_1_kmh', 't_reacel_2_2m', 'vel_reacel_2_kmh', 'z_score_acel'
+    ].includes(metricKey);
+
+    const isVO2 = [
+      'vo2_max', 'vam', 'fc_max', 'nivel', 'pasada', 'mts', 'vfa', 'vt1_vel', 'vt1_pct', 'vt1_fc', 'vt2_vel', 'vt2_pct', 'vt2_fc'
+    ].includes(metricKey);
+
+    const isAntro = [
+      'masa_adiposa_pct', 'masa_corporal_kg', 'talla_cm', 'talla_sentada_cm', 'masa_muscular_pct', 'masa_osea_pct', 'sum_pliegues_6_mm', 'sum_pliegues_8_mm', 'indice_imo', 'indice_imc', 'masa_muscular_kg', 'masa_adiposa_kg', 'masa_osea_kg', 'somatotipo_endo', 'somatotipo_meso', 'somatotipo_ecto', 'maduracion_media', 'phv_media', 'estatura_proy_media_cm'
+    ].includes(metricKey);
+
+    if (isIMTP) {
+      records = imtp;
+      dateField = 'fecha_test';
+    } else if (isCmjRebound) {
+      records = cmjReboundData;
+      dateField = 'fecha_test';
+    } else if (isSpeed) {
+      records = speed;
+      dateField = 'fecha';
+    } else if (is505) {
+      records = test505Data;
+      dateField = 'fecha';
+    } else if (isVO2) {
+      records = vo2max;
+      dateField = 'fecha';
+    } else if (isAntro) {
+      records = antropometria;
+      dateField = 'fecha_medicion';
+    }
+
+    const sorted = records
+      .filter(r => Number(r.player_id) === Number(playerId))
+      .sort((a, b) => new Date(b[dateField]).getTime() - new Date(a[dateField]).getTime());
+
+    for (const r of sorted) {
+      let val = r[metricKey];
+      if (val === undefined || val === null || val === '') {
+        if (metricKey === 'imtp_fuerza_n') val = r['Peak Vertical Force [N]'];
+        if (metricKey === 'imtp_f_relativa_n_kg') val = r['Peak Vertical Force / BM'] || r['Peak Vertical Force / BM [N/kg]'];
+        if (metricKey === 'imtp_force_50ms') val = r['Force (Net of BW) at 50ms'] || r['Force (Net of BW) at 50ms [N]'];
+        if (metricKey === 'imtp_force_100ms') val = r['Force (Net of BW) at 100ms'] || r['Force (Net of BW) at 100ms [N]'];
+        if (metricKey === 'imtp_force_150ms') val = r['Force (Net of BW) at 150ms'] || r['Force (Net of BW) at 150ms [N]'];
+        if (metricKey === 'imtp_force_200ms') val = r['Force (Net of BW) at 200ms'] || r['Force (Net of BW) at 200ms [N]'];
+        if (metricKey === 'imtp_rfd_100ms') val = r['RFD - 100ms [N/s]'];
+        if (metricKey === 'imtp_rfd_150ms') val = r['RFD - 150ms [N/s]'];
+        if (metricKey === 'imtp_rfd_200ms') val = r['RFD - 200ms [N/s]'];
+
+        if (metricKey === 'concentric_peak_force_n') val = r.fuerza_cmj;
+        if (metricKey === 'rsi_modified_m_s') val = r.cmj_rsi_mod;
+        if (metricKey === 'jump_height_impmom_cm') val = r.cmj_altura_salto_im;
+      }
+      if (val !== null && val !== undefined && val !== '') {
+        const valNum = Number(val);
+        if (!isNaN(valNum)) {
+          return valNum;
+        }
+      }
+    }
+    return undefined;
+  };
 
   const calculateStats = (metricKey: string) => {
     const filteredPlayers = players.filter(p => {
@@ -3513,7 +4513,7 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     });
 
     const values = filteredPlayers.map(p => {
-      const val = getLatestMetricValue(p.player_id, metricKey, imtp, speed, vo2max, antropometria);
+      const val = getValueForPlayer(p.player_id, metricKey);
       return val !== undefined ? Number(val) : null;
     }).filter((v): v is number => v !== null && !isNaN(v));
 
@@ -3522,7 +4522,8 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
     const std = Math.sqrt(values.map(x => Math.pow(x - avg, 2)).reduce((a, b) => a + b, 0) / values.length);
 
-    const isInverted = [
+    const optionInfo = ALL_METRICS_LIST.find(o => o.key === metricKey) as { label: string; key: string; lowerIsBetter?: boolean } | undefined;
+    const isInverted = optionInfo?.lowerIsBetter || [
       'masa_adiposa_kg', 
       'masa_adiposa_pct', 
       'tiempo_10m', 
@@ -3557,7 +4558,7 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     });
 
     const values = filteredPlayers.map(p => {
-      const val = getLatestMetricValue(p.player_id, metricKey, imtp, speed, vo2max, antropometria);
+      const val = getValueForPlayer(p.player_id, metricKey);
       return val !== undefined ? Number(val) : null;
     }).filter((v): v is number => v !== null && !isNaN(v));
 
@@ -3575,7 +4576,8 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     const p25 = getP(25);
     const p10 = getP(10);
 
-    const isInverted = [
+    const optionInfo = ALL_METRICS_LIST.find(o => o.key === metricKey) as { label: string; key: string; lowerIsBetter?: boolean } | undefined;
+    const isInverted = optionInfo?.lowerIsBetter || [
       'masa_adiposa_kg', 
       'masa_adiposa_pct', 
       'tiempo_10m', 
@@ -3601,315 +4603,279 @@ const Categorias = ({ players, imtp, speed, vo2max, antropometria, selectedAnios
     return { p90, p75, p50, p25, p10, count: values.length, distribution, isInverted };
   };
 
-  const renderCategoryBox = (metricKey: string, setMetric: (val: string) => void, title: string) => {
+  const renderUnifiedAnalysisBox = (
+    metricKey: string,
+    setMetric: (val: string) => void,
+    title: string,
+    subtitle: string,
+    options: { label: string, key: string, lowerIsBetter?: boolean }[],
+    mode: 'estadisticos' | 'percentiles',
+    setMode: (m: 'estadisticos' | 'percentiles') => void,
+    accentColorClass: string = 'bg-red-600'
+  ) => {
     const stats = calculateStats(metricKey);
-    const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
+    const pStats = calculatePercentileStats(metricKey);
+    const isPercentile = mode === 'percentiles';
 
     return (
-      <div className="bg-white rounded-[40px] p-8 md:p-12 shadow-sm border border-slate-100 flex flex-col">
-        <div className="flex flex-wrap items-center justify-between gap-6 mb-12">
-          <div className="flex items-center gap-4">
-            <div className="w-3 h-10 bg-red-600 rounded-full"></div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">{title}</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Benchmarks Estadísticos</p>
+      <div className="bg-white rounded-[40px] p-6 md:p-8 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-md">
+        <div>
+          {/* HEADER */}
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+            <div className="flex items-center gap-3.5">
+              <div className={`w-2.5 h-8 ${accentColorClass} rounded-full`}></div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-tighter italic leading-none">{title}</h3>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{subtitle}</p>
+              </div>
+            </div>
+            
+            {/* TOGGLE MODE */}
+            <div className="flex bg-slate-100 p-1 rounded-xl">
+              <button
+                onClick={() => setMode('estadisticos')}
+                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                  !isPercentile 
+                    ? 'bg-white text-slate-900 shadow-sm' 
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Estadísticos
+              </button>
+              <button
+                onClick={() => setMode('percentiles')}
+                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                  isPercentile 
+                    ? 'bg-white text-slate-900 shadow-sm' 
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Percentiles
+              </button>
             </div>
           </div>
-          <select 
-            value={metricKey}
-            onChange={(e) => setMetric(e.target.value)}
-            className="bg-slate-50 border-none rounded-2xl px-6 py-3 text-xs font-black text-slate-600 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest transition-all"
-          >
-            {METRICS_OPTIONS.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
-          </select>
-        </div>
 
-        {!stats ? (
-          <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-[32px] border border-dashed border-slate-200">
-            <i className="fa-solid fa-chart-line text-slate-300 text-4xl mb-4"></i>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sin datos suficientes para calcular</p>
+          {/* SELECT METRIC */}
+          <div className="mb-8">
+            <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Seleccionar Métrica</label>
+            <select 
+              value={metricKey}
+              onChange={(e) => setMetric(e.target.value)}
+              className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-black text-slate-600 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest transition-all"
+            >
+              {options.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+            </select>
           </div>
-        ) : (
-          <div className="space-y-10">
-            {/* RESUMEN BASE */}
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-900 rounded-3xl p-6 text-white">
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Promedio (μ)</p>
-                  <p className="text-3xl font-black italic tracking-tighter">
-                    {(stats.avg != null && !isNaN(Number(stats.avg))) ? Number(stats.avg).toFixed(2) : '-'}
-                  </p>
+
+          {/* DATA PRESENTATION */}
+          {(!stats || !pStats) ? (
+            <div className="flex flex-col items-center justify-center py-16 bg-slate-50 rounded-[32px] border border-dashed border-slate-200">
+              <i className="fa-solid fa-chart-line text-slate-300 text-3xl mb-3"></i>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sin datos suficientes</p>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {/* RESUMEN METRICAS PRINCIPALES */}
+              {!isPercentile ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-900 rounded-3xl p-5 text-white">
+                    <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Promedio (μ)</p>
+                    <p className="text-2xl font-black italic tracking-tighter">
+                      {(stats.avg != null && !isNaN(Number(stats.avg))) ? Number(stats.avg).toFixed(2) : '-'}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Desv. Estándar (σ)</p>
+                    <p className="text-2xl font-black italic tracking-tighter text-slate-900">
+                      ±{(stats.std != null && !isNaN(Number(stats.std))) ? Number(stats.std).toFixed(2) : '0.00'}
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Desv. Estándar (σ)</p>
-                  <p className="text-3xl font-black italic tracking-tighter text-slate-900">
-                    ±{(stats.std != null && !isNaN(Number(stats.std))) ? Number(stats.std).toFixed(2) : '0.00'}
-                  </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-900 rounded-3xl p-5 text-white">
+                    <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Mediana (P50)</p>
+                    <p className="text-2xl font-black italic tracking-tighter">
+                      {(pStats.p50 != null && !isNaN(Number(pStats.p50))) ? Number(pStats.p50).toFixed(2) : '-'}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Élite (P90)</p>
+                    <p className="text-2xl font-black italic tracking-tighter text-slate-900">
+                      {(pStats.p90 != null && !isNaN(Number(pStats.p90))) ? Number(pStats.p90).toFixed(2) : '-'}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* MUESTRA TOTAL */}
               <div className="flex justify-center">
-                <div className="bg-slate-100/50 px-4 py-1.5 rounded-full flex items-center gap-2">
-                  <i className="fa-solid fa-users text-[10px] text-slate-400"></i>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Muestra Total: {stats.count} Jugadores</span>
+                <div className="bg-slate-100/50 px-3 py-1 rounded-full flex items-center gap-2">
+                  <i className="fa-solid fa-users text-[8px] text-slate-400"></i>
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                    Muestra: {stats.count} Jugadores
+                  </span>
+                </div>
+              </div>
+
+              {/* DISTRIBUCIÓN POR NIVELES */}
+              <div className="space-y-3">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                  Distribución por {!isPercentile ? 'Niveles' : 'Percentiles'}
+                </p>
+
+                <div className="space-y-2">
+                  {/* ELITE */}
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-emerald-200">
+                        <i className="fa-solid fa-crown text-xs"></i>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest leading-none">Élite</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {!isPercentile 
+                            ? (stats.isInverted ? 'Inferior a -1σ' : 'Superior a +1σ')
+                            : (pStats.isInverted ? 'Inferior a P10' : 'Superior a P90')
+                          } ({!isPercentile ? stats.distribution.elite : pStats.distribution.elite} jug.)
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-emerald-700 italic tracking-tighter">
+                        {!isPercentile 
+                          ? `${stats.isInverted ? '<' : '>'} ${((stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std) != null && !isNaN(Number(stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std))) ? (stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std).toFixed(2) : '-'}`
+                          : `${pStats.isInverted ? '<=' : '>='} ${(pStats.isInverted ? pStats.p10 : pStats.p90).toFixed(2)}`
+                        }
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* COMPETITIVO */}
+                  <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-blue-200">
+                        <i className="fa-solid fa-bolt text-xs"></i>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none">Competitivo</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {!isPercentile 
+                            ? (stats.isInverted ? 'Entre -1σ y Promedio' : 'Entre Promedio y +1σ')
+                            : (pStats.isInverted ? 'Entre P10 y P25' : 'Entre P75 y P90')
+                          } ({!isPercentile ? stats.distribution.competitive : pStats.distribution.competitive} jug.)
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-blue-700 italic tracking-tighter">
+                        {!isPercentile 
+                          ? (stats.isInverted 
+                              ? `${(stats.avg - stats.std != null && !isNaN(Number(stats.avg - stats.std))) ? (stats.avg - stats.std).toFixed(2) : '-'} - ${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'}`
+                              : `${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'} - ${(stats.avg + stats.std != null && !isNaN(Number(stats.avg + stats.std))) ? (stats.avg + stats.std).toFixed(2) : '-'}`
+                            )
+                          : (pStats.isInverted 
+                              ? `${pStats.p10.toFixed(2)} - ${pStats.p25.toFixed(2)}`
+                              : `${pStats.p75.toFixed(2)} - ${pStats.p90.toFixed(2)}`
+                            )
+                        }
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* DESARROLLO */}
+                  <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-amber-200">
+                        <i className="fa-solid fa-seedling text-xs"></i>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest leading-none">En Desarrollo</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {!isPercentile 
+                            ? (stats.isInverted ? 'Entre Promedio y +1σ' : 'Entre -1σ y Promedio')
+                            : (pStats.isInverted ? 'Entre P25 y P50' : 'Entre P50 y P75')
+                          } ({!isPercentile ? stats.distribution.development : pStats.distribution.development} jug.)
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-amber-700 italic tracking-tighter">
+                        {!isPercentile 
+                          ? (stats.isInverted
+                              ? `${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'} - ${(stats.avg + stats.std != null && !isNaN(Number(stats.avg + stats.std))) ? (stats.avg + stats.std).toFixed(2) : '-'}`
+                              : `${(stats.avg - stats.std != null && !isNaN(Number(stats.avg - stats.std))) ? (stats.avg - stats.std).toFixed(2) : '-'} - ${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'}`
+                            )
+                          : (pStats.isInverted
+                              ? `${pStats.p25.toFixed(2)} - ${pStats.p50.toFixed(2)}`
+                              : `${pStats.p50.toFixed(2)} - ${pStats.p75.toFixed(2)}`
+                            )
+                        }
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* ATENCION */}
+                  <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-red-200">
+                        <i className="fa-solid fa-triangle-exclamation text-xs"></i>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-red-600 uppercase tracking-widest leading-none">Atención</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {!isPercentile 
+                            ? (stats.isInverted ? 'Superior a +1σ' : 'Inferior a -1σ')
+                            : (pStats.isInverted ? 'Superior a P50' : 'Inferior a P50')
+                          } ({!isPercentile ? stats.distribution.attention : pStats.distribution.attention} jug.)
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-red-700 italic tracking-tighter">
+                        {!isPercentile 
+                          ? `${stats.isInverted ? '>' : '<'} ${((stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std) != null && !isNaN(Number(stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std))) ? (stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std).toFixed(2) : '-'}`
+                          : `${pStats.isInverted ? '>' : '<'} ${(pStats.p50 != null && !isNaN(Number(pStats.p50))) ? pStats.p50.toFixed(2) : '0.00'}`
+                        }
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-
-            {/* CATEGORÍAS */}
-            <div className="space-y-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Distribución por Niveles</p>
-              
-              <div className="grid grid-cols-1 gap-3">
-                {/* ELITE */}
-                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-200">
-                      <i className="fa-solid fa-crown text-sm"></i>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Nivel Élite</p>
-                      <p className="text-xs font-bold text-slate-500">
-                        {stats.isInverted ? 'Inferior a -1σ' : 'Superior a +1σ'} ({stats.distribution.elite} jug.)
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-emerald-700 italic tracking-tighter">
-                      {stats.isInverted ? '<' : '>'} {((stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std) != null && !isNaN(Number(stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std))) ? (stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std).toFixed(2) : '-'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* COMPETITIVO */}
-                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-                      <i className="fa-solid fa-bolt text-sm"></i>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Nivel Competitivo</p>
-                      <p className="text-xs font-bold text-slate-500">
-                        {stats.isInverted ? 'Entre -1σ y Promedio' : 'Entre Promedio y +1σ'} ({stats.distribution.competitive} jug.)
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-blue-700 italic tracking-tighter">
-                      {stats.isInverted 
-                        ? `${(stats.avg - stats.std != null && !isNaN(Number(stats.avg - stats.std))) ? (stats.avg - stats.std).toFixed(2) : '-'} - ${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'}`
-                        : `${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'} - ${(stats.avg + stats.std != null && !isNaN(Number(stats.avg + stats.std))) ? (stats.avg + stats.std).toFixed(2) : '-'}`
-                      }
-                    </p>
-                  </div>
-                </div>
-
-                {/* DESARROLLO */}
-                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
-                      <i className="fa-solid fa-seedling text-sm"></i>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Nivel en Desarrollo</p>
-                      <p className="text-xs font-bold text-slate-500">
-                        {stats.isInverted ? 'Entre Promedio y +1σ' : 'Entre -1σ y Promedio'} ({stats.distribution.development} jug.)
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-amber-700 italic tracking-tighter">
-                      {stats.isInverted
-                        ? `${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'} - ${(stats.avg + stats.std != null && !isNaN(Number(stats.avg + stats.std))) ? (stats.avg + stats.std).toFixed(2) : '-'}`
-                        : `${(stats.avg - stats.std != null && !isNaN(Number(stats.avg - stats.std))) ? (stats.avg - stats.std).toFixed(2) : '-'} - ${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'}`
-                      }
-                    </p>
-                  </div>
-                </div>
-
-                {/* ATENCION */}
-                <div className="bg-red-50 border border-red-100 rounded-2xl p-5 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-200">
-                      <i className="fa-solid fa-triangle-exclamation text-sm"></i>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Nivel de Atención</p>
-                      <p className="text-xs font-bold text-slate-500">
-                        {stats.isInverted ? 'Superior a +1σ' : 'Inferior a -1σ'} ({stats.distribution.attention} jug.)
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-red-700 italic tracking-tighter">
-                      {stats.isInverted ? '>' : '<'} {((stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std) != null && !isNaN(Number(stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std))) ? (stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std).toFixed(2) : '-'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderPercentileBox = (metricKey: string, title: string) => {
-    const stats = calculatePercentileStats(metricKey);
-    const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
-
-    return (
-      <div className="bg-white rounded-[40px] p-8 md:p-12 shadow-sm border border-slate-100 flex flex-col">
-        <div className="flex flex-wrap items-center justify-between gap-6 mb-12">
-          <div className="flex items-center gap-4">
-            <div className="w-3 h-10 bg-[#0b1220] rounded-full"></div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">{title}</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Análisis por Percentiles</p>
-            </div>
-          </div>
-          <div className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-            <i className="fa-solid fa-chart-bar"></i> {label}
-          </div>
+          )}
         </div>
-
-        {!stats ? (
-          <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-[32px] border border-dashed border-slate-200">
-            <i className="fa-solid fa-chart-simple text-slate-300 text-4xl mb-4"></i>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sin datos suficientes para calcular percentiles</p>
-          </div>
-        ) : (
-          <div className="space-y-10">
-            {/* RESUMEN PERCENTILES */}
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-900 rounded-3xl p-6 text-white">
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Mediana (P50)</p>
-                  <p className="text-3xl font-black italic tracking-tighter">
-                    {(stats.p50 != null && !isNaN(Number(stats.p50))) ? Number(stats.p50).toFixed(2) : '-'}
-                  </p>
-                </div>
-                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Elite (P90)</p>
-                  <p className="text-3xl font-black italic tracking-tighter text-slate-900">
-                    {(stats.p90 != null && !isNaN(Number(stats.p90))) ? Number(stats.p90).toFixed(2) : '-'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-center">
-                <div className="bg-slate-100/50 px-4 py-1.5 rounded-full flex items-center gap-2">
-                  <i className="fa-solid fa-users text-[10px] text-slate-400"></i>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Muestra Total: {stats.count} Jugadores</span>
-                </div>
-              </div>
-            </div>
-
-            {/* CATEGORÍAS PERCENTILES */}
-            <div className="space-y-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Distribución por Percentiles</p>
-              
-              <div className="grid grid-cols-1 gap-3">
-                {/* ELITE P90 */}
-                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-200">
-                      <i className="fa-solid fa-crown text-sm"></i>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Rango Élite (Top 10%)</p>
-                      <p className="text-xs font-bold text-slate-500">
-                        {stats.isInverted ? `Inferior a P10` : `Superior a P90`} ({stats.distribution.elite} jug.)
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-emerald-700 italic tracking-tighter">
-                      {stats.isInverted ? '<=' : '>='} {(stats.isInverted ? stats.p10 : stats.p90).toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* COMPETITIVO P75 */}
-                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-                      <i className="fa-solid fa-bolt text-sm"></i>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Rango Competitivo</p>
-                      <p className="text-xs font-bold text-slate-500">
-                        {stats.isInverted ? `Entre P10 y P25` : `Entre P75 y P90`} ({stats.distribution.competitive} jug.)
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-blue-700 italic tracking-tighter">
-                      {stats.isInverted 
-                        ? `${stats.p10.toFixed(2)} - ${stats.p25.toFixed(2)}`
-                        : `${stats.p75.toFixed(2)} - ${stats.p90.toFixed(2)}`
-                      }
-                    </p>
-                  </div>
-                </div>
-
-                {/* DESARROLLO P50 */}
-                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
-                      <i className="fa-solid fa-seedling text-sm"></i>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Rango en Desarrollo</p>
-                      <p className="text-xs font-bold text-slate-500">
-                        {stats.isInverted ? `Entre P25 y P50` : `Entre P50 y P75`} ({stats.distribution.development} jug.)
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-amber-700 italic tracking-tighter">
-                      {stats.isInverted
-                        ? `${stats.p25.toFixed(2)} - ${stats.p50.toFixed(2)}`
-                        : `${stats.p50.toFixed(2)} - ${stats.p75.toFixed(2)}`
-                      }
-                    </p>
-                  </div>
-                </div>
-
-                {/* ATENCION < P50 */}
-                <div className="bg-red-50 border border-red-100 rounded-2xl p-5 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-200">
-                      <i className="fa-solid fa-triangle-exclamation text-sm"></i>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Rango de Atención</p>
-                      <p className="text-xs font-bold text-slate-500">
-                        {stats.isInverted ? `Superior a P50` : `Inferior a P50`} ({stats.distribution.attention} jug.)
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-red-700 italic tracking-tighter">
-                      {stats.isInverted ? '>' : '<'} {stats.p50.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
 
   return (
     <div className="space-y-12">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-        {renderCategoryBox(metric1, setMetric1, "Caja de Análisis 1")}
-        {renderCategoryBox(metric2, setMetric2, "Caja de Análisis 2")}
+      <div className="bg-[#0b1220] rounded-[32px] p-8 text-white relative overflow-hidden shadow-lg border border-slate-800">
+        <div className="absolute right-0 top-0 bottom-0 opacity-10 flex items-center justify-center p-8 pointer-events-none">
+          <i className="fa-solid fa-layer-group text-[180px]"></i>
+        </div>
+        <div className="relative z-10 max-w-2xl">
+          <span className="bg-red-600 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
+            Módulo de Categorías por Evaluación
+          </span>
+          <h2 className="text-3xl font-black italic tracking-tighter uppercase mt-4 mb-3">
+            Análisis de Benchmarks
+          </h2>
+          <p className="text-xs text-slate-300 font-medium leading-relaxed">
+            Consulte la distribución del plantel nacional dividida por evaluaciones clave del laboratorio de ciencias del deporte. Compare métricas específicas utilizando estadísticas de campana de Gauss (μ/σ) o rangos de percentiles (P) para identificar talentos de nivel Élite o jugadores que requieren atención.
+          </p>
+        </div>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-        {renderPercentileBox(metric1, "Caja de Análisis 3 (Percentiles)")}
-        {renderPercentileBox(metric2, "Caja de Análisis 4 (Percentiles)")}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {renderUnifiedAnalysisBox(metric1, setMetric1, "Fuerza (IMTP)", "Estadísticas de Fuerza Máxima", BOX1_METRICS, mode1, setMode1, "bg-orange-500")}
+        {renderUnifiedAnalysisBox(metric2, setMetric2, "Salto & Reactividad (CMJ)", "Reactividad de Miembro Inferior", BOX2_METRICS, mode2, setMode2, "bg-teal-500")}
+        {renderUnifiedAnalysisBox(metric3, setMetric3, "Velocidad & Agilidad", "Pruebas de Esprint y COD 505", BOX3_METRICS, mode3, setMode3, "bg-blue-500")}
+        {renderUnifiedAnalysisBox(metric4, setMetric4, "Resistencia Aeróbica", "Capacidad y Umbrales Cardiorrespiratorios", BOX4_METRICS, mode4, setMode4, "bg-purple-500")}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {renderUnifiedAnalysisBox(metric5, setMetric5, "Antropometría", "Composición Corporal y Maduración", BOX5_METRICS, mode5, setMode5, "bg-pink-500")}
       </div>
     </div>
   );
@@ -4265,9 +5231,101 @@ const HealthLoad = ({ player, injury, gps }: { player?: PlayerData, injury?: Inj
   );
 };
 
-const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTPData[], speed: SpeedTestData[], vo2max: VO2MaxData[], antropometria: AntropometriaData[], players: PlayerData[] }) => {
-  const [tableType, setTableType] = useState<'imtp' | 'speed' | 'vo2max' | 'antropometria'>('imtp');
+const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjRebound = [], players }: { imtp: IMTPData[], speed: SpeedTestData[], vo2max: VO2MaxData[], antropometria: AntropometriaData[], test505?: any[], cmjRebound?: CMJReboundData[], players: PlayerData[] }) => {
+  const [tableType, setTableType] = useState<'imtp' | 'rebound' | 'speed' | 'vo2max' | 'antropometria' | 'test505' | 'comparativa'>('imtp');
   const [searchTerm, setSearchTerm] = useState('');
+
+  const [comparativeMetrics, setComparativeMetrics] = useState({
+    fuerza: 'imtp_fuerza_n',
+    velocidad: 'tiempo_total',
+    resistencia: 'vo2_max',
+    antropometria: 'masa_corporal_kg',
+    agilidad: 't_cod_2m'
+  });
+
+  const isLowerIsBetter = (key: string): boolean => {
+    return [
+      'imtp_asimetria',
+      'concentric_duration_ms',
+      'rebound_contact_time_ms',
+      'tiempo_total',
+      'tiempo_10m',
+      'tiempo_10_20m',
+      'tiempo_20_30m',
+      't_acel_2m',
+      't_desacel_2m',
+      't_cod_2m',
+      't_reacel_1_2m',
+      't_reacel_2_2m',
+      'masa_adiposa_pct',
+      'sum_pliegues_6_mm',
+      'sum_pliegues_8_mm',
+      'masa_adiposa_kg'
+    ].includes(key);
+  };
+
+  const fuerzaMetrics = [
+    { label: 'IMTP Fuerza Máxima (N)', key: 'imtp_fuerza_n' },
+    { label: 'IMTP Fuerza Relativa (N/kg)', key: 'imtp_f_relativa_n_kg' },
+    { label: 'IMTP Fuerza 50ms (N)', key: 'imtp_force_50ms' },
+    { label: 'IMTP Fuerza 100ms (N)', key: 'imtp_force_100ms' },
+    { label: 'IMTP Fuerza 150ms (N)', key: 'imtp_force_150ms' },
+    { label: 'IMTP Fuerza 200ms (N)', key: 'imtp_force_200ms' },
+    { label: 'IMTP RFD 100ms (N/s)', key: 'imtp_rfd_100ms' },
+    { label: 'IMTP RFD 150ms (N/s)', key: 'imtp_rfd_150ms' },
+    { label: 'IMTP RFD 200ms (N/s)', key: 'imtp_rfd_200ms' },
+    { label: 'IMTP Asimetría (%)', key: 'imtp_asimetria' },
+    { label: 'IMTP Débil', key: 'imtp_debil' },
+    { label: 'CMJ Fuerza Pico Conc (N)', key: 'concentric_peak_force_n' },
+    { label: 'CMJ RSI Modificado', key: 'rsi_modified_m_s' },
+    { label: 'CMJ Altura Salto (cm)', key: 'jump_height_impmom_cm' },
+    { label: 'CMJ Pot. Pico Rel (W/kg)', key: 'peak_power_bm_w_kg' },
+    { label: 'CMJ Pot. Pico Abs (W)', key: 'peak_power_w' },
+    { label: 'CMJ Profundidad (cm)', key: 'countermovement_depth_cm' },
+    { label: 'CMJ Duración Conc (ms)', key: 'concentric_duration_ms' },
+    { label: 'CMJ Impulso Conc (Ns)', key: 'concentric_impulse_ns' },
+    { label: 'CMJ Momento Despegue', key: 'take_off_momentum_kg_m_s' },
+    { label: 'CMJ Rebound RSI', key: 'rebound_rsi' },
+    { label: 'T. Contacto Rebound (ms)', key: 'rebound_contact_time_ms' },
+    { label: 'T. Vuelo Rebound (ms)', key: 'rebound_flight_time_ms' },
+  ];
+
+  const velocidadMetrics = [
+    { label: 'Tiempo Total (s)', key: 'tiempo_total' },
+    { label: 'Tiempo 10m (s)', key: 'tiempo_10m' },
+    { label: 'Velocidad 10m (m/s)', key: 'vel_10m' },
+    { label: 'Tiempo 10-20m (s)', key: 'tiempo_10_20m' },
+    { label: 'Tiempo 20-30m (s)', key: 'tiempo_20_30m' },
+  ];
+
+  const resistenciaMetrics = [
+    { label: 'VO2 Max (ml/kg/min)', key: 'vo2_max' },
+    { label: 'VMA (km/h)', key: 'vam' },
+    { label: 'FC Máxima (bpm)', key: 'fc_max' },
+    { label: 'Distancia (m)', key: 'mts' },
+    { label: 'VFA', key: 'vfa' },
+    { label: 'VT1 Vel', key: 'vt1_vel' },
+    { label: 'VT2 Vel', key: 'vt2_vel' },
+  ];
+
+  const antropometriaMetrics = [
+    { label: 'Masa Corporal (kg)', key: 'masa_corporal_kg' },
+    { label: 'Talla (cm)', key: 'talla_cm' },
+    { label: 'Masa Muscular (%)', key: 'masa_muscular_pct' },
+    { label: 'Masa Muscular (kg)', key: 'masa_muscular_kg' },
+    { label: 'Masa Adiposa (%)', key: 'masa_adiposa_pct' },
+    { label: 'Masa Adiposa (kg)', key: 'masa_adiposa_kg' },
+    { label: 'Suma 6 Pliegues (mm)', key: 'sum_pliegues_6_mm' },
+    { label: 'Índice IMO', key: 'indice_imo' },
+  ];
+
+  const agilidadMetrics = [
+    { label: 'T. COD 2m (s)', key: 't_cod_2m' },
+    { label: 'T. Acel 2m (s)', key: 't_acel_2m' },
+    { label: 'T. Desacel 2m (s)', key: 't_desacel_2m' },
+    { label: 'T. Reacel 1.2m (s)', key: 't_reacel_1_2m' },
+    { label: 'Z-Score Acel', key: 'z_score_acel' },
+  ];
 
   const playerMap = useMemo(() => {
     const map: Record<number, PlayerData> = {};
@@ -4275,14 +5333,191 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
     return map;
   }, [players]);
 
+  const resolveMetricValue = (row: any, key: string): any => {
+    if (!row) return undefined;
+    let val = row[key];
+    if (val === undefined || val === null || val === '') {
+      if (key === 'imtp_fuerza_n') val = row['Peak Vertical Force [N]'];
+      if (key === 'imtp_f_relativa_n_kg') val = row['Peak Vertical Force / BM'] || row['Peak Vertical Force / BM [N/kg]'];
+      if (key === 'imtp_force_50ms') val = row['Force (Net of BW) at 50ms'] || row['Force (Net of BW) at 50ms [N]'];
+      if (key === 'imtp_force_100ms') val = row['Force (Net of BW) at 100ms'] || row['Force (Net of BW) at 100ms [N]'];
+      if (key === 'imtp_force_150ms') val = row['Force (Net of BW) at 150ms'] || row['Force (Net of BW) at 150ms [N]'];
+      if (key === 'imtp_force_200ms') val = row['Force (Net of BW) at 200ms'] || row['Force (Net of BW) at 200ms [N]'];
+      if (key === 'imtp_rfd_100ms') val = row['RFD - 100ms [N/s]'];
+      if (key === 'imtp_rfd_150ms') val = row['RFD - 150ms [N/s]'];
+      if (key === 'imtp_rfd_200ms') val = row['RFD - 200ms [N/s]'];
+
+      if (key === 'concentric_peak_force_n') val = row.fuerza_cmj;
+      if (key === 'fuerza_cmj') val = row.concentric_peak_force_n;
+      if (key === 'rsi_modified_m_s') val = row.cmj_rsi_mod;
+      if (key === 'cmj_rsi_mod') val = row.rsi_modified_m_s;
+      if (key === 'jump_height_impmom_cm') val = row.cmj_altura_salto_im;
+      if (key === 'cmj_altura_salto_im') val = row.jump_height_impmom_cm;
+      if (key === 'peak_power_bm_w_kg') val = row.cmj_peak_pot_relativa;
+      if (key === 'cmj_peak_pot_relativa') val = row.peak_power_bm_w_kg;
+    }
+    return val;
+  };
+
+  const latestEvaluationsMap = useMemo(() => {
+    const map: Record<number, {
+      imtp: any | null;
+      speed: any | null;
+      vo2max: any | null;
+      antropometria: any | null;
+      test505: any | null;
+      rebound: any | null;
+    }> = {};
+
+    players.forEach(p => {
+      map[p.player_id] = {
+        imtp: null,
+        speed: null,
+        vo2max: null,
+        antropometria: null,
+        test505: null,
+        rebound: null,
+      };
+    });
+
+    imtp.forEach(row => {
+      const pId = row.player_id;
+      if (map[pId]) {
+        const current = map[pId].imtp;
+        if (!current || new Date(row.fecha_test).getTime() > new Date(current.fecha_test).getTime()) {
+          map[pId].imtp = row;
+        }
+      }
+    });
+
+    speed.forEach(row => {
+      const pId = row.player_id;
+      if (map[pId]) {
+        const current = map[pId].speed;
+        if (!current || new Date(row.fecha).getTime() > new Date(current.fecha).getTime()) {
+          map[pId].speed = row;
+        }
+      }
+    });
+
+    vo2max.forEach(row => {
+      const pId = row.player_id;
+      if (map[pId]) {
+        const current = map[pId].vo2max;
+        if (!current || new Date(row.fecha).getTime() > new Date(current.fecha).getTime()) {
+          map[pId].vo2max = row;
+        }
+      }
+    });
+
+    antropometria.forEach(row => {
+      const pId = row.player_id;
+      if (map[pId]) {
+        const current = map[pId].antropometria;
+        if (!current || new Date(row.fecha_medicion).getTime() > new Date(current.fecha_medicion).getTime()) {
+          map[pId].antropometria = row;
+        }
+      }
+    });
+
+    test505.forEach(row => {
+      const pId = row.player_id;
+      if (map[pId]) {
+        const current = map[pId].test505;
+        if (!current || new Date(row.fecha).getTime() > new Date(current.fecha).getTime()) {
+          map[pId].test505 = row;
+        }
+      }
+    });
+
+    cmjRebound.forEach(row => {
+      const pId = row.player_id;
+      if (map[pId]) {
+        const current = map[pId].rebound;
+        if (!current || new Date(row.fecha_test).getTime() > new Date(current.fecha_test).getTime()) {
+          map[pId].rebound = row;
+        }
+      }
+    });
+
+    return map;
+  }, [players, imtp, speed, vo2max, antropometria, test505, cmjRebound]);
+
+  const resolveComparativeValueAndDate = (evals: any, metricKey: string) => {
+    let record = null;
+    let dateField = 'fecha';
+
+    const isIMTP = [
+      'imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'imtp_asimetria', 'imtp_debil', 'imtp_force_50ms', 'imtp_force_100ms', 'imtp_force_150ms', 'imtp_force_200ms', 'imtp_rfd_100ms', 'imtp_rfd_150ms', 'imtp_rfd_200ms',
+      'fuerza_cmj', 'cmj_rsi_mod', 'cmj_altura_salto_im', 'cmj_peak_pot_relativa',
+      'concentric_peak_force_n', 'rsi_modified_m_s', 'jump_height_impmom_cm', 'peak_power_bm_w_kg', 'countermovement_depth_cm', 'concentric_duration_ms', 'concentric_impulse_ns', 'take_off_momentum_kg_m_s', 'peak_power_w'
+    ].includes(metricKey);
+
+    const isCmjRebound = [
+      'rebound_rsi', 'rebound_contact_time_ms', 'rebound_flight_time_ms'
+    ].includes(metricKey);
+
+    const isSpeed = [
+      'tiempo_10m', 'vel_10m', 'tiempo_10_20m', 'vel_10_20m', 'tiempo_20_30m', 'vel_20_30m', 'tiempo_total', 'vel_max_kmh'
+    ].includes(metricKey);
+
+    const is505 = [
+      't_acel_2m', 'vel_acel_kmh', 't_desacel_2m', 'vel_desacel_kmh', 't_cod_2m', 'vel_cod_kmh', 't_reacel_1_2m', 'vel_reacel_1_kmh', 't_reacel_2_2m', 'vel_reacel_2_kmh', 'z_score_acel'
+    ].includes(metricKey);
+
+    const isVO2 = [
+      'vo2_max', 'vam', 'fc_max', 'nivel', 'pasada', 'mts', 'vfa', 'vt1_vel', 'vt1_pct', 'vt1_fc', 'vt2_vel', 'vt2_pct', 'vt2_fc'
+    ].includes(metricKey);
+
+    const isAntro = [
+      'masa_adiposa_pct', 'masa_corporal_kg', 'talla_cm', 'talla_sentada_cm', 'masa_muscular_pct', 'masa_osea_pct', 'sum_pliegues_6_mm', 'sum_pliegues_8_mm', 'indice_imo', 'indice_imc', 'masa_muscular_kg', 'masa_adiposa_kg', 'masa_osea_kg', 'somatotipo_endo', 'somatotipo_meso', 'somatotipo_ecto', 'maduracion_media', 'phv_media', 'estatura_proy_media_cm'
+    ].includes(metricKey);
+
+    if (isIMTP) {
+      record = evals.imtp;
+      dateField = 'fecha_test';
+    } else if (isCmjRebound) {
+      record = evals.rebound;
+      dateField = 'fecha_test';
+    } else if (isSpeed) {
+      record = evals.speed;
+      dateField = 'fecha';
+    } else if (is505) {
+      record = evals.test505;
+      dateField = 'fecha';
+    } else if (isVO2) {
+      record = evals.vo2max;
+      dateField = 'fecha';
+    } else if (isAntro) {
+      record = evals.antropometria;
+      dateField = 'fecha_medicion';
+    }
+
+    const value = record ? resolveMetricValue(record, metricKey) : null;
+    const date = record ? record[dateField] : null;
+
+    return { value, date };
+  };
+
+  const filteredPlayersList = useMemo(() => {
+    let list = players;
+    if (!searchTerm) return list;
+    return list.filter(p => {
+      const name = `${p.nombre} ${p.apellido1}`.toLowerCase();
+      return name.includes(searchTerm.toLowerCase());
+    });
+  }, [players, searchTerm]);
+
   const filteredData = useMemo(() => {
     let data: any[] = [];
     if (tableType === 'imtp') data = imtp;
+    else if (tableType === 'rebound') data = cmjRebound;
     else if (tableType === 'speed') data = speed;
     else if (tableType === 'vo2max') data = vo2max;
     else if (tableType === 'antropometria') data = antropometria;
+    else if (tableType === 'test505') data = test505;
+    else if (tableType === 'comparativa') return [];
 
-    // Solo conservar registros cuyos jugadores estén presentes en la lista de jugadores actual (según el ámbito seleccionado)
     const validData = data.filter(d => !!playerMap[d.player_id]);
 
     if (!searchTerm) return validData;
@@ -4292,7 +5527,7 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
       const name = player ? `${player.nombre} ${player.apellido1}`.toLowerCase() : '';
       return name.includes(searchTerm.toLowerCase());
     });
-  }, [tableType, imtp, speed, vo2max, antropometria, searchTerm, playerMap]);
+  }, [tableType, imtp, cmjRebound, speed, vo2max, antropometria, test505, searchTerm, playerMap]);
 
   const columns = useMemo(() => {
     if (tableType === 'imtp') {
@@ -4301,31 +5536,35 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
         { label: 'Peso', key: 'peso' },
         { label: 'IMTP Fuerza (N)', key: 'imtp_fuerza_n' },
         { label: 'IMTP F. Relativa', key: 'imtp_f_relativa_n_kg' },
-        { label: 'IMTP Asimetría', key: 'imtp_asimetria' },
+        { label: 'IMTP F. 50ms (N)', key: 'imtp_force_50ms' },
+        { label: 'IMTP F. 100ms (N)', key: 'imtp_force_100ms' },
+        { label: 'IMTP F. 150ms (N)', key: 'imtp_force_150ms' },
+        { label: 'IMTP F. 200ms (N)', key: 'imtp_force_200ms' },
+        { label: 'IMTP RFD 100ms', key: 'imtp_rfd_100ms' },
+        { label: 'IMTP RFD 150ms', key: 'imtp_rfd_150ms' },
+        { label: 'IMTP RFD 200ms', key: 'imtp_rfd_200ms' },
+        { label: 'IMTP Asimetría %', key: 'imtp_asimetria' },
         { label: 'IMTP Débil', key: 'imtp_debil' },
-        { label: 'Fuerza CMJ', key: 'fuerza_cmj' },
-        { label: 'CMJ RSI Mod', key: 'cmj_rsi_mod' },
-        { label: 'CMJ Altura (IM)', key: 'cmj_altura_salto_im' },
-        { label: 'CMJ Salto (TV)', key: 'cmj_salto_tv' },
-        { label: 'CMJ Peak Pot Rel', key: 'cmj_peak_pot_relativa' },
-        { label: 'CMJ Asim Aterrizaje', key: 'cmj_asimetria_aterrizaje' },
-        { label: 'Landing (N)', key: 'landing_n' },
-        { label: 'Landing Relativo', key: 'landing_relativo' },
-        { label: 'CMJ Pierna Débil', key: 'cmj_pierna_debil' },
-        { label: 'DSI Valor', key: 'dsi_valor' },
-        { label: 'AVK Peak Pot Rel', key: 'avk_peak_pot_relativa' },
-        { label: 'AVK Brazo TV', key: 'avk_indice_uso_brazos_tv' },
-        { label: 'AVK X TV', key: 'avk_x_tv' },
-        { label: 'AVK X IM', key: 'avk_x_im' },
-        { label: 'AVK Brazo IM', key: 'avk_indice_uso_brazos_im' },
-        { label: 'SLCMJ Izq (IM)', key: 'slcmj_izq_altura_im' },
-        { label: 'SLCMJ Izq (TV)', key: 'slcmj_izq_altura_tv' },
-        { label: 'SLCMJ Der (IM)', key: 'slcmj_der_altura_im' },
-        { label: 'SLCMJ Der (TV)', key: 'slcmj_der_altura_tv' },
-        { label: 'SLCMJ Dif % (IM)', key: 'slcmj_diferencia_pct_im' },
-        { label: 'SLCMJ Dif % (TV)', key: 'slcmj_diferencia_pct_tv' },
-        { label: 'Déficit Bilateral', key: 'deficit_bilateral' },
-        { label: 'Altura x RSI Mod', key: 'altura_x_rsi_mod' },
+        { label: 'CMJ Fuerza Pico Conc', key: 'concentric_peak_force_n' },
+        { label: 'CMJ RSI Mod', key: 'rsi_modified_m_s' },
+        { label: 'CMJ Altura (IM)', key: 'jump_height_impmom_cm' },
+        { label: 'CMJ Peak Pot Rel', key: 'peak_power_bm_w_kg' },
+        { label: 'CMJ Peak Pot Abs', key: 'peak_power_w' },
+        { label: 'CMJ Profundidad (cm)', key: 'countermovement_depth_cm' },
+        { label: 'CMJ Duración (ms)', key: 'concentric_duration_ms' },
+        { label: 'CMJ Impulso (Ns)', key: 'concentric_impulse_ns' },
+        { label: 'CMJ Momento Despegue', key: 'take_off_momentum_kg_m_s' },
+        { label: 'Observaciones', key: 'observaciones' },
+      ];
+    } else if (tableType === 'rebound') {
+      return [
+        { label: 'Fecha', key: 'fecha_test' },
+        { label: 'BW (kg)', key: 'bw_kg' },
+        { label: 'Repeticiones', key: 'reps' },
+        { label: 'CMJ Rebound RSI', key: 'rebound_rsi' },
+        { label: 'T. Contacto (ms)', key: 'rebound_contact_time_ms' },
+        { label: 'T. Vuelo (ms)', key: 'rebound_flight_time_ms' },
+        { label: 'Momento Despegue', key: 'take_off_momentum_kg_m_s' },
         { label: 'Observaciones', key: 'observaciones' },
       ];
     } else if (tableType === 'speed') {
@@ -4359,6 +5598,24 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
         { label: 'Peso', key: 'peso' },
         { label: 'Observaciones', key: 'observaciones' },
       ];
+    } else if (tableType === 'test505') {
+      return [
+        { label: 'Fecha', key: 'fecha' },
+        { label: 'T. Acel 2m', key: 't_acel_2m' },
+        { label: 'Vel Acel (km/h)', key: 'vel_acel_kmh' },
+        { label: 'T. Desacel 2m', key: 't_desacel_2m' },
+        { label: 'Vel Desacel (km/h)', key: 'vel_desacel_kmh' },
+        { label: 'T. COD 2m', key: 't_cod_2m' },
+        { label: 'Vel COD (km/h)', key: 'vel_cod_kmh' },
+        { label: 'T. Reacel 1.2m', key: 't_reacel_1_2m' },
+        { label: 'Vel Reacel 1 (km/h)', key: 'vel_reacel_1_kmh' },
+        { label: 'T. Reacel 2.2m', key: 't_reacel_2_2m' },
+        { label: 'Vel Reacel 2 (km/h)', key: 'vel_reacel_2_kmh' },
+        { label: 'Z-Score Acel', key: 'z_score_acel' },
+        { label: 'Observaciones', key: 'observaciones' },
+      ];
+    } else if (tableType === 'comparativa') {
+      return [];
     } else {
       return [
         { label: 'Fecha', key: 'fecha_medicion' },
@@ -4382,20 +5639,127 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
     }
   }, [tableType]);
 
+  const allValuesMap = useMemo(() => {
+    const map: Record<string, number[]> = {};
+    columns.forEach(col => {
+      map[col.key] = filteredData
+        .map(row => Number(resolveMetricValue(row, col.key)))
+        .filter(v => v !== null && v !== undefined && !isNaN(v) && v !== 0);
+    });
+    return map;
+  }, [filteredData, columns]);
+
+  const comparativeValuesMap = useMemo(() => {
+    const map: Record<string, number[]> = {
+      fuerza: [],
+      velocidad: [],
+      resistencia: [],
+      antropometria: [],
+      agilidad: []
+    };
+
+    filteredPlayersList.forEach(p => {
+      const evals = latestEvaluationsMap[p.player_id] || { imtp: null, speed: null, vo2max: null, antropometria: null, test505: null, rebound: null };
+      
+      const fData = resolveComparativeValueAndDate(evals, comparativeMetrics.fuerza);
+      if (fData.value !== null && fData.value !== undefined && !isNaN(Number(fData.value))) {
+        map.fuerza.push(Number(fData.value));
+      }
+
+      const vData = resolveComparativeValueAndDate(evals, comparativeMetrics.velocidad);
+      if (vData.value !== null && vData.value !== undefined && !isNaN(Number(vData.value))) {
+        map.velocidad.push(Number(vData.value));
+      }
+
+      const rData = resolveComparativeValueAndDate(evals, comparativeMetrics.resistencia);
+      if (rData.value !== null && rData.value !== undefined && !isNaN(Number(rData.value))) {
+        map.resistencia.push(Number(rData.value));
+      }
+
+      const aData = resolveComparativeValueAndDate(evals, comparativeMetrics.antropometria);
+      if (aData.value !== null && aData.value !== undefined && !isNaN(Number(aData.value))) {
+        map.antropometria.push(Number(aData.value));
+      }
+
+      const agData = resolveComparativeValueAndDate(evals, comparativeMetrics.agilidad);
+      if (agData.value !== null && agData.value !== undefined && !isNaN(Number(agData.value))) {
+        map.agilidad.push(Number(agData.value));
+      }
+    });
+
+    return map;
+  }, [filteredPlayersList, latestEvaluationsMap, comparativeMetrics]);
+
+  const getPerformanceColorFromCategorias = (metricKey: string, value: number, values: number[]) => {
+    if (value === undefined || value === null || value === 0 || isNaN(value)) {
+      return null;
+    }
+    if (values.length < 2) {
+      return null;
+    }
+
+    if (['fecha', 'fecha_test', 'fecha_medicion', 'observaciones', 'jugador', 'player_id', 'id', 'bw_kg', 'peso', 'reps'].includes(metricKey)) {
+      return null;
+    }
+
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const std = Math.sqrt(values.map(x => Math.pow(x - avg, 2)).reduce((a, b) => a + b, 0) / values.length);
+
+    if (std === 0) return { bg: 'bg-slate-100', text: 'text-slate-600', label: 'MED' };
+
+    const isInverted = isLowerIsBetter(metricKey);
+
+    if (isInverted) {
+      if (value < avg - std) {
+        return { bg: 'bg-emerald-500', text: 'text-white', label: 'ELITE' };
+      } else if (value >= avg - std && value < avg) {
+        return { bg: 'bg-blue-500', text: 'text-white', label: 'COMP' };
+      } else if (value >= avg && value <= avg + std) {
+        return { bg: 'bg-amber-500', text: 'text-white', label: 'DESAR' };
+      } else {
+        return { bg: 'bg-red-500', text: 'text-white', label: 'ATENC' };
+      }
+    } else {
+      if (value > avg + std) {
+        return { bg: 'bg-emerald-500', text: 'text-white', label: 'ELITE' };
+      } else if (value > avg && value <= avg + std) {
+        return { bg: 'bg-blue-500', text: 'text-white', label: 'COMP' };
+      } else if (value >= avg - std && value <= avg) {
+        return { bg: 'bg-amber-500', text: 'text-white', label: 'DESAR' };
+      } else {
+        return { bg: 'bg-red-500', text: 'text-white', label: 'ATENC' };
+      }
+    }
+  };
+
+  const formatFecha = (fStr: string | null) => {
+    if (!fStr) return '';
+    try {
+      const d = new Date(fStr);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-wrap items-center justify-between gap-6">
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-6">
         <div className="flex flex-wrap gap-2">
           {[
             { id: 'imtp', label: 'Fuerza y Potencia & Saltos', icon: 'fa-bolt' },
+            { id: 'rebound', label: 'CMJ Rebound', icon: 'fa-arrows-spin' },
             { id: 'speed', label: 'Velocidad', icon: 'fa-gauge-high' },
             { id: 'vo2max', label: 'Resistencia', icon: 'fa-wind' },
             { id: 'antropometria', label: 'Antropometría', icon: 'fa-ruler-combined' },
+            { id: 'test505', label: 'Agilidad (Test 505)', icon: 'fa-person-running' },
+            { id: 'comparativa', label: 'Comparador de Evaluaciones', icon: 'fa-scale-balanced' },
           ].map(t => (
             <button
               key={t.id}
               onClick={() => setTableType(t.id as any)}
-              className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+              className={`px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
                 tableType === t.id ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
               }`}
             >
@@ -4423,59 +5787,262 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
             <thead className="bg-[#0b1220] text-white font-black uppercase text-[10px] tracking-widest">
               <tr>
                 <th className="px-6 py-5 sticky left-0 bg-[#0b1220] z-10">Jugador</th>
-                {columns.map(col => (
-                  <th key={col.key} className="px-4 py-5 whitespace-nowrap">{col.label}</th>
-                ))}
+                {tableType === 'comparativa' ? (
+                  <>
+                    <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-slate-400 text-[8px] tracking-wider">Fuerza y Potencia</span>
+                        <select
+                          value={comparativeMetrics.fuerza}
+                          onChange={(e) => setComparativeMetrics(prev => ({ ...prev, fuerza: e.target.value }))}
+                          className="bg-slate-800 text-white text-[10px] font-black uppercase border border-slate-700 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-red-500 w-full cursor-pointer"
+                        >
+                          {fuerzaMetrics.map(m => (
+                            <option key={m.key} value={m.key}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </th>
+                    <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-slate-400 text-[8px] tracking-wider">Velocidad</span>
+                        <select
+                          value={comparativeMetrics.velocidad}
+                          onChange={(e) => setComparativeMetrics(prev => ({ ...prev, velocidad: e.target.value }))}
+                          className="bg-slate-800 text-white text-[10px] font-black uppercase border border-slate-700 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-red-500 w-full cursor-pointer"
+                        >
+                          {velocidadMetrics.map(m => (
+                            <option key={m.key} value={m.key}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </th>
+                    <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-slate-400 text-[8px] tracking-wider">Resistencia</span>
+                        <select
+                          value={comparativeMetrics.resistencia}
+                          onChange={(e) => setComparativeMetrics(prev => ({ ...prev, resistencia: e.target.value }))}
+                          className="bg-slate-800 text-white text-[10px] font-black uppercase border border-slate-700 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-red-500 w-full cursor-pointer"
+                        >
+                          {resistenciaMetrics.map(m => (
+                            <option key={m.key} value={m.key}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </th>
+                    <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-slate-400 text-[8px] tracking-wider">Antropometría</span>
+                        <select
+                          value={comparativeMetrics.antropometria}
+                          onChange={(e) => setComparativeMetrics(prev => ({ ...prev, antropometria: e.target.value }))}
+                          className="bg-slate-800 text-white text-[10px] font-black uppercase border border-slate-700 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-red-500 w-full cursor-pointer"
+                        >
+                          {antropometriaMetrics.map(m => (
+                            <option key={m.key} value={m.key}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </th>
+                    <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-slate-400 text-[8px] tracking-wider">Agilidad</span>
+                        <select
+                          value={comparativeMetrics.agilidad}
+                          onChange={(e) => setComparativeMetrics(prev => ({ ...prev, agilidad: e.target.value }))}
+                          className="bg-slate-800 text-white text-[10px] font-black uppercase border border-slate-700 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-red-500 w-full cursor-pointer"
+                        >
+                          {agilidadMetrics.map(m => (
+                            <option key={m.key} value={m.key}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </th>
+                  </>
+                ) : (
+                  columns.map(col => (
+                    <th key={col.key} className="px-4 py-5 whitespace-nowrap">{col.label}</th>
+                  ))
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredData.map((row, idx) => {
-                const player = playerMap[row.player_id];
-                return (
-                  <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-50">
-                      <div className="flex flex-col">
-                        <span className="text-xs font-black text-slate-900 uppercase italic">
-                          {player ? `${player.nombre} ${player.apellido1}` : 'DESCONOCIDO'}
-                        </span>
-                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
-                          {player?.posicion || '-'} {player ? ` • AÑO: ${(player as any).anio || (player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : '-')}` : ''}
-                        </span>
-                      </div>
-                    </td>
-                    {columns.map(col => {
-                      const value = row[col.key];
-                      let performanceStyle = null;
-                      
-                      if (tableType === 'imtp') {
-                        if (col.key === 'imtp_fuerza_n') performanceStyle = getPerformanceColor(Number(value), 'fuerza_peak');
-                        if (col.key === 'imtp_f_relativa_n_kg') performanceStyle = getPerformanceColor(Number(value), 'fuerza_relativa');
-                        if (col.key === 'cmj_altura_salto_im') performanceStyle = getPerformanceColor(Number(value), 'altura_salto');
-                        if (col.key === 'cmj_rsi_mod') performanceStyle = getPerformanceColor(Number(value), 'rsi_mod');
-                      }
+              {tableType === 'comparativa' ? (
+                filteredPlayersList.map((player, idx) => {
+                  const evals = latestEvaluationsMap[player.player_id] || { imtp: null, speed: null, vo2max: null, antropometria: null, test505: null, rebound: null };
+                  
+                  const fData = resolveComparativeValueAndDate(evals, comparativeMetrics.fuerza);
+                  const valFuerza = fData.value;
+                  const dateFuerza = fData.date;
 
-                      return (
-                        <td key={col.key} className="px-4 py-4 text-[11px] font-bold text-slate-600 whitespace-nowrap">
-                          {performanceStyle ? (
+                  const vData = resolveComparativeValueAndDate(evals, comparativeMetrics.velocidad);
+                  const valVel = vData.value;
+                  const dateVel = vData.date;
+
+                  const rData = resolveComparativeValueAndDate(evals, comparativeMetrics.resistencia);
+                  const valRes = rData.value;
+                  const dateRes = rData.date;
+
+                  const aData = resolveComparativeValueAndDate(evals, comparativeMetrics.antropometria);
+                  const valAntro = aData.value;
+                  const dateAntro = aData.date;
+
+                  const agData = resolveComparativeValueAndDate(evals, comparativeMetrics.agilidad);
+                  const valAgilidad = agData.value;
+                  const dateAgilidad = agData.date;
+
+                  const perfFuerza = getPerformanceColorFromCategorias(comparativeMetrics.fuerza, Number(valFuerza), comparativeValuesMap.fuerza);
+                  const perfVel = getPerformanceColorFromCategorias(comparativeMetrics.velocidad, Number(valVel), comparativeValuesMap.velocidad);
+                  const perfRes = getPerformanceColorFromCategorias(comparativeMetrics.resistencia, Number(valRes), comparativeValuesMap.resistencia);
+                  const perfAntro = getPerformanceColorFromCategorias(comparativeMetrics.antropometria, Number(valAntro), comparativeValuesMap.antropometria);
+                  const perfAgilidad = getPerformanceColorFromCategorias(comparativeMetrics.agilidad, Number(valAgilidad), comparativeValuesMap.agilidad);
+
+                  return (
+                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
+                      <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-50">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-black text-slate-900 uppercase italic">
+                            {player ? `${player.nombre} ${player.apellido1}` : 'DESCONOCIDO'}
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
+                            {player?.posicion || '-'} {player ? ` • AÑO: ${(player as any).anio || (player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : '-')}` : ''}
+                          </span>
+                        </div>
+                      </td>
+                      {/* Fuerza */}
+                      <td className="px-4 py-4 text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          {perfFuerza ? (
                             <div className="flex items-center gap-2">
-                              <span className={`px-2 py-1 rounded-md min-w-[45px] text-center text-[9px] font-black uppercase tracking-tighter ${performanceStyle.bg} ${performanceStyle.text}`}>
-                                {value !== undefined && value !== null && value !== '' ? String(value) : '-'}
+                              <span className={`px-2 py-1 rounded-md min-w-[45px] text-center text-[9px] font-black uppercase tracking-tighter ${perfFuerza.bg} ${perfFuerza.text}`}>
+                                {valFuerza !== undefined && valFuerza !== null && valFuerza !== '' ? String(valFuerza) : '-'}
                               </span>
-                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter w-6">{performanceStyle.label}</span>
+                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter w-6">{perfFuerza.label}</span>
                             </div>
                           ) : (
-                            row[col.key] !== undefined && row[col.key] !== null && row[col.key] !== '' ? String(row[col.key]) : '-'
+                            <span className="text-slate-950 font-black">{valFuerza !== undefined && valFuerza !== null && valFuerza !== '' ? String(valFuerza) : '-'}</span>
                           )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
+                          {dateFuerza && <span className="text-[8px] text-slate-400 font-black tracking-widest mt-0.5">{formatFecha(dateFuerza)}</span>}
+                        </div>
+                      </td>
+                      {/* Velocidad */}
+                      <td className="px-4 py-4 text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          {perfVel ? (
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-1 rounded-md min-w-[45px] text-center text-[9px] font-black uppercase tracking-tighter ${perfVel.bg} ${perfVel.text}`}>
+                                {valVel !== undefined && valVel !== null && valVel !== '' ? String(valVel) : '-'}
+                              </span>
+                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter w-6">{perfVel.label}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-950 font-black">{valVel !== undefined && valVel !== null && valVel !== '' ? String(valVel) : '-'}</span>
+                          )}
+                          {dateVel && <span className="text-[8px] text-slate-400 font-black tracking-widest mt-0.5">{formatFecha(dateVel)}</span>}
+                        </div>
+                      </td>
+                      {/* Resistencia */}
+                      <td className="px-4 py-4 text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          {perfRes ? (
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-1 rounded-md min-w-[45px] text-center text-[9px] font-black uppercase tracking-tighter ${perfRes.bg} ${perfRes.text}`}>
+                                {valRes !== undefined && valRes !== null && valRes !== '' ? String(valRes) : '-'}
+                              </span>
+                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter w-6">{perfRes.label}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-950 font-black">{valRes !== undefined && valRes !== null && valRes !== '' ? String(valRes) : '-'}</span>
+                          )}
+                          {dateRes && <span className="text-[8px] text-slate-400 font-black tracking-widest mt-0.5">{formatFecha(dateRes)}</span>}
+                        </div>
+                      </td>
+                      {/* Antropometria */}
+                      <td className="px-4 py-4 text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          {perfAntro ? (
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-1 rounded-md min-w-[45px] text-center text-[9px] font-black uppercase tracking-tighter ${perfAntro.bg} ${perfAntro.text}`}>
+                                {valAntro !== undefined && valAntro !== null && valAntro !== '' ? String(valAntro) : '-'}
+                              </span>
+                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter w-6">{perfAntro.label}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-950 font-black">{valAntro !== undefined && valAntro !== null && valAntro !== '' ? String(valAntro) : '-'}</span>
+                          )}
+                          {dateAntro && <span className="text-[8px] text-slate-400 font-black tracking-widest mt-0.5">{formatFecha(dateAntro)}</span>}
+                        </div>
+                      </td>
+                      {/* Agilidad */}
+                      <td className="px-4 py-4 text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          {perfAgilidad ? (
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-1 rounded-md min-w-[45px] text-center text-[9px] font-black uppercase tracking-tighter ${perfAgilidad.bg} ${perfAgilidad.text}`}>
+                                {valAgilidad !== undefined && valAgilidad !== null && valAgilidad !== '' ? String(valAgilidad) : '-'}
+                              </span>
+                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter w-6">{perfAgilidad.label}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-950 font-black">{valAgilidad !== undefined && valAgilidad !== null && valAgilidad !== '' ? String(valAgilidad) : '-'}</span>
+                          )}
+                          {dateAgilidad && <span className="text-[8px] text-slate-400 font-black tracking-widest mt-0.5">{formatFecha(dateAgilidad)}</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                filteredData.map((row, idx) => {
+                  const player = playerMap[row.player_id];
+                  return (
+                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
+                      <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-50">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-black text-slate-900 uppercase italic">
+                            {player ? `${player.nombre} ${player.apellido1}` : 'DESCONOCIDO'}
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
+                            {player?.posicion || '-'} {player ? ` • AÑO: ${(player as any).anio || (player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : '-')}` : ''}
+                          </span>
+                        </div>
+                      </td>
+                      {columns.map(col => {
+                        const rawValue = resolveMetricValue(row, col.key);
+                        const isDate = col.key.includes('fecha');
+
+                        const performanceStyle = getPerformanceColorFromCategorias(
+                          col.key,
+                          Number(rawValue),
+                          allValuesMap[col.key] || []
+                        );
+
+                        return (
+                          <td key={col.key} className="px-4 py-4 text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                            {performanceStyle ? (
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-1 rounded-md min-w-[45px] text-center text-[9px] font-black uppercase tracking-tighter ${performanceStyle.bg} ${performanceStyle.text}`}>
+                                  {rawValue !== undefined && rawValue !== null && rawValue !== '' ? String(rawValue) : '-'}
+                                </span>
+                                <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter w-6">{performanceStyle.label}</span>
+                              </div>
+                            ) : (
+                              isDate 
+                                ? formatFecha(rawValue)
+                                : (rawValue !== undefined && rawValue !== null && rawValue !== '' ? String(rawValue) : '-')
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
-        {filteredData.length === 0 && (
+        {((tableType === 'comparativa' && filteredPlayersList.length === 0) || (tableType !== 'comparativa' && filteredData.length === 0)) && (
           <div className="p-20 text-center">
             <i className="fa-solid fa-folder-open text-4xl text-slate-100 mb-4"></i>
             <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">No se encontraron registros</p>
@@ -4488,12 +6055,76 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, players }: { imtp: IMTP
 
 // --- TOP TEN DASHBOARD ---
 
-const TOP_TEN_METRIC_OPTIONS = [
-  { label: 'IMTP Máximo (N)', key: 'imtp_fuerza_n', unit: 'N', icon: 'fa-dumbbell', colorClass: 'text-orange-500 bg-orange-50 stroke-orange-500 border-orange-100' },
-  { label: 'IMTP Relativo (N/kg)', key: 'imtp_f_relativa_n_kg', unit: 'N/kg', icon: 'fa-bolt', colorClass: 'text-red-500 bg-red-50 stroke-red-500 border-red-100' },
-  { label: 'CMJ RSI Mod', key: 'cmj_rsi_mod', unit: 'Index', icon: 'fa-compress', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100' },
-  { label: 'Test de Velocidad (s)', key: 'tiempo_total', unit: 's', icon: 'fa-gauge-high', colorClass: 'text-blue-500 bg-blue-50 stroke-blue-500 border-blue-100' },
-  { label: 'Consumo de Oxígeno (VO2)', key: 'vo2_max', unit: 'ml/kg/min', icon: 'fa-wind', colorClass: 'text-purple-500 bg-purple-50 stroke-purple-500 border-purple-100' },
+interface MetricOption {
+  label: string;
+  key: string;
+  unit: string;
+  icon: string;
+  colorClass: string;
+  lowerIsBetter?: boolean;
+}
+
+const BOX1_METRIC_OPTIONS: MetricOption[] = [
+  { label: 'IMTP Fuerza Máxima (N)', key: 'imtp_fuerza_n', unit: 'N', icon: 'fa-dumbbell', colorClass: 'text-orange-500 bg-orange-50 stroke-orange-500 border-orange-100' },
+  { label: 'IMTP Fuerza Relativa (N/kg)', key: 'imtp_f_relativa_n_kg', unit: 'N/kg', icon: 'fa-bolt', colorClass: 'text-red-500 bg-red-50 stroke-red-500 border-red-100' },
+  { label: 'IMTP Fuerza neta 50ms (N)', key: 'imtp_force_50ms', unit: 'N', icon: 'fa-gauge', colorClass: 'text-amber-500 bg-amber-50 stroke-amber-500 border-amber-100' },
+  { label: 'IMTP Fuerza neta 100ms (N)', key: 'imtp_force_100ms', unit: 'N', icon: 'fa-gauge-high', colorClass: 'text-yellow-500 bg-yellow-50 stroke-yellow-500 border-yellow-100' },
+  { label: 'IMTP Fuerza neta 150ms (N)', key: 'imtp_force_150ms', unit: 'N', icon: 'fa-bolt', colorClass: 'text-lime-500 bg-lime-50 stroke-lime-500 border-lime-100' },
+  { label: 'IMTP Fuerza neta 200ms (N)', key: 'imtp_force_200ms', unit: 'N', icon: 'fa-fire', colorClass: 'text-emerald-500 bg-emerald-50 stroke-emerald-500 border-emerald-100' },
+  { label: 'IMTP RFD 100ms (N/s)', key: 'imtp_rfd_100ms', unit: 'N/s', icon: 'fa-arrow-trend-up', colorClass: 'text-teal-500 bg-teal-50 stroke-teal-500 border-teal-100' },
+  { label: 'IMTP RFD 150ms (N/s)', key: 'imtp_rfd_150ms', unit: 'N/s', icon: 'fa-angles-up', colorClass: 'text-cyan-500 bg-cyan-50 stroke-cyan-500 border-cyan-100' },
+  { label: 'IMTP RFD 200ms (N/s)', key: 'imtp_rfd_200ms', unit: 'N/s', icon: 'fa-gauge-high', colorClass: 'text-sky-500 bg-sky-50 stroke-sky-500 border-sky-100' },
+  { label: 'IMTP Asimetría (%)', key: 'imtp_asimetria', unit: '%', icon: 'fa-scale-unbalanced', colorClass: 'text-blue-500 bg-blue-50 stroke-blue-500 border-blue-100', lowerIsBetter: true }
+];
+
+const BOX2_METRIC_OPTIONS: MetricOption[] = [
+  { label: 'CMJ Fuerza Pico Conc. (N)', key: 'concentric_peak_force_n', unit: 'N', icon: 'fa-compress', colorClass: 'text-emerald-500 bg-emerald-50 stroke-emerald-500 border-emerald-100' },
+  { label: 'CMJ RSI Modificado (m/s)', key: 'rsi_modified_m_s', unit: 'm/s', icon: 'fa-bolt', colorClass: 'text-teal-500 bg-teal-50 stroke-teal-500 border-teal-100' },
+  { label: 'CMJ Altura Salto (cm)', key: 'jump_height_impmom_cm', unit: 'cm', icon: 'fa-arrows-up-down', colorClass: 'text-cyan-500 bg-cyan-50 stroke-cyan-500 border-cyan-100' },
+  { label: 'CMJ Pot. Pico Relativa (W/kg)', key: 'peak_power_bm_w_kg', unit: 'W/kg', icon: 'fa-gauge', colorClass: 'text-sky-500 bg-sky-50 stroke-sky-500 border-sky-100' },
+  { label: 'CMJ Pot. Pico Absoluta (W)', key: 'peak_power_w', unit: 'W', icon: 'fa-fire', colorClass: 'text-violet-500 bg-violet-50 stroke-violet-500 border-violet-100' },
+  { label: 'CMJ Profundidad (cm)', key: 'countermovement_depth_cm', unit: 'cm', icon: 'fa-arrow-down', colorClass: 'text-fuchsia-500 bg-fuchsia-50 stroke-fuchsia-500 border-fuchsia-100' },
+  { label: 'CMJ Duración Conc. (ms)', key: 'concentric_duration_ms', unit: 'ms', icon: 'fa-clock', colorClass: 'text-pink-500 bg-pink-50 stroke-pink-500 border-pink-100', lowerIsBetter: true },
+  { label: 'CMJ Impulso Conc. (Ns)', key: 'concentric_impulse_ns', unit: 'N s', icon: 'fa-gauge-high', colorClass: 'text-rose-500 bg-rose-50 stroke-rose-500 border-rose-100' },
+  { label: 'CMJ Momento Despegue (kg·m/s)', key: 'take_off_momentum_kg_m_s', unit: 'kg·m/s', icon: 'fa-person-running', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100' },
+  { label: 'CMJ Rebound RSI', key: 'rebound_rsi', unit: 'Index', icon: 'fa-arrows-spin', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100' },
+  { label: 'T. Contacto Rebound (ms)', key: 'rebound_contact_time_ms', unit: 'ms', icon: 'fa-clock', colorClass: 'text-amber-500 bg-amber-50 stroke-amber-500 border-amber-100', lowerIsBetter: true },
+  { label: 'T. Vuelo Rebound (ms)', key: 'rebound_flight_time_ms', unit: 'ms', icon: 'fa-plane-up', colorClass: 'text-lime-500 bg-lime-50 stroke-lime-500 border-lime-100' }
+];
+
+const BOX3_METRIC_OPTIONS: MetricOption[] = [
+  { label: 'Velocidad Tiempo Total (s)', key: 'tiempo_total', unit: 's', icon: 'fa-gauge-high', colorClass: 'text-blue-500 bg-blue-50 stroke-blue-500 border-blue-100', lowerIsBetter: true },
+  { label: 'Velocidad 10m Tiempo (s)', key: 'tiempo_10m', unit: 's', icon: 'fa-bolt', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100', lowerIsBetter: true },
+  { label: 'Velocidad 10m Promedio (km/h)', key: 'vel_10m', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-emerald-500 bg-emerald-50 stroke-emerald-500 border-emerald-100' },
+  { label: 'Velocidad 10-20m Tiempo (s)', key: 'tiempo_10_20m', unit: 's', icon: 'fa-clock', colorClass: 'text-cyan-500 bg-cyan-50 stroke-cyan-500 border-cyan-100', lowerIsBetter: true },
+  { label: 'Velocidad 10-20m Promedio (km/h)', key: 'vel_10_20m', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-sky-500 bg-sky-50 stroke-sky-500 border-sky-100' },
+  { label: 'Velocidad 20-30m Tiempo (s)', key: 'tiempo_20_30m', unit: 's', icon: 'fa-clock', colorClass: 'text-fuchsia-500 bg-fuchsia-50 stroke-fuchsia-500 border-fuchsia-100', lowerIsBetter: true },
+  { label: 'Velocidad 20-30m Promedio (km/h)', key: 'vel_20_30m', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-violet-500 bg-violet-50 stroke-violet-500 border-violet-100' },
+  { label: '505 Tiempo Acel. 2m (s)', key: 't_acel_2m', unit: 's', icon: 'fa-clock', colorClass: 'text-orange-500 bg-orange-50 stroke-orange-500 border-orange-100', lowerIsBetter: true },
+  { label: '505 Vel. Acel. (km/h)', key: 'vel_acel_kmh', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-amber-500 bg-amber-50 stroke-amber-500 border-amber-100' },
+  { label: '505 Tiempo Desacel. 2m (s)', key: 't_desacel_2m', unit: 's', icon: 'fa-clock', colorClass: 'text-rose-500 bg-rose-50 stroke-rose-500 border-rose-100', lowerIsBetter: true },
+  { label: '505 Vel. Desacel. (km/h)', key: 'vel_desacel_kmh', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-pink-500 bg-pink-50 stroke-pink-500 border-pink-100' },
+  { label: '505 Tiempo COD 2m (s)', key: 't_cod_2m', unit: 's', icon: 'fa-clock', colorClass: 'text-teal-500 bg-teal-50 stroke-teal-500 border-teal-100', lowerIsBetter: true },
+  { label: '505 Vel. COD (km/h)', key: 'vel_cod_kmh', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-emerald-500 bg-emerald-50 stroke-emerald-500 border-emerald-100' },
+  { label: '505 Tiempo Re-acel 1 (s)', key: 't_reacel_1_2m', unit: 's', icon: 'fa-clock', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100', lowerIsBetter: true },
+  { label: '505 Vel. Re-acel 1 (km/h)', key: 'vel_reacel_1_kmh', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-violet-500 bg-violet-50 stroke-violet-500 border-violet-100' },
+  { label: '505 Tiempo Re-acel 2 (s)', key: 't_reacel_2_2m', unit: 's', icon: 'fa-clock', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100', lowerIsBetter: true },
+  { label: '505 Vel. Re-acel 2 (km/h)', key: 'vel_reacel_2_kmh', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-violet-500 bg-violet-50 stroke-violet-500 border-violet-100' },
+  { label: '505 Z-Score Aceleración', key: 'z_score_acel', unit: 'Score', icon: 'fa-chart-simple', colorClass: 'text-slate-500 bg-slate-50 stroke-slate-500 border-slate-100' }
+];
+
+const BOX4_METRIC_OPTIONS: MetricOption[] = [
+  { label: 'Consumo Máx Oxígeno (VO2)', key: 'vo2_max', unit: 'ml/kg/min', icon: 'fa-wind', colorClass: 'text-purple-500 bg-purple-50 stroke-purple-500 border-purple-100' },
+  { label: 'Vel. Aeróbica Máx (VAM)', key: 'vam', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100' },
+  { label: 'Velocidad VT1 (km/h)', key: 'vt1_vel', unit: 'km/h', icon: 'fa-gauge-high', colorClass: 'text-blue-500 bg-blue-50 stroke-blue-500 border-blue-100' },
+  { label: 'Frec. Cardíaca VT1 (bpm)', key: 'vt1_fc', unit: 'bpm', icon: 'fa-heartpulse', colorClass: 'text-red-500 bg-red-50 stroke-red-500 border-red-100' },
+  { label: 'Velocidad VT2 (km/h)', key: 'vt2_vel', unit: 'km/h', icon: 'fa-gauge-high', colorClass: 'text-emerald-500 bg-emerald-50 stroke-emerald-500 border-emerald-100' },
+  { label: 'Frec. Cardíaca VT2 (bpm)', key: 'vt2_fc', unit: 'bpm', icon: 'fa-heartpulse', colorClass: 'text-pink-500 bg-pink-50 stroke-pink-500 border-pink-100' },
+  { label: 'Frec. Cardíaca Máx (bpm)', key: 'fc_max', unit: 'bpm', icon: 'fa-heart', colorClass: 'text-rose-500 bg-rose-50 stroke-rose-500 border-rose-100' },
+  { label: 'Vel. Final de Prueba (VFA)', key: 'vfa', unit: 'km/h', icon: 'fa-gauge', colorClass: 'text-cyan-500 bg-cyan-50 stroke-cyan-500 border-cyan-100' },
+  { label: 'Nivel Alcanzado', key: 'nivel', unit: 'Nivel', icon: 'fa-layer-group', colorClass: 'text-amber-500 bg-amber-50 stroke-amber-500 border-amber-100' },
+  { label: 'Pasada Alcanzada', key: 'pasada', unit: 'Pasada', icon: 'fa-person-walking-arrow-right', colorClass: 'text-orange-500 bg-orange-50 stroke-orange-500 border-orange-100' },
+  { label: 'Metros Recorridos (m)', key: 'mts', unit: 'm', icon: 'fa-route', colorClass: 'text-slate-500 bg-slate-50 stroke-slate-500 border-slate-100' }
 ];
 
 interface TopTenDashboardProps {
@@ -4501,6 +6132,8 @@ interface TopTenDashboardProps {
   imtpData: IMTPData[];
   speedData: SpeedTestData[];
   vo2maxData: VO2MaxData[];
+  cmjReboundData: CMJReboundData[];
+  test505Data?: any[];
   selectedAnios: number[];
   selectedPosiciones: string[];
   selectedClubId: number | null;
@@ -4525,6 +6158,8 @@ const TopTenDashboard: React.FC<TopTenDashboardProps> = ({
   imtpData,
   speedData,
   vo2maxData,
+  cmjReboundData,
+  test505Data = [],
   selectedAnios,
   selectedPosiciones,
   selectedClubId,
@@ -4563,33 +6198,70 @@ const TopTenDashboard: React.FC<TopTenDashboardProps> = ({
       return yearMatch && posMatch && clubMatch;
     });
 
+    const allOptions = [
+      ...BOX1_METRIC_OPTIONS,
+      ...BOX2_METRIC_OPTIONS,
+      ...BOX3_METRIC_OPTIONS,
+      ...BOX4_METRIC_OPTIONS
+    ];
+    const option = allOptions.find(o => o.key === metricKey);
+    const isLowerBetter = option?.lowerIsBetter ?? false;
+
     const list: { player: PlayerData; value: number }[] = [];
 
     filtered.forEach(p => {
       let val: number | null = null;
-      if (metricKey === 'imtp_fuerza_n' || metricKey === 'imtp_f_relativa_n_kg' || metricKey === 'cmj_rsi_mod') {
-        const rows = imtpData.filter(d => d.player_id === p.player_id);
-        if (rows.length > 0) {
-          const vals = rows.map(r => Number(r[metricKey as keyof IMTPData])).filter(v => !isNaN(v) && v > 0);
-          if (vals.length > 0) {
-            val = Math.max(...vals);
-          }
+      let rows: any[] = [];
+
+      // Determine which dataset to search
+      if (BOX1_METRIC_OPTIONS.some(o => o.key === metricKey)) {
+        rows = imtpData.filter(d => d.player_id === p.player_id);
+      } else if (BOX2_METRIC_OPTIONS.some(o => o.key === metricKey)) {
+        if (['rebound_rsi', 'rebound_contact_time_ms', 'rebound_flight_time_ms'].includes(metricKey)) {
+          rows = cmjReboundData.filter(d => d.player_id === p.player_id);
+        } else {
+          rows = imtpData.filter(d => d.player_id === p.player_id);
         }
-      } else if (metricKey === 'tiempo_total') {
-        const rows = speedData.filter(d => d.player_id === p.player_id);
-        if (rows.length > 0) {
-          const vals = rows.map(r => Number(r.tiempo_total)).filter(v => !isNaN(v) && v > 0);
-          if (vals.length > 0) {
-            val = Math.min(...vals);
-          }
+      } else if (BOX3_METRIC_OPTIONS.some(o => o.key === metricKey)) {
+        const is505Metric = ['t_acel_2m', 'vel_acel_kmh', 't_desacel_2m', 'vel_desacel_kmh', 't_cod_2m', 'vel_cod_kmh', 't_reacel_1_2m', 'vel_reacel_1_kmh', 't_reacel_2_2m', 'vel_reacel_2_kmh', 'z_score_acel'].includes(metricKey);
+        if (is505Metric) {
+          rows = test505Data.filter(d => d.player_id === p.player_id);
+        } else {
+          rows = speedData.filter(d => d.player_id === p.player_id);
         }
-      } else if (metricKey === 'vo2_max') {
-        const rows = vo2maxData.filter(d => d.player_id === p.player_id);
-        if (rows.length > 0) {
-          const vals = rows.map(r => Number(r.vo2_max)).filter(v => !isNaN(v) && v > 0);
-          if (vals.length > 0) {
-            val = Math.max(...vals);
-          }
+      } else if (BOX4_METRIC_OPTIONS.some(o => o.key === metricKey)) {
+        rows = vo2maxData.filter(d => d.player_id === p.player_id);
+      } else {
+        rows = imtpData.filter(d => d.player_id === p.player_id);
+      }
+
+      if (rows.length > 0) {
+        const vals = rows
+          .map(r => {
+            let v = r[metricKey];
+            // Handle synced properties / alias keys
+            if (v === undefined || v === null) {
+              if (metricKey === 'imtp_fuerza_n') v = r['Peak Vertical Force [N]'];
+              if (metricKey === 'imtp_f_relativa_n_kg') v = r['Peak Vertical Force / BM'] || r['Peak Vertical Force / BM [N/kg]'];
+              if (metricKey === 'imtp_force_50ms') v = r['Force (Net of BW) at 50ms'] || r['Force (Net of BW) at 50ms [N]'];
+              if (metricKey === 'imtp_force_100ms') v = r['Force (Net of BW) at 100ms'] || r['Force (Net of BW) at 100ms [N]'];
+              if (metricKey === 'imtp_force_150ms') v = r['Force (Net of BW) at 150ms'] || r['Force (Net of BW) at 150ms [N]'];
+              if (metricKey === 'imtp_force_200ms') v = r['Force (Net of BW) at 200ms'] || r['Force (Net of BW) at 200ms [N]'];
+              if (metricKey === 'imtp_rfd_100ms') v = r['RFD - 100ms [N/s]'];
+              if (metricKey === 'imtp_rfd_150ms') v = r['RFD - 150ms [N/s]'];
+              if (metricKey === 'imtp_rfd_200ms') v = r['RFD - 200ms [N/s]'];
+
+              if (metricKey === 'concentric_peak_force_n') v = r.fuerza_cmj;
+              if (metricKey === 'rsi_modified_m_s') v = r.cmj_rsi_mod;
+              if (metricKey === 'jump_height_impmom_cm') v = r.cmj_altura_salto_im;
+              if (metricKey === 'peak_power_bm_w_kg') v = r.cmj_peak_pot_relativa;
+            }
+            return Number(v);
+          })
+          .filter(v => !isNaN(v) && (['z_score_acel', 'imtp_asimetria'].includes(metricKey) ? true : v > 0));
+
+        if (vals.length > 0) {
+          val = isLowerBetter ? Math.min(...vals) : Math.max(...vals);
         }
       }
 
@@ -4598,7 +6270,7 @@ const TopTenDashboard: React.FC<TopTenDashboardProps> = ({
       }
     });
 
-    if (metricKey === 'tiempo_total') {
+    if (isLowerBetter) {
       list.sort((a, b) => a.value - b.value);
     } else {
       list.sort((a, b) => b.value - a.value);
@@ -4628,41 +6300,48 @@ const TopTenDashboard: React.FC<TopTenDashboardProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <TopTenBox
-          title="Fuerza Máxima (IMTP)"
+          title="Fuerza (IMTP)"
           boxNum={1}
           metricKey={box1Metric}
           setMetricKey={setBox1Metric}
           data={getRankData(box1Metric)}
           clubs={clubs}
           onSelectPlayer={onSelectPlayer}
+          lowerIsBetter={BOX1_METRIC_OPTIONS.find(o => o.key === box1Metric)?.lowerIsBetter}
+          metricOptions={BOX1_METRIC_OPTIONS}
         />
         <TopTenBox
-          title="Fuerza Relativa (IMTP)"
+          title="Salto & Reactividad (CMJ)"
           boxNum={2}
           metricKey={box2Metric}
           setMetricKey={setBox2Metric}
           data={getRankData(box2Metric)}
           clubs={clubs}
           onSelectPlayer={onSelectPlayer}
+          lowerIsBetter={BOX2_METRIC_OPTIONS.find(o => o.key === box2Metric)?.lowerIsBetter}
+          metricOptions={BOX2_METRIC_OPTIONS}
         />
         <TopTenBox
-          title="Velocidad (10m / Total)"
+          title="Velocidad & Agilidad"
           boxNum={3}
           metricKey={box3Metric}
           setMetricKey={setBox3Metric}
           data={getRankData(box3Metric)}
           clubs={clubs}
           onSelectPlayer={onSelectPlayer}
-          lowerIsBetter={box3Metric === 'tiempo_total'}
+          lowerIsBetter={BOX3_METRIC_OPTIONS.find(o => o.key === box3Metric)?.lowerIsBetter}
+          metricOptions={BOX3_METRIC_OPTIONS}
         />
         <TopTenBox
-          title="Consumo de Oxígeno o RSI"
+          title="Resistencia Aeróbica"
           boxNum={4}
           metricKey={box4Metric}
           setMetricKey={setBox4Metric}
           data={getRankData(box4Metric)}
           clubs={clubs}
           onSelectPlayer={onSelectPlayer}
+          lowerIsBetter={BOX4_METRIC_OPTIONS.find(o => o.key === box4Metric)?.lowerIsBetter}
+          metricOptions={BOX4_METRIC_OPTIONS}
         />
       </div>
     </div>
@@ -4678,6 +6357,7 @@ interface TopTenBoxProps {
   clubs: any[];
   onSelectPlayer: (id: number) => void;
   lowerIsBetter?: boolean;
+  metricOptions: { label: string; key: string; unit: string; icon: string; colorClass: string; lowerIsBetter?: boolean }[];
 }
 
 const TopTenBox: React.FC<TopTenBoxProps> = ({
@@ -4688,9 +6368,10 @@ const TopTenBox: React.FC<TopTenBoxProps> = ({
   data,
   clubs,
   onSelectPlayer,
-  lowerIsBetter = false
+  lowerIsBetter = false,
+  metricOptions
 }) => {
-  const currentMetric = TOP_TEN_METRIC_OPTIONS.find(o => o.key === metricKey) || TOP_TEN_METRIC_OPTIONS[0];
+  const currentMetric = metricOptions.find(o => o.key === metricKey) || metricOptions[0];
 
   return (
     <div className="bg-white rounded-[32px] p-5 border border-slate-100 shadow-sm hover:border-slate-200 transition-all duration-300 flex flex-col justify-between h-[600px]">
@@ -4699,7 +6380,7 @@ const TopTenBox: React.FC<TopTenBoxProps> = ({
           <div>
             <span className="text-[9px] font-black uppercase text-red-600 tracking-wider">Caja #{boxNum}</span>
             <h3 className="text-xs font-black text-slate-800 uppercase tracking-tight leading-none mt-0.5 whitespace-nowrap overflow-ellipsis">
-              {currentMetric.label.split(' (')[0]}
+              {title}
             </h3>
           </div>
           <div className="relative">
@@ -4708,7 +6389,7 @@ const TopTenBox: React.FC<TopTenBoxProps> = ({
               onChange={(e) => setMetricKey(e.target.value)}
               className="bg-slate-50 border-none rounded-xl px-2 py-1 text-[9px] font-black text-slate-600 uppercase tracking-tight outline-none focus:ring-1 focus:ring-red-500 max-w-[110px]"
             >
-              {TOP_TEN_METRIC_OPTIONS.map(opt => (
+              {metricOptions.map(opt => (
                 <option key={opt.key} value={opt.key}>{opt.label}</option>
               ))}
             </select>
@@ -4720,9 +6401,9 @@ const TopTenBox: React.FC<TopTenBoxProps> = ({
             <i className={`fa-solid ${currentMetric.icon} text-[11px]`}></i>
           </div>
           <div className="min-w-0">
-            <p className="text-[7px] font-black uppercase text-slate-400 leading-none">Unidad</p>
+            <p className="text-[7px] font-black uppercase text-slate-400 leading-none">Métrica Seleccionada</p>
             <p className="text-[10px] font-black text-slate-700 leading-tight mt-0.5 truncate">
-              {currentMetric.unit ? currentMetric.unit : 'Índice'} {lowerIsBetter && <span className="text-[8px] font-bold text-blue-500 italic lowercase tracking-normal">(menor tiempo es mejor)</span>}
+              {currentMetric.label} {lowerIsBetter && <span className="text-[8px] font-bold text-blue-500 italic lowercase tracking-normal">(menor tiempo es mejor)</span>}
             </p>
           </div>
         </div>
@@ -4759,7 +6440,7 @@ const TopTenBox: React.FC<TopTenBoxProps> = ({
                       <p className="text-[10px] font-black text-slate-800 uppercase italic truncate group-hover:text-red-600 transition-colors">
                         {item.player.nombre} {item.player.apellido1}
                       </p>
-                       <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[7px] font-bold uppercase tracking-tight text-slate-400 bg-slate-50 px-1 py-0.2 rounded">
                           {item.player.posicion}
                         </span>

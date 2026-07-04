@@ -399,6 +399,7 @@ create table if not exists public.evaluaciones_imtp_salto (
   slcmj_diferencia_pct_tv numeric,
   deficit_bilateral numeric,
   altura_x_rsi_mod numeric,
+  observaciones text,
   unique(player_id, fecha_test)
 );
 
@@ -612,11 +613,11 @@ on conflict (player_id) do nothing;
 create or replace function public.create_microcycle_safe(
   p_category_id int,
   p_type text,
-  p_start_date date,
-  p_end_date date,
+  p_start_date text,
+  p_end_date text,
   p_city text,
   p_country text,
-  p_created_by uuid
+  p_created_by text default null
 )
 returns void
 language plpgsql
@@ -624,15 +625,28 @@ security definer
 as $$
 declare
   v_code text;
+  v_start_date date;
+  v_end_date date;
+  v_created_by uuid;
 begin
+  -- Convert input strings to correct database types
+  v_start_date := p_start_date::date;
+  v_end_date := p_end_date::date;
+  
+  if p_created_by is not null and p_created_by <> '' then
+    v_created_by := p_created_by::uuid;
+  else
+    v_created_by := null;
+  end if;
+
   -- Generate a unique code: CAT-DATE-RANDOM
-  v_code := 'MC-' || p_category_id || '-' || to_char(p_start_date, 'YYYYMMDD') || '-' || substring(md5(random()::text), 1, 5);
+  v_code := 'MC-' || p_category_id || '-' || to_char(v_start_date, 'YYYYMMDD') || '-' || substring(md5(random()::text), 1, 5);
   
   -- Insert with the generated code
   insert into public.microcycles (
     category_id, type, start_date, end_date, city, country, created_by, code
   ) values (
-    p_category_id, p_type, p_start_date, p_end_date, p_city, p_country, p_created_by, v_code
+    p_category_id, p_type, v_start_date, v_end_date, p_city, p_country, v_created_by, v_code
   );
 end;
 $$;

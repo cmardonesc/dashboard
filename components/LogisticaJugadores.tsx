@@ -133,7 +133,8 @@ const LogisticaJugadores: React.FC<LogisticaJugadoresProps> = ({ onRefresh }) =>
 
   const CLUBS = useMemo(() => {
     if (loadingClubs) return [];
-    const names = dbClubs.map(c => c.nombre);
+    // Ensure unique club names
+    const names = Array.from(new Set(dbClubs.map(c => c.nombre).filter(Boolean)));
     // Asegurar que 'Extranjero' y 'S/C' estén si no vienen de la DB
     if (!names.includes('Extranjero')) names.push('Extranjero');
     if (!names.includes('S/C')) names.push('S/C');

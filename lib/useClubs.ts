@@ -87,6 +87,22 @@ export const useClubs = () => {
         console.error("Error loading custom clubs from localStorage:", e);
       }
 
+      // Ensure absolute uniqueness of both id_club and nombre (case-insensitive) to prevent duplicate key errors
+      const uniqueClubs: ClubDB[] = [];
+      const seenIds = new Set<number>();
+      const seenNames = new Set<string>();
+
+      finalClubs.forEach(c => {
+        const id = Number(c.id_club);
+        const nameKey = (c.nombre || '').toUpperCase().trim();
+        if (c.nombre && !seenIds.has(id) && !seenNames.has(nameKey)) {
+          seenIds.add(id);
+          seenNames.add(nameKey);
+          uniqueClubs.push(c);
+        }
+      });
+      finalClubs = uniqueClubs;
+
       // Sort: Chile first, then alphabetical country, then alphabetical name
       finalClubs.sort((a: any, b: any) => {
         const countryA = (a.pais || '').toUpperCase().trim();

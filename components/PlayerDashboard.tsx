@@ -188,7 +188,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
   const CLUBS = useMemo(() => {
     if (loadingClubs) return [];
-    const names = dbClubs.map(c => c.nombre);
+    // Ensure unique club names
+    const names = Array.from(new Set(dbClubs.map(c => c.nombre).filter(Boolean)));
     if (!names.includes('Extranjero')) names.push('Extranjero');
     if (!names.includes('S/C')) names.push('S/C');
     return names.sort();
@@ -550,9 +551,15 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       } else if (saveError && (
         saveError.message?.includes('session_index') || 
         saveError.details?.includes('session_index') ||
-        JSON.stringify(saveError).includes('session_index')
+        saveError.message?.includes('ON CONFLICT') ||
+        saveError.message?.includes('on conflict') ||
+        saveError.message?.includes('specification') ||
+        JSON.stringify(saveError).includes('session_index') ||
+        JSON.stringify(saveError).includes('on_conflict') ||
+        JSON.stringify(saveError).includes('ON CONFLICT') ||
+        JSON.stringify(saveError).includes('specification')
       )) {
-        console.warn("⚠️ Columna 'session_index' no encontrada en base de datos. Cayendo en modo compatible (sin session_index)...");
+        console.warn("⚠️ Columna 'session_index' o restricción múltiple no encontrada en base de datos. Cayendo en modo compatible (sin session_index)...");
         let { error: retryError } = await supabase
           .from('internal_load')
           .upsert(payloadWithoutIndex, { onConflict: 'player_id,session_date' });
@@ -649,7 +656,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           const fallbackPayload = {
             player_id: player.player_id,
             session_date: selectedDate,
-            rpe: data.rpe,
+            rpe: Math.max(1, Number(data.rpe) || 0), // Garantiza un mínimo de 1 para cumplir la restricción check de internal_load
             duration_min: Number(matchMinutesValue) || 90,
             type: 'MATCH',
             molestias: `[Partido vs ${data.rival || 'Desconocido'} - Resultado: ${matchResultValue || 'Titular'}] | ` + (data.sorenessAreas.join(', ') || 'Sin molestias'),
@@ -661,65 +668,57 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           const fallbackPayloadWithoutIndex = { ...fallbackPayload };
           delete (fallbackPayloadWithoutIndex as any).session_index;
 
-          let internalLoadErr;
-          try {
-            // Intentar con session_index
-            const { error: err1 } = await supabase
-              .from('internal_load')
-              .upsert(fallbackPayload, { onConflict: 'player_id,session_date,session_index' });
-            internalLoadErr = err1;
-          } catch (e: any) {
-            internalLoadErr = e;
+          // Hacemos una consulta previa para verificar la existencia del registro en internal_load de manera agnóstica de constraints
+          const { data: existingLoads, error: selectErr } = await supabase
+            .from('internal_load')
+            .select('*')
+            .eq('player_id', player.player_id)
+            .eq('session_date', selectedDate);
+
+          if (selectErr) {
+            console.error("Error consultando internal_load previo en fallback:", selectErr);
           }
 
-          if (internalLoadErr) {
-            // Si el error es por restricción única de player_id, session_date
-            const isMatchUniqueViolation = (
-              String(internalLoadErr.code) === '23505' ||
-              internalLoadErr.message?.includes('internal_load_player_id_session_date_key') ||
-              internalLoadErr.details?.includes('internal_load_player_id_session_date_key') ||
-              internalLoadErr.message?.includes('duplicate key value violates unique constraint') ||
-              JSON.stringify(internalLoadErr).includes('internal_load_player_id_session_date_key')
-            );
+          // Intentar ubicar un registro candidato para actualizar
+          const targetLoad = existingLoads?.find(ld => ld.session_index === 2) ||
+                             existingLoads?.find(ld => ld.type === 'MATCH') ||
+                             existingLoads?.[0];
 
-            if (isMatchUniqueViolation) {
-              console.warn("⚠️ Detectada restricción única antigua en fallback de MATCH. Sobrescribiendo/actualizando fila existente para el partido...");
-              try {
-                const { data: extLd } = await supabase
+          if (targetLoad) {
+            console.log("📝 Encontrado registro existente en fallback de MATCH. Actualizando fila ID:", targetLoad.id);
+            const updatePayload: any = {
+              rpe: fallbackPayload.rpe,
+              duration_min: fallbackPayload.duration_min,
+              type: 'MATCH',
+              molestias: fallbackPayload.molestias,
+              enfermedad: fallbackPayload.enfermedad
+            };
+            
+            const { error: updErr } = await supabase
+              .from('internal_load')
+              .update(updatePayload)
+              .eq('id', targetLoad.id);
+
+            if (updErr) throw updErr;
+          } else {
+            console.log("➕ No se encontró registro previo. Insertando nueva carga en fallback de MATCH...");
+            // Intentamos insertar con session_index primero
+            const { error: insErr } = await supabase
+              .from('internal_load')
+              .insert(fallbackPayload);
+
+            if (insErr) {
+              const insErrMsg = insErr.message || JSON.stringify(insErr);
+              // Si falla porque no existe la columna session_index, intentamos insertar sin session_index
+              if (insErrMsg.includes('session_index') || insErrMsg.includes('column') || insErr.code === '42703') {
+                console.warn("⚠️ Columna 'session_index' no encontrada al insertar fallback. Reintentando sin ella...");
+                const { error: insErr2 } = await supabase
                   .from('internal_load')
-                  .select('*')
-                  .eq('player_id', player.player_id)
-                  .eq('session_date', selectedDate)
-                  .maybeSingle();
-
-                if (extLd) {
-                  const { error: updErr } = await supabase
-                    .from('internal_load')
-                    .update({
-                      rpe: fallbackPayload.rpe,
-                      duration_min: fallbackPayload.duration_min,
-                      type: 'MATCH',
-                      molestias: fallbackPayload.molestias,
-                      enfermedad: fallbackPayload.enfermedad
-                    })
-                    .eq('id', extLd.id);
-                  if (updErr) throw updErr;
-                } else {
-                  const { error: upsertErr } = await supabase
-                    .from('internal_load')
-                    .upsert(fallbackPayloadWithoutIndex, { onConflict: 'player_id,session_date' });
-                  if (upsertErr) throw upsertErr;
-                }
-              } catch (e: any) {
-                console.error("Error en consolidación fallback de MATCH:", e);
-                throw internalLoadErr;
+                  .insert(fallbackPayloadWithoutIndex);
+                if (insErr2) throw insErr2;
+              } else {
+                throw insErr;
               }
-            } else {
-              // Fallback sin session_index si choca la estructura por otra razón (e.g. columna session_index ausente)
-              const { error: err2 } = await supabase
-                .from('internal_load')
-                .upsert(fallbackPayloadWithoutIndex, { onConflict: 'player_id,session_date' });
-              if (err2) throw err2;
             }
           }
         } else {
