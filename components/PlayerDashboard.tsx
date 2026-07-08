@@ -147,7 +147,6 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         .upsert({
           id: player.id,
           player_id: pid,
-          email: player.email || null,
           role: 'player',
           club_name: clubName
         });

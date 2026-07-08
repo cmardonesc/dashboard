@@ -450,33 +450,19 @@ export default function App() {
     try {
       let { data, error } = await supabase
         .from('profiles')
-        .select('role, player_id, club_name, email')
+        .select('role, player_id, club_name')
         .eq('id', userId)
         .maybeSingle()
 
-      if ((error || !data) && email) {
-        console.log(`fetchUserData: Perfil no encontrado por id (${userId}). Reintentando por email (${email})...`);
-        const { data: emailData, error: emailErr } = await supabase
-          .from('profiles')
-          .select('role, player_id, club_name, email')
-          .eq('email', email.toLowerCase().trim())
-          .maybeSingle();
-        
-        if (emailData && !emailErr) {
-          data = emailData;
-          error = null;
-        }
-      }
-
-      if (error || !data) return { role: null, player_id: null, club_name: null, email: null }
+      if (error || !data) return { role: null, player_id: null, club_name: null, email: email || null }
       return {
         role: (data.role as Role) ?? null,
         player_id: data.player_id ? Number(data.player_id) : null,
         club_name: data.club_name || null,
-        email: data.email || null
+        email: email || null
       }
     } catch (err) {
-      return { role: null, player_id: null, club_name: null, email: null }
+      return { role: null, player_id: null, club_name: null, email: email || null }
     }
   }
 
@@ -664,7 +650,6 @@ export default function App() {
                 id: session.user.id,
                 player_id: recoveredId,
                 role: 'player',
-                email: session.user.email || null,
                 club_name: userData.club_name
               });
               userData.player_id = recoveredId;
@@ -850,18 +835,6 @@ export default function App() {
       let userData = await fetchUserData(session.user.id, session.user.email);
       console.log("Datos de usuario obtenidos:", userData);
       
-      // AUTO-POBLAR EMAIL si falta en la tabla profiles
-      if (userData.role && !userData.email && session.user.email) {
-        console.log("Actualizando email en perfil...");
-        supabase.from('profiles').upsert({
-          id: session.user.id,
-          role: userData.role,
-          player_id: userData.player_id,
-          club_name: userData.club_name,
-          email: session.user.email
-        }).then();
-      }
-
       // NUEVO: RECOVERY FROM LEGACY CSV MAPPING
       const emailMatch = session.user.email?.toLowerCase();
       if (emailMatch && LEGACY_EMAIL_MAPPING[emailMatch]) {
@@ -879,8 +852,7 @@ export default function App() {
           supabase.from('profiles').upsert({
              id: session.user.id,
              role: userData.role,
-             player_id: legacyPlayerId,
-             email: session.user.email
+             player_id: legacyPlayerId
           }).then(({error}) => {
              if (error) console.error("Error persistiendo mapeo legacy:", error);
           });
@@ -931,7 +903,6 @@ export default function App() {
           id: session.user.id,
           player_id: recoveredId,
           role: 'player',
-          email: session.user.email || null,
           club_name: userData.club_name
         });
         userData.player_id = recoveredId;
@@ -1589,8 +1560,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
               id: data.user.id,
               role: signupRole,
               player_id: verifiedPlayerId,
-              club_name: signupRole === 'club' ? selectedClub : null,
-              email: email.toLowerCase().trim()
+              club_name: signupRole === 'club' ? selectedClub : null
             });
           } catch (e) {
             console.error("Error creando perfil:", e);

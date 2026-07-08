@@ -25,22 +25,20 @@ try {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function checkPlayers() {
-  const ids = [151, 785, 765, 758, 690, 710];
-  console.log("Checking player details for IDs:", ids);
-  
-  const { data, error } = await supabase
-    .from('players')
-    .select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion')
-    .in('player_id', ids);
+  console.log("Listing all profiles in profiles table...");
+  const { data: profiles, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .limit(100);
 
   if (error) {
-    console.error("Error fetching players:", error);
+    console.error("Error fetching profiles:", error);
     return;
   }
 
-  console.log(`Found ${data.length} players:`);
-  data.forEach(p => {
-    console.log(`ID=${p.player_id}: Name=${p.nombre} ${p.apellido1} ${p.apellido2 || ''}, Anio=${p.anio}, ClubID=${p.id_club}, Position=${p.posicion}`);
+  console.log(`Found ${profiles?.length || 0} profiles:`);
+  profiles?.forEach(p => {
+    console.log(`ID=${p.id}, PlayerID=${p.player_id}, Role=${p.role}, Email=${p.email}, ClubName=${p.club_name}`);
   });
 }
 
