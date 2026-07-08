@@ -5,7 +5,7 @@ import { User } from '../types';
 
 import { fetchCatapultActivities, fetchCatapultActivityStats, fetchCatapultActivityDetail, testCatapultConnection } from '../services/catapultService';
 
-type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'cmj' | 'cmj_rebound' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api';
+type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'cmj' | 'cmj_rebound' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api' | 'encoder_1rm';
 
 interface ImportConfig {
   label: string;
@@ -275,6 +275,41 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
     ]
+  },
+  encoder_1rm: {
+    label: 'Encoder 1RM',
+    table: 'evaluaciones_encoder',
+    icon: 'fa-solid fa-gauge',
+    description: 'Carga de datos del encoder lineal 1RM (repeticiones, velocidad y potencia).',
+    conflictColumns: ['player_id', 'fecha', 'series', 'repeticion'],
+    fields: [
+      { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'jugador', label: 'Jugador', required: false, type: 'string' },
+      { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
+      { key: 'repeticion', label: 'Repetición', required: true, type: 'string' },
+      { key: 'series', label: 'Series', required: true, type: 'string' },
+      { key: 'ejercicio', label: 'Ejercicio', required: false, type: 'string' },
+      { key: 'lateralidad', label: 'Lateralidad', required: false, type: 'string' },
+      { key: 'peso_adicional_kg', label: 'Peso adicional (Kg)', required: false, type: 'number' },
+      { key: 'peso_total_kg', label: 'Peso total (Kg)', required: false, type: 'number' },
+      { key: 'inicio_ms', label: 'Inicio (ms)', required: false, type: 'number' },
+      { key: 'duracion_ms', label: 'Duración (ms)', required: false, type: 'number' },
+      { key: 'distancia_mm', label: 'Distancia (mm)', required: false, type: 'number' },
+      { key: 'v_m_s', label: 'v (m/s)', required: false, type: 'number' },
+      { key: 'vmax_m_s', label: 'vmax (m/s)', required: false, type: 'number' },
+      { key: 't_to_vmax_ms', label: 't->vmax (ms)', required: false, type: 'number' },
+      { key: 'rvd_m_s2', label: 'RVD (m/s^2)', required: false, type: 'number' },
+      { key: 'p_w', label: 'p (W)', required: false, type: 'number' },
+      { key: 'pmax_w', label: 'pmax (W)', required: false, type: 'number' },
+      { key: 't_to_pmax_ms', label: 't->pmax (ms)', required: false, type: 'number' },
+      { key: 'rpd_w_s', label: 'RPD (W/s)', required: false, type: 'number' },
+      { key: 'f_n', label: 'F (N)', required: false, type: 'number' },
+      { key: 'fmax_n', label: 'Fmax (N)', required: false, type: 'number' },
+      { key: 't_to_fmax_ms', label: 't->Fmax (ms)', required: false, type: 'number' },
+      { key: 'rfd_n_s', label: 'RFD (N/s)', required: false, type: 'number' },
+      { key: 'trabajo_kcal', label: '|Trabajo| (KCal)', required: false, type: 'number' },
+      { key: 'impulso_n_s', label: 'Impulso (N*s)', required: false, type: 'number' },
+    ]
   }
 };
 
@@ -299,6 +334,7 @@ export default function DataImportArea() {
   const [selectedActivity, setSelectedActivity] = useState<any>(null);
   const [syncingToSupabase, setSyncingToSupabase] = useState(false);
   const [sessionErrors, setSessionErrors] = useState<Record<string, string>>({});
+  const [copiedScript, setCopiedScript] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPlayers();
@@ -476,204 +512,314 @@ export default function DataImportArea() {
     return isNaN(numVal) ? null : numVal;
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (selectedType === 'antropometria') {
-        Papa.parse(file, {
-          header: false,
-          skipEmptyLines: 'greedy',
-          delimiter: "", // auto-detect
-          complete: (results) => {
-            const rawRows = results.data as string[][];
-            // Find header row containing "PACIENTES"
-            let headerIndex = rawRows.findIndex(row => 
-              row && row[0] && normalizeString(row[0]).includes('paciente')
+  const extractPlayerNameFromFilename = (filename: string): string => {
+    let name = filename.replace(/\.[^/.]+$/, "");
+    name = name.replace(/[_\-+]+/g, " ");
+    name = name.replace(/\b(encoder|1rm|fuerza|test|evaluacion|entrenamiento|squat|sentadilla|gym)\b/gi, "");
+    name = name.replace(/\b\d{1,4}[-.\/ ]\d{1,2}[-.\/ ]\d{1,4}\b/g, "");
+    name = name.replace(/\b\d{6,8}\b/g, "");
+    name = name.replace(/\s+/g, " ").trim();
+    return name;
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
+
+    if (selectedType === 'antropometria') {
+      const file = files[0];
+      Papa.parse(file, {
+        header: false,
+        skipEmptyLines: 'greedy',
+        delimiter: "", // auto-detect
+        complete: (results) => {
+          const rawRows = results.data as string[][];
+          // Find header row containing "PACIENTES"
+          let headerIndex = rawRows.findIndex(row => 
+            row && row[0] && normalizeString(row[0]).includes('paciente')
+          );
+          if (headerIndex === -1) {
+            headerIndex = rawRows.findIndex(row => 
+              row && row.some(cell => cell && normalizeString(cell).includes('paciente'))
             );
-            if (headerIndex === -1) {
-              headerIndex = rawRows.findIndex(row => 
-                row && row.some(cell => cell && normalizeString(cell).includes('paciente'))
-              );
-            }
-            if (headerIndex === -1) {
-              setMessage({ type: 'error', text: 'No se encontró la cabecera "PACIENTES" en el archivo CSV.' });
-              return;
-            }
-
-            const rawHeaders = rawRows[headerIndex];
-            const dataRows = rawRows.slice(headerIndex + 1).filter(row => 
-              row && row[0] && row[0].trim() !== '' && row[1] && row[1].trim() !== ''
-            );
-
-            // Create unique header names to prevent duplication issues
-            const headersList = rawHeaders.map((h, idx) => {
-              const trimmed = (h || '').trim();
-              return trimmed ? `${trimmed} (col ${idx})` : `Columna ${idx}`;
-            });
-
-            const formattedData = dataRows.map((row, rIdx) => {
-              const obj: Record<string, string> = { _rowIndex: String(rIdx) };
-              headersList.forEach((h, idx) => {
-                obj[h] = row[idx] || '';
-              });
-              obj._rawRow = JSON.stringify(row);
-              return obj;
-            });
-
-            setCsvData(formattedData);
-            setHeaders(headersList);
-
-            const unmatched: any[] = [];
-            const initialResolved: Record<number, number> = {};
-
-            // Set name header
-            setNameHeader(headersList[0]); // PACIENTES column
-
-            formattedData.forEach((rowObj: any, index: number) => {
-              const rawRow = JSON.parse(rowObj._rawRow);
-              const cleanName = (rawRow[0] || '').trim();
-              const player = findPlayerByName(cleanName);
-              if (player) {
-                initialResolved[index] = player.player_id;
-              } else if (cleanName) {
-                unmatched.push({ ...rowObj, _rowIndex: index, _cleanName: cleanName });
-              }
-            });
-
-            setMapping({});
-            setUnmatchedRows(unmatched);
-            setResolvedIds(initialResolved);
           }
-        });
-      } else {
-        Papa.parse(file, {
-          header: true,
-          skipEmptyLines: 'greedy',
-          delimiter: "", // auto-detect
-          complete: (results) => {
-            const data = results.data;
-            setCsvData(data);
-            if (results.meta.fields) {
-              setHeaders(results.meta.fields);
+          if (headerIndex === -1) {
+            setMessage({ type: 'error', text: 'No se encontró la cabecera "PACIENTES" en el archivo CSV.' });
+            return;
+          }
+
+          const rawHeaders = rawRows[headerIndex];
+          const dataRows = rawRows.slice(headerIndex + 1).filter(row => 
+            row && row[0] && row[0].trim() !== '' && row[1] && row[1].trim() !== ''
+          );
+
+          // Create unique header names to prevent duplication issues
+          const headersList = rawHeaders.map((h, idx) => {
+            const trimmed = (h || '').trim();
+            return trimmed ? `${trimmed} (col ${idx})` : `Columna ${idx}`;
+          });
+
+          const formattedData = dataRows.map((row, rIdx) => {
+            const obj: Record<string, any> = { _rowIndex: rIdx, _filename: file.name };
+            headersList.forEach((h, idx) => {
+              obj[h] = row[idx] || '';
+            });
+            obj._rawRow = JSON.stringify(row);
+            return obj;
+          });
+
+          setCsvData(formattedData);
+          setHeaders(headersList);
+
+          const unmatched: any[] = [];
+          const initialResolved: Record<number, number> = {};
+
+          // Set name header
+          setNameHeader(headersList[0]); // PACIENTES column
+
+          formattedData.forEach((rowObj: any, index: number) => {
+            const rawRow = JSON.parse(rowObj._rawRow);
+            const cleanName = (rawRow[0] || '').trim();
+            const player = findPlayerByName(cleanName);
+            if (player) {
+              initialResolved[index] = player.player_id;
+            } else if (cleanName) {
+              unmatched.push({ ...rowObj, _rowIndex: index, _cleanName: cleanName });
+            }
+          });
+
+          setMapping({});
+          setUnmatchedRows(unmatched);
+          setResolvedIds(initialResolved);
+        }
+      });
+    } else {
+      const allRows: any[] = [];
+      const allFieldsSet = new Set<string>();
+      const unmatched: any[] = [];
+      const initialResolved: Record<number, number> = {};
+      const newMapping: Record<string, string> = {};
+      let firstDetectedNameHeader: string | null = null;
+
+      const parsePromises = files.map((file) => {
+        return new Promise<void>((resolve) => {
+          Papa.parse(file, {
+            header: true,
+            skipEmptyLines: 'greedy',
+            delimiter: "", // auto-detect
+            complete: (results) => {
+              const fileRows = results.data || [];
+              const fields = results.meta.fields || [];
               
-              const newMapping: Record<string, string> = {};
-              const unmatched: any[] = [];
-              const initialResolved: Record<number, number> = {};
+              // Filter out summary/aggregate rows (MAX, AVG, SD, MIN, MEAN, STD, TOTAL, SUM, etc.)
+              const filteredFileRows = fileRows.filter((row: any) => {
+                if (!row) return false;
+                for (const key of Object.keys(row)) {
+                  const val = String(row[key] || '').trim().toUpperCase();
+                  if (!val) continue;
+                  const lowKey = key.toLowerCase();
+                  const isPlayerNameCol = lowKey.includes('name') || lowKey === 'jugador' || lowKey === 'nombre' || lowKey === 'atleta';
+                  if (['MAX', 'AVG', 'SD', 'MIN', 'MEAN', 'STD', 'TOTAL', 'SUM', 'PROMEDIO', 'MEDIA', 'DESV.EST', 'DESV EST', 'DESV_EST'].includes(val)) {
+                    if (!isPlayerNameCol) {
+                      return false;
+                    }
+                  }
+                }
+                return true;
+              });
+              
+              fields.forEach(f => allFieldsSet.add(f));
+
+              const firstRowIdxForFile = allRows.length;
+
+              filteredFileRows.forEach((row: any, localIdx) => {
+                const globalIdx = firstRowIdxForFile + localIdx;
+                const clonedRow = { ...row, _rowIndex: globalIdx, _filename: file.name };
+                allRows.push(clonedRow);
+              });
 
               if (selectedType) {
                 const config = IMPORT_CONFIGS[selectedType];
-                const detectedNameHeader = results.meta.fields.find(h => {
+                const detectedNameHeader = fields.find(h => {
                   const low = h.toLowerCase();
                   return low === 'name' || low === 'jugador' || low === 'nombre' || low === 'atleta' || low.includes('jugador');
                 });
-                setNameHeader(detectedNameHeader || null);
+                if (detectedNameHeader && !firstDetectedNameHeader) {
+                  firstDetectedNameHeader = detectedNameHeader;
+                }
 
-                config.fields.forEach(field => {
-                  const normalizeForMatch = (s: string) => {
-                    return s.toLowerCase()
-                      .replace(/[\s\r\n\t_()\-.,;]+/g, '')
-                      .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // remove accents
-                  };
-
-                  const fieldKeyNorm = normalizeForMatch(field.key);
-                  const fieldLabelNorm = normalizeForMatch(field.label);
-
-                  let match = results.meta.fields?.find(h => {
-                    const hNorm = normalizeForMatch(h);
-                    return hNorm.includes(fieldKeyNorm) || 
-                           hNorm.includes(fieldLabelNorm) || 
-                           fieldKeyNorm.includes(hNorm) || 
-                           fieldLabelNorm.includes(hNorm);
-                  });
-
-                  // Extra fallbacks for backward compatibility
-                   if (!match && field.key === 'Peak Vertical Force [N]') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn.includes('imtpfuerza') || hn.includes('peakforce') || hn.includes('peakverticalforce');
+                if (selectedType === 'encoder_1rm') {
+                  const fileNamePlayerName = extractPlayerNameFromFilename(file.name);
+                  const player = findPlayerByName(fileNamePlayerName);
+                  if (player) {
+                    filteredFileRows.forEach((_, localIdx) => {
+                      const globalIdx = firstRowIdxForFile + localIdx;
+                      initialResolved[globalIdx] = player.player_id;
+                    });
+                  } else {
+                    unmatched.push({
+                      _rowIndex: firstRowIdxForFile,
+                      _cleanName: fileNamePlayerName,
+                      _isFileAssociation: true,
+                      _filename: file.name
                     });
                   }
-                  if (!match && field.key === 'Peak Vertical Force / BM [N/kg]') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn.includes('frelativa') || hn.includes('forcebm') || hn.includes('verticalforcebm');
+                } else {
+                  const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'cmj', 'cmj_rebound', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
+                  if (needsNameMatching && detectedNameHeader) {
+                    const seenNames = new Set<string>();
+                    filteredFileRows.forEach((rowObj: any, localIdx) => {
+                      const globalIdx = firstRowIdxForFile + localIdx;
+                      const cleanName = (rowObj[detectedNameHeader] || '').trim();
+                      const player = findPlayerByName(cleanName);
+                      if (player) {
+                        initialResolved[globalIdx] = player.player_id;
+                      } else if (cleanName && !seenNames.has(normalizeString(cleanName))) {
+                        unmatched.push({
+                          ...rowObj,
+                          _rowIndex: globalIdx,
+                          _cleanName: cleanName,
+                          _filename: file.name
+                        });
+                        seenNames.add(normalizeString(cleanName));
+                      }
                     });
                   }
-                  if (!match && field.key === 'peso') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn.includes('bwkg') || hn.includes('bodyweight') || hn.includes('peso');
-                    });
-                  }
-                  if (!match && field.key === 'bw_kg') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn.includes('bwkg') || hn.includes('bodyweight') || hn.includes('peso');
-                    });
-                  }
-                  if (!match && field.key === 'fecha_test') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn === 'date' || hn === 'fecha' || hn === 'fechatest';
-                    });
-                  }
-                  if (!match && field.key === 'rebound_rsi') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn.includes('reboundrsi') || hn.includes('rsi') || hn.includes('flighttimecontacttime');
-                    });
-                  }
-                  if (!match && field.key === 'rebound_contact_time_ms') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn.includes('contacttime') || hn.includes('tiempocontacto');
-                    });
-                  }
-                  if (!match && field.key === 'rebound_flight_time_ms') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn.includes('flighttime') || hn.includes('tiempovuelo');
-                    });
-                  }
-                  if (!match && field.key === 'take_off_momentum_kg_m_s') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn.includes('takeoffmomentum') || hn.includes('momentum');
-                    });
-                  }
-                  if (!match && field.key === 'observaciones') {
-                    match = results.meta.fields?.find(h => {
-                      const hn = normalizeForMatch(h);
-                      return hn.includes('tags');
-                    });
-                  }
-
-                  if (match) newMapping[field.key] = match;
-                });
-
-                // Special logic for name matching
-                const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'cmj', 'cmj_rebound', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
-                
-                if (needsNameMatching && detectedNameHeader) {
-                  const seenNames = new Set<string>();
-                  data.forEach((row: any, index: number) => {
-                    const cleanName = getRowName(row);
-                    const player = findPlayerByName(cleanName);
-                    if (player) {
-                      initialResolved[index] = player.player_id;
-                    } else if (cleanName && !seenNames.has(normalizeString(cleanName))) {
-                      unmatched.push({ ...row, _rowIndex: index, _cleanName: cleanName });
-                      seenNames.add(normalizeString(cleanName));
-                    }
-                  });
                 }
               }
-              setMapping(newMapping);
-              setUnmatchedRows(unmatched);
-              setResolvedIds(initialResolved);
+              resolve();
             }
-          }
+          });
         });
+      });
+
+      await Promise.all(parsePromises);
+
+      if (allRows.length > 0) {
+        setCsvData(allRows);
+        const headersList = Array.from(allFieldsSet);
+        setHeaders(headersList);
+        setNameHeader(firstDetectedNameHeader || null);
+
+        if (selectedType) {
+          const config = IMPORT_CONFIGS[selectedType];
+          headersList.forEach(h => {
+            config.fields.forEach(field => {
+              const normalizeForMatch = (s: string) => {
+                return s.toLowerCase()
+                  .replace(/[\s\r\n\t_()\-.,;]+/g, '')
+                  .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // remove accents
+              };
+
+              const fieldKeyNorm = normalizeForMatch(field.key);
+              const fieldLabelNorm = normalizeForMatch(field.label);
+
+              let match = headersList.find(h => {
+                const hNorm = normalizeForMatch(h);
+                return hNorm.includes(fieldKeyNorm) || 
+                       hNorm.includes(fieldLabelNorm) || 
+                       fieldKeyNorm.includes(hNorm) || 
+                       fieldLabelNorm.includes(hNorm);
+              });
+
+              // Extra fallbacks for backward compatibility
+              if (!match && field.key === 'Peak Vertical Force [N]') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn.includes('imtpfuerza') || hn.includes('peakforce') || hn.includes('peakverticalforce');
+                });
+              }
+              if (!match && field.key === 'Peak Vertical Force / BM [N/kg]') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn.includes('frelativa') || hn.includes('forcebm') || hn.includes('verticalforcebm');
+                });
+              }
+              if (!match && field.key === 'peso') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn.includes('bwkg') || hn.includes('bodyweight') || hn.includes('peso');
+                });
+              }
+              if (!match && field.key === 'bw_kg') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn.includes('bwkg') || hn.includes('bodyweight') || hn.includes('peso');
+                });
+              }
+              if (!match && field.key === 'fecha_test') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn === 'date' || hn === 'fecha' || hn === 'fechatest';
+                });
+              }
+              if (!match && field.key === 'rebound_rsi') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn.includes('reboundrsi') || hn.includes('rsi') || hn.includes('flighttimecontacttime');
+                });
+              }
+              if (!match && field.key === 'rebound_contact_time_ms') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn.includes('contacttime') || hn.includes('tiempocontacto');
+                });
+              }
+              if (!match && field.key === 'rebound_flight_time_ms') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn.includes('flighttime') || hn.includes('tiempovuelo');
+                });
+              }
+              if (!match && field.key === 'take_off_momentum_kg_m_s') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn.includes('takeoffmomentum') || hn.includes('momentum');
+                });
+              }
+              if (!match && field.key === 'observaciones') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn.includes('tags');
+                });
+              }
+
+              if (!match && selectedType === 'encoder_1rm') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  if (field.key === 'v_m_s' && hn === 'vms') return true;
+                  if (field.key === 'vmax_m_s' && hn === 'vmaxms') return true;
+                  if (field.key === 't_to_vmax_ms' && (hn === 'tvmaxms' || hn === 'ttovmaxms')) return true;
+                  if (field.key === 'rvd_m_s2' && (hn === 'rvdmssquared' || hn === 'rvdmss' || hn === 'rvdms2' || hn.includes('rvd'))) return true;
+                  if (field.key === 'p_w' && hn === 'pw') return true;
+                  if (field.key === 'pmax_w' && hn === 'pmaxw') return true;
+                  if (field.key === 't_to_pmax_ms' && (hn === 'tpmaxms' || hn === 'ttopmaxms')) return true;
+                  if (field.key === 'rpd_w_s' && hn === 'rpdws') return true;
+                  if (field.key === 'f_n' && hn === 'fn') return true;
+                  if (field.key === 'fmax_n' && hn === 'fmaxn') return true;
+                  if (field.key === 't_to_fmax_ms' && (hn === 'tfmaxms' || hn === 'ttofmaxms')) return true;
+                  if (field.key === 'rfd_n_s' && hn === 'rfdns') return true;
+                  if (field.key === 'trabajo_kcal' && (hn === 'trabajokcal' || hn.includes('trabajo'))) return true;
+                  if (field.key === 'impulso_n_s' && (hn === 'impulson_s' || hn.includes('impulso'))) return true;
+                  return false;
+                });
+              }
+
+              if (!match && field.key === 'fecha') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  return hn === 'series' || hn === 'fecha' || hn === 'date';
+                });
+              }
+
+              if (match) newMapping[field.key] = match;
+            });
+          });
+        }
+
+        setMapping(newMapping);
+        setUnmatchedRows(unmatched);
+        setResolvedIds(initialResolved);
       }
     }
   };
@@ -783,23 +929,48 @@ export default function DataImportArea() {
                 val = isNaN(numVal) ? null : numVal;
               }
               if (field.type === 'date') {
-                const trimmedVal = String(val).trim();
-                if (trimmedVal.includes('/') || trimmedVal.includes('-')) {
-                  const separator = trimmedVal.includes('/') ? '/' : '-';
-                  const parts = trimmedVal.split(separator);
-                  if (parts.length === 3) {
-                    const d = parts[0];
-                    const m = parts[1];
-                    const y = parts[2];
-                    if (d.length === 4) {
-                      val = `${d}-${m.padStart(2, '0')}-${y.padStart(2, '0')}`;
+                let trimmedVal = String(val).trim();
+                const upperVal = trimmedVal.toUpperCase();
+                if (upperVal === 'NA' || upperVal === 'N/A' || upperVal === 'NULL' || upperVal === 'UNDEFINED' || upperVal === '') {
+                  val = manualDate;
+                } else {
+                  if (trimmedVal.includes(' ')) {
+                    trimmedVal = trimmedVal.split(' ')[0];
+                  }
+                  if (trimmedVal.includes('/') || trimmedVal.includes('-')) {
+                    const separator = trimmedVal.includes('/') ? '/' : '-';
+                    const parts = trimmedVal.split(separator);
+                    if (parts.length === 3) {
+                      const d = parts[0];
+                      const m = parts[1];
+                      const y = parts[2];
+                      if (d.length === 4) {
+                        val = `${d}-${m.padStart(2, '0')}-${y.padStart(2, '0')}`;
+                      } else {
+                        const fullYear = y.length === 2 ? `20${y}` : y;
+                        val = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                      }
                     } else {
-                      const fullYear = y.length === 2 ? `20${y}` : y;
-                      val = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                      val = manualDate;
+                    }
+                  } else if (!isNaN(Number(trimmedVal)) && Number(trimmedVal) > 30000) {
+                    val = excelDateToJSDate(Number(trimmedVal));
+                  } else {
+                    const d = new Date(trimmedVal);
+                    if (!isNaN(d.getTime())) {
+                      val = d.toISOString().split('T')[0];
+                    } else {
+                      val = manualDate;
                     }
                   }
-                } else if (!isNaN(Number(trimmedVal)) && Number(trimmedVal) > 30000) {
-                  val = excelDateToJSDate(Number(trimmedVal));
+                }
+
+                // Final safety validation check
+                if (typeof val === 'string') {
+                  const isValidFormat = /^\d{4}-\d{2}-\d{2}/.test(val);
+                  if (!isValidFormat) {
+                    val = manualDate;
+                  }
                 }
               }
               item[field.key] = val;
@@ -999,6 +1170,9 @@ export default function DataImportArea() {
         if (config.table === 'vo2max_tests') {
           delete cleanItem.jugador;
         }
+        if (config.table === 'gps_tareas') {
+          cleanItem.id_del_jugador = cleanItem.player_id;
+        }
 
         return cleanItem;
       });
@@ -1009,29 +1183,166 @@ export default function DataImportArea() {
         return !isNaN(pId) && pId > 0;
       });
 
-      let uploadError = null;
-      try {
-        const { error } = await supabase.from(config.table).upsert(sanitizedData, {
-          onConflict: config.conflictColumns.join(',')
-        });
-        if (error) {
-          uploadError = error;
+      // Execute the upload using the robust, auto-healing native upsert with fallback
+      {
+        let tableName = config.table;
+        if (selectedType === 'encoder_1rm') {
+          try {
+            const { error: checkErr } = await supabase.from('evaluaciones_encoder').select('id').limit(1);
+            if (checkErr && (
+              checkErr.message?.includes('schema cache') || 
+              checkErr.message?.includes('does not exist') ||
+              checkErr.code === 'PGRST205'
+            )) {
+              console.log("⚠️ Table 'evaluaciones_encoder' not found in schema cache. Trying 'encoder_1rm_reports' as fallback...");
+              tableName = 'encoder_1rm_reports';
+            }
+          } catch (e) {
+            console.warn("Error while checking for 'evaluaciones_encoder' table, defaulting to config table name:", e);
+          }
         }
-      } catch (upsertCatchError: any) {
-        uploadError = upsertCatchError;
-      }
 
-      if (uploadError) {
-        console.warn("⚠️ Native upsert failed, attempting custom self-healing merge fallback...", uploadError);
-        
-        try {
-          const tableName = config.table;
-          const conflictCols = config.conflictColumns;
+        let activeConflictCols = [...config.conflictColumns];
 
-          const dateCol = conflictCols.find(col => ['fecha', 'fecha_medicion', 'fecha_test', 'checkin_date', 'session_date'].includes(col));
+        if (selectedType === 'encoder_1rm' && tableName === 'encoder_1rm_reports') {
+          // If we fell back to encoder_1rm_reports, let's map and filter to only the known working columns:
+          const allowedCols = [
+            'id', 'created_at', 'player_id', 'filename', 'repeticion', 'fecha_ejercicio', 'ejercicio', 'lateralidad',
+            'peso_adicional', 'peso_total', 'inicio_ms', 'duracion_ms', 'distancia_mm',
+            'v_ms', 'vmax_ms', 't_vmax_ms', 'rvd_ms2', 'p_w', 'pmax_w', 't_pmax_ms', 'rpd_ws',
+            'f_n', 'fmax_n', 't_fmax_ms', 'rfd_ns', 'trabajo_kcal', 'impulso_ns'
+          ];
+          sanitizedData = sanitizedData.map((item: any) => {
+            const mapped: any = {};
+            
+            // Handle player_id
+            if (item.player_id !== undefined && item.player_id !== null) {
+              mapped.player_id = Number(item.player_id);
+            }
+            
+            // Handle filename
+            mapped.filename = item.filename ?? 'CSV Import';
+
+            // Handle repeticion
+            if (item.repeticion !== undefined && item.repeticion !== null) {
+              mapped.repeticion = String(item.repeticion);
+            }
+
+            // Handle fecha_ejercicio
+            const dateVal = item.fecha ?? item.fecha_ejercicio ?? item.created_at;
+            if (dateVal !== undefined && dateVal !== null) {
+              mapped.fecha_ejercicio = dateVal;
+            }
+
+            // Simple string mappings
+            if (item.ejercicio !== undefined && item.ejercicio !== null) mapped.ejercicio = item.ejercicio;
+            if (item.lateralidad !== undefined && item.lateralidad !== null) mapped.lateralidad = item.lateralidad;
+
+            // Numeric weight mappings
+            const pesoAdicional = item.peso_adicional_kg ?? item.peso_adicional;
+            const pesoTotal = item.peso_total_kg ?? item.peso_total;
+            if (pesoAdicional !== undefined && pesoAdicional !== null) mapped.peso_adicional = Number(pesoAdicional);
+            if (pesoTotal !== undefined && pesoTotal !== null) mapped.peso_total = Number(pesoTotal);
+
+            // Numeric ms/mm mappings
+            if (item.inicio_ms !== undefined && item.inicio_ms !== null) mapped.inicio_ms = Math.round(Number(item.inicio_ms));
+            if (item.duracion_ms !== undefined && item.duracion_ms !== null) mapped.duracion_ms = Math.round(Number(item.duracion_ms));
+            if (item.distancia_mm !== undefined && item.distancia_mm !== null) mapped.distancia_mm = Math.round(Number(item.distancia_mm));
+
+            // Velocity / Acceleration metrics mapping
+            const vVal = item.v_m_s ?? item.v_ms;
+            if (vVal !== undefined && vVal !== null) mapped.v_ms = Number(vVal);
+
+            const vmaxVal = item.vmax_m_s ?? item.vmax_ms;
+            if (vmaxVal !== undefined && vmaxVal !== null) mapped.vmax_ms = Number(vmaxVal);
+
+            const tvmaxVal = item.t_to_vmax_ms ?? item.t_vmax_ms;
+            if (tvmaxVal !== undefined && tvmaxVal !== null) mapped.t_vmax_ms = Math.round(Number(tvmaxVal));
+
+            const rvdVal = item.rvd_m_s2 ?? item.rvd_ms2;
+            if (rvdVal !== undefined && rvdVal !== null) mapped.rvd_ms2 = Number(rvdVal);
+
+            // Power metrics mapping
+            if (item.p_w !== undefined && item.p_w !== null) mapped.p_w = Number(item.p_w);
+            if (item.pmax_w !== undefined && item.pmax_w !== null) mapped.pmax_w = Number(item.pmax_w);
+
+            const tpmaxVal = item.t_to_pmax_ms ?? item.t_pmax_ms;
+            if (tpmaxVal !== undefined && tpmaxVal !== null) mapped.t_pmax_ms = Math.round(Number(tpmaxVal));
+
+            const rpdVal = item.rpd_w_s ?? item.rpd_ws;
+            if (rpdVal !== undefined && rpdVal !== null) mapped.rpd_ws = Number(rpdVal);
+
+            // Force metrics mapping
+            if (item.f_n !== undefined && item.f_n !== null) mapped.f_n = Number(item.f_n);
+            if (item.fmax_n !== undefined && item.fmax_n !== null) mapped.fmax_n = Number(item.fmax_n);
+
+            const tfmaxVal = item.t_to_fmax_ms ?? item.t_fmax_ms;
+            if (tfmaxVal !== undefined && tfmaxVal !== null) mapped.t_fmax_ms = Math.round(Number(tfmaxVal));
+
+            const rfdVal = item.rfd_n_s ?? item.rfd_ns;
+            if (rfdVal !== undefined && rfdVal !== null) mapped.rfd_ns = Number(rfdVal);
+
+            // Work and Impulse mapping
+            if (item.trabajo_kcal !== undefined && item.trabajo_kcal !== null) mapped.trabajo_kcal = Number(item.trabajo_kcal);
+
+            const impulsoVal = item.impulso_n_s ?? item.impulso_ns;
+            if (impulsoVal !== undefined && impulsoVal !== null) mapped.impulso_ns = Number(impulsoVal);
+
+            return mapped;
+          });
+          activeConflictCols = ['player_id', 'fecha_ejercicio', 'repeticion'];
+        }
+
+        let attemptData = JSON.parse(JSON.stringify(sanitizedData));
+        let lastError: any = null;
+        let success = false;
+        const maxAttempts = 15;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const { error } = await supabase.from(tableName).upsert(attemptData, {
+              onConflict: activeConflictCols.join(',')
+            });
+            if (!error) {
+              console.log(`✅ Upserted ${attemptData.length} rows to ${tableName} successfully on attempt ${attempt}`);
+              success = true;
+              break;
+            }
+            lastError = error;
+          } catch (err: any) {
+            lastError = err;
+          }
+
+          const errMsg = lastError?.message || String(lastError);
+          console.warn(`Attempt ${attempt} of native upsert failed for ${tableName}:`, errMsg);
+
+          const matchPostgrest = errMsg.match(/Could not find the '([^']+)' column of '([^']+)' in the schema cache/i);
+          const matchPostgres1 = errMsg.match(/column "([^"]+)" of relation "([^"]+)" does not exist/i);
+          const matchPostgres2 = errMsg.match(/column "([^"]+)" does not exist/i);
+
+          const missingCol = (matchPostgrest && matchPostgrest[1]) || 
+                             (matchPostgres1 && matchPostgres1[1]) || 
+                             (matchPostgres2 && matchPostgres2[1]);
+
+          if (missingCol) {
+            console.log(`💡 Detected missing column in DB: "${missingCol}". Filtering it out from payload and conflict columns...`);
+            attemptData = attemptData.map((item: any) => {
+              const { [missingCol]: _, ...rest } = item;
+              return rest;
+            });
+            activeConflictCols = activeConflictCols.filter(col => col !== missingCol);
+            continue;
+          }
+
+          break; // If some other error (like missing table), exit the loop and let fallback merge handle or raise it
+        }
+
+        if (!success) {
+          console.warn("⚠️ Native upsert failed even after filtering columns, attempting custom self-healing merge fallback...");
           
+          const dateCol = activeConflictCols.find(col => ['fecha', 'fecha_medicion', 'fecha_test', 'checkin_date', 'session_date', 'created_at'].includes(col));
           const validPlayerIds = Array.from(new Set(
-            sanitizedData
+            attemptData
               .map(d => Number(d.player_id))
               .filter(id => !isNaN(id) && id > 0)
           ));
@@ -1040,108 +1351,146 @@ export default function DataImportArea() {
             throw new Error("No hay registros con un ID de jugador registrado en el sistema. Asegúrate de que los nombres de los jugadores en el archivo coincidan exactamente con la base de datos.");
           }
 
-          let query = supabase.from(tableName).select('*').in('player_id', validPlayerIds);
+          let fallbackSuccess = false;
 
-          if (dateCol) {
-            const uniqDates = Array.from(new Set(sanitizedData.map((d: any) => d[dateCol]).filter(Boolean)));
-            if (uniqDates.length > 0) {
-              query = query.in(dateCol, uniqDates);
-            }
-          }
-
-          const { data: existingData, error: selectError } = await query;
-          if (selectError) throw selectError;
-
-          const existingMap = new Map<string, any>();
-          if (existingData) {
-            existingData.forEach((row: any) => {
-              const key = conflictCols.map(col => String(row[col] ?? '')).join('|');
-              existingMap.set(key, row);
-            });
-          }
-
-          const toInsert: any[] = [];
-          const toUpdate: { id: any; data: any; filters: any }[] = [];
-          const processedKeysInBatch = new Set<string>();
-
-          sanitizedData.forEach(item => {
-            const key = conflictCols.map(col => String(item[col] ?? '')).join('|');
-            
-            // Avoid local batch duplicates
-            if (processedKeysInBatch.has(key)) {
-              const insertIdx = toInsert.findIndex(x => conflictCols.map(col => String(x[col] ?? '')).join('|') === key);
-              if (insertIdx !== -1) {
-                toInsert[insertIdx] = item;
-              } else {
-                const updateIdx = toUpdate.findIndex(x => conflictCols.map(col => String(x.data[col] ?? '')).join('|') === key);
-                if (updateIdx !== -1) {
-                  toUpdate[updateIdx].data = item;
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+              let query = supabase.from(tableName).select('*').in('player_id', validPlayerIds);
+              if (dateCol && attemptData[0] && attemptData[0][dateCol]) {
+                const uniqDates = Array.from(new Set(attemptData.map((d: any) => d[dateCol]).filter(Boolean)));
+                if (uniqDates.length > 0) {
+                  query = query.in(dateCol, uniqDates);
                 }
               }
-              return;
-            }
-            
-            processedKeysInBatch.add(key);
-            const matchedRow = existingMap.get(key);
 
-            if (matchedRow) {
-              const filters: any = {};
-              conflictCols.forEach(col => {
-                filters[col] = item[col];
-              });
-              toUpdate.push({
-                id: matchedRow.id || null,
-                data: item,
-                filters
-              });
-            } else {
-              toInsert.push(item);
-            }
-          });
+              const { data: existingData, error: selectError } = await query;
+              if (selectError) {
+                throw selectError;
+              }
 
-          // Perform Inserts in a single batch
-          if (toInsert.length > 0) {
-            const { error: insertErr } = await supabase.from(tableName).insert(toInsert);
-            if (insertErr) throw insertErr;
-          }
+              const existingMap = new Map<string, any>();
+              if (existingData) {
+                existingData.forEach((row: any) => {
+                  const key = activeConflictCols
+                    .filter(col => col in row)
+                    .map(col => String(row[col] ?? ''))
+                    .join('|');
+                  existingMap.set(key, row);
+                });
+              }
 
-          // Perform Updates in safe chunks of 25 parallel requests to avoid DB choke
-          if (toUpdate.length > 0) {
-            const batchSize = 25;
-            for (let i = 0; i < toUpdate.length; i += batchSize) {
-              const chunk = toUpdate.slice(i, i + batchSize);
-              await Promise.all(
-                chunk.map(async (up) => {
-                  let updateQuery = supabase.from(tableName).update(up.data);
-                  if (up.id) {
-                    updateQuery = updateQuery.eq('id', up.id);
+              const toInsert: any[] = [];
+              const toUpdate: { id: any; data: any; filters: any }[] = [];
+              const processedKeysInBatch = new Set<string>();
+
+              attemptData.forEach((item: any) => {
+                const actualConflictCols = activeConflictCols.filter(col => col in item);
+                const key = actualConflictCols.map(col => String(item[col] ?? '')).join('|');
+
+                if (processedKeysInBatch.has(key)) {
+                  const insertIdx = toInsert.findIndex(x => actualConflictCols.map(col => String(x[col] ?? '')).join('|') === key);
+                  if (insertIdx !== -1) {
+                    toInsert[insertIdx] = item;
                   } else {
-                    Object.entries(up.filters).forEach(([col, val]) => {
-                      updateQuery = updateQuery.eq(col, val);
-                    });
+                    const updateIdx = toUpdate.findIndex(x => actualConflictCols.map(col => String(x.data[col] ?? '')).join('|') === key);
+                    if (updateIdx !== -1) {
+                      toUpdate[updateIdx].data = item;
+                    }
                   }
-                  const { error: updateErr } = await updateQuery;
-                  if (updateErr) {
-                    console.error(`Error updating record in fallback merge for ${tableName}:`, updateErr);
-                  }
-                })
-              );
+                  return;
+                }
+
+                processedKeysInBatch.add(key);
+                const matchedRow = existingMap.get(key);
+
+                if (matchedRow) {
+                  const filters: any = {};
+                  actualConflictCols.forEach(col => {
+                    filters[col] = item[col];
+                  });
+                  toUpdate.push({
+                    id: matchedRow.id || null,
+                    data: item,
+                    filters
+                  });
+                } else {
+                  toInsert.push(item);
+                }
+              });
+
+              if (toInsert.length > 0) {
+                const { error: insertErr } = await supabase.from(tableName).insert(toInsert);
+                if (insertErr) {
+                  throw insertErr;
+                }
+              }
+
+              if (toUpdate.length > 0) {
+                const batchSize = 25;
+                for (let i = 0; i < toUpdate.length; i += batchSize) {
+                  const chunk = toUpdate.slice(i, i + batchSize);
+                  await Promise.all(
+                    chunk.map(async (up) => {
+                      let updateQuery = supabase.from(tableName).update(up.data);
+                      if (up.id) {
+                        updateQuery = updateQuery.eq('id', up.id);
+                      } else {
+                        Object.entries(up.filters).forEach(([col, val]) => {
+                          updateQuery = updateQuery.eq(col, val);
+                        });
+                      }
+                      const { error: updateErr } = await updateQuery;
+                      if (updateErr) {
+                        throw updateErr;
+                      }
+                    })
+                  );
+                }
+              }
+
+              console.log(`✅ Custom fallback merge successfully premium processed: ${toInsert.length} inserts & ${toUpdate.length} updates.`);
+              fallbackSuccess = true;
+              break;
+            } catch (err: any) {
+              lastError = err;
             }
+
+            const errMsg = lastError?.message || String(lastError);
+            console.warn(`Fallback attempt ${attempt} failed for ${tableName}:`, errMsg);
+
+            const matchPostgrest = errMsg.match(/Could not find the '([^']+)' column of '([^']+)' in the schema cache/i);
+            const matchPostgres1 = errMsg.match(/column "([^"]+)" of relation "([^"]+)" does not exist/i);
+            const matchPostgres2 = errMsg.match(/column "([^"]+)" does not exist/i);
+
+            const missingCol = (matchPostgrest && matchPostgrest[1]) || 
+                               (matchPostgres1 && matchPostgres1[1]) || 
+                               (matchPostgres2 && matchPostgres2[1]);
+
+            if (missingCol) {
+              console.log(`💡 Fallback: Detected missing column in DB: "${missingCol}". Filtering it out from payload and conflict columns...`);
+              attemptData = attemptData.map((item: any) => {
+                const { [missingCol]: _, ...rest } = item;
+                return rest;
+              });
+              activeConflictCols = activeConflictCols.filter(col => col !== missingCol);
+              continue;
+            }
+
+            throw lastError;
           }
 
-          console.log(`✅ Custom fallback merge successfully premium processed: ${toInsert.length} inserts & ${toUpdate.length} updates.`);
-        } catch (fallbackError: any) {
-          console.error("❌ Custom self-healing merge fallback also failed:", fallbackError);
-          throw fallbackError;
+          if (!fallbackSuccess) {
+            throw lastError;
+          }
         }
       }
 
-      setMessage({ type: 'success', text: `Se han importado ${dataToInsert.length} registros correctamente.` });
-      setCsvData([]);
-      setHeaders([]);
-      setMapping({});
-      setUnmatchedRows([]);
-      setResolvedIds({});
+        setMessage({ type: 'success', text: `Se han importado ${dataToInsert.length} registros correctamente.` });
+        setCsvData([]);
+        setHeaders([]);
+        setMapping({});
+        setUnmatchedRows([]);
+        setResolvedIds({});
     } catch (err: any) {
       console.error("Error importing:", err);
       const errStr = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
@@ -1153,19 +1502,41 @@ export default function DataImportArea() {
 
   const updateResolvedId = (rowIndex: number, playerId: number) => {
     const row = csvData[rowIndex];
+    if (!row) return;
     const cleanName = getRowName(row);
     const newResolved = { ...resolvedIds };
-    const normalizedCleanName = normalizeString(cleanName);
     
-    csvData.forEach((r, idx) => {
-      if (normalizeString(getRowName(r)) === normalizedCleanName) {
+    if (selectedType === 'encoder_1rm' && row._filename) {
+      const targetFilename = row._filename;
+      csvData.forEach((r, idx) => {
+        if (r._filename === targetFilename) {
+          if (!playerId || isNaN(playerId) || playerId <= 0) {
+            delete newResolved[idx];
+          } else {
+            newResolved[idx] = playerId;
+          }
+        }
+      });
+    } else if (selectedType === 'encoder_1rm') {
+      csvData.forEach((_, idx) => {
         if (!playerId || isNaN(playerId) || playerId <= 0) {
           delete newResolved[idx];
         } else {
           newResolved[idx] = playerId;
         }
-      }
-    });
+      });
+    } else {
+      const normalizedCleanName = normalizeString(cleanName);
+      csvData.forEach((r, idx) => {
+        if (normalizeString(getRowName(r)) === normalizedCleanName) {
+          if (!playerId || isNaN(playerId) || playerId <= 0) {
+            delete newResolved[idx];
+          } else {
+            newResolved[idx] = playerId;
+          }
+        }
+      });
+    }
 
     setResolvedIds(newResolved);
   };
@@ -1612,7 +1983,7 @@ export default function DataImportArea() {
     // Validate that at least some are mapped
     const validMappings = catapultAthletes.filter(a => a.supabase_player_id);
     if (validMappings.length === 0) {
-      alert("Debes asociar al menos un atleta a un jugador del sistema.");
+      setMessage({ type: 'error', text: 'Debes asociar al menos un atleta a un jugador del sistema.' });
       return;
     }
 
@@ -2183,7 +2554,9 @@ export default function DataImportArea() {
                   message.text.includes('evaluaciones_imtp_salto') || 
                   message.text.includes('jugador') || 
                   message.text.includes('trigger') ||
-                  message.text.includes('relation')
+                  message.text.includes('relation') ||
+                  message.text.includes('evaluaciones_encoder') ||
+                  message.text.includes('encoder_1rm_reports')
                 ) && (
                   <div className="p-6 rounded-3xl border border-rose-100 bg-rose-50/40 space-y-4">
                     <div className="flex items-start gap-3">
@@ -2197,10 +2570,10 @@ export default function DataImportArea() {
                     </div>
                     
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Este error de base de datos ocurre porque las tablas consolidadas o disparadores (triggers) en tu proyecto de Supabase no se han actualizado para sincronizar el nuevo formato de columnas. 
+                      Este error de base de datos ocurre porque las tablas consolidadas, tablas nuevas o disparadores (triggers) en tu proyecto de Supabase no se han creado o actualizado para sincronizar el formato de columnas. 
                     </p>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                       {/* Solución de CMJ */}
                       <div className="p-4 bg-white rounded-2xl border border-slate-100 space-y-3 shadow-sm">
                         <div className="flex items-center gap-2 text-rose-600">
@@ -2245,11 +2618,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;`;
                               navigator.clipboard.writeText(sql);
-                              alert('¡SQL de CMJ copiado! Pégalo en el SQL Editor de Supabase y haz clic en Run.');
+                              setCopiedScript('cmj');
+                              setTimeout(() => setCopiedScript(null), 3000);
                             }}
-                            className="bg-slate-900 text-white hover:bg-slate-800 text-[9px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                            className={`${copiedScript === 'cmj' ? 'bg-emerald-600' : 'bg-slate-900 hover:bg-slate-800'} text-white text-[9px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer`}
                           >
-                            <i className="fa-solid fa-copy mr-1"></i> Copiar SQL CMJ
+                            <i className={`fa-solid ${copiedScript === 'cmj' ? 'fa-circle-check' : 'fa-copy'} mr-1`}></i>
+                            {copiedScript === 'cmj' ? '¡SQL CMJ Copiado!' : 'Copiar SQL CMJ'}
                           </button>
                         </div>
                       </div>
@@ -2294,17 +2669,92 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;`;
                               navigator.clipboard.writeText(sql);
-                              alert('¡SQL de IMTP copiado! Pégalo en el SQL Editor de Supabase y haz clic en Run.');
+                              setCopiedScript('imtp');
+                              setTimeout(() => setCopiedScript(null), 3000);
                             }}
-                            className="bg-slate-900 text-white hover:bg-slate-800 text-[9px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                            className={`${copiedScript === 'imtp' ? 'bg-emerald-600' : 'bg-slate-900 hover:bg-slate-800'} text-white text-[9px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer`}
                           >
-                            <i className="fa-solid fa-copy mr-1"></i> Copiar SQL IMTP
+                            <i className={`fa-solid ${copiedScript === 'imtp' ? 'fa-circle-check' : 'fa-copy'} mr-1`}></i>
+                            {copiedScript === 'imtp' ? '¡SQL IMTP Copiado!' : 'Copiar SQL IMTP'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Solución de Encoder 1RM */}
+                      <div className="p-4 bg-white rounded-2xl border border-slate-100 space-y-3 shadow-sm">
+                        <div className="flex items-center gap-2 text-rose-600">
+                          <i className="fa-solid fa-gauge"></i>
+                          <h5 className="text-[10px] font-black uppercase tracking-wider">Solución para Encoder (1RM)</h5>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-normal font-medium">Crea la tabla <code className="bg-slate-100 px-1 py-0.5 rounded font-bold">evaluaciones_encoder</code> o <code className="bg-slate-100 px-1 py-0.5 rounded font-bold">encoder_1rm_reports</code> para habilitar la carga.</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => {
+                              const sql = `-- Crear tabla de evaluaciones para el Encoder Lineal 1RM (Recomendado)
+CREATE TABLE IF NOT EXISTS public.evaluaciones_encoder (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+  player_id int4 NOT NULL REFERENCES public.players(player_id) ON DELETE CASCADE,
+  jugador text,
+  fecha date NOT NULL,
+  repeticion text NOT NULL,
+  series text NOT NULL,
+  ejercicio text,
+  lateralidad text,
+  peso_adicional_kg numeric,
+  peso_total_kg numeric,
+  inicio_ms numeric,
+  duracion_ms numeric,
+  distancia_mm numeric,
+  v_m_s numeric,
+  vmax_m_s numeric,
+  t_to_vmax_ms numeric,
+  rvd_m_s2 numeric,
+  p_w numeric,
+  pmax_w numeric,
+  t_to_pmax_ms numeric,
+  rpd_w_s numeric,
+  f_n numeric,
+  fmax_n numeric,
+  t_to_fmax_ms numeric,
+  rfd_n_s numeric,
+  trabajo_kcal numeric,
+  impulso_n_s numeric,
+  UNIQUE(player_id, fecha, series, repeticion)
+);
+
+-- Asegurar RLS y políticas de acceso total para la tabla recomendada
+ALTER TABLE public.evaluaciones_encoder ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable all access for evaluaciones_encoder" ON public.evaluaciones_encoder;
+CREATE POLICY "Enable all access for evaluaciones_encoder" 
+ON public.evaluaciones_encoder 
+FOR ALL 
+USING (true) 
+WITH CHECK (true);
+
+-- OPCIONAL: Si ya tienes y prefieres usar la tabla "encoder_1rm_reports"
+-- Asegurar que tenga políticas de RLS correctas para evitar errores de seguridad
+ALTER TABLE public.encoder_1rm_reports ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable all access for encoder_1rm_reports" ON public.encoder_1rm_reports;
+CREATE POLICY "Enable all access for encoder_1rm_reports" 
+ON public.encoder_1rm_reports 
+FOR ALL 
+USING (true) 
+WITH CHECK (true);`;
+                              navigator.clipboard.writeText(sql);
+                              setCopiedScript('encoder');
+                              setTimeout(() => setCopiedScript(null), 3000);
+                            }}
+                            className={`${copiedScript === 'encoder' ? 'bg-emerald-600' : 'bg-slate-900 hover:bg-slate-800'} text-white text-[9px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer`}
+                          >
+                            <i className={`fa-solid ${copiedScript === 'encoder' ? 'fa-circle-check' : 'fa-copy'} mr-1`}></i>
+                            {copiedScript === 'encoder' ? '¡SQL Encoder Copiado!' : 'Copiar SQL Encoder'}
                           </button>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 pt-2">
+                    <div className="flex flex-wrap items-center gap-3 pt-2">
                       <a 
                         href="/fix_cmj_trigger.sql" 
                         download="fix_cmj_trigger.sql"
@@ -2319,6 +2769,20 @@ $$ LANGUAGE plpgsql;`;
                       >
                         <i className="fa-solid fa-download"></i> Descargar Script IMTP Completo
                       </a>
+                      <a 
+                        href="/create_encoder_table.sql" 
+                        download="create_encoder_table.sql"
+                        className="bg-[#CF1B2B] text-white hover:bg-red-700 text-[10px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all flex items-center gap-2 shadow-sm"
+                      >
+                        <i className="fa-solid fa-download"></i> Descargar Script Encoder
+                      </a>
+                      <a 
+                        href="/create_cmj_rebound_table.sql" 
+                        download="create_cmj_rebound_table.sql"
+                        className="bg-[#CF1B2B] text-white hover:bg-red-700 text-[10px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all flex items-center gap-2 shadow-sm"
+                      >
+                        <i className="fa-solid fa-download"></i> Descargar Script CMJ Rebound
+                      </a>
                     </div>
                   </div>
                 )}
@@ -2330,11 +2794,12 @@ $$ LANGUAGE plpgsql;`;
                 <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-slate-300 mb-6 shadow-sm">
                   <i className="fa-solid fa-file-csv text-4xl"></i>
                 </div>
-                <p className="text-slate-900 font-black uppercase tracking-widest text-xs mb-2">Selecciona un archivo CSV</p>
-                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-tighter mb-8">El archivo debe contener encabezados de columna</p>
+                <p className="text-slate-900 font-black uppercase tracking-widest text-xs mb-2">Selecciona uno o más archivos CSV</p>
+                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-tighter mb-8">Los archivos deben contener encabezados de columna. Puedes subir múltiples archivos simultáneamente.</p>
                 <input
                   type="file"
                   accept=".csv"
+                  multiple
                   onChange={handleFileChange}
                   className="hidden"
                   id="csv-upload"
@@ -2444,7 +2909,9 @@ $$ LANGUAGE plpgsql;`;
                     return (
                       <div key={row._rowIndex} className="bg-white p-4 rounded-2xl border border-amber-200 shadow-sm flex flex-col gap-3">
                         <div className="flex flex-col">
-                          <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Nombre en CSV</span>
+                          <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">
+                            {row._isFileAssociation ? 'Nombre del Archivo' : 'Nombre en CSV'}
+                          </span>
                           <span className="text-[11px] font-black text-slate-900 truncate">{row._cleanName}</span>
                         </div>
                         <div className="space-y-3">

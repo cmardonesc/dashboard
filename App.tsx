@@ -117,9 +117,9 @@ export default function App() {
       }
 
       let [wellnessRes, loadsRes, gpsRes, nutritionRes] = await Promise.all([
-        wellnessQuery.order('checkin_date', { ascending: true }),
-        loadsQuery.order('session_date', { ascending: true }),
-        gpsQuery.order('fecha', { ascending: true }),
+        wellnessQuery.order('checkin_date', { ascending: false }),
+        loadsQuery.order('session_date', { ascending: false }),
+        gpsQuery.order('fecha', { ascending: false }),
         nutritionQuery
       ]);
 
@@ -130,7 +130,7 @@ export default function App() {
           .from('wellness_checkin')
           .select('*')
           .gte('checkin_dat', dateStr)
-          .order('checkin_dat', { ascending: true });
+          .order('checkin_dat', { ascending: false });
       }
 
       console.log("Supabase Data Counts:", {
@@ -244,11 +244,15 @@ export default function App() {
         };
       });
 
+      const sortedWellness = [...mappedWellness].sort((a, b) => a.date.localeCompare(b.date));
+      const sortedLoads = [...mappedLoads].sort((a, b) => a.date.localeCompare(b.date));
+      const sortedGps = [...mappedGps].sort((a, b) => a.date.localeCompare(b.date));
+
       setAllData(prev => ({
         ...prev,
-        wellness: mappedWellness,
-        loads: mappedLoads,
-        gps: mappedGps,
+        wellness: sortedWellness,
+        loads: sortedLoads,
+        gps: sortedGps,
         nutrition: (nutritionRes.data || []).map((n: any) => ({
           ...n,
           player_id: n.player_id,

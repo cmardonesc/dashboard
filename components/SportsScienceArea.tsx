@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import ClubBadge from './ClubBadge';
 import Markdown from 'react-markdown';
 import { ALL_METRIC_CONFIGS } from './FisicaResumenGrupal';
+import { FichaOrientacionAtleta, FichaOrientacionGrupal } from './FichasOrientacion';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Cell, BarChart, Bar, LineChart, Line, Legend,
@@ -770,6 +771,12 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             test505={test505Data.filter(d => d.player_id === selectedPlayerId)}
             cmjRebound={cmjReboundData.filter(d => d.player_id === selectedPlayerId)}
             clubs={clubs}
+            allPlayers={players}
+            allImtp={imtpData}
+            allSpeed={speedData}
+            allVo2={vo2maxData}
+            allTest505={test505Data}
+            allCmjRebound={cmjReboundData}
           />
         )}
         {activeTab === 'grupal' && (
@@ -782,6 +789,8 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             imtp={imtpData}
             vo2max={vo2maxData}
             antropometria={antropometria}
+            test505={test505Data}
+            cmjRebound={cmjReboundData}
           />
         )}
         {activeTab === 'laboratorio' && (
@@ -2736,7 +2745,8 @@ const AthleteHuella = ({
 };
 
 const IndividualDashboard = ({ 
-  player, imtp, speed, antropometria, vo2max, test505 = [], cmjRebound = [], clubs
+  player, imtp, speed, antropometria, vo2max, test505 = [], cmjRebound = [], clubs,
+  allPlayers = [], allImtp = [], allSpeed = [], allVo2 = [], allTest505 = [], allCmjRebound = []
 }: { 
   player?: PlayerData, 
   imtp: IMTPData[], 
@@ -2745,7 +2755,13 @@ const IndividualDashboard = ({
   vo2max: VO2MaxData[],
   test505?: any[],
   cmjRebound?: CMJReboundData[],
-  clubs: any[]
+  clubs: any[],
+  allPlayers?: any[],
+  allImtp?: any[],
+  allSpeed?: any[],
+  allVo2?: any[],
+  allTest505?: any[],
+  allCmjRebound?: any[]
 }) => {
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>([
     'imtp_fuerza_n',
@@ -2795,6 +2811,42 @@ const IndividualDashboard = ({
   const antroMetrics = METRICS_OPTIONS.filter(m => m.table === 'antropometria');
   const agilityMetrics = METRICS_OPTIONS.filter(m => m.table === 'test505');
   const reboundMetrics = METRICS_OPTIONS.filter(m => m.table === 'rebound');
+
+  const latestImtpFuerza = useMemo(() => {
+    if (!imtp || imtp.length === 0) return null;
+    const sorted = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime());
+    return sorted[0].imtp_fuerza_n || null;
+  }, [imtp]);
+
+  const latestCmjAltura = useMemo(() => {
+    if (!imtp || imtp.length === 0) return null;
+    const sorted = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime());
+    return sorted[0].cmj_altura_salto_im || null;
+  }, [imtp]);
+
+  const latestSpeedTotal = useMemo(() => {
+    if (!speed || speed.length === 0) return null;
+    const sorted = [...speed].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+    return sorted[0].tiempo_total || null;
+  }, [speed]);
+
+  const latestVo2Max = useMemo(() => {
+    if (!vo2max || vo2max.length === 0) return null;
+    const sorted = [...vo2max].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+    return sorted[0].vo2_max || null;
+  }, [vo2max]);
+
+  const latestAgilityCod = useMemo(() => {
+    if (!test505 || test505.length === 0) return null;
+    const sorted = [...test505].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+    return sorted[0].t_cod_2m || null;
+  }, [test505]);
+
+  const latestReboundRsi = useMemo(() => {
+    if (!cmjRebound || cmjRebound.length === 0) return null;
+    const sorted = [...cmjRebound].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime());
+    return sorted[0].rebound_rsi || null;
+  }, [cmjRebound]);
 
   const resolveMetricValue = (row: any, key: string): any => {
     if (!row) return undefined;
@@ -3176,6 +3228,23 @@ const IndividualDashboard = ({
         </div>
       </div>
 
+      {player && (
+        <FichaOrientacionAtleta
+          player={player as any}
+          imtp={imtp}
+          speed={speed}
+          vo2max={vo2max}
+          test505={test505}
+          cmjRebound={cmjRebound}
+          allPlayers={allPlayers}
+          allImtp={allImtp}
+          allSpeed={allSpeed}
+          allVo2={allVo2}
+          allTest505={allTest505}
+          allCmjRebound={allCmjRebound}
+        />
+      )}
+
       {/* BLOQUES DINÁMICOS IMTP */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
@@ -3238,6 +3307,26 @@ const IndividualDashboard = ({
             );
           })}
         </div>
+
+        {latestImtpFuerza !== null && (
+          <div className="bg-red-50 rounded-3xl p-6 border border-red-100 flex items-start gap-4 mt-4">
+            <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+              <i className="fa-solid fa-dumbbell text-sm"></i>
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Fuerza & Potencia</h4>
+              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                {latestImtpFuerza < 2800 && (latestCmjAltura === null || latestCmjAltura < 35) ? (
+                  "Déficit combinado en Fuerza Máxima y Potencia. Se prescribe priorizar una base de fuerza estructural y fuerza máxima en el gimnasio (Sentadillas, IMTP al 75-85% 1RM) antes de programar bloques dinámicos/balísticos."
+                ) : latestImtpFuerza >= 2800 && (latestCmjAltura !== null && latestCmjAltura < 35) ? (
+                  "Nivel de Fuerza Máxima óptimo pero con baja transferencia a Potencia. Enfoca el programa de gimnasio en la tasa de desarrollo de fuerza (RFD), velocidad-fuerza y pliometría con cargas medias a ligeras (30-50% 1RM) a máxima intención concéntrica."
+                ) : (
+                  "Perfil competitivo de fuerza y saltabilidad. Continuar con el microciclo actual enfocado en el mantenimiento de la potencia dinámica y prevención."
+                )}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* BLOQUES DINÁMICOS VELOCIDAD */}
@@ -3302,6 +3391,24 @@ const IndividualDashboard = ({
             );
           })}
         </div>
+
+        {latestSpeedTotal !== null && (
+          <div className="bg-amber-50 rounded-3xl p-6 border border-amber-100 flex items-start gap-4 mt-4">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+              <i className="fa-solid fa-person-running text-sm"></i>
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Velocidad / Sprint Lineal</h4>
+              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                {latestSpeedTotal > 4.40 ? (
+                  "Nivel de velocidad lineal y aceleración por debajo del promedio. Se aconseja integrar series de sprints cortos (10-30m) con recuperación completa al inicio de la sesión, complementado con fuerza horizontal y arrastres de trineo en gimnasio."
+                ) : (
+                  "Perfil competitivo de velocidad lineal. Sostener la calidad técnica y mecánica actual, alternando con trabajos de agilidad y deceleración reactiva."
+                )}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* BLOQUES DINÁMICOS VO2 MAX */}
@@ -3366,6 +3473,24 @@ const IndividualDashboard = ({
             );
           })}
         </div>
+
+        {latestVo2Max !== null && (
+          <div className="bg-indigo-50 rounded-3xl p-6 border border-indigo-100 flex items-start gap-4 mt-4">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+              <i className="fa-solid fa-lungs text-sm"></i>
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Capacidad Aeróbica (VO2 Max)</h4>
+              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                {latestVo2Max < 52 ? (
+                  "Capacidad aeróbica subóptima para alta competencia. Se prescribe entrenamiento interválico de alta intensidad (HIIT - e.g. pasadas intermitentes en cancha de 15s al 105% VAM con 15s de pausa pasiva) para aumentar la potencia aeróbica y acelerar la recuperación entre esfuerzos de alta intensidad."
+                ) : (
+                  "Resistencia aeróbica óptima. Mantener el volumen general de trabajo y el estímulo intermitente específico en cancha."
+                )}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* BLOQUES DINÁMICOS ANTROPOMETRÍA */}
@@ -3494,6 +3619,24 @@ const IndividualDashboard = ({
             );
           })}
         </div>
+
+        {latestAgilityCod !== null && (
+          <div className="bg-sky-50 rounded-3xl p-6 border border-sky-100 flex items-start gap-4 mt-4">
+            <div className="w-10 h-10 rounded-xl bg-sky-100 flex items-center justify-center text-sky-600 shrink-0">
+              <i className="fa-solid fa-person-running text-sm"></i>
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Cambio de Dirección & Agilidad</h4>
+              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                {latestAgilityCod > 1.60 ? (
+                  "Tiempo de cambio de dirección deficiente. Enfocar el entrenamiento en sobrecarga excéntrica de frenado (polea cónica, frenadas excéntricas con cinturón ruso) y técnica de re-aceleración en el primer paso en cancha."
+                ) : (
+                  "Excelente agilidad y control motor lateral. Mantener driles abiertos con toma de decisión cognitiva y reactiva ante estímulos visuales."
+                )}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* BLOQUES DINÁMICOS CMJ REBOUND */}
@@ -3558,6 +3701,24 @@ const IndividualDashboard = ({
             );
           })}
         </div>
+
+        {latestReboundRsi !== null && (
+          <div className="bg-rose-50 rounded-3xl p-6 border border-rose-100 flex items-start gap-4 mt-4">
+            <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+              <i className="fa-solid fa-arrows-up-down text-sm"></i>
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Fuerza Reactiva & Elasticidad</h4>
+              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                {latestReboundRsi < 1.50 ? (
+                  "Capacidad elástica/reactiva (stiffness de tobillo) deficiente. Priorizar pliometría reactiva rápida (contacto < 250ms, e.g. pogo jumps de tobillo continuos, rebotes continuos en cajón bajo) para optimizar el ciclo de estiramiento-acortamiento rápido (SSC)."
+                ) : (
+                  "Excelente reactividad y elasticidad muscular-tendinosa. Mantener la dosis actual con drop jumps de mayor altura y aceleraciones de alta velocidad."
+                )}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3650,7 +3811,20 @@ const ORDERED_POSITIONS = [
   'Media Punta'
 ];
 
-const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, antropometria }: { anios: number[], posiciones: string[], players: PlayerData[], gps: GPSData[], speed: SpeedTestData[], imtp: IMTPData[], vo2max: VO2MaxData[], antropometria: AntropometriaData[] }) => {
+const SquadAnalytics = ({ 
+  anios, posiciones, players, gps, speed, imtp, vo2max, antropometria, test505 = [], cmjRebound = [] 
+}: { 
+  anios: number[], 
+  posiciones: string[], 
+  players: PlayerData[], 
+  gps: GPSData[], 
+  speed: SpeedTestData[], 
+  imtp: IMTPData[], 
+  vo2max: VO2MaxData[], 
+  antropometria: AntropometriaData[],
+  test505?: any[],
+  cmjRebound?: CMJReboundData[]
+}) => {
   const [selectedImtpMetrics, setSelectedImtpMetrics] = useState<string[]>(['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'cmj_rsi_mod', 'fuerza_cmj']);
   const [selectedSpeedMetrics, setSelectedSpeedMetrics] = useState<string[]>(['tiempo_total', 'vel_10m', 'tiempo_10m', 'tiempo_20_30m']);
   const [selectedVo2Metrics, setSelectedVo2Metrics] = useState<string[]>(['vo2_max', 'vam', 'fc_max', 'mts']);
@@ -3858,6 +4032,16 @@ const SquadAnalytics = ({ anios, posiciones, players, gps, speed, imtp, vo2max, 
 
   return (
     <div className="space-y-12">
+      {/* FICHA DE ORIENTACIÓN GRUPAL */}
+      <FichaOrientacionGrupal
+        players={filteredPlayers as any}
+        imtp={imtp}
+        speed={speed}
+        vo2max={vo2max}
+        test505={test505}
+        cmjRebound={cmjRebound}
+      />
+
       {/* SECCIÓN IMTP BOX PLOTS */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">

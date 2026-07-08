@@ -57,7 +57,21 @@ const AITrainer: React.FC = () => {
         }
       });
 
-      const data = JSON.parse(response.text || '{}');
+      const rawText = response.text || '{}';
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseError) {
+        console.warn("Standard JSON parse failed for AI trainer. Attempting safe extraction.", parseError);
+        const firstBrace = rawText.indexOf('{');
+        const lastBrace = rawText.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          const cleaned = rawText.substring(firstBrace, lastBrace + 1);
+          data = JSON.parse(cleaned);
+        } else {
+          throw parseError;
+        }
+      }
       setRoutine(data);
     } catch (err) {
       console.warn("AI Trainer Error (fallback triggered):", err);

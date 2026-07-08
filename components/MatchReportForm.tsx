@@ -115,6 +115,19 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCate
       </div>
 
       <div className="space-y-6">
+        {/* FECHA DEL PARTIDO / REPORTE - SIEMPRE VISIBLE PARA EVITAR PERDER LA REFERENCIA DEL MICROCICLO */}
+        <div>
+          <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">
+            {noMatchOrSuspended ? "📅 FECHA DE REFERENCIA / FIN DE SEMANA" : "📅 FECHA DEL PARTIDO"}
+          </label>
+          <input 
+            type="date"
+            value={formData.date}
+            onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+            className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+          />
+        </div>
+
         {/* CHECKBOX PARA TRATAR PARTIDO SUSPENDIDO */}
         <div className="flex items-center gap-3 p-4 bg-red-50 rounded-2xl border border-red-100/60 mb-2 hover:bg-red-100/30 transition-all">
           <input 
@@ -132,17 +145,16 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCate
           </label>
         </div>
 
+        {noMatchOrSuspended && (
+          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100/60 mb-2 animate-in fade-in duration-200">
+            <p className="text-[10px] font-bold text-amber-800 uppercase tracking-tight leading-normal">
+              ⚠️ IMPORTANTE: Selecciona la fecha del fin de semana o jornada correspondiente a esta fecha sin competencia para asociar correctamente tu reporte al microciclo de entrenamiento.
+            </p>
+          </div>
+        )}
+
         {!noMatchOrSuspended && (
           <div className="space-y-6 animate-in fade-in slide-in-from-top-1 duration-200">
-            <div>
-              <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">📅 FECHA DEL PARTIDO</label>
-              <input 
-                type="date"
-                value={formData.date}
-                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-              />
-            </div>
 
             <div>
               <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">🛡️ RIVAL</label>

@@ -128,6 +128,55 @@ export interface WeatherData {
 const weatherCache: Record<string, { data: WeatherData, timestamp: number }> = {};
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
+function extractFirstJsonObject(str: string): string {
+  const startIdx = str.indexOf('{');
+  if (startIdx === -1) {
+    throw new Error("No JSON object start brace found");
+  }
+
+  let braceCount = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIdx; i < str.length; i++) {
+    const char = str[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          return str.substring(startIdx, i + 1);
+        }
+      }
+    }
+  }
+
+  // Fallback to standard substring if state-machine didn't find matching end brace
+  const lastBrace = str.lastIndexOf('}');
+  if (lastBrace > startIdx) {
+    return str.substring(startIdx, lastBrace + 1);
+  }
+
+  throw new Error("Unbalanced braces in JSON");
+}
+
 export const getWeatherForecast = async (city: string, country: string): Promise<{ data: WeatherData | null, sources: any[], error?: string }> => {
   const cacheKey = `${city}-${country}`;
   const now = Date.now();
@@ -171,12 +220,63 @@ export const getWeatherForecast = async (city: string, country: string): Promise
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            city: { type: Type.STRING },
+            currentTemp: { type: Type.NUMBER },
+            condition: { type: Type.STRING },
+            precipitation: { type: Type.STRING },
+            humidity: { type: Type.STRING },
+            wind: { type: Type.STRING },
+            hourly: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  time: { type: Type.STRING },
+                  temp: { type: Type.NUMBER }
+                },
+                required: ["time", "temp"]
+              }
+            },
+            daily: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  day: { type: Type.STRING },
+                  icon: { type: Type.STRING },
+                  high: { type: Type.NUMBER },
+                  low: { type: Type.NUMBER },
+                  isToday: { type: Type.BOOLEAN }
+                },
+                required: ["day", "icon", "high", "low"]
+              }
+            }
+          },
+          required: ["city", "currentTemp", "condition", "precipitation", "humidity", "wind", "hourly", "daily"]
+        }
       },
     });
 
     const jsonText = response.text || "{}";
-    const data = JSON.parse(jsonText) as WeatherData;
+    let data: WeatherData;
+    try {
+      const extracted = extractFirstJsonObject(jsonText);
+      data = JSON.parse(extracted) as WeatherData;
+    } catch (parseError) {
+      console.warn("Standard JSON parse failed for weather. Attempting safe extraction.", parseError);
+      const firstBrace = jsonText.indexOf('{');
+      const lastBrace = jsonText.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        const cleaned = jsonText.substring(firstBrace, lastBrace + 1);
+        data = JSON.parse(cleaned) as WeatherData;
+      } else {
+        throw parseError;
+      }
+    }
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
     // Cache the successful response
@@ -201,7 +301,7 @@ export const getWeatherForecast = async (city: string, country: string): Promise
     if (isQuotaError) {
       console.warn("Weather API quota exhausted. Using offline fallback simulation.");
     } else {
-      console.error("Error fetching weather:", error);
+      console.warn("Error fetching weather (using offline fallback):", error);
     }
 
     // High fidelity offline weather generator to keep the widget beautifully rendering
