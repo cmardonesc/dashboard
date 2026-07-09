@@ -9,6 +9,35 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
+const DEFAULT_GPS_REFS = [
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'DELANTERO', dist_total_m: 3800, m_por_min: 60, dist_ai_m_15_kmh: 350, dist_mai_m_20_kmh: 60, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 70 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'MEDIO', dist_total_m: 4200, m_por_min: 65, dist_ai_m_15_kmh: 400, dist_mai_m_20_kmh: 70, dist_sprint_m_25_kmh: 3, acc_decc_ai_n: 85 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'DEFENSA', dist_total_m: 3500, m_por_min: 55, dist_ai_m_15_kmh: 300, dist_mai_m_20_kmh: 50, dist_sprint_m_25_kmh: 4, acc_decc_ai_n: 65 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'PORTERO', dist_total_m: 1200, m_por_min: 20, dist_ai_m_15_kmh: 30, dist_mai_m_20_kmh: 5, dist_sprint_m_25_kmh: 1, acc_decc_ai_n: 20 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_14', Posicion: 'DELANTERO', dist_total_m: 4000, m_por_min: 62, dist_ai_m_15_kmh: 380, dist_mai_m_20_kmh: 70, dist_sprint_m_25_kmh: 6, acc_decc_ai_n: 80 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_14', Posicion: 'MEDIO', dist_total_m: 4400, m_por_min: 68, dist_ai_m_15_kmh: 450, dist_mai_m_20_kmh: 80, dist_sprint_m_25_kmh: 4, acc_decc_ai_n: 95 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_14', Posicion: 'DEFENSA', dist_total_m: 3800, m_por_min: 58, dist_ai_m_15_kmh: 330, dist_mai_m_20_kmh: 60, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 75 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_14', Posicion: 'PORTERO', dist_total_m: 1300, m_por_min: 22, dist_ai_m_15_kmh: 40, dist_mai_m_20_kmh: 8, dist_sprint_m_25_kmh: 1, acc_decc_ai_n: 25 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_15', Posicion: 'DELANTERO', dist_total_m: 4200, m_por_min: 65, dist_ai_m_15_kmh: 420, dist_mai_m_20_kmh: 80, dist_sprint_m_25_kmh: 8, acc_decc_ai_n: 90 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_15', Posicion: 'MEDIO', dist_total_m: 4600, m_por_min: 70, dist_ai_m_15_kmh: 500, dist_mai_m_20_kmh: 90, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 105 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_15', Posicion: 'DEFENSA', dist_total_m: 4000, m_por_min: 62, dist_ai_m_15_kmh: 360, dist_mai_m_20_kmh: 70, dist_sprint_m_25_kmh: 6, acc_decc_ai_n: 85 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_15', Posicion: 'PORTERO', dist_total_m: 1400, m_por_min: 24, dist_ai_m_15_kmh: 45, dist_mai_m_20_kmh: 10, dist_sprint_m_25_kmh: 2, acc_decc_ai_n: 28 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_16', Posicion: 'DELANTERO', dist_total_m: 4400, m_por_min: 68, dist_ai_m_15_kmh: 460, dist_mai_m_20_kmh: 90, dist_sprint_m_25_kmh: 9, acc_decc_ai_n: 95 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_16', Posicion: 'MEDIO', dist_total_m: 4800, m_por_min: 72, dist_ai_m_15_kmh: 550, dist_mai_m_20_kmh: 110, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 115 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_16', Posicion: 'DEFENSA', dist_total_m: 4100, m_por_min: 64, dist_ai_m_15_kmh: 380, dist_mai_m_20_kmh: 75, dist_sprint_m_25_kmh: 7, acc_decc_ai_n: 88 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_16', Posicion: 'PORTERO', dist_total_m: 1450, m_por_min: 24, dist_ai_m_15_kmh: 48, dist_mai_m_20_kmh: 10, dist_sprint_m_25_kmh: 2, acc_decc_ai_n: 29 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'DELANTERO', dist_total_m: 4500, m_por_min: 70, dist_ai_m_15_kmh: 500, dist_mai_m_20_kmh: 100, dist_sprint_m_25_kmh: 10, acc_decc_ai_n: 100 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'MEDIO', dist_total_m: 5000, m_por_min: 75, dist_ai_m_15_kmh: 600, dist_mai_m_20_kmh: 120, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 120 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'DEFENSA', dist_total_m: 4200, m_por_min: 65, dist_ai_m_15_kmh: 400, dist_mai_m_20_kmh: 80, dist_sprint_m_25_kmh: 8, acc_decc_ai_n: 90 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_17', Posicion: 'PORTERO', dist_total_m: 1500, m_por_min: 25, dist_ai_m_15_kmh: 50, dist_mai_m_20_kmh: 10, dist_sprint_m_25_kmh: 2, acc_decc_ai_n: 30 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_20', Posicion: 'DELANTERO', dist_total_m: 4800, m_por_min: 75, dist_ai_m_15_kmh: 550, dist_mai_m_20_kmh: 110, dist_sprint_m_25_kmh: 12, acc_decc_ai_n: 110 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_20', Posicion: 'MEDIO', dist_total_m: 5300, m_por_min: 80, dist_ai_m_15_kmh: 650, dist_mai_m_20_kmh: 130, dist_sprint_m_25_kmh: 6, acc_decc_ai_n: 130 },
+  { Tipo: 'PROMEDIO', Categoria: 'SUB_20', Posicion: 'DEFENSA', dist_total_m: 4500, m_por_min: 70, dist_ai_m_15_kmh: 450, dist_mai_m_20_kmh: 90, dist_sprint_m_25_kmh: 10, acc_decc_ai_n: 100 },
+  { Tipo: 'PROMEDIO', Categoria: 'ADULTA', Posicion: 'DELANTERO', dist_total_m: 5000, m_por_min: 80, dist_ai_m_15_kmh: 600, dist_mai_m_20_kmh: 120, dist_sprint_m_25_kmh: 15, acc_decc_ai_n: 120 },
+  { Tipo: 'PROMEDIO', Categoria: 'ADULTA', Posicion: 'MEDIO', dist_total_m: 5500, m_por_min: 85, dist_ai_m_15_kmh: 700, dist_mai_m_20_kmh: 140, dist_sprint_m_25_kmh: 8, acc_decc_ai_n: 140 },
+  { Tipo: 'PROMEDIO', Categoria: 'ADULTA', Posicion: 'DEFENSA', dist_total_m: 4800, m_por_min: 75, dist_ai_m_15_kmh: 500, dist_mai_m_20_kmh: 100, dist_sprint_m_25_kmh: 12, acc_decc_ai_n: 110 }
+];
+
 interface FisicaAreaProps {
   performanceRecords: AthletePerformanceRecord[];
   view?: 'wellness' | 'pse' | 'external_total' | 'report';
@@ -57,6 +86,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // NUEVO: Estado de Ordenamiento
   const [sortField, setSortField] = useState<string>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // NUEVO: Estado de Ordenamiento para Datos GPS
+  const [gpsSortField, setGpsSortField] = useState<string>('name');
+  const [gpsSortDirection, setGpsSortDirection] = useState<'asc' | 'desc'>('asc');
   
   // NUEVO: Filtro de Sesión para Doble Jornada
   const [selectedSessionFilter, setSelectedSessionFilter] = useState<string>('all');
@@ -89,6 +122,15 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     fetchReferences();
   }, []);
 
+  const handleGpsSort = (field: string) => {
+    if (gpsSortField === field) {
+      setGpsSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setGpsSortField(field);
+      setGpsSortDirection(field === 'name' || field === 'categoria' ? 'asc' : 'desc');
+    }
+  };
+
   const getIFRColor = (ifr: number) => {
     if (ifr < 50) return '#2ecc71'; // Verde
     if (ifr < 85) return '#f1c40f'; // Amarillo
@@ -96,35 +138,104 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     return '#e74c3c'; // Rojo
   };
 
-  const calcularIFR = (gpsData: any, player: any) => {
-    if (!gpsReferences.length || !player) return null;
+  const matchPosition = (playerPosStr: string, refPosStr: string): boolean => {
+    const p = (playerPosStr || '').toUpperCase().replace(/[^A-Z]/g, '');
+    const r = (refPosStr || '').toUpperCase().replace(/[^A-Z]/g, '');
+
+    if (!p || !r) return false;
+
+    // Exact match
+    if (p === r) return true;
+
+    // Substring matches
+    if (p.includes(r) || r.includes(p)) return true;
+
+    // Key mappings for DB positions:
+    // "DEFENSACENTRAL", "DEFENSALATERAL", "VOLANTE", "DELANTEROEXTREMO", "DELANTEROCENTRO"
+    const isLateral = p.includes('LATERAL') || p.includes('BANDA') || p.includes('CARRILERO') || p.includes('WINGBACK');
+    const isCentral = p.includes('CENTRAL') || p.includes('ZAGUERO') || p.includes('LIBERO') || p.includes('DEFENSA');
+    const isExtremo = p.includes('EXTREMO') || p.includes('PUNTERO') || p.includes('WING');
+    const isCentroDelantero = p.includes('DELANTERO') || p.includes('PUNTA') || p.includes('CENTRO') || p.includes('ATACANTE') || p.includes('9');
+    const isVolante = p.includes('VOLANTE') || p.includes('MEDIO') || p.includes('CENTRAL') || p.includes('MC') || p.includes('MCO') || p.includes('MCD');
+
+    if (r.includes('LATERAL') && isLateral) return true;
+    if (r.includes('CENTRAL') && isCentral && !isLateral) return true;
+    if (r.includes('EXTREMO') && isExtremo) return true;
+    if (r.includes('CENTRO') && isCentroDelantero && !isExtremo) return true;
+    if (r.includes('VOLANTE') && isVolante) return true;
+
+    // Fallbacks for DEFAULT_GPS_REFS (which uses DELANTERO, MEDIO, DEFENSA, PORTERO)
+    if (r === 'DEFENSA' && (isCentral || isLateral || p.includes('DEFENSA'))) return true;
+    if (r === 'MEDIO' && (isVolante || p.includes('MEDIO') || p.includes('VOLANTE'))) return true;
+    if (r === 'DELANTERO' && (isCentroDelantero || isExtremo || p.includes('DELANTERO'))) return true;
+    if (r === 'PORTERO' && (p.includes('PORTERO') || p.includes('ARQUERO') || p.includes('GK'))) return true;
+
+    return false;
+  };
+
+  const obtenerReferenciaJugador = (player: any) => {
+    if (!player) return null;
+    const refs = gpsReferences.length > 0 ? gpsReferences : DEFAULT_GPS_REFS;
 
     const normalizeStr = (str: string) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    // Find reference for player category and position
-    let playerPos = (player.posicion || '').toUpperCase();
-    if (playerPos.includes('DELANTERO') || playerPos.includes('EXTREMO') || playerPos.includes('PUNTA')) playerPos = 'DELANTERO';
-    else if (playerPos.includes('VOLANTE') || playerPos.includes('MEDIO') || playerPos.includes('CENTRAL') && !playerPos.includes('DEFENSA')) playerPos = 'MEDIO';
-    else if (playerPos.includes('DEFENSA') || playerPos.includes('LATERAL') || playerPos.includes('ZAGUERO')) playerPos = 'DEFENSA';
-    else if (playerPos.includes('PORTERO') || playerPos.includes('ARQUERO')) playerPos = 'PORTERO';
-    else playerPos = 'MEDIO';
-
     const pCat = normalizeStr(player.categoria || '');
 
-    let ref = gpsReferences.find(r => {
+    // 1. Try exact player match if player_id matches
+    if (player.player_id) {
+      const pIdRef = refs.find(r => r.player_id && Number(r.player_id) === Number(player.player_id));
+      if (pIdRef) return pIdRef;
+    }
+
+    // 2. Try match category + position
+    let ref = refs.find(r => {
       const rCat = normalizeStr(r.Categoria || r.categoria || '');
-      const rPos = (r.Posicion || r.posicion || '').toUpperCase();
-      return rCat === pCat && rPos === playerPos;
+      const rPos = r.Posicion || r.posicion || '';
+      return rCat === pCat && matchPosition(player.posicion, rPos);
     });
 
-    // Fallback: If no exact match for category + position, try position in any category
+    // 3. Fallback: match position across any category
     if (!ref) {
-      ref = gpsReferences.find(r => {
-        const rPos = (r.Posicion || r.posicion || '').toUpperCase();
-        return rPos === playerPos;
+      ref = refs.find(r => {
+        const rPos = r.Posicion || r.posicion || '';
+        return matchPosition(player.posicion, rPos);
       });
     }
 
+    return ref || null;
+  };
+
+  const getParamCellProps = (actualVal: number | undefined | null, refVal: number | undefined | null) => {
+    if (actualVal === undefined || actualVal === null || !refVal || isNaN(actualVal) || isNaN(refVal)) {
+      return { className: '', style: {} };
+    }
+    const pct = (actualVal / refVal) * 100;
+    if (pct < 50) {
+      return {
+        className: 'transition-all duration-200',
+        style: { backgroundColor: 'rgba(46, 204, 113, 0.15)', color: '#27ae60' }
+      };
+    }
+    if (pct < 85) {
+      return {
+        className: 'transition-all duration-200',
+        style: { backgroundColor: 'rgba(241, 196, 15, 0.15)', color: '#b7950b' }
+      };
+    }
+    if (pct < 110) {
+      return {
+        className: 'transition-all duration-200',
+        style: { backgroundColor: 'rgba(230, 126, 34, 0.15)', color: '#d35400' }
+      };
+    }
+    return {
+      className: 'transition-all duration-200 font-extrabold',
+      style: { backgroundColor: 'rgba(231, 76, 60, 0.15)', color: '#c0392b' }
+    };
+  };
+
+  const calcularIFR = (gpsData: any, player: any) => {
+    if (!player) return null;
+    const ref = obtenerReferenciaJugador(player);
     if (!ref) return null;
 
     // Weights: 0.2 Volumen, 0.3 Intensidad, 0.5 Neuromuscular
@@ -380,10 +491,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 4.5) return 'bg-emerald-600 text-white';
-    if (score >= 3.5) return 'bg-emerald-400 text-slate-900';
-    if (score >= 2.5) return 'bg-amber-400 text-slate-900';
-    return 'bg-red-600 text-white';
+    if (score >= 4.5) return 'bg-emerald-200 text-black font-black';
+    if (score >= 3.5) return 'bg-emerald-100 text-black font-black';
+    if (score >= 2.5) return 'bg-amber-100 text-black font-black';
+    return 'bg-red-200 text-black font-black';
   };
 
   const getIntensityStyle = (val: number) => {
@@ -405,8 +516,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     // Hue ranges from 120 (emerald green/light green) down to 0 (crimson red)
     const hue = 120 - Math.round(((val - 1) / 9) * 120);
     return {
-      backgroundColor: `hsl(${hue}, 80%, 45%)`,
-      color: '#ffffff',
+      backgroundColor: `hsl(${hue}, 80%, 85%)`,
+      color: '#000000',
       fontWeight: '900'
     };
   };
@@ -417,8 +528,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     // Hue ranges from 120 (emerald green) down to 0 (crimson red)
     const hue = 120 - Math.round(((val - 1) / 999) * 120);
     return {
-      backgroundColor: `hsl(${hue}, 80%, 40%)`,
-      color: '#ffffff',
+      backgroundColor: `hsl(${hue}, 80%, 85%)`,
+      color: '#000000',
       fontWeight: '900'
     };
   };
@@ -1042,7 +1153,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   }, [currentCitadosPlayers, selectedDate, athleteSearch, minDuration, maxDuration]);
 
   const filteredGpsImport = useMemo(() => {
-    return anonymizedGpsImport.filter(row => {
+    const filtered = anonymizedGpsImport.filter(row => {
       const player = row.players;
       
       // Filtro por Categoría
@@ -1057,7 +1168,78 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       const matchesDuration = duration >= minDuration && duration <= maxDuration;
       return matchesSearch && matchesDuration;
     });
-  }, [anonymizedGpsImport, athleteSearch, minDuration, maxDuration, selectedCategories]);
+
+    filtered.sort((a, b) => {
+      let valA: any = 0;
+      let valB: any = 0;
+
+      switch (gpsSortField) {
+        case 'name': {
+          const pA = a.players;
+          const pB = b.players;
+          valA = pA ? `${pA.nombre} ${pA.apellido1} ${pA.apellido2 || ''}`.trim().toLowerCase() : 'atleta desconocido';
+          valB = pB ? `${pB.nombre} ${pB.apellido1} ${pB.apellido2 || ''}`.trim().toLowerCase() : 'atleta desconocido';
+          break;
+        }
+        case 'categoria': {
+          valA = (a.players?.categoria || '').toLowerCase();
+          valB = (b.players?.categoria || '').toLowerCase();
+          break;
+        }
+        case 'minutos':
+          valA = a.minutos || 0;
+          valB = b.minutos || 0;
+          break;
+        case 'dist_total_m':
+          valA = a.dist_total_m || 0;
+          valB = b.dist_total_m || 0;
+          break;
+        case 'm_por_min':
+          valA = a.m_por_min || 0;
+          valB = b.m_por_min || 0;
+          break;
+        case 'dist_ai_m_15_kmh':
+          valA = a.dist_ai_m_15_kmh || 0;
+          valB = b.dist_ai_m_15_kmh || 0;
+          break;
+        case 'dist_mai_m_20_kmh':
+          valA = a.dist_mai_m_20_kmh || 0;
+          valB = b.dist_mai_m_20_kmh || 0;
+          break;
+        case 'dist_sprint_m_25_kmh':
+          valA = a.dist_sprint_m_25_kmh || 0;
+          valB = b.dist_sprint_m_25_kmh || 0;
+          break;
+        case 'sprints_n':
+          valA = a.sprints_n || 0;
+          valB = b.sprints_n || 0;
+          break;
+        case 'vel_max_kmh':
+          valA = a.vel_max_kmh || 0;
+          valB = b.vel_max_kmh || 0;
+          break;
+        case 'acc_decc_ai_n':
+          valA = a.acc_decc_ai_n || 0;
+          valB = b.acc_decc_ai_n || 0;
+          break;
+        default:
+          valA = 0;
+          valB = 0;
+      }
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return gpsSortDirection === 'asc'
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      } else {
+        return gpsSortDirection === 'asc'
+          ? (valA as number) - (valB as number)
+          : (valB as number) - (valA as number);
+      }
+    });
+
+    return filtered;
+  }, [anonymizedGpsImport, athleteSearch, minDuration, maxDuration, selectedCategories, gpsSortField, gpsSortDirection]);
 
   const { leftWellnessList, rightWellnessList, wellnessDayAvg } = useMemo(() => {
     const half = Math.ceil(unifiedList.length / 2);
@@ -1344,7 +1526,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             data.cell.styles.halign = 'left'; // dolores / sintomas
             const text = (data.cell.text && data.cell.text[0]) || '';
             if (text && text !== '-' && text !== 'SIN DOLOR | SANO') {
-              data.cell.styles.textColor = [226, 35, 26]; // Red text
+              data.cell.styles.fillColor = [254, 226, 226]; // Light red background
+              data.cell.styles.textColor = [0, 0, 0];       // Black text
               data.cell.styles.fontStyle = 'bold';
             }
           } else {
@@ -1356,12 +1539,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             const val = parseFloat(data.cell.text[0]);
             if (!isNaN(val)) {
               data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [0, 0, 0]; // Black text
               if (val >= 8) {
-                data.cell.styles.textColor = [226, 35, 26];
+                data.cell.styles.fillColor = [254, 226, 226]; // Light red
               } else if (val >= 5) {
-                data.cell.styles.textColor = [212, 163, 89];
+                data.cell.styles.fillColor = [254, 243, 199]; // Light amber
               } else {
-                data.cell.styles.textColor = [39, 174, 96];
+                data.cell.styles.fillColor = [220, 252, 231]; // Light green
               }
             }
           }
@@ -1371,12 +1555,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             const val = parseFloat(data.cell.text[0]);
             if (!isNaN(val)) {
               data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [0, 0, 0]; // Black text
               if (val >= 600) {
-                data.cell.styles.textColor = [226, 35, 26];
+                data.cell.styles.fillColor = [254, 226, 226]; // Light red
               } else if (val >= 300) {
-                data.cell.styles.textColor = [212, 163, 89];
+                data.cell.styles.fillColor = [254, 243, 199]; // Light amber
               } else {
-                data.cell.styles.textColor = [39, 174, 96];
+                data.cell.styles.fillColor = [220, 252, 231]; // Light green
               }
             }
           }
@@ -1404,7 +1589,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             data.cell.styles.halign = 'left'; // dolores / sintomas
             const text = (data.cell.text && data.cell.text[0]) || '';
             if (text && text !== '-' && text !== 'SIN DOLOR | SANO') {
-              data.cell.styles.textColor = [226, 35, 26]; // Red text
+              data.cell.styles.fillColor = [254, 226, 226]; // Light red background
+              data.cell.styles.textColor = [0, 0, 0];       // Black text
               data.cell.styles.fontStyle = 'bold';
             }
           } else {
@@ -1416,13 +1602,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             const val = parseFloat(data.cell.text[0]);
             if (!isNaN(val)) {
               data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [0, 0, 0]; // Black text
               if (val >= 4.0) {
-                data.cell.styles.textColor = [39, 174, 96]; // Verde
+                data.cell.styles.fillColor = [220, 252, 231]; // Light green
               } else if (val >= 3.0) {
-                data.cell.styles.textColor = [212, 163, 89]; // Amarillo oscuro
+                data.cell.styles.fillColor = [254, 243, 199]; // Light amber
               } else {
-                data.cell.styles.textColor = [231, 76, 60];  // Rojo
-                data.cell.styles.fillColor = [254, 237, 238]; // fondo suave rojizo
+                data.cell.styles.fillColor = [254, 226, 226]; // Light red
               }
             }
           }
@@ -1432,9 +1618,14 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             const val = parseFloat(data.cell.text[0]);
             if (!isNaN(val)) {
               data.cell.styles.fontStyle = 'bold';
-              if (val >= 4.0) data.cell.styles.textColor = [39, 174, 96];
-              else if (val >= 3.0) data.cell.styles.textColor = [40, 40, 40];
-              else data.cell.styles.textColor = [231, 76, 60];
+              data.cell.styles.textColor = [0, 0, 0]; // Black text
+              if (val >= 4.0) {
+                data.cell.styles.fillColor = [220, 252, 231]; // Light green
+              } else if (val >= 3.0) {
+                data.cell.styles.fillColor = [254, 243, 199]; // Light amber
+              } else {
+                data.cell.styles.fillColor = [254, 226, 226]; // Light red
+              }
             }
           }
 
@@ -2534,6 +2725,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       {leftWellnessList.map((row, idx) => {
                         const isPending = view === 'pse' ? !row.load : !row.wellness;
                         const avgValue = row.wellness ? ((row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3).toFixed(1) : '-';
+                        const hasPseAlert = row.load && (row.load.molestias || row.load.enfermedad);
+                        const hasWellnessAlert = row.wellness && (
+                          (row.wellness.soreness_areas && row.wellness.soreness_areas.length > 0) ||
+                          (row.wellness.illness_symptoms && row.wellness.illness_symptoms.length > 0)
+                        );
                         return (
                           <tr key={`left-well-${idx}`} className={`hover:bg-slate-50/50 transition-all ${isPending ? 'opacity-40' : ''}`}>
                             <td className="py-2.5 font-bold text-slate-800">
@@ -2548,7 +2744,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <td className="py-2.5 text-center">
                                   {row.load?.rpe ? (
                                     <span 
-                                      className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[8.5px] text-white font-black"
+                                      className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[8.5px] text-black font-black"
                                       style={getRpeStyle(row.load.rpe)}
                                     >
                                       {row.load.rpe}
@@ -2558,25 +2754,25 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <td className="py-2.5 text-center">
                                   {row.load?.load ? (
                                     <span 
-                                      className="inline-flex items-center justify-center px-1.5 py-0.5 min-w-[36px] rounded text-[8.5px] text-white font-black"
+                                      className="inline-flex items-center justify-center px-1.5 py-0.5 min-w-[36px] rounded text-[8.5px] text-black font-black"
                                       style={getCargaStyle(row.load.load)}
                                     >
                                       {row.load.load}
                                     </span>
                                   ) : '-'}
                                 </td>
-                                <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate text-left">
+                                <td className={`py-2.5 px-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate text-left transition-all ${hasPseAlert ? 'bg-red-100 text-black rounded-md' : ''}`}>
                                   {!row.load ? '-' : (
                                     <div className="flex flex-col gap-0.5">
                                       {row.load?.molestias ? (
-                                        <span className="text-red-500 font-bold">痛 {row.load.molestias}</span>
+                                        <span className="text-black font-bold">痛 {row.load.molestias}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold justify-start text-left block">SIN MOL.</span>
+                                        <span className={hasPseAlert ? "text-black/60 font-bold justify-start text-left block" : "text-slate-400 font-bold justify-start text-left block"}>SIN MOL.</span>
                                       )}
                                       {row.load?.enfermedad ? (
-                                        <span className="text-amber-600 font-bold">🏥 {row.load.enfermedad}</span>
+                                        <span className="text-black font-bold">🏥 {row.load.enfermedad}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold justify-start text-left block">SANO</span>
+                                        <span className={hasPseAlert ? "text-black/60 font-bold justify-start text-left block" : "text-slate-400 font-bold justify-start text-left block"}>SANO</span>
                                       )}
                                     </div>
                                   )}
@@ -2602,18 +2798,18 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <td className="py-2.5 text-center font-black text-[10px]">
                                   {row.wellness ? <span className="text-slate-800">{avgValue}</span> : '-'}
                                 </td>
-                                <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate">
+                                <td className={`py-2.5 px-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate text-left transition-all ${hasWellnessAlert ? 'bg-red-100 text-black rounded-md' : ''}`}>
                                   {isPending ? '-' : (
                                     <div className="flex flex-col gap-0.5">
                                       {row.wellness?.soreness_areas && row.wellness.soreness_areas.length > 0 ? (
-                                        <span className="text-red-500 font-bold">痛 {row.wellness.soreness_areas.join(', ')}</span>
+                                        <span className="text-black font-bold">痛 {row.wellness.soreness_areas.join(', ')}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold">SIN MOL.</span>
+                                        <span className={hasWellnessAlert ? "text-black/60 font-bold" : "text-slate-400 font-bold"}>SIN MOL.</span>
                                       )}
                                       {row.wellness?.illness_symptoms && row.wellness.illness_symptoms.length > 0 ? (
-                                        <span className="text-red-500 font-bold">🏥 {row.wellness.illness_symptoms.join(', ')}</span>
+                                        <span className="text-black font-bold">🏥 {row.wellness.illness_symptoms.join(', ')}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold">SANO</span>
+                                        <span className={hasWellnessAlert ? "text-black/60 font-bold" : "text-slate-400 font-bold"}>SANO</span>
                                       )}
                                     </div>
                                   )}
@@ -2665,6 +2861,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       {rightWellnessList.map((row, idx) => {
                         const isPending = view === 'pse' ? !row.load : !row.wellness;
                         const avgValue = row.wellness ? ((row.wellness.fatigue + row.wellness.sleep + row.wellness.mood) / 3).toFixed(1) : '-';
+                        const hasPseAlert = row.load && (row.load.molestias || row.load.enfermedad);
+                        const hasWellnessAlert = row.wellness && (
+                          (row.wellness.soreness_areas && row.wellness.soreness_areas.length > 0) ||
+                          (row.wellness.illness_symptoms && row.wellness.illness_symptoms.length > 0)
+                        );
                         return (
                           <tr key={`right-well-${idx}`} className={`hover:bg-slate-50/50 transition-all ${isPending ? 'opacity-40' : ''}`}>
                             <td className="py-2.5 font-bold text-slate-800">
@@ -2679,7 +2880,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <td className="py-2.5 text-center">
                                   {row.load?.rpe ? (
                                     <span 
-                                      className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[8.5px] text-white font-black"
+                                      className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[8.5px] text-black font-black"
                                       style={getRpeStyle(row.load.rpe)}
                                     >
                                       {row.load.rpe}
@@ -2689,25 +2890,25 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <td className="py-2.5 text-center">
                                   {row.load?.load ? (
                                     <span 
-                                      className="inline-flex items-center justify-center px-1.5 py-0.5 min-w-[36px] rounded text-[8.5px] text-white font-black"
+                                      className="inline-flex items-center justify-center px-1.5 py-0.5 min-w-[36px] rounded text-[8.5px] text-black font-black"
                                       style={getCargaStyle(row.load.load)}
                                     >
                                       {row.load.load}
                                     </span>
                                   ) : '-'}
                                 </td>
-                                <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate text-left">
+                                <td className={`py-2.5 px-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate text-left transition-all ${hasPseAlert ? 'bg-red-100 text-black rounded-md' : ''}`}>
                                   {!row.load ? '-' : (
                                     <div className="flex flex-col gap-0.5">
                                       {row.load?.molestias ? (
-                                        <span className="text-red-500 font-bold">痛 {row.load.molestias}</span>
+                                        <span className="text-black font-bold">痛 {row.load.molestias}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold justify-start text-left block">SIN MOL.</span>
+                                        <span className={hasPseAlert ? "text-black/60 font-bold justify-start text-left block" : "text-slate-400 font-bold justify-start text-left block"}>SIN MOL.</span>
                                       )}
                                       {row.load?.enfermedad ? (
-                                        <span className="text-amber-600 font-bold">🏥 {row.load.enfermedad}</span>
+                                        <span className="text-black font-bold">🏥 {row.load.enfermedad}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold justify-start text-left block">SANO</span>
+                                        <span className={hasPseAlert ? "text-black/60 font-bold justify-start text-left block" : "text-slate-400 font-bold justify-start text-left block"}>SANO</span>
                                       )}
                                     </div>
                                   )}
@@ -2733,18 +2934,18 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <td className="py-2.5 text-center font-black text-[10px]">
                                   {row.wellness ? <span className="text-slate-800">{avgValue}</span> : '-'}
                                 </td>
-                                <td className="py-2.5 pl-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate">
+                                <td className={`py-2.5 px-2 text-[8px] font-black uppercase tracking-tight max-w-[130px] truncate text-left transition-all ${hasWellnessAlert ? 'bg-red-100 text-black rounded-md' : ''}`}>
                                   {isPending ? '-' : (
                                     <div className="flex flex-col gap-0.5">
                                       {row.wellness?.soreness_areas && row.wellness.soreness_areas.length > 0 ? (
-                                        <span className="text-red-500 font-bold">痛 {row.wellness.soreness_areas.join(', ')}</span>
+                                        <span className="text-black font-bold">痛 {row.wellness.soreness_areas.join(', ')}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold">SIN MOL.</span>
+                                        <span className={hasWellnessAlert ? "text-black/60 font-bold" : "text-slate-400 font-bold"}>SIN MOL.</span>
                                       )}
                                       {row.wellness?.illness_symptoms && row.wellness.illness_symptoms.length > 0 ? (
-                                        <span className="text-red-500 font-bold">🏥 {row.wellness.illness_symptoms.join(', ')}</span>
+                                        <span className="text-black font-bold">🏥 {row.wellness.illness_symptoms.join(', ')}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold">SANO</span>
+                                        <span className={hasWellnessAlert ? "text-black/60 font-bold" : "text-slate-400 font-bold"}>SANO</span>
                                       )}
                                     </div>
                                   )}
@@ -2793,17 +2994,105 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
              <table className="w-full text-center min-w-[1200px]">
                <thead className="bg-[#0b1220] text-white font-black uppercase text-[9px] md:text-[10px]">
                  <tr>
-                   <th className="px-4 md:px-8 py-4 md:py-5 text-left sticky left-0 bg-[#0b1220] z-10">Atleta</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">Categoría</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">Minutos</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">Dist. Total (m)</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">m/min</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">Dist. AI (&gt;15)</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">Dist. MAI (&gt;20)</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">Dist. Sprint (&gt;25)</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">Sprints (n)</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">Vel. Máx (km/h)</th>
-                   <th className="px-2 md:px-4 py-4 md:py-5">Acc/Decc AI</th>
+                   <th className="px-4 md:px-8 py-1.5 md:py-2 text-left sticky left-0 bg-[#0b1220] z-10 cursor-pointer group select-none" onClick={() => handleGpsSort('name')}>
+                     <div className="flex items-center gap-1.5 justify-start">
+                       <span>Atleta</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'name' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'name' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('categoria')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>Categoría</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'categoria' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'categoria' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('minutos')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>Minutos</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'minutos' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'minutos' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('dist_total_m')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>Dist. Total (m)</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'dist_total_m' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'dist_total_m' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('m_por_min')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>m/min</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'm_por_min' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'm_por_min' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('dist_ai_m_15_kmh')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>Dist. AI (&gt;15)</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'dist_ai_m_15_kmh' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'dist_ai_m_15_kmh' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('dist_mai_m_20_kmh')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>Dist. MAI (&gt;20)</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'dist_mai_m_20_kmh' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'dist_mai_m_20_kmh' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('dist_sprint_m_25_kmh')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>Dist. Sprint (&gt;25)</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'dist_sprint_m_25_kmh' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'dist_sprint_m_25_kmh' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('sprints_n')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>Sprints (n)</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'sprints_n' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'sprints_n' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('vel_max_kmh')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>Vel. Máx (km/h)</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'vel_max_kmh' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'vel_max_kmh' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('acc_decc_ai_n')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>Acc/Decc AI</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'acc_decc_ai_n' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'acc_decc_ai_n' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-slate-100 font-black italic uppercase text-[10px] md:text-xs">
@@ -2815,6 +3104,21 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                    const isHighlighted = highlightPlayerId && Number(row.player_id) === Number(highlightPlayerId);
                    const ifrValue = calcularIFR(row, player);
                    const ifrColor = ifrValue !== null ? getIFRColor(ifrValue) : null;
+
+                    const playerRef = obtenerReferenciaJugador(player);
+                    const refDistTotal = playerRef ? Number(playerRef['Total Distance (m)'] || playerRef.distancia_total || playerRef.dist_total_m) || null : null;
+                    const refMetrosMin = playerRef ? Number(playerRef['Metros/min'] || playerRef.metros_minuto || playerRef.m_por_min) || null : null;
+                    const refDistAI = playerRef ? Number(playerRef['AInt >15 km/h'] || playerRef.distancia_ai || playerRef.dist_ai_m_15_kmh) || null : null;
+                    const refDistMAI = playerRef ? Number(playerRef['MAInt >20km/h'] || playerRef.distancia_mai || playerRef.dist_mai_m_20_kmh) || null : null;
+                    const refDistSprint = playerRef ? Number(playerRef['Sprint >25 km/h'] || playerRef.distancia_sprint || playerRef.dist_sprint_m_25_kmh) || null : null;
+                    const refAccDecc = playerRef ? Number(playerRef['#Acc+Decc AI'] || playerRef.acc_decc_ai || playerRef.acc_decc_ai_n) || null : null;
+
+                    const styleDistTotal = getParamCellProps(row.dist_total_m, refDistTotal);
+                    const styleMetrosMin = getParamCellProps(row.m_por_min, refMetrosMin);
+                    const styleDistAI = getParamCellProps(row.dist_ai_m_15_kmh, refDistAI);
+                    const styleDistMAI = getParamCellProps(row.dist_mai_m_20_kmh, refDistMAI);
+                    const styleDistSprint = getParamCellProps(row.dist_sprint_m_25_kmh, refDistSprint);
+                    const styleAccDecc = getParamCellProps(row.acc_decc_ai_n, refAccDecc);
                    
                    return (
                      <tr 
@@ -2824,7 +3128,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                          backgroundColor: ifrColor ? `${ifrColor}25` : undefined 
                        }}
                      >
-                       <td className={`px-4 md:px-8 py-4 md:py-5 text-left sticky left-0 group-hover:bg-slate-50 border-r border-slate-50 ${isHighlighted ? 'bg-blue-50' : isOwnPlayer ? 'bg-slate-100/80' : 'bg-white'}`} style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>
+                       <td className={`px-4 md:px-8 py-1 md:py-1 text-left sticky left-0 group-hover:bg-slate-50 border-r border-slate-50 ${isHighlighted ? 'bg-blue-50' : isOwnPlayer ? 'bg-slate-100/80' : 'bg-white'}`} style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>
                           {player?.player_id ? (
                             <span 
                               onClick={(e) => {
@@ -2841,22 +3145,20 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             playerName
                           )}
                         </td>
-                       <td className="px-2 md:px-4 py-4 md:py-5 text-slate-500 font-bold tracking-tight">
+                       <td className="px-2 md:px-4 py-1 md:py-1 text-slate-500 font-bold tracking-tight">
                          {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
                        </td>
-                       <td className="px-2 md:px-4 py-4 md:py-5">{row.minutos?.toFixed(1) || '0.0'}</td>
-                       <td className="px-2 md:px-4 py-4 md:py-5">{row.dist_total_m?.toFixed(0) || '0'}</td>
-                       <td className="px-2 md:px-4 py-4 md:py-5">
-                         <span className={`px-3 py-1 rounded-lg ${getIntensityStyle(row.m_por_min || 0)}`}>
-                           {row.m_por_min?.toFixed(1) || '0.0'}
-                         </span>
+                       <td className="px-2 md:px-4 py-1 md:py-1">{row.minutos?.toFixed(1) || '0.0'}</td>
+                       <td className={`px-2 md:px-4 py-1 md:py-1 ${styleDistTotal.className}`} style={styleDistTotal.style}>{row.dist_total_m?.toFixed(0) || '0'}</td>
+                       <td className={`px-2 md:px-4 py-1 md:py-1 ${styleMetrosMin.className}`} style={styleMetrosMin.style}>
+                         {row.m_por_min?.toFixed(1) || '0.0'}
                        </td>
-                       <td className="px-2 md:px-4 py-4 md:py-5">{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
-                       <td className="px-2 md:px-4 py-4 md:py-5">{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
-                       <td className="px-2 md:px-4 py-4 md:py-5 text-blue-600">{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
-                       <td className="px-2 md:px-4 py-4 md:py-5">{row.sprints_n?.toFixed(0) || '0'}</td>
-                       <td className="px-2 md:px-4 py-4 md:py-5 text-red-600 font-black">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
-                       <td className="px-2 md:px-4 py-4 md:py-5">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
+                       <td className={`px-2 md:px-4 py-1 md:py-1 ${styleDistAI.className}`} style={styleDistAI.style}>{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
+                       <td className={`px-2 md:px-4 py-1 md:py-1 ${styleDistMAI.className}`} style={styleDistMAI.style}>{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
+                       <td className={`px-2 md:px-4 py-1 md:py-1 ${styleDistSprint.className}`} style={styleDistSprint.style}>{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
+                       <td className="px-2 md:px-4 py-1 md:py-1">{row.sprints_n?.toFixed(0) || '0'}</td>
+                       <td className="px-2 md:px-4 py-1 md:py-1 text-red-600 font-black">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
+                       <td className={`px-2 md:px-4 py-1 md:py-1 ${styleAccDecc.className}`} style={styleAccDecc.style}>{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
 
                      </tr>
                    );
@@ -2955,13 +3257,95 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           {/* VISTA PREVIA DEL PDF (Solo visible en pantalla o impresión) */}
           <div className="space-y-0 print:bg-white print:m-0 print:p-0">
             {(() => {
-              const halfWellness = Math.ceil(reportData.wellnessList.length / 2);
-              const leftWellness = reportData.wellnessList.slice(0, halfWellness);
-              const rightWellness = reportData.wellnessList.slice(halfWellness);
+              const sortedWellnessList = [...reportData.wellnessList].sort((a, b) => {
+                let valA: any;
+                let valB: any;
 
-              const halfLoads = Math.ceil(reportData.loadList.length / 2);
-              const leftLoads = reportData.loadList.slice(0, halfLoads);
-              const rightLoads = reportData.loadList.slice(halfLoads);
+                switch (sortField) {
+                  case 'name':
+                    valA = a.player.name?.toLowerCase() || '';
+                    valB = b.player.name?.toLowerCase() || '';
+                    break;
+                  case 'fatigue':
+                    valA = a.data?.fatigue ?? -1;
+                    valB = b.data?.fatigue ?? -1;
+                    break;
+                  case 'sleep':
+                    valA = a.data?.sleep ?? -1;
+                    valB = b.data?.sleep ?? -1;
+                    break;
+                  case 'soreness':
+                    valA = a.data?.soreness ?? -1;
+                    valB = b.data?.soreness ?? -1;
+                    break;
+                  case 'stress':
+                    valA = (a.data?.stress || (a.data as any)?.stres) ?? -1;
+                    valB = (b.data?.stress || (b.data as any)?.stres) ?? -1;
+                    break;
+                  case 'mood':
+                    valA = (a.data?.mood || (a.data as any)?.ani) ?? -1;
+                    valB = (b.data?.mood || (b.data as any)?.ani) ?? -1;
+                    break;
+                  case 'avg':
+                    valA = a.data ? ((a.data.fatigue + a.data.sleep + (a.data.mood || (a.data as any).ani || 0)) / 3) : -1;
+                    valB = b.data ? ((b.data.fatigue + b.data.sleep + (b.data.mood || (b.data as any).ani || 0)) / 3) : -1;
+                    break;
+                  case 'soreness_areas':
+                    valA = a.data?.soreness_areas?.join(', ').toLowerCase() || '';
+                    valB = b.data?.soreness_areas?.join(', ').toLowerCase() || '';
+                    break;
+                  case 'health_status':
+                    valA = a.data?.illness_symptoms?.join(', ').toLowerCase() || '';
+                    valB = b.data?.illness_symptoms?.join(', ').toLowerCase() || '';
+                    break;
+                  default:
+                    valA = a.player.name?.toLowerCase() || '';
+                    valB = b.player.name?.toLowerCase() || '';
+                }
+
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+              });
+
+              const sortedLoadList = [...reportData.loadList].sort((a, b) => {
+                let valA: any;
+                let valB: any;
+
+                switch (sortField) {
+                  case 'name':
+                    valA = a.player.name?.toLowerCase() || '';
+                    valB = b.player.name?.toLowerCase() || '';
+                    break;
+                  case 'rpe':
+                    valA = a.sessions.length ? (a.sessions.reduce((acc: any, c: any) => acc + c.rpe, 0) / a.sessions.length) : -1;
+                    valB = b.sessions.length ? (b.sessions.reduce((acc: any, c: any) => acc + c.rpe, 0) / b.sessions.length) : -1;
+                    break;
+                  case 'duration':
+                    valA = a.sessions.reduce((acc: any, c: any) => acc + c.duration, 0);
+                    valB = b.sessions.reduce((acc: any, c: any) => acc + c.duration, 0);
+                    break;
+                  case 'load':
+                    valA = a.sessions.reduce((acc: any, c: any) => acc + c.load, 0);
+                    valB = b.sessions.reduce((acc: any, c: any) => acc + c.load, 0);
+                    break;
+                  default:
+                    valA = a.player.name?.toLowerCase() || '';
+                    valB = b.player.name?.toLowerCase() || '';
+                }
+
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+              });
+
+              const halfWellness = Math.ceil(sortedWellnessList.length / 2);
+              const leftWellness = sortedWellnessList.slice(0, halfWellness);
+              const rightWellness = sortedWellnessList.slice(halfWellness);
+
+              const halfLoads = Math.ceil(sortedLoadList.length / 2);
+              const leftLoads = sortedLoadList.slice(0, halfLoads);
+              const rightLoads = sortedLoadList.slice(halfLoads);
 
               const gpsParameters = [
                 { name: 'Distancia Total Promedio (m)', value: reportData.gpsAvg?.dist ? `${reportData.gpsAvg.dist.toFixed(0)} m` : '—' },
@@ -3025,162 +3409,145 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
                     <div className="w-full flex justify-between items-center text-[8px] font-black tracking-widest text-slate-600 uppercase border-t border-slate-850 pt-4">
                       <span>ELITE FOOTBALL PERFORMANCE PRO • AMB</span>
-                      <span>HOJA 1 / 6</span>
+                      <span>HOJA 1 / 5</span>
                     </div>
                   </div>
 
                   {/* HOJA 2: CHECK IN (WELLNESS) */}
                   <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
                     <div>
-                      {/* Cabecera Oficial Selección Nacional - Estilo Wellness Menu */}
-                      <div className="flex items-center h-14 bg-[#0b1220] rounded-xl overflow-hidden relative shadow-md mb-2 text-white w-full">
-                        {/* Blue Segment */}
-                        <div className="bg-[#02428c] h-full flex items-center px-6 relative z-20 min-w-[260px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
-                          <span className="text-xs font-black text-white uppercase italic tracking-tighter whitespace-nowrap">
-                            REPORTE BIENESTAR FISIOLÓGICO
-                          </span>
-                        </div>
-                        
-                        {/* Red Segment */}
-                        <div className="bg-[#e2231a] h-full w-16 -ml-8 relative z-10 shadow-lg" style={{ clipPath: 'polygon(25% 0, 100% 0, 75% 100%, 0% 100%)' }}></div>
-                        
-                        {/* Logo & Identity */}
-                        <div className="flex-1 flex items-center justify-end gap-3 relative z-30 pr-6">
-                          <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center p-0.5 bg-white rounded-full shadow-sm">
-                            <img 
-                              src={getDriveDirectLink(FEDERATION_LOGO)} 
-                              alt="Logo" 
-                              className="w-full h-full object-contain"
-                              referrerPolicy="no-referrer"
-                            />
-                          </div>
-                          <div className="h-6 w-[1px] bg-slate-700"></div>
-                          <div className="flex flex-col text-right">
-                            <h2 className="text-[9.5px] font-black text-white uppercase tracking-tighter leading-tight font-sans">
-                              SELECCIÓN NACIONAL
-                            </h2>
-                            <span className="text-[8.5px] font-black text-red-500 uppercase tracking-tighter leading-none mt-0.5">
-                              {selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories.map(c => c.replace('SUB_', 'SUB ')).join(', ').toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                      <PrintHeader 
+                        selectedDate={selectedDate} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={2} 
+                        total={5} 
+                      />
 
-                      {/* Grid de Metadatos del Microciclo */}
-                      <div className="grid grid-cols-3 gap-2.5 mb-2.5">
-                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
-                          <div className="w-1 h-1 rounded-full bg-[#02428c]"></div>
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">PROCESO / MICROCICLO</span>
-                            <span className="text-[8.5px] font-black text-slate-800 uppercase tracking-tight mt-1 truncate">
-                              {activeMicrocycle?.nombre_display || (activeMicrocycle ? `MICROCICLO #${activeMicrocycle.micro_number || activeMicrocycle.id}` : 'SIN MICROCICLO ACTIVO')}
-                            </span>
-                          </div>
-                        </div>
+                      <section className="mt-2">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-[#02428c] pl-3 mb-3 uppercase tracking-widest italic flex items-center justify-between">
+                          <span>2._ EVALUACIÓN DE BIENESTAR DIARIO (CHECK-IN WELLNESS)</span>
+                        </h3>
 
-                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
-                          <div className="w-1 h-1 rounded-full bg-red-650"></div>
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">FECHA DEL REPORTE</span>
-                            <span className="text-[8.5px] font-black text-slate-800 tracking-tight mt-1">
-                              {new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                            </span>
+                        {/* Grid de KPIs / Estadísticas Clave */}
+                        <div className="grid grid-cols-4 gap-2.5 mb-2.5">
+                          {/* KPI 1: Check-ins */}
+                          <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-tight">CHECK-IN COMPLETADOS</span>
+                              <span className="text-[9px] font-black text-[#02428c] leading-tight">
+                                {stats.checkInDone} <span className="text-[7px] font-bold text-slate-400">/ {currentCitadosPlayers.length}</span>
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-200 rounded-full h-1 overflow-hidden">
+                              <div 
+                                className="bg-[#02428c] h-full rounded-full transition-all duration-500" 
+                                style={{ width: `${currentCitadosPlayers.length > 0 ? (stats.checkInDone / currentCitadosPlayers.length) * 100 : 0}%` }}
+                              ></div>
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
-                          <div className="w-1 h-1 rounded-full bg-emerald-500"></div>
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">CIUDAD / UBICACIÓN</span>
-                            <span className="text-[8.5px] font-black text-slate-800 uppercase tracking-tight mt-1 truncate">
-                              {activeMicrocycle?.city ? `${activeMicrocycle.city}, ${activeMicrocycle.country || 'CHILE'}` : 'SANTIAGO, CHILE'}
+                          {/* KPI 2: Alertas Dolor */}
+                          <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-tight">ALERTAS DOLOR MUSCULAR</span>
+                              <span className={`text-[10px] font-black leading-tight ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-800'}`}>
+                                {stats.sorenessAlerts} <span className="text-[7px] font-bold text-slate-400">alertas</span>
+                              </span>
+                            </div>
+                            <span className={`text-[5.5px] font-black uppercase ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-400'} leading-tight truncate`}>
+                              {stats.sorenessAlerts > 0 ? 'Requieren fisioterapia' : 'Sin sobrecargas clínicas'}
                             </span>
                           </div>
-                        </div>
-                      </div>
 
-                      {/* Grid de KPIs / Estadísticas Clave */}
-                      <div className="grid grid-cols-4 gap-2.5 mb-3">
-                        {/* KPI 1: Check-ins */}
-                        <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-between shadow-xs">
-                          <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                            CHECK-IN COMPLETADOS
-                          </span>
-                          <div className="my-1 flex items-baseline gap-0.5">
-                            <span className="text-xs font-black text-[#02428c] leading-none">
-                              {stats.checkInDone}
-                            </span>
-                            <span className="text-[8px] font-bold text-slate-400">
-                              / {currentCitadosPlayers.length}
+                          {/* KPI 3: Alertas Salud */}
+                          <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-tight">ALERTAS ESTADO SALUD</span>
+                              <span className={`text-[10px] font-black leading-tight ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-800'}`}>
+                                {stats.healthAlerts} <span className="text-[7px] font-bold text-slate-400">alertas</span>
+                              </span>
+                            </div>
+                            <span className={`text-[5.5px] font-black uppercase ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-400'} leading-tight truncate`}>
+                              {stats.healthAlerts > 0 ? 'Evaluación médica' : 'Plantel en óptimo estado'}
                             </span>
                           </div>
-                          <div className="w-full bg-slate-205 rounded-full h-1 overflow-hidden">
-                            <div 
-                              className="bg-[#02428c] h-full rounded-full transition-all duration-500" 
-                              style={{ width: `${currentCitadosPlayers.length > 0 ? (stats.checkInDone / currentCitadosPlayers.length) * 100 : 0}%` }}
-                            ></div>
-                          </div>
-                        </div>
 
-                        {/* KPI 2: Alertas Dolor */}
-                        <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-between shadow-xs">
-                          <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">ALERTAS DOLOR MUSCULAR</span>
-                          <div className="my-1 flex items-baseline gap-0.5">
-                            <span className={`text-xs font-black leading-none ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-800'}`}>
-                              {stats.sorenessAlerts}
+                          {/* KPI 4: Promedio Bienestar */}
+                          <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-tight">PROMEDIO BIENESTAR JORNADA</span>
+                              <span className="text-[10px] font-black text-emerald-600 leading-tight">
+                                {wellnessDayAvg} <span className="text-[7px] font-bold text-slate-400">/ 5.0</span>
+                              </span>
+                            </div>
+                            <span className="text-[5.5px] text-slate-400 font-bold uppercase tracking-wider leading-tight truncate">
+                              Puntuación general del día
                             </span>
-                            <span className="text-[8px] font-bold text-slate-400 ml-1">alertas</span>
                           </div>
-                          <span className={`text-[6px] font-black uppercase ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                            {stats.sorenessAlerts > 0 ? 'Requieren fisioterapia' : 'Sin sobrecargas clínicas'}
-                          </span>
                         </div>
-
-                        {/* KPI 3: Alertas Salud */}
-                        <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-between shadow-xs">
-                          <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">ALERTAS ESTADO SALUD</span>
-                          <div className="my-1 flex items-baseline gap-0.5">
-                            <span className={`text-xs font-black leading-none ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-800'}`}>
-                              {stats.healthAlerts}
-                            </span>
-                            <span className="text-[8px] font-bold text-slate-400 ml-1">alertas</span>
-                          </div>
-                          <span className={`text-[6px] font-black uppercase ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
-                            {stats.healthAlerts > 0 ? 'Evaluación médica' : 'Plantel en óptimo estado'}
-                          </span>
-                        </div>
-
-                        {/* KPI 4: Promedio Bienestar */}
-                        <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-between shadow-xs">
-                          <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest leading-none">PROMEDIO BIENESTAR JORNADA</span>
-                          <div className="my-1 flex items-baseline gap-0.5">
-                            <span className="text-xs font-black text-emerald-600 leading-none">
-                              {wellnessDayAvg}
-                            </span>
-                            <span className="text-[8px] font-bold text-slate-400 ml-1">/ 5.0</span>
-                          </div>
-                          <span className="text-[6px] text-slate-400 font-bold uppercase tracking-wider leading-none">
-                            Puntuación general del día
-                          </span>
-                        </div>
-                      </div>
 
                       {/* Tablas lado-a-lado */}
                       <div className="grid grid-cols-2 gap-4">
                         {/* Left Wellness Table */}
                         <div className="overflow-hidden rounded-xl border border-slate-100 shadow-sm">
-                          <table className="w-full text-center border-collapse bg-white">
-                            <thead className="bg-[#0b1220] text-white text-[6.5px] font-black uppercase tracking-[0.05em]">
+                          <table className="w-full text-center border-separate border-spacing-0 bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[6.5px] font-black uppercase tracking-[0.05em] select-none">
                               <tr>
-                                <th className="px-2 py-1 text-left">ATLETA</th>
-                                <th className="px-0.5 py-1">FAT</th>
-                                <th className="px-0.5 py-1">SUE</th>
-                                <th className="px-0.5 py-1">DOL</th>
-                                <th className="px-0.5 py-1">EST</th>
-                                <th className="px-0.5 py-1">ÁNI</th>
-                                <th className="px-0.5 py-1">PROM</th>
-                                <th className="px-2 py-1 text-left">ZONA MOLESTIA / SÍNTOMAS</th>
-                                <th className="px-0.5 py-1">ESTADO</th>
+                                <th className="px-2 py-1 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('name'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-1">
+                                    ATLETA
+                                    <i className={`fa-solid ${sortField === 'name' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('fatigue'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    FAT
+                                    <i className={`fa-solid ${sortField === 'fatigue' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('sleep'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    SUE
+                                    <i className={`fa-solid ${sortField === 'sleep' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('soreness'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    DOL
+                                    <i className={`fa-solid ${sortField === 'soreness' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('stress'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    EST
+                                    <i className={`fa-solid ${sortField === 'stress' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('mood'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    ÁNI
+                                    <i className={`fa-solid ${sortField === 'mood' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('avg'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    PROM
+                                    <i className={`fa-solid ${sortField === 'avg' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-2 py-1 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('soreness_areas'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-1">
+                                    ZONA MOLESTIA / SÍNTOMAS
+                                    <i className={`fa-solid ${sortField === 'soreness_areas' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('health_status'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    ESTADO
+                                    <i className={`fa-solid ${sortField === 'health_status' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
                               </tr>
                             </thead>
                             <tbody className="text-[7px] font-bold text-slate-900">
@@ -3195,59 +3562,29 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 const isPending = !data;
 
                                 return (
-                                  <tr key={`lwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 h-[25px] hover:bg-slate-50/50">
-                                    <td className="px-2 py-0.5 text-left">
+                                  <tr key={`lwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 h-[26px] hover:bg-slate-50/50">
+                                    <td className="px-2 py-1 text-left">
                                       <span className="block font-black text-[#0b1220] text-[7px] uppercase truncate max-w-[85px] leading-tight">{player.name}</span>
                                       <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-wider truncate max-w-[85px] leading-none mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
                                     </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.fatigue)}`}>
-                                          {data.fatigue}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.sleep)}`}>
-                                          {data.sleep}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.soreness)}`}>
-                                          {data.soreness}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.stress || data.stres || 0)}`}>
-                                          {data.stress || data.stres || 0}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.mood || data.ani || 0)}`}>
-                                          {data.mood || data.ani || 0}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center text-[7.5px] font-black text-[#0b1220] font-mono">
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.fatigue) : "text-slate-300"}`}>{data ? data.fatigue : "-"}</td>
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.sleep) : "text-slate-300"}`}>{data ? data.sleep : "-"}</td>
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.soreness) : "text-slate-300"}`}>{data ? data.soreness : "-"}</td>
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.stress || data.stres || 0) : "text-slate-300"}`}>{data ? (data.stress || data.stres || 0) : "-"}</td>
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.mood || data.ani || 0) : "text-slate-300"}`}>{data ? (data.mood || data.ani || 0) : "-"}</td>
+                                    <td className="px-0.5 py-1 text-center text-[7.5px] font-black text-[#0b1220] font-mono">
                                       {avg ? avg.toFixed(1) : '-'}
                                     </td>
-                                    <td className="px-2 py-0.5 text-left truncate max-w-[120px]">
+                                    <td className={`px-2 py-1 text-left truncate max-w-[120px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
                                       {isPending ? (
                                         <span className="text-slate-300 font-bold">—</span>
                                       ) : hasAlert ? (
-                                        <span className="text-red-500 font-extrabold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                        <span className="text-black font-extrabold text-[7px] uppercase tracking-tight">{detailText}</span>
                                       ) : (
                                         <span className="text-slate-400 font-bold text-[7px] uppercase tracking-tight">{detailText}</span>
                                       )}
                                     </td>
-                                    <td className="px-0.5 py-0.5 text-center">
+                                    <td className="px-0.5 py-1 text-center">
                                       {isPending ? (
                                         <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5.5px] font-black border border-amber-100 uppercase">PEND</span>
                                       ) : (
@@ -3263,18 +3600,63 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
                         {/* Right Wellness Table */}
                         <div className="overflow-hidden rounded-xl border border-slate-100 shadow-sm">
-                          <table className="w-full text-center border-collapse bg-white">
-                            <thead className="bg-[#0b1220] text-white text-[6.5px] font-black uppercase tracking-[0.05em]">
+                          <table className="w-full text-center border-separate border-spacing-0 bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[6.5px] font-black uppercase tracking-[0.05em] select-none">
                               <tr>
-                                <th className="px-2 py-1 text-left">ATLETA</th>
-                                <th className="px-0.5 py-1">FAT</th>
-                                <th className="px-0.5 py-1">SUE</th>
-                                <th className="px-0.5 py-1">DOL</th>
-                                <th className="px-0.5 py-1">EST</th>
-                                <th className="px-0.5 py-1">ÁNI</th>
-                                <th className="px-0.5 py-1">PROM</th>
-                                <th className="px-2 py-1 text-left">ZONA MOLESTIA / SÍNTOMAS</th>
-                                <th className="px-0.5 py-1">ESTADO</th>
+                                <th className="px-2 py-1 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('name'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-1">
+                                    ATLETA
+                                    <i className={`fa-solid ${sortField === 'name' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('fatigue'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    FAT
+                                    <i className={`fa-solid ${sortField === 'fatigue' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('sleep'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    SUE
+                                    <i className={`fa-solid ${sortField === 'sleep' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('soreness'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    DOL
+                                    <i className={`fa-solid ${sortField === 'soreness' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('stress'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    EST
+                                    <i className={`fa-solid ${sortField === 'stress' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('mood'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    ÁNI
+                                    <i className={`fa-solid ${sortField === 'mood' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('avg'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    PROM
+                                    <i className={`fa-solid ${sortField === 'avg' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-2 py-1 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('soreness_areas'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-1">
+                                    ZONA MOLESTIA / SÍNTOMAS
+                                    <i className={`fa-solid ${sortField === 'soreness_areas' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
+                                <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('health_status'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <span className="inline-flex items-center gap-0.5 justify-center">
+                                    ESTADO
+                                    <i className={`fa-solid ${sortField === 'health_status' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                  </span>
+                                </th>
                               </tr>
                             </thead>
                             <tbody className="text-[7px] font-bold text-slate-900">
@@ -3289,59 +3671,29 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 const isPending = !data;
 
                                 return (
-                                  <tr key={`rwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 h-[25px] hover:bg-slate-50/50">
-                                    <td className="px-2 py-0.5 text-left">
+                                  <tr key={`rwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 h-[26px] hover:bg-slate-50/50">
+                                    <td className="px-2 py-1 text-left">
                                       <span className="block font-black text-[#0b1220] text-[7px] uppercase truncate max-w-[85px] leading-tight">{player.name}</span>
                                       <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-wider truncate max-w-[85px] leading-none mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
                                     </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.fatigue)}`}>
-                                          {data.fatigue}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.sleep)}`}>
-                                          {data.sleep}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.soreness)}`}>
-                                          {data.soreness}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.stress || data.stres || 0)}`}>
-                                          {data.stress || data.stres || 0}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center">
-                                      {data ? (
-                                        <span className={`w-3.5 h-3.5 flex items-center justify-center mx-auto rounded-full text-white text-[6.5px] font-black ${getScoreColor(data.mood || data.ani || 0)}`}>
-                                          {data.mood || data.ani || 0}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-0.5 py-0.5 text-center text-[7.5px] font-black text-[#0b1220] font-mono">
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.fatigue) : "text-slate-300"}`}>{data ? data.fatigue : "-"}</td>
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.sleep) : "text-slate-300"}`}>{data ? data.sleep : "-"}</td>
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.soreness) : "text-slate-300"}`}>{data ? data.soreness : "-"}</td>
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.stress || data.stres || 0) : "text-slate-300"}`}>{data ? (data.stress || data.stres || 0) : "-"}</td>
+                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.mood || data.ani || 0) : "text-slate-300"}`}>{data ? (data.mood || data.ani || 0) : "-"}</td>
+                                    <td className="px-0.5 py-1 text-center text-[7.5px] font-black text-[#0b1220] font-mono">
                                       {avg ? avg.toFixed(1) : '-'}
                                     </td>
-                                    <td className="px-2 py-0.5 text-left truncate max-w-[120px]">
+                                    <td className={`px-2 py-1 text-left truncate max-w-[120px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
                                       {isPending ? (
                                         <span className="text-slate-300 font-bold">—</span>
                                       ) : hasAlert ? (
-                                        <span className="text-red-500 font-extrabold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                        <span className="text-black font-extrabold text-[7px] uppercase tracking-tight">{detailText}</span>
                                       ) : (
                                         <span className="text-slate-400 font-bold text-[7px] uppercase tracking-tight">{detailText}</span>
                                       )}
                                     </td>
-                                    <td className="px-0.5 py-0.5 text-center">
+                                    <td className="px-0.5 py-1 text-center">
                                       {isPending ? (
                                         <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5.5px] font-black border border-amber-100 uppercase">PEND</span>
                                       ) : (
@@ -3355,9 +3707,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           </table>
                         </div>
                       </div>
-                    </div>
-                    <PrintFooter page={2} />
+                    </section>
                   </div>
+                  <PrintFooter page={2} />
+                </div>
 
                   {/* HOJA 3: CHECK OUT (PSE) */}
                   <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
@@ -3367,7 +3720,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                         activeMicrocycle={activeMicrocycle} 
                         page={3} 
-                        total={6} 
+                        total={5} 
                       />
                       
                       <section className="mt-4">
@@ -3383,15 +3736,35 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         <div className="grid grid-cols-2 gap-6">
                           {/* Left loads table */}
                           <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
-                            <table className="w-full text-center border-collapse bg-white">
-                              <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
+                            <table className="w-full text-center border-separate border-spacing-0 bg-white">
+                              <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em] select-none">
                                 <tr>
-                                  <th className="px-3 py-2 text-left">ATLETA</th>
-                                  <th className="px-1 py-2">SESIONES</th>
-                                  <th className="px-1 py-2">RPE PROMEDIO</th>
-                                  <th className="px-1 py-2">DURACIÓN (MIN)</th>
-                                  <th className="px-1 py-2">CARGA (U.A.)</th>
-                                  <th className="px-2 py-2">SITUACIÓN CLÍNICA / DETALLE</th>
+                                  <th className="px-3 py-2 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('name'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-1">
+                                      ATLETA
+                                      <i className={`fa-solid ${sortField === 'name' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-1 py-2 text-center">SESIONES</th>
+                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('rpe'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-0.5 justify-center">
+                                      RPE PROMEDIO
+                                      <i className={`fa-solid ${sortField === 'rpe' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('duration'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-0.5 justify-center">
+                                      DURACIÓN (MIN)
+                                      <i className={`fa-solid ${sortField === 'duration' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('load'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-0.5 justify-center">
+                                      CARGA (U.A.)
+                                      <i className={`fa-solid ${sortField === 'load' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-2 py-2 text-left">SITUACIÓN CLÍNICA / DETALLE</th>
                                 </tr>
                               </thead>
                               <tbody className="text-[8px] font-bold text-slate-900">
@@ -3404,12 +3777,12 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                   const loadDetails = [allMolestias, allEnfermedad].filter(Boolean).join(' | ');
 
                                   return (
-                                    <tr key={`lload-${player.player_id}-${idx}`} className="border-b border-slate-50 h-[30px] hover:bg-slate-50/50">
+                                    <tr key={`lload-${player.player_id}-${idx}`} className="border-b border-slate-50 h-[24px] hover:bg-slate-50/50">
                                       <td className="px-3 py-1 text-left font-black text-[#0b1220] truncate max-w-[120px]">{player.name}</td>
                                       <td className="px-1 py-1 text-slate-400 italic font-black font-mono">{sessions.length}</td>
-                                      <td className="px-1 py-1 text-[#0b1220] font-black text-[9px] font-mono">{rpeAvg ? rpeAvg.toFixed(1) : '—'}</td>
+                                      <td className={`px-1 py-1 text-center font-black font-mono text-[7.5px] ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "—"}</td>
                                       <td className="px-1 py-1 text-slate-500 italic font-black font-mono">{totalMin}'</td>
-                                      <td className="px-1 py-1 text-red-650 font-extrabold text-[9px] font-mono">{totalLoad}</td>
+                                      <td className={`px-1 py-1 text-center font-black font-mono text-[7.5px] ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "0"}</td>
                                       <td className="px-2 py-1 truncate text-[7px] max-w-[124px]" title={loadDetails}>
                                         {loadDetails ? (
                                           <span className="text-red-500 font-bold bg-amber-50 px-1 border border-amber-100 rounded text-[6.5px] tracking-tight">{loadDetails.toUpperCase()}</span>
@@ -3426,15 +3799,35 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
                           {/* Right loads table */}
                           <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
-                            <table className="w-full text-center border-collapse bg-white">
-                              <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
+                            <table className="w-full text-center border-separate border-spacing-0 bg-white">
+                              <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em] select-none">
                                 <tr>
-                                  <th className="px-3 py-2 text-left">ATLETA</th>
-                                  <th className="px-1 py-2">SESIONES</th>
-                                  <th className="px-1 py-2">RPE PROMEDIO</th>
-                                  <th className="px-1 py-2">DURACIÓN (MIN)</th>
-                                  <th className="px-1 py-2">CARGA (U.A.)</th>
-                                  <th className="px-2 py-2">SITUACIÓN CLÍNICA / DETALLE</th>
+                                  <th className="px-3 py-2 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('name'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-1">
+                                      ATLETA
+                                      <i className={`fa-solid ${sortField === 'name' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-1 py-2 text-center">SESIONES</th>
+                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('rpe'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-0.5 justify-center">
+                                      RPE PROMEDIO
+                                      <i className={`fa-solid ${sortField === 'rpe' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('duration'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-0.5 justify-center">
+                                      DURACIÓN (MIN)
+                                      <i className={`fa-solid ${sortField === 'duration' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('load'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-0.5 justify-center">
+                                      CARGA (U.A.)
+                                      <i className={`fa-solid ${sortField === 'load' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-2 py-2 text-left">SITUACIÓN CLÍNICA / DETALLE</th>
                                 </tr>
                               </thead>
                               <tbody className="text-[8px] font-bold text-slate-900">
@@ -3447,12 +3840,12 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                   const loadDetails = [allMolestias, allEnfermedad].filter(Boolean).join(' | ');
 
                                   return (
-                                    <tr key={`rload-${player.player_id}-${idx}`} className="border-b border-slate-50 h-[30px] hover:bg-slate-50/50">
+                                    <tr key={`rload-${player.player_id}-${idx}`} className="border-b border-slate-50 h-[24px] hover:bg-slate-50/50">
                                       <td className="px-3 py-1 text-left font-black text-[#0b1220] truncate max-w-[120px]">{player.name}</td>
                                       <td className="px-1 py-1 text-slate-400 italic font-black font-mono">{sessions.length}</td>
-                                      <td className="px-1 py-1 text-[#0b1220] font-black text-[9px] font-mono">{rpeAvg ? rpeAvg.toFixed(1) : '—'}</td>
+                                      <td className={`px-1 py-1 text-center font-black font-mono text-[7.5px] ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "—"}</td>
                                       <td className="px-1 py-1 text-slate-500 italic font-black font-mono">{totalMin}'</td>
-                                      <td className="px-1 py-1 text-red-655 font-extrabold text-[9px] font-mono">{totalLoad}</td>
+                                      <td className={`px-1 py-1 text-center font-black font-mono text-[7.5px] ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "0"}</td>
                                       <td className="px-2 py-1 truncate text-[7px] max-w-[124px]" title={loadDetails}>
                                         {loadDetails ? (
                                           <span className="text-red-500 font-bold bg-amber-50 px-1 border border-amber-100 rounded text-[6.5px] tracking-tight">{loadDetails.toUpperCase()}</span>
@@ -3480,7 +3873,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                         activeMicrocycle={activeMicrocycle} 
                         page={4} 
-                        total={6} 
+                        total={5} 
                       />
                       
                       <section className="mt-4">
@@ -3494,7 +3887,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         </h3>
 
                         <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm max-h-[120mm]">
-                          <table className="w-full text-center border-collapse bg-white">
+                          <table className="w-full text-center border-separate border-spacing-0 bg-white">
                             <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
                               <tr>
                                 <th className="px-4 py-2 text-left bg-[#0b1220] min-w-[140px]">ATLETA</th>
@@ -3514,29 +3907,44 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 const player = row.players;
                                 const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim() : `ID: ${row.player_id}`;
 
+                                const playerRef = obtenerReferenciaJugador(player);
+                                const refDistTotal = playerRef ? Number(playerRef['Total Distance (m)'] || playerRef.distancia_total || playerRef.dist_total_m) || null : null;
+                                const refMetrosMin = playerRef ? Number(playerRef['Metros/min'] || playerRef.metros_minuto || playerRef.m_por_min) || null : null;
+                                const refDistAI = playerRef ? Number(playerRef['AInt >15 km/h'] || playerRef.distancia_ai || playerRef.dist_ai_m_15_kmh) || null : null;
+                                const refDistMAI = playerRef ? Number(playerRef['MAInt >20km/h'] || playerRef.distancia_mai || playerRef.dist_mai_m_20_kmh) || null : null;
+                                const refDistSprint = playerRef ? Number(playerRef['Sprint >25 km/h'] || playerRef.distancia_sprint || playerRef.dist_sprint_m_25_kmh) || null : null;
+                                const refAccDecc = playerRef ? Number(playerRef['#Acc+Decc AI'] || playerRef.acc_decc_ai || playerRef.acc_decc_ai_n) || null : null;
+
+                                const styleDistTotal = getParamCellProps(row.dist_total_m, refDistTotal);
+                                const styleMetrosMin = getParamCellProps(row.m_por_min, refMetrosMin);
+                                const styleDistAI = getParamCellProps(row.dist_ai_m_15_kmh, refDistAI);
+                                const styleDistMAI = getParamCellProps(row.dist_mai_m_20_kmh, refDistMAI);
+                                const styleDistSprint = getParamCellProps(row.dist_sprint_m_25_kmh, refDistSprint);
+                                const styleAccDecc = getParamCellProps(row.acc_decc_ai_n, refAccDecc);
+
                                 return (
-                                  <tr key={`gps-rep-${idx}`} className="border-b border-slate-50 h-[28px] hover:bg-slate-50/50 font-black">
-                                    <td className="px-4 py-0.5 text-left font-sans font-black text-[#0b1220] truncate max-w-[140px]">{playerName}</td>
-                                    <td className="px-1 py-0.5 text-slate-500 font-sans font-bold text-center">
+                                  <tr key={`gps-rep-${idx}`} className="border-b border-slate-50 h-[24px] hover:bg-slate-50/50 font-black">
+                                    <td className="px-4 py-1 text-left font-sans font-black text-[#0b1220] truncate max-w-[140px]">{playerName}</td>
+                                    <td className="px-1 py-1 text-slate-500 font-sans font-bold text-center">
                                       {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
                                     </td>
-                                    <td className="px-1 py-0.5 text-slate-400 font-bold">{row.minutos?.toFixed(0) || '0'}</td>
-                                    <td className="px-1 py-0.5 text-[#0b1220] font-bold">{row.dist_total_m?.toFixed(0) || '0'}</td>
-                                    <td className="px-1 py-0.5 text-[#02428c] font-black bg-blue-50/30 font-mono">
+                                    <td className="px-1 py-1 text-slate-400 font-bold">{row.minutos?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 ${styleDistTotal.className}`} style={styleDistTotal.style}>{row.dist_total_m?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 ${styleMetrosMin.className}`} style={styleMetrosMin.style}>
                                       {row.m_por_min?.toFixed(1) || '0.0'}
                                     </td>
-                                    <td className="px-1 py-0.5 text-slate-500 font-bold font-mono">{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
-                                    <td className="px-1 py-0.5 text-slate-500 font-bold font-mono">{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
-                                    <td className="px-1 py-0.5 text-blue-600 font-bold font-mono">{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
-                                    <td className="px-1 py-0.5 text-red-655 font-extrabold font-mono">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
-                                    <td className="px-1 py-0.5 text-[#0b1220] font-bold font-mono">{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 ${styleDistMAI.className}`} style={styleDistMAI.style}>{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 ${styleDistAI.className}`} style={styleDistAI.style}>{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 ${styleDistSprint.className}`} style={styleDistSprint.style}>{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
+                                    <td className="px-1 py-1 text-red-655 font-extrabold font-mono">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
+                                    <td className={`px-1 py-1 ${styleAccDecc.className}`} style={styleAccDecc.style}>{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
                                   </tr>
                                 );
                               })}
                               
                               {/* FILA DE PROMEDIOS GRUPALES */}
                               {reportData.gpsAvg && (
-                                <tr className="bg-[#0b1220] text-emerald-400 font-black italic h-[32px] sticky bottom-0">
+                                <tr className="bg-[#0b1220] text-emerald-400 font-black italic h-[26px]">
                                   <td className="px-4 py-1 text-left font-sans uppercase tracking-[0.1em] text-[8px] text-white">Promedio Grupal</td>
                                   <td className="px-1 py-1 text-[8px] font-sans text-slate-500">-</td>
                                   <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.minutos.toFixed(0)}'</td>
@@ -3565,7 +3973,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                         activeMicrocycle={activeMicrocycle} 
                         page={5} 
-                        total={6} 
+                        total={5} 
                       />
                       
                       <section className="mt-4 text-slate-900">
@@ -3602,50 +4010,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     </div>
                     <PrintFooter page={5} />
                   </div>
-
-                  {/* HOJA 6: PLANILLA DE PRONÓSTICO (2 COLUMNAS) */}
-                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
-                    <div>
-                      <PrintHeader 
-                        selectedDate={selectedDate} 
-                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
-                        activeMicrocycle={activeMicrocycle} 
-                        page={6} 
-                        total={6} 
-                      />
-                      
-                      <section className="mt-4 text-slate-900">
-                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-slate-900 pl-3 mb-4 uppercase tracking-widest italic">
-                          6._ PLANILLA DE ESTIMACIONES GPS (DOS COLUMNAS EN BLANCO)
-                        </h3>
-                        
-                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-6">
-                          * Ficha técnica de planificación para ser completada con lápiz de forma manual por el cuerpo de preparadores físicos antes de iniciar la jornada de entrenamiento.
-                        </p>
-
-                        <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm max-w-3xl mx-auto">
-                          <table className="w-full text-center border-collapse bg-white">
-                            <thead className="bg-[#0b1220] text-white text-[9px] font-black uppercase tracking-[0.15em] h-12">
-                              <tr>
-                                <th className="px-6 py-3 text-left w-1/2">PARAMETROS GPS</th>
-                                <th className="px-6 py-3 w-1/2">PRONOSTICO</th>
-                              </tr>
-                            </thead>
-                            <tbody className="text-[11px] font-black uppercase text-slate-800">
-                              {gpsParameters.map((param, index) => (
-                                <tr key={`param-p6-${index}`} className="border-b border-slate-100 h-[52px] hover:bg-slate-50/50">
-                                  <td className="px-6 py-3 text-left text-slate-900 font-bold">{param.name}</td>
-                                  {/* Resto vacío para poder escribir */}
-                                  <td className="px-6 py-3 bg-slate-50/10"></td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </section>
-                    </div>
-                    <PrintFooter page={6} />
-                  </div>
                 </>
               );
             })()}
@@ -3667,7 +4031,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             display: flex !important;
             flex-direction: column !important;
             justify-content: space-between !important;
-            padding: 32px !important;
+            padding: 24px !important;
             background-color: white;
             overflow: hidden !important;
             position: relative !important;
@@ -3698,7 +4062,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             height: 210mm !important; /* Alto completo de A4 */
             width: 297mm !important;  /* Ancho completo de A4 */
             margin: 0 auto !important;
-            padding: 10mm !important;
+            padding: 8mm !important;
             background: white !important;
             border: none !important;
             box-sizing: border-box !important;
@@ -3729,7 +4093,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   );
 }
 
-// Subcomponente de Encabezado para Impresión (Rediseñado FIFA-Style con Diagonales)
+// Subcomponente de Encabezado para Impresión (Rediseñado FIFA-Style con Diagonales, Compacto)
 function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, total }: any) {
   const formatCategoryLabel = (idOrName: any) => {
     if (typeof idOrName === 'string' && isNaN(Number(idOrName))) return idOrName.toUpperCase().replace('_', ' ');
@@ -3751,22 +4115,22 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
   }, [selectedDate]);
 
   return (
-    <div className="hidden print:block mb-8 font-sans">
+    <div className="mb-3 font-sans">
       {/* Top Graphic Bar */}
-      <div className="flex items-center h-20 relative overflow-hidden">
+      <div className="flex items-center h-14 relative overflow-hidden">
         {/* Blue Segment */}
-        <div className="bg-[#02428c] h-full flex items-center px-10 relative z-20 min-w-[380px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
-          <span className="text-4xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap font-['Bebas_Neue']">
+        <div className="bg-[#02428c] h-full flex items-center px-6 relative z-20 min-w-[280px]" style={{ clipPath: 'polygon(0 0, 92% 0, 100% 100%, 0% 100%)' }}>
+          <span className="text-2xl font-black text-white uppercase italic tracking-tighter whitespace-nowrap font-['Bebas_Neue']">
             {dateDisplay}
           </span>
         </div>
         
         {/* Red Segment */}
-        <div className="bg-[#e2231a] h-full w-24 -ml-12 relative z-10 shadow-lg" style={{ clipPath: 'polygon(25% 0, 100% 0, 75% 100%, 0% 100%)' }}></div>
+        <div className="bg-[#e2231a] h-full w-16 -ml-8 relative z-10 shadow-lg" style={{ clipPath: 'polygon(25% 0, 100% 0, 75% 100%, 0% 100%)' }}></div>
         
         {/* Logo Section */}
-        <div className="flex items-center gap-6 ml-12">
-          <div className="w-20 h-20 flex items-center justify-center p-1 bg-white rounded-full shadow-md">
+        <div className="flex items-center gap-4 ml-8">
+          <div className="w-14 h-14 flex items-center justify-center p-1 bg-white rounded-full shadow-md">
             <img 
               src={getDriveDirectLink(FEDERATION_LOGO)} 
               alt="Logo" 
@@ -3774,12 +4138,12 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
               referrerPolicy="no-referrer"
             />
           </div>
-          <div className="h-12 w-[2px] bg-slate-200"></div>
+          <div className="h-8 w-[2px] bg-slate-200"></div>
           <div className="flex flex-col">
-            <h2 className="text-2xl font-black text-[#02428c] uppercase tracking-tighter leading-tight font-['Bebas_Neue']">
+            <h2 className="text-lg font-black text-[#02428c] uppercase tracking-tighter leading-tight font-['Bebas_Neue']">
               SELECCIÓN NACIONAL
             </h2>
-            <span className="text-2xl font-black text-red-600 uppercase tracking-tighter leading-none font-['Bebas_Neue']">
+            <span className="text-lg font-black text-red-600 uppercase tracking-tighter leading-none font-['Bebas_Neue']">
               {formatCategoryLabel(selectedCategory)}
             </span>
           </div>
@@ -3787,31 +4151,31 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
       </div>
 
       {/* Metadata Section */}
-      <div className="mt-4 px-8 border-b-2 border-[#02428c] pb-2">
-        <div className="grid grid-cols-3 gap-8">
-          <div className="flex items-center gap-3">
+      <div className="mt-3 px-6 border-b-2 border-[#02428c] pb-1.5">
+        <div className="grid grid-cols-3 gap-6">
+          <div className="flex items-center gap-2">
              <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
-             <span className="text-xs font-black text-slate-900 uppercase">MICROCICLO</span>
-             <div className="h-4 w-px bg-slate-300"></div>
-             <span className="text-sm font-black text-red-600">#{microNumber}</span>
+             <span className="text-[10px] font-black text-slate-900 uppercase">MICROCICLO</span>
+             <div className="h-3 w-px bg-slate-300"></div>
+             <span className="text-xs font-black text-red-600">#{microNumber}</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
              <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
-             <span className="text-xs font-black text-slate-900 uppercase">SESIÓN</span>
-             <div className="h-4 w-px bg-slate-300"></div>
-             <span className="text-sm font-black text-red-600">AM</span>
+             <span className="text-[10px] font-black text-slate-900 uppercase">SESIÓN</span>
+             <div className="h-3 w-px bg-slate-300"></div>
+             <span className="text-xs font-black text-red-600">AM</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
              <div className="w-1.5 h-1.5 rounded-full bg-[#02428c]"></div>
-             <span className="text-xs font-black text-slate-900 uppercase">LUGARES</span>
-             <div className="h-4 w-px bg-slate-300"></div>
-             <span className="text-sm font-black text-red-600 truncate">{location.toUpperCase()}</span>
+             <span className="text-[10px] font-black text-slate-900 uppercase">LUGARES</span>
+             <div className="h-3 w-px bg-slate-300"></div>
+             <span className="text-xs font-black text-red-600 truncate">{location.toUpperCase()}</span>
           </div>
         </div>
       </div>
       
-      <div className="mt-2 flex justify-end px-8">
-         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
+      <div className="mt-1 flex justify-end px-6">
+         <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest italic">
            HOJA {page} / {total} — GENERADO EL {new Date().toLocaleDateString()}
          </span>
       </div>
@@ -3821,7 +4185,7 @@ function PrintHeader({ selectedDate, selectedCategory, activeMicrocycle, page, t
 
 function PrintFooter({ page }: { page: number }) {
   return (
-    <div className="hidden print:block absolute bottom-4 left-10 right-10 border-t border-slate-100 pt-1">
+    <div className="absolute bottom-4 left-10 right-10 border-t border-slate-100 pt-1">
       <div className="flex justify-between items-center">
         <p className="text-[5px] font-black text-slate-300 uppercase tracking-[0.2em]">Documento Confidencial • Área Física Selección Nacional • © 2026</p>
         <div className="flex items-center gap-4">

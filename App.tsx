@@ -980,7 +980,7 @@ export default function App() {
       }
     };
 
-    if (role === 'admin') {
+    if (role && role !== 'player') {
       seedIfrReferences();
     }
   }, [role]);

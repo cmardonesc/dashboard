@@ -26,13 +26,15 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function check() {
   const tables = [
-    'evaluaciones_imtp',
-    'evaluaciones_cmj',
-    'evaluaciones_imtp_salto',
-    'velocidad_tests',
-    'physical_tests',
-    'gps_import',
-    'gps_tareas'
+    'profiles',
+    'players',
+    'wellness_checkin',
+    'internal_load',
+    'match_reports',
+    'clubes',
+    'microcycles',
+    'gps_tareas',
+    'antropometria'
   ];
 
   for (const table of tables) {
