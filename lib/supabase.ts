@@ -69,12 +69,23 @@ try {
   isIframe = true; // Si no podemos acceder a window.top, asumimos que estamos en un entorno restringido
 }
 
+const shouldProxy = (): boolean => {
+  if (typeof window === 'undefined') return true;
+  const host = window.location.hostname;
+  return host === 'localhost' || host === '127.0.0.1' || host.includes('.run.app') || host.includes('gitpod') || host.includes('codesandbox');
+};
+
 const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const urlStr = typeof input === 'string' 
     ? input 
     : (input as any).url || (input && typeof input.toString === 'function' ? input.toString() : '');
   
   if (urlStr && urlStr.includes('supabase.co')) {
+    // Si no estamos en un entorno de desarrollo de AI Studio o local, conectarse DIRECTAMENTE a Supabase
+    if (!shouldProxy()) {
+      return await fetch(input, init);
+    }
+
     try {
       const proxyUrl = typeof window !== 'undefined' 
         ? '/api/supabase-proxy' 
@@ -88,7 +99,16 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
         headers,
       };
       
-      return await fetch(proxyUrl, proxyInit);
+      const response = await fetch(proxyUrl, proxyInit);
+      
+      // Si el proxy responde con un HTML (por ejemplo, el fallback del SPA en producción que es un 404)
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || contentType.includes('text/html')) {
+        console.warn(`Supabase proxy returned non-JSON/error (${response.status}). Falling back to direct Supabase.`);
+        return await fetch(input, init);
+      }
+      
+      return response;
     } catch (err) {
       console.warn("Supabase customFetch proxy failed, falling back to direct:", err);
       return await fetch(input, init);
