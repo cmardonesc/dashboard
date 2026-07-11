@@ -4,7 +4,7 @@ import { User, Category, CATEGORY_ID_MAP, MicrocicloDB, UserRole } from '../type
 import { supabase } from '../lib/supabase'
 import { triggerPushNotification } from '../lib/notifications'
 import { FEDERATION_LOGO, FALLBACK_CLUB_NAMES } from '../constants'
-import { getDriveDirectLink } from '../lib/utils'
+import { getDriveDirectLink, sortClubsByChileFirst } from '../lib/utils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import JSZip from 'jszip'
@@ -915,10 +915,9 @@ export default function CitacionesArea({
         clubsMap.set(Number(clubId), clubName);
       }
     });
-    return Array.from(clubsMap.entries())
-      .map(([id, nombre]) => ({ id, nombre }))
-      .sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [allPlayers]);
+    const mapped = Array.from(clubsMap.entries()).map(([id, nombre]) => ({ id, nombre }));
+    return sortClubsByChileFirst(mapped, propClubs);
+  }, [allPlayers, propClubs]);
 
   const sortedCitados = useMemo(() => {
     return [...currentCitados].sort((a, b) => (a.name || "").localeCompare(b.name || ""));

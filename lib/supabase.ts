@@ -2,20 +2,30 @@
 import { createClient } from '@supabase/supabase-js'
 
 // Try to get environment variables from standard Vite or Process sources
-const getEnv = (name: string) => {
-  // Fix: Use type assertion to safely access Vite-specific environment variables in TypeScript
+const getEnvUrl = () => {
   const meta = import.meta as any;
-  if (typeof import.meta !== 'undefined' && meta.env && meta.env[name]) {
-    return meta.env[name];
+  if (typeof import.meta !== 'undefined' && meta.env && meta.env.VITE_SUPABASE_URL) {
+    return meta.env.VITE_SUPABASE_URL;
   }
-  if (typeof process !== 'undefined' && process.env && process.env[name]) {
-    return process.env[name];
+  if (typeof process !== 'undefined' && process.env && process.env.VITE_SUPABASE_URL) {
+    return process.env.VITE_SUPABASE_URL;
+  }
+  return null;
+}
+
+const getEnvKey = () => {
+  const meta = import.meta as any;
+  if (typeof import.meta !== 'undefined' && meta.env && meta.env.VITE_SUPABASE_ANON_KEY) {
+    return meta.env.VITE_SUPABASE_ANON_KEY;
+  }
+  if (typeof process !== 'undefined' && process.env && process.env.VITE_SUPABASE_ANON_KEY) {
+    return process.env.VITE_SUPABASE_ANON_KEY;
   }
   return null;
 }
 
 const supabaseUrl = (() => {
-  const envUrl = getEnv('VITE_SUPABASE_URL');
+  const envUrl = getEnvUrl();
   const fallback = 'https://nqdbqqmjyygopjnpqyvm.supabase.co';
   
   if (!envUrl) return fallback;
@@ -45,7 +55,7 @@ const supabaseUrl = (() => {
 })();
 
 const supabaseAnonKey = (
-  getEnv('VITE_SUPABASE_ANON_KEY') || 
+  getEnvKey() || 
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xZGJxcW1qeXlnb3BqbnBxeXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzMjU1MzMsImV4cCI6MjA4NTkwMTUzM30.5aYRn3fz6kc0BQSeeBKE5AAiGZNfMWQfcQPwEkNLQjk'
 ).trim()
 
@@ -59,11 +69,43 @@ try {
   isIframe = true; // Si no podemos acceder a window.top, asumimos que estamos en un entorno restringido
 }
 
+const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const urlStr = typeof input === 'string' 
+    ? input 
+    : (input as any).url || (input && typeof input.toString === 'function' ? input.toString() : '');
+  
+  if (urlStr && urlStr.includes('supabase.co')) {
+    try {
+      const proxyUrl = typeof window !== 'undefined' 
+        ? '/api/supabase-proxy' 
+        : 'http://localhost:3000/api/supabase-proxy';
+      
+      const headers = new Headers(init?.headers || {});
+      headers.set('x-target-url', urlStr);
+      
+      const proxyInit: RequestInit = {
+        ...init,
+        headers,
+      };
+      
+      return await fetch(proxyUrl, proxyInit);
+    } catch (err) {
+      console.warn("Supabase customFetch proxy failed, falling back to direct:", err);
+      return await fetch(input, init);
+    }
+  }
+  
+  return await fetch(input, init);
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: false, // Desactivado permanentemente para evitar conflictos de bloqueo (Navigator LockManager)
     autoRefreshToken: false,
     detectSessionInUrl: false,
     storageKey: 'lr-performance-auth-v1'
+  },
+  global: {
+    fetch: customFetch
   }
 })

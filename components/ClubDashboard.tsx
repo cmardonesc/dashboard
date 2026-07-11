@@ -9,6 +9,7 @@ import CargaTareasArea from './CargaTareasArea';
 import NutricionResumenGrupal from './NutricionResumenGrupal';
 import ClubBadge from './ClubBadge';
 import { useIFR, GPSData as IFRGPSData } from '../hooks/useIFR';
+import { sortClubsByChileFirst } from '../lib/utils';
 
 interface ClubDashboardProps {
   userClub?: string;
@@ -78,8 +79,8 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
     performanceRecords.forEach(r => {
       if (r.player.club) uniqueClubs.add(r.player.club);
     });
-    return Array.from(uniqueClubs).sort();
-  }, [performanceRecords]);
+    return sortClubsByChileFirst(Array.from(uniqueClubs), clubs);
+  }, [performanceRecords, clubs]);
 
   // Generar fechas para el slicer (últimos 14 días)
   const dates = useMemo(() => {

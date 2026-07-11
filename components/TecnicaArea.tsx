@@ -77,6 +77,8 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'Actividad Social', emoji: '🤝' },
   { label: 'Salida', emoji: '🛫' },
   { label: 'Retorno', emoji: '🛬' },
+  { label: 'Despegue y Retorno', emoji: '✈️' },
+  { label: 'Salida y Retorno', emoji: '🚌' },
   { label: 'Partido Amistoso', emoji: '🏟️' },
   { label: 'Partido Oficial', emoji: '🏆' },
   { label: 'Citación', emoji: '📢' },

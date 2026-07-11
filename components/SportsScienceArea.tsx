@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { normalizeClub } from '../lib/utils';
+import { normalizeClub, sortClubsByChileFirst } from '../lib/utils';
 import { getChartSummary, getAthleteFootprintSummary, askAthleteAiAssistant } from '../services/geminiService';
 import { motion, AnimatePresence } from 'motion/react';
 import ClubBadge from './ClubBadge';
@@ -637,7 +637,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
                   Limpiar Selección
                 </button>
                 <div className="h-px bg-slate-100 my-2"></div>
-                {clubs.map(c => {
+                {sortClubsByChileFirst(clubs).map(c => {
                   const cId = c.id_club || c.id;
                   const isSelected = selectedClubId === Number(cId);
                   return (
@@ -791,6 +791,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             antropometria={antropometria}
             test505={test505Data}
             cmjRebound={cmjReboundData}
+            selectedPlayerId={selectedPlayerId}
           />
         )}
         {activeTab === 'laboratorio' && (
@@ -845,7 +846,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             antropometria={antropometria}
             test505={test505Data}
             cmjRebound={cmjReboundData}
-            players={filteredByClubScopePlayers} 
+            players={selectablePlayers} 
           />
         )}
 
@@ -1041,7 +1042,12 @@ const TachometerGauge = ({
   fillColor = 'text-red-600',
   lowerIsBetter = false,
   percentile,
-  outlier
+  outlier,
+  referenceMax,
+  personalMax,
+  penultimateValue,
+  swc,
+  mdc
 }: { 
   value: number; 
   average: number; 
@@ -1053,6 +1059,11 @@ const TachometerGauge = ({
   lowerIsBetter?: boolean;
   percentile?: number;
   outlier?: 'low' | 'high';
+  referenceMax?: number;
+  personalMax?: number;
+  penultimateValue?: number;
+  swc?: number;
+  mdc?: number;
 }) => {
   const safeVal = isNaN(value) || value < 0 ? 0 : value;
   const safeAvg = isNaN(average) || average < 0 ? 0 : average;
@@ -1086,6 +1097,56 @@ const TachometerGauge = ({
         : ((safeVal - safeAvg) / safeAvg) * 100
       )
     : 0;
+
+  const hasRefMax = referenceMax !== undefined && referenceMax > 0;
+  const pctDiffMax = hasRefMax 
+    ? (lowerIsBetter 
+        ? ((referenceMax - safeVal) / referenceMax) * 100 
+        : ((safeVal - referenceMax) / referenceMax) * 100
+      )
+    : 0;
+  const isBetterThanMax = lowerIsBetter ? (safeVal < referenceMax) : (safeVal > referenceMax);
+  const isEqualToMax = safeVal === referenceMax;
+
+  const hasPersonalMax = personalMax !== undefined && personalMax > 0;
+  const pctDiffPersonal = hasPersonalMax 
+    ? (lowerIsBetter 
+        ? ((personalMax - safeVal) / personalMax) * 100 
+        : ((safeVal - personalMax) / personalMax) * 100
+      )
+    : 0;
+  const isBetterThanPersonal = lowerIsBetter ? (safeVal < personalMax) : (safeVal > personalMax);
+  const isEqualToPersonal = safeVal === personalMax;
+
+  const hasPenultimate = penultimateValue !== undefined && penultimateValue > 0;
+  let diffPrev = 0;
+  let pctDiffPrev = 0;
+  let isPrevBetter = false;
+  let isPrevEqual = false;
+  let displayPctPrev = 0;
+  let changeClassification: 'mejora_real' | 'mejora_probable' | 'estable' | 'deterioro_probable' | 'deterioro_real' = 'estable';
+
+  if (hasPenultimate && safeVal > 0) {
+    const rawDiff = safeVal - penultimateValue;
+    diffPrev = lowerIsBetter ? -rawDiff : rawDiff;
+    isPrevBetter = diffPrev > 0;
+    isPrevEqual = diffPrev === 0;
+    displayPctPrev = lowerIsBetter 
+      ? ((penultimateValue - safeVal) / penultimateValue) * 100 
+      : ((safeVal - penultimateValue) / penultimateValue) * 100;
+
+    const absDiff = Math.abs(rawDiff);
+    const safeSwc = swc || 0;
+    const safeMdc = mdc || 0;
+
+    if (absDiff >= safeMdc) {
+      changeClassification = isPrevBetter ? 'mejora_real' : 'deterioro_real';
+    } else if (absDiff >= safeSwc) {
+      changeClassification = isPrevBetter ? 'mejora_probable' : 'deterioro_probable';
+    } else {
+      changeClassification = 'estable';
+    }
+  }
 
   const getPercentileLevel = (pct: number) => {
     if (pct >= 90) return 'Elite';
@@ -1201,6 +1262,93 @@ const TachometerGauge = ({
           </div>
           <div className={`px-2 py-0.5 rounded-full text-[7px] font-black uppercase border ${getPercentileColorClass(percentile)}`}>
             {getPercentileLevel(percentile)}
+          </div>
+        </div>
+      )}
+
+      {hasRefMax && safeVal > 0 && (
+        <div className="w-full flex justify-between items-center bg-white px-3 py-1 mt-1.5 rounded-xl border border-slate-100 z-10">
+          <div className="text-left">
+            <p className="text-[7px] font-black uppercase text-slate-400 tracking-wider">vs Récord Cat.</p>
+            <p className={`text-[9px] font-black italic ${isEqualToMax ? 'text-amber-600' : (isBetterThanMax ? 'text-purple-600' : 'text-slate-500')}`}>
+              {isEqualToMax ? '0.0%' : `${pctDiffMax > 0 ? '+' : ''}${pctDiffMax.toFixed(1)}%`}
+            </p>
+          </div>
+          <div className={`px-2 py-0.5 rounded-full text-[7px] font-black uppercase border ${
+            isEqualToMax 
+              ? 'text-amber-600 bg-amber-50 border-amber-100 dark:border-amber-200/20' 
+              : (isBetterThanMax 
+                  ? 'text-purple-600 bg-purple-50 border-purple-100 dark:border-purple-200/20' 
+                  : 'text-slate-500 bg-slate-50 border-slate-100')
+          }`}>
+            {isEqualToMax ? 'Récord Cat.' : (isBetterThanMax ? 'Supera Récord' : 'Del Récord')}
+          </div>
+        </div>
+      )}
+
+      {hasPersonalMax && safeVal > 0 && (
+        <div className="w-full flex justify-between items-center bg-white px-3 py-1 mt-1.5 rounded-xl border border-slate-100 z-10">
+          <div className="text-left">
+            <p className="text-[7px] font-black uppercase text-slate-400 tracking-wider">vs Récord Atleta</p>
+            <p className={`text-[9px] font-black italic ${isEqualToPersonal ? 'text-emerald-600 font-bold' : (isBetterThanPersonal ? 'text-purple-600' : 'text-slate-500')}`}>
+              {isEqualToPersonal ? 'Récord Pers.' : `${pctDiffPersonal > 0 ? '+' : ''}${pctDiffPersonal.toFixed(1)}%`}
+            </p>
+          </div>
+          <div className={`px-2 py-0.5 rounded-full text-[7px] font-black uppercase border ${
+            isEqualToPersonal 
+              ? 'text-emerald-600 bg-emerald-50 border-emerald-100 dark:border-emerald-200/20' 
+              : (isBetterThanPersonal 
+                  ? 'text-purple-600 bg-purple-50 border-purple-100 dark:border-purple-200/20' 
+                  : 'text-slate-500 bg-slate-50 border-slate-100')
+          }`}>
+            {isEqualToPersonal ? 'Récord Atleta' : (isBetterThanPersonal ? 'Nuevo Récord' : 'Del Atleta')}
+          </div>
+        </div>
+      )}
+
+      {hasPenultimate && safeVal > 0 && (
+        <div className="w-full flex flex-col gap-1.5 bg-white px-3 py-2 mt-1.5 rounded-xl border border-slate-100 z-10 text-left">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="text-[7px] font-black uppercase text-slate-400 tracking-wider">vs Eval. Previa</p>
+              <p className={`text-[9px] font-black italic ${isPrevEqual ? 'text-slate-500' : (isPrevBetter ? 'text-emerald-600' : 'text-red-500')}`}>
+                {isPrevEqual ? 'Sin cambio' : `${displayPctPrev > 0 ? '+' : ''}${displayPctPrev.toFixed(1)}%`}
+                <span className="text-[7px] text-slate-400 font-normal ml-1 lowercase">
+                  (antes: {penultimateValue.toLocaleString('es-ES', { maximumFractionDigits: 1 })})
+                </span>
+              </p>
+            </div>
+
+            {changeClassification === 'mejora_real' && (
+              <div className="px-2 py-0.5 rounded-full text-[7px] font-black uppercase bg-emerald-100 text-emerald-700 border border-emerald-200" title="Cambio mayor o igual al Cambio Mínimo Detectable (MDC). Indica una mejora real y no ruido de medición.">
+                Mejora Real
+              </div>
+            )}
+            {changeClassification === 'mejora_probable' && (
+              <div className="px-2 py-0.5 rounded-full text-[7px] font-black uppercase bg-teal-50 text-teal-600 border border-teal-100" title="Cambio mayor o igual al Cambio Mínimo Rentable (SWC) pero menor que MDC.">
+                Mejora Prob.
+              </div>
+            )}
+            {changeClassification === 'estable' && (
+              <div className="px-2 py-0.5 rounded-full text-[7px] font-black uppercase bg-slate-50 text-slate-400 border border-slate-100" title="El cambio está dentro del rango trivial de variación (menor al SWC). Es ruido.">
+                Estable / Ruido
+              </div>
+            )}
+            {changeClassification === 'deterioro_probable' && (
+              <div className="px-2 py-0.5 rounded-full text-[7px] font-black uppercase bg-amber-50 text-amber-600 border border-amber-100" title="Disminución de rendimiento mayor al SWC pero menor al MDC.">
+                Baja Prob.
+              </div>
+            )}
+            {changeClassification === 'deterioro_real' && (
+              <div className="px-2 py-0.5 rounded-full text-[7px] font-black uppercase bg-red-100 text-red-700 border border-red-200" title="Disminución de rendimiento mayor o igual al MDC. Indica un deterioro real.">
+                Baja Real
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-between text-[6px] text-slate-400 font-bold uppercase tracking-wider pt-1.5 border-t border-slate-100/50">
+            <span title="Smallest Worthwhile Change (Cambio Mínimo Rentable): 0.2 * SD del grupo">SWC: ±{(swc || 0).toLocaleString('es-ES', { maximumFractionDigits: 2 })} {unit}</span>
+            <span title="Minimal Detectable Change (Cambio Mínimo Detectable): cambio real fuera de error con confianza del 95%">MDC: ±{(mdc || 0).toLocaleString('es-ES', { maximumFractionDigits: 2 })} {unit}</span>
           </div>
         </div>
       )}
@@ -1359,6 +1507,10 @@ const AthleteHuella = ({
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
   const [chatSending, setChatSending] = useState(false);
 
+  const [generalProfileFilter, setGeneralProfileFilter] = useState<string>('all');
+  const [generalProfileSearch, setGeneralProfileSearch] = useState<string>('');
+  const [generalProfileSort, setGeneralProfileSort] = useState<'percentile-desc' | 'percentile-asc' | 'area'>('percentile-desc');
+
   const generateAiSummary = async () => {};
   const handleConsultAssistant = async (customQuery?: string) => {};
 
@@ -1465,17 +1617,10 @@ const AthleteHuella = ({
 
 
 
-  if (!player) return (
-    <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
-      <i className="fa-solid fa-user-magnifying-glass text-4xl text-slate-200 mb-4"></i>
-      <p className="text-slate-400 font-black uppercase text-xs tracking-widest">Selecciona un atleta para visualizar su huella digital</p>
-    </div>
-  );
-
-  const latestImtp = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0];
-  const latestSpeed = [...speed].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-  const latestAntro = getLatestCompositeAntro(processedAntro, player.player_id);
-  const latestVo2 = [...vo2max].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+  const latestImtp = player && imtp && imtp.length > 0 ? [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime())[0] : undefined;
+  const latestSpeed = player && speed && speed.length > 0 ? [...speed].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0] : undefined;
+  const latestAntro = player ? getLatestCompositeAntro(processedAntro, player.player_id) : undefined;
+  const latestVo2 = player && vo2max && vo2max.length > 0 ? [...vo2max].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0] : undefined;
 
   // Personal Best Marks (Max values among player's records)
   const bestImtpFuerzaVal = imtp && imtp.length > 0 
@@ -1721,6 +1866,52 @@ const AthleteHuella = ({
     return undefined;
   };
 
+  const getCohortBest = (data: any[], key: string, lowerIsBetter: boolean = false) => {
+    let targetPlayerIds = activeComparisonPlayerIds;
+    let playerBestValues = targetPlayerIds.map(pId => {
+      const pRows = data.filter(d => d.player_id === pId && d[key] != null && !isNaN(Number(d[key])));
+      if (pRows.length === 0) return null;
+      const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+      if (numericVals.length === 0) return null;
+      return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+    }).filter((v): v is number => v !== null);
+
+    // Fallback if not enough data
+    if (playerBestValues.length <= 1) {
+      const allPlayerIds = allPlayers.map(p => p.player_id);
+      playerBestValues = allPlayerIds.map(pId => {
+        const pRows = data.filter(d => d.player_id === pId && d[key] != null && !isNaN(Number(d[key])));
+        if (pRows.length === 0) return null;
+        const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+        if (numericVals.length === 0) return null;
+        return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+      }).filter((v): v is number => v !== null);
+    }
+
+    if (playerBestValues.length === 0) return 0;
+
+    if (excludeOutliers && playerBestValues.length >= 4) {
+      const sorted = [...playerBestValues].sort((a, b) => a - b);
+      const getQuantile = (q: number) => {
+        const pos = (sorted.length - 1) * q;
+        const base = Math.floor(pos);
+        const rest = pos - base;
+        return sorted[base + 1] !== undefined
+          ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+          : sorted[base];
+      };
+      const q1 = getQuantile(0.25);
+      const q3 = getQuantile(0.75);
+      const iqr = q3 - q1;
+      const low = q1 - 1.5 * iqr;
+      const high = q3 + 1.5 * iqr;
+      playerBestValues = playerBestValues.filter(v => v >= low && v <= high);
+    }
+
+    if (playerBestValues.length === 0) return 0;
+    return lowerIsBetter ? Math.min(...playerBestValues) : Math.max(...playerBestValues);
+  };
+
   const pctImtp = calculatePercentile(bestImtpFuerza, allImtp, 'imtp_fuerza_n');
   const pctImtpRelativo = calculatePercentile(bestImtpRelativo, allImtp, 'imtp_f_relativa_n_kg');
   const pctSpeedTime = calculatePercentile(bestSpeedTime, allSpeed, 'tiempo_total', true);
@@ -1768,6 +1959,54 @@ const AthleteHuella = ({
   const outlierSumPliegues6 = checkOutlier(valSumPliegues6, processedAllAntro, 'sum_pliegues_6_mm', true);
   const outlierIndiceImo = checkOutlier(valIndiceImo, processedAllAntro, 'indice_imo');
 
+  const refMasaMuscularPct = getCohortBest(processedAllAntro, 'masa_muscular_pct');
+  const refMasaMuscularKg = getCohortBest(processedAllAntro, 'masa_muscular_kg');
+  const refMasaAdiposaPct = getCohortBest(processedAllAntro, 'masa_adiposa_pct', true);
+  const refMasaAdiposaKg = getCohortBest(processedAllAntro, 'masa_adiposa_kg', true);
+  const refSumPliegues6 = getCohortBest(processedAllAntro, 'sum_pliegues_6_mm', true);
+  const refIndiceImo = getCohortBest(processedAllAntro, 'indice_imo');
+
+  const bestAntroMasaMuscularPctVal = processedAntro && processedAntro.length > 0
+    ? Math.max(...processedAntro.map(d => Number(d.masa_muscular_pct)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestAntroMasaMuscularPct = bestAntroMasaMuscularPctVal !== -Infinity && bestAntroMasaMuscularPctVal > 0 ? bestAntroMasaMuscularPctVal : 0;
+
+  const bestAntroMasaMuscularKgVal = processedAntro && processedAntro.length > 0
+    ? Math.max(...processedAntro.map(d => Number(d.masa_muscular_kg)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestAntroMasaMuscularKg = bestAntroMasaMuscularKgVal !== -Infinity && bestAntroMasaMuscularKgVal > 0 ? bestAntroMasaMuscularKgVal : 0;
+
+  const bestAntroMasaAdiposaPctVal = processedAntro && processedAntro.length > 0
+    ? Math.min(...processedAntro.map(d => Number(d.masa_adiposa_pct)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestAntroMasaAdiposaPct = bestAntroMasaAdiposaPctVal !== Infinity && bestAntroMasaAdiposaPctVal > 0 ? bestAntroMasaAdiposaPctVal : 0;
+
+  const bestAntroMasaAdiposaKgVal = processedAntro && processedAntro.length > 0
+    ? Math.min(...processedAntro.map(d => Number(d.masa_adiposa_kg)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestAntroMasaAdiposaKg = bestAntroMasaAdiposaKgVal !== Infinity && bestAntroMasaAdiposaKgVal > 0 ? bestAntroMasaAdiposaKgVal : 0;
+
+  const bestAntroSumPliegues6Val = processedAntro && processedAntro.length > 0
+    ? Math.min(...processedAntro.map(d => Number(d.sum_pliegues_6_mm)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestAntroSumPliegues6 = bestAntroSumPliegues6Val !== Infinity && bestAntroSumPliegues6Val > 0 ? bestAntroSumPliegues6Val : 0;
+
+  const bestAntroIndiceImoVal = processedAntro && processedAntro.length > 0
+    ? Math.max(...processedAntro.map(d => Number(d.indice_imo)).filter(v => !isNaN(v) && v > 0))
+    : 0;
+  const bestAntroIndiceImo = bestAntroIndiceImoVal !== -Infinity && bestAntroIndiceImoVal > 0 ? bestAntroIndiceImoVal : 0;
+
+  const calculateCohortSD = (list: any[], key: string): number => {
+    if (!list || list.length === 0) return 0;
+    const values = list
+      .map(d => Number(d[key]))
+      .filter(v => !isNaN(v) && v > 0);
+    if (values.length <= 1) return 0;
+    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (values.length - 1);
+    return Math.sqrt(variance);
+  };
+
   const getGaugeData = (
     metricKey: string,
     dataList: any[],
@@ -1778,24 +2017,44 @@ const AthleteHuella = ({
     fillColor: string,
     fallbackMax: number = 100
   ) => {
-    const values = (dataList || [])
-      .filter(d => Number(d.player_id) === Number(player?.player_id) && d[metricKey] != null && d[metricKey] !== '' && !isNaN(Number(d[metricKey])))
-      .map(d => Number(d[metricKey]));
+    const playerRows = (dataList || [])
+      .filter(d => Number(d.player_id) === Number(player?.player_id) && d[metricKey] != null && d[metricKey] !== '' && !isNaN(Number(d[metricKey])));
+    
+    const sortedPlayerRows = [...playerRows].sort((a, b) => {
+      const dateA = a.fecha_test ? new Date(a.fecha_test).getTime() : (a.fecha ? new Date(a.fecha).getTime() : 0);
+      const dateB = b.fecha_test ? new Date(b.fecha_test).getTime() : (b.fecha ? new Date(b.fecha).getTime() : 0);
+      return dateB - dateA;
+    });
+
+    const latestValue = sortedPlayerRows.length > 0 ? Number(sortedPlayerRows[0][metricKey]) : 0;
+    const penultimateValue = sortedPlayerRows.length >= 2 ? Number(sortedPlayerRows[1][metricKey]) : undefined;
     
     let bestValue = 0;
-    if (values.length > 0) {
-      bestValue = lowerIsBetter ? Math.min(...values) : Math.max(...values);
+    if (playerRows.length > 0) {
+      const numericVals = playerRows.map(d => Number(d[metricKey]));
+      bestValue = lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
     }
     
     const average = getAvg(dataList, metricKey);
     const globalMax = getGlobalMax(dataList, metricKey);
-    const maxValue = Math.max(bestValue, average, globalMax, fallbackMax) * 1.1;
+    const maxValue = Math.max(latestValue, bestValue, average, globalMax, fallbackMax) * 1.1;
     
-    const percentile = calculatePercentile(bestValue, dataList, metricKey, lowerIsBetter);
-    const outlier = checkOutlier(bestValue, dataList, metricKey, lowerIsBetter);
+    const percentile = calculatePercentile(latestValue, dataList, metricKey, lowerIsBetter);
+    const outlier = checkOutlier(latestValue, dataList, metricKey, lowerIsBetter);
+    const cohortBest = getCohortBest(dataList, metricKey, lowerIsBetter);
+
+    const cohortSd = calculateCohortSD(dataList, metricKey);
+    let swc = cohortSd * 0.2;
+    let mdc = cohortSd * 0.88; // standard formula representing 1.96 * sqrt(2) * SEM with ICC assumed around 0.90
+    
+    // Safety fallback for extremely low/zero SD
+    if (cohortSd === 0 && penultimateValue !== undefined && penultimateValue > 0) {
+      swc = penultimateValue * 0.02; // 2% fallback
+      mdc = penultimateValue * 0.05; // 5% fallback
+    }
     
     return {
-      value: bestValue,
+      value: latestValue,
       average,
       maxValue,
       title,
@@ -1804,9 +2063,198 @@ const AthleteHuella = ({
       fillColor,
       lowerIsBetter,
       percentile,
-      outlier: outlier as 'high' | 'low' | undefined
+      outlier: outlier as 'high' | 'low' | undefined,
+      referenceMax: cohortBest,
+      personalMax: bestValue,
+      penultimateValue,
+      swc,
+      mdc
     };
   };
+
+  const evaluatedMetrics = useMemo(() => {
+    if (!player) return [];
+    const list: {
+      title: string;
+      value: number;
+      unit: string;
+      percentile: number;
+      level: 'Elite' | 'Sobresaliente' | 'Promedio' | 'Bajo Promedio' | 'Por Mejorar';
+      area: string;
+    }[] = [];
+
+    const getPercentileLevel = (pct: number) => {
+      if (pct >= 90) return 'Elite';
+      if (pct >= 75) return 'Sobresaliente';
+      if (pct >= 45) return 'Promedio';
+      if (pct >= 20) return 'Bajo Promedio';
+      return 'Por Mejorar';
+    };
+
+    const addStandardMetric = (metricKey: string, dataList: any[], lowerIsBetter: boolean, title: string, unit: string, area: string) => {
+      const playerRows = (dataList || [])
+        .filter(d => Number(d.player_id) === Number(player?.player_id) && d[metricKey] != null && d[metricKey] !== '' && !isNaN(Number(d[metricKey])));
+      
+      if (playerRows.length === 0) return;
+
+      const sortedPlayerRows = [...playerRows].sort((a, b) => {
+        const dateA = a.fecha_test ? new Date(a.fecha_test).getTime() : (a.fecha ? new Date(a.fecha).getTime() : 0);
+        const dateB = b.fecha_test ? new Date(b.fecha_test).getTime() : (b.fecha ? new Date(b.fecha).getTime() : 0);
+        return dateB - dateA;
+      });
+
+      const latestValue = Number(sortedPlayerRows[0][metricKey]);
+      if (latestValue <= 0 || isNaN(latestValue)) return;
+
+      const percentile = calculatePercentile(latestValue, dataList, metricKey, lowerIsBetter);
+      const level = getPercentileLevel(percentile);
+
+      list.push({
+        title,
+        value: latestValue,
+        unit,
+        percentile,
+        level,
+        area
+      });
+    };
+
+    // Fuerza Máxima
+    addStandardMetric('imtp_fuerza_n', allImtp, false, 'IMTP Fuerza Máxima', 'N', 'Fuerza Máxima');
+    addStandardMetric('imtp_f_relativa_n_kg', allImtp, false, 'IMTP F. Relativa', 'N/kg', 'Fuerza Máxima');
+    addStandardMetric('imtp_force_50ms', allImtp, false, 'Fuerza Net a 50ms', 'N', 'Fuerza Máxima');
+    addStandardMetric('imtp_rfd_100ms', allImtp, false, 'RFD a 100ms', 'N/s', 'Fuerza Máxima');
+
+    // Potencia y Saltabilidad
+    addStandardMetric('concentric_peak_force_n', allImtp, false, 'Fuerza Pico Conc.', 'N', 'Potencia y Saltabilidad');
+    addStandardMetric('rsi_modified_m_s', allImtp, false, 'CMJ RSI Modificado', 'm/s', 'Potencia y Saltabilidad');
+    addStandardMetric('jump_height_impmom_cm', allImtp, false, 'Altura Salto (Imp-Mom)', 'cm', 'Potencia y Saltabilidad');
+    addStandardMetric('peak_power_bm_w_kg', allImtp, false, 'Pot. Pico Relativa', 'W/kg', 'Potencia y Saltabilidad');
+    addStandardMetric('peak_power_w', allImtp, false, 'Pot. Pico Absoluta', 'W', 'Potencia y Saltabilidad');
+
+    // Reactividad y Rebote
+    addStandardMetric('rebound_rsi', allCmjRebound, false, 'Rebound RSI', '', 'Reactividad y Rebote');
+    addStandardMetric('rebound_contact_time_ms', allCmjRebound, true, 'Tiempo Contacto', 'ms', 'Reactividad y Rebote');
+    addStandardMetric('rebound_flight_time_ms', allCmjRebound, false, 'Tiempo Vuelo', 'ms', 'Reactividad y Rebote');
+    addStandardMetric('take_off_momentum_kg_m_s', allCmjRebound, false, 'Momentum Despegue', 'kg·m/s', 'Reactividad y Rebote');
+    addStandardMetric('reps', allCmjRebound, false, 'Repeticiones', 'reps', 'Reactividad y Rebote');
+
+    // Sprint y Aceleración
+    addStandardMetric('tiempo_10m', allSpeed, true, 'Tiempo 10m', 's', 'Sprint y Aceleración');
+    addStandardMetric('vel_10m', allSpeed, false, 'Velocidad 10m', 'm/s', 'Sprint y Aceleración');
+    addStandardMetric('tiempo_10_20m', allSpeed, true, 'Tiempo 10-20m', 's', 'Sprint y Aceleración');
+    addStandardMetric('tiempo_20_30m', allSpeed, true, 'Tiempo 20-30m', 's', 'Sprint y Aceleración');
+    addStandardMetric('tiempo_total', allSpeed, true, 'Tiempo Total', 's', 'Sprint y Aceleración');
+
+    // Consumo de Oxígeno
+    addStandardMetric('vo2_max', allVo2, false, 'Consumo de Oxígeno', 'ml/kg/min', 'Consumo de Oxígeno');
+    addStandardMetric('vam', allVo2, false, 'VMA', 'km/h', 'Consumo de Oxígeno');
+    addStandardMetric('fc_max', allVo2, false, 'FC Máxima', 'bpm', 'Consumo de Oxígeno');
+    addStandardMetric('mts', allVo2, false, 'Distancia', 'm', 'Consumo de Oxígeno');
+    addStandardMetric('vt2_fc', allVo2, false, 'VT2 FC', 'bpm', 'Consumo de Oxígeno');
+
+    // Cambio de Dirección
+    addStandardMetric('t_acel_2m', allTest505, true, '505 T. Acel 2m', 's', 'Cambio de Dirección');
+    addStandardMetric('t_desacel_2m', allTest505, true, '505 T. Desacel 2m', 's', 'Cambio de Dirección');
+    addStandardMetric('t_cod_2m', allTest505, true, '505 T. COD 2m', 's', 'Cambio de Dirección');
+    addStandardMetric('t_reacel_1_2m', allTest505, true, '505 T. Reacel 1 2m', 's', 'Cambio de Dirección');
+    addStandardMetric('z_score_acel', allTest505, false, '505 Z-Score Acel', '', 'Cambio de Dirección');
+
+    // Antropometría
+    const addAntroMetric = (val: number, pct: number, title: string, unit: string) => {
+      if (val <= 0 || isNaN(val)) return;
+      list.push({
+        title,
+        value: val,
+        unit,
+        percentile: pct,
+        level: getPercentileLevel(pct),
+        area: 'Antropometría'
+      });
+    };
+
+    addAntroMetric(valMasaMuscularPct, pctMasaMuscularPct, '% Masa Muscular', '%');
+    addAntroMetric(valMasaMuscularKg, pctMasaMuscularKg, 'Kg Masa Muscular', 'kg');
+    addAntroMetric(valMasaAdiposaPct, pctMasaAdiposaPct, '% Masa Grasa', '%');
+    addAntroMetric(valMasaAdiposaKg, pctMasaAdiposaKg, 'Kg Masa Grasa', 'kg');
+    addAntroMetric(valSumPliegues6, pctSumPliegues6, '6 Pliegues', 'mm');
+    addAntroMetric(valIndiceImo, pctIndiceImo, 'Índice IMO', '');
+
+    return list;
+  }, [
+    player,
+    allImtp,
+    allCmjRebound,
+    allSpeed,
+    allVo2,
+    allTest505,
+    valMasaMuscularPct, pctMasaMuscularPct,
+    valMasaMuscularKg, pctMasaMuscularKg,
+    valMasaAdiposaPct, pctMasaAdiposaPct,
+    valMasaAdiposaKg, pctMasaAdiposaKg,
+    valSumPliegues6, pctSumPliegues6,
+    valIndiceImo, pctIndiceImo
+  ]);
+
+  const levelSummary = useMemo(() => {
+    const counts = {
+      Elite: 0,
+      Sobresaliente: 0,
+      Promedio: 0,
+      'Bajo Promedio': 0,
+      'Por Mejorar': 0,
+    };
+    evaluatedMetrics.forEach(m => {
+      if (counts[m.level] !== undefined) {
+        counts[m.level]++;
+      }
+    });
+    return counts;
+  }, [evaluatedMetrics]);
+
+  const processedProfileMetrics = useMemo(() => {
+    let result = [...evaluatedMetrics];
+
+    // Filter by search query
+    if (generalProfileSearch.trim()) {
+      const q = generalProfileSearch.toLowerCase();
+      result = result.filter(m => 
+        m.title.toLowerCase().includes(q) || 
+        m.area.toLowerCase().includes(q)
+      );
+    }
+
+    // Filter by Level
+    if (generalProfileFilter !== 'all') {
+      if (generalProfileFilter === 'top') {
+        result = result.filter(m => m.level === 'Elite' || m.level === 'Sobresaliente');
+      } else if (generalProfileFilter === 'mid') {
+        result = result.filter(m => m.level === 'Promedio');
+      } else if (generalProfileFilter === 'low') {
+        result = result.filter(m => m.level === 'Bajo Promedio' || m.level === 'Por Mejorar');
+      } else {
+        result = result.filter(m => m.level === generalProfileFilter);
+      }
+    }
+
+    // Sort
+    if (generalProfileSort === 'percentile-desc') {
+      result.sort((a, b) => b.percentile - a.percentile);
+    } else if (generalProfileSort === 'percentile-asc') {
+      result.sort((a, b) => a.percentile - b.percentile);
+    } else if (generalProfileSort === 'area') {
+      result.sort((a, b) => a.area.localeCompare(b.area) || b.percentile - a.percentile);
+    }
+
+    return result;
+  }, [evaluatedMetrics, generalProfileSearch, generalProfileFilter, generalProfileSort]);
+
+  if (!player) return (
+    <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
+      <i className="fa-solid fa-user-magnifying-glass text-4xl text-slate-200 mb-4"></i>
+      <p className="text-slate-400 font-black uppercase text-xs tracking-widest">Selecciona un atleta para visualizar su huella digital</p>
+    </div>
+  );
 
   const getTScore = (
     playerValue: number,
@@ -1965,21 +2413,158 @@ const AthleteHuella = ({
           </div>
         </div>
 
-        <div className="bg-emerald-600 rounded-[40px] p-8 text-white shadow-xl shadow-emerald-100 flex flex-col justify-between relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
+        <div className="bg-white rounded-[40px] p-6 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-red-500"></div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60 mb-2">Disponibilidad</p>
-            <h3 className="text-3xl font-black italic uppercase leading-none tracking-tighter">Apto para<br/>Competición</h3>
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Perfil General</p>
+            <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest mt-0.5 mb-3">Distribución de Rendimiento</h4>
           </div>
-          <div className="mt-8">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
-              <span className="text-xs font-black uppercase tracking-widest">Disponible 100%</span>
+          
+          <div className="space-y-1.5 flex-1 flex flex-col justify-between">
+            {/* ELITE */}
+            <div 
+              onClick={() => {
+                setGeneralProfileFilter(generalProfileFilter === 'Elite' ? 'all' : 'Elite');
+                const el = document.getElementById('perfil-multidimensional-card');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                generalProfileFilter === 'Elite' 
+                  ? 'bg-purple-100 border-purple-300 shadow-sm' 
+                  : 'bg-purple-50/40 hover:bg-purple-50/80 border-purple-100/60'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                  <span className="font-black uppercase text-purple-900 tracking-wider">Elite (≥90%)</span>
+                </div>
+                <span className="font-black text-purple-900 italic">{levelSummary.Elite}</span>
+              </div>
+              <div className="w-full bg-purple-100/50 h-1 rounded-full mt-1 overflow-hidden">
+                <div 
+                  className="bg-purple-600 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary.Elite / evaluatedMetrics.length) * 100 : 0}%` }}
+                ></div>
+              </div>
             </div>
-            <div className="h-1 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-white w-full"></div>
+
+            {/* SOBRESALIENTE */}
+            <div 
+              onClick={() => {
+                setGeneralProfileFilter(generalProfileFilter === 'Sobresaliente' ? 'all' : 'Sobresaliente');
+                const el = document.getElementById('perfil-multidimensional-card');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                generalProfileFilter === 'Sobresaliente' 
+                  ? 'bg-emerald-100 border-emerald-300 shadow-sm' 
+                  : 'bg-emerald-50/40 hover:bg-emerald-50/80 border-emerald-100/60'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                  <span className="font-black uppercase text-emerald-900 tracking-wider">Sobresaliente (75-89%)</span>
+                </div>
+                <span className="font-black text-emerald-900 italic">{levelSummary.Sobresaliente}</span>
+              </div>
+              <div className="w-full bg-emerald-100/50 h-1 rounded-full mt-1 overflow-hidden">
+                <div 
+                  className="bg-emerald-600 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary.Sobresaliente / evaluatedMetrics.length) * 100 : 0}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* PROMEDIO */}
+            <div 
+              onClick={() => {
+                setGeneralProfileFilter(generalProfileFilter === 'Promedio' ? 'all' : 'Promedio');
+                const el = document.getElementById('perfil-multidimensional-card');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                generalProfileFilter === 'Promedio' 
+                  ? 'bg-blue-100 border-blue-300 shadow-sm' 
+                  : 'bg-blue-50/40 hover:bg-blue-50/80 border-blue-100/60'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                  <span className="font-black uppercase text-blue-900 tracking-wider">Promedio (45-74%)</span>
+                </div>
+                <span className="font-black text-blue-900 italic">{levelSummary.Promedio}</span>
+              </div>
+              <div className="w-full bg-blue-100/50 h-1 rounded-full mt-1 overflow-hidden">
+                <div 
+                  className="bg-blue-600 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary.Promedio / evaluatedMetrics.length) * 100 : 0}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* BAJO PROMEDIO */}
+            <div 
+              onClick={() => {
+                setGeneralProfileFilter(generalProfileFilter === 'Bajo Promedio' ? 'all' : 'Bajo Promedio');
+                const el = document.getElementById('perfil-multidimensional-card');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                generalProfileFilter === 'Bajo Promedio' 
+                  ? 'bg-orange-100 border-orange-300 shadow-sm' 
+                  : 'bg-orange-50/40 hover:bg-orange-50/80 border-orange-100/60'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-600"></span>
+                  <span className="font-black uppercase text-orange-900 tracking-wider">Bajo Prom. (20-44%)</span>
+                </div>
+                <span className="font-black text-orange-900 italic">{levelSummary['Bajo Promedio']}</span>
+              </div>
+              <div className="w-full bg-orange-100/50 h-1 rounded-full mt-1 overflow-hidden">
+                <div 
+                  className="bg-orange-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary['Bajo Promedio'] / evaluatedMetrics.length) * 100 : 0}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* POR MEJORAR */}
+            <div 
+              onClick={() => {
+                setGeneralProfileFilter(generalProfileFilter === 'Por Mejorar' ? 'all' : 'Por Mejorar');
+                const el = document.getElementById('perfil-multidimensional-card');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                generalProfileFilter === 'Por Mejorar' 
+                  ? 'bg-red-100 border-red-300 shadow-sm' 
+                  : 'bg-red-50/40 hover:bg-red-50/80 border-red-100/60'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                  <span className="font-black uppercase text-red-900 tracking-wider">Por Mejorar (&lt;20%)</span>
+                </div>
+                <span className="font-black text-red-900 italic">{levelSummary['Por Mejorar']}</span>
+              </div>
+              <div className="w-full bg-red-100/50 h-1 rounded-full mt-1 overflow-hidden">
+                <div 
+                  className="bg-red-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary['Por Mejorar'] / evaluatedMetrics.length) * 100 : 0}%` }}
+                ></div>
+              </div>
             </div>
           </div>
+          
+          <p className="text-[7px] text-slate-400 font-bold uppercase tracking-wider mt-2.5 text-center leading-tight">
+            * Haz clic en un rango para filtrar la tabla de abajo.
+          </p>
         </div>
       </div>
 
@@ -2090,6 +2675,30 @@ const AthleteHuella = ({
         </div>
       </div>
 
+      {/* 6. REACTIVIDAD Y REBOTE - CMJ REBOUND */}
+      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
+            <i className="fa-solid fa-arrow-trend-up text-violet-600 text-lg"></i>
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
+              Evaluación de Reactividad y Rebote - CMJ Rebound
+            </h3>
+            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+              Reactividad neuromuscular, tiempos de contacto, vuelo y momentum de despegue
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+          <TachometerGauge {...getGaugeData('rebound_rsi', allCmjRebound, false, 'Rebound RSI', '', 'stroke-violet-600', 'text-violet-600', 3.0)} />
+          <TachometerGauge {...getGaugeData('rebound_contact_time_ms', allCmjRebound, true, 'Tiempo Contacto', 'ms', 'stroke-indigo-600', 'text-indigo-600', 400)} />
+          <TachometerGauge {...getGaugeData('rebound_flight_time_ms', allCmjRebound, false, 'Tiempo Vuelo', 'ms', 'stroke-purple-600', 'text-purple-600', 600)} />
+          <TachometerGauge {...getGaugeData('take_off_momentum_kg_m_s', allCmjRebound, false, 'Momentum Despegue', 'kg·m/s', 'stroke-fuchsia-600', 'text-fuchsia-600', 400)} />
+          <TachometerGauge {...getGaugeData('reps', allCmjRebound, false, 'Repeticiones', 'reps', 'stroke-pink-600', 'text-pink-600', 10)} />
+        </div>
+      </div>
+
       {/* 3. SPRINT Y ACELERACIÓN - VELOCIDAD */}
       <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
         <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
@@ -2162,29 +2771,7 @@ const AthleteHuella = ({
         </div>
       </div>
 
-      {/* 6. REACTIVIDAD Y REBOTE - CMJ REBOUND */}
-      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
-          <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
-            <i className="fa-solid fa-arrow-trend-up text-violet-600 text-lg"></i>
-          </div>
-          <div>
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
-              Evaluación de Reactividad y Rebote - CMJ Rebound
-            </h3>
-            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-              Reactividad neuromuscular, tiempos de contacto, vuelo y momentum de despegue
-            </p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-          <TachometerGauge {...getGaugeData('rebound_rsi', allCmjRebound, false, 'Rebound RSI', '', 'stroke-violet-600', 'text-violet-600', 3.0)} />
-          <TachometerGauge {...getGaugeData('rebound_contact_time_ms', allCmjRebound, true, 'Tiempo Contacto', 'ms', 'stroke-indigo-600', 'text-indigo-600', 400)} />
-          <TachometerGauge {...getGaugeData('rebound_flight_time_ms', allCmjRebound, false, 'Tiempo Vuelo', 'ms', 'stroke-purple-600', 'text-purple-600', 600)} />
-          <TachometerGauge {...getGaugeData('take_off_momentum_kg_m_s', allCmjRebound, false, 'Momentum Despegue', 'kg·m/s', 'stroke-fuchsia-600', 'text-fuchsia-600', 400)} />
-          <TachometerGauge {...getGaugeData('reps', allCmjRebound, false, 'Repeticiones', 'reps', 'stroke-pink-600', 'text-pink-600', 10)} />
-        </div>
-      </div>
+
 
       {/* METRICAS ANTROPOMETRICAS BENTO - FULL WIDTH SINGLE ROW */}
       <div className="w-full mb-8">
@@ -2255,6 +2842,8 @@ const AthleteHuella = ({
                 fillColor="text-emerald-600"
                 percentile={pctMasaMuscularPct}
                 outlier={outlierMasaMuscularPct}
+                referenceMax={refMasaMuscularPct}
+                personalMax={bestAntroMasaMuscularPct}
               />
               <TachometerGauge 
                 value={valMasaMuscularKg} 
@@ -2266,6 +2855,8 @@ const AthleteHuella = ({
                 fillColor="text-teal-600"
                 percentile={pctMasaMuscularKg}
                 outlier={outlierMasaMuscularKg}
+                referenceMax={refMasaMuscularKg}
+                personalMax={bestAntroMasaMuscularKg}
               />
               <TachometerGauge 
                 value={valMasaAdiposaPct} 
@@ -2278,6 +2869,8 @@ const AthleteHuella = ({
                 lowerIsBetter={true}
                 percentile={pctMasaAdiposaPct}
                 outlier={outlierMasaAdiposaPct}
+                referenceMax={refMasaAdiposaPct}
+                personalMax={bestAntroMasaAdiposaPct}
               />
               <TachometerGauge 
                 value={valMasaAdiposaKg} 
@@ -2290,6 +2883,8 @@ const AthleteHuella = ({
                 lowerIsBetter={true}
                 percentile={pctMasaAdiposaKg}
                 outlier={outlierMasaAdiposaKg}
+                referenceMax={refMasaAdiposaKg}
+                personalMax={bestAntroMasaAdiposaKg}
               />
               <TachometerGauge 
                 value={valSumPliegues6} 
@@ -2302,6 +2897,8 @@ const AthleteHuella = ({
                 lowerIsBetter={true}
                 percentile={pctSumPliegues6}
                 outlier={outlierSumPliegues6}
+                referenceMax={refSumPliegues6}
+                personalMax={bestAntroSumPliegues6}
               />
               <TachometerGauge 
                 value={valIndiceImo} 
@@ -2313,6 +2910,8 @@ const AthleteHuella = ({
                 fillColor="text-purple-600"
                 percentile={pctIndiceImo}
                 outlier={outlierIndiceImo}
+                referenceMax={refIndiceImo}
+                personalMax={bestAntroIndiceImo}
               />
             </div>
           </div>
@@ -2386,6 +2985,179 @@ const AthleteHuella = ({
                   );
                 })()}
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* RESUMEN DE PERFIL MULTIDIMENSIONAL Y TABLA GENERAL */}
+      <div id="perfil-multidimensional-card" className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-slate-950 flex items-center justify-center">
+              <i className="fa-solid fa-chart-bar text-white text-lg"></i>
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
+                Perfil General y Evaluación Multidimensional
+              </h3>
+              <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                Consolidado de parámetros evaluados y distribución de rendimiento por rangos de percentil
+              </p>
+            </div>
+          </div>
+          
+          <div className="text-right text-xs text-slate-500 font-bold">
+            Total Parámetros Evaluados: <span className="text-slate-900 font-black text-sm">{evaluatedMetrics.length}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-8">
+          {/* Right Panel: Interactive Metrics Table */}
+          <div className="flex flex-col space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              {/* Search */}
+              <div className="relative flex-1">
+                <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input
+                  type="text"
+                  value={generalProfileSearch}
+                  onChange={(e) => setGeneralProfileSearch(e.target.value)}
+                  placeholder="Buscar parámetro o área..."
+                  className="w-full pl-9 pr-4 py-2 border border-slate-200 focus:border-slate-400 bg-slate-50/50 rounded-2xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none transition-all duration-200"
+                />
+              </div>
+
+              {/* Sort selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Ordenar por:</span>
+                <select
+                  value={generalProfileSort}
+                  onChange={(e: any) => setGeneralProfileSort(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700 font-bold focus:outline-none focus:border-slate-400 transition"
+                >
+                  <option value="percentile-desc">Mayor Percentil</option>
+                  <option value="percentile-asc">Menor Percentil</option>
+                  <option value="area">Por Área Funcional</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Quick Filters */}
+            <div className="flex flex-wrap gap-1.5 pb-1">
+              <button
+                onClick={() => setGeneralProfileFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                  generalProfileFilter === 'all'
+                    ? 'bg-slate-950 border-slate-950 text-white shadow-sm'
+                    : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:border-slate-300'
+                }`}
+              >
+                Todos ({evaluatedMetrics.length})
+              </button>
+              <button
+                onClick={() => setGeneralProfileFilter('top')}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                  generalProfileFilter === 'top'
+                    ? 'bg-purple-950 border-purple-950 text-white shadow-sm'
+                    : 'bg-white border-slate-200 text-purple-700 hover:bg-purple-50 hover:border-purple-300'
+                }`}
+              >
+                Destacados ({levelSummary.Elite + levelSummary.Sobresaliente})
+              </button>
+              <button
+                onClick={() => setGeneralProfileFilter('mid')}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                  generalProfileFilter === 'mid'
+                    ? 'bg-blue-950 border-blue-950 text-white shadow-sm'
+                    : 'bg-white border-slate-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300'
+                }`}
+              >
+                Promedio ({levelSummary.Promedio})
+              </button>
+              <button
+                onClick={() => setGeneralProfileFilter('low')}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                  generalProfileFilter === 'low'
+                    ? 'bg-red-950 border-red-950 text-white shadow-sm'
+                    : 'bg-white border-slate-200 text-red-600 hover:bg-red-50 hover:border-red-300'
+                }`}
+              >
+                Por Mejorar ({levelSummary['Bajo Promedio'] + levelSummary['Por Mejorar']})
+              </button>
+            </div>
+
+            {/* Table Container */}
+            <div className="flex-1 min-h-[300px] max-h-[480px] overflow-y-auto border border-slate-100 rounded-3xl bg-slate-50/30 shadow-inner scrollbar-thin">
+              {processedProfileMetrics.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <i className="fa-solid fa-chart-line text-slate-300 text-3xl mb-3"></i>
+                  <p className="text-xs text-slate-500 font-bold">No se encontraron parámetros evaluados</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Prueba cambiando los filtros o la búsqueda</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {processedProfileMetrics.map((m) => {
+                    let levelBadgeClass = '';
+                    if (m.level === 'Elite') levelBadgeClass = 'bg-purple-50 border-purple-100 text-purple-700';
+                    else if (m.level === 'Sobresaliente') levelBadgeClass = 'bg-emerald-50 border-emerald-100 text-emerald-700';
+                    else if (m.level === 'Promedio') levelBadgeClass = 'bg-blue-50 border-blue-100 text-blue-700';
+                    else if (m.level === 'Bajo Promedio') levelBadgeClass = 'bg-orange-50 border-orange-150 text-orange-700';
+                    else levelBadgeClass = 'bg-red-50 border-red-100 text-red-600';
+
+                    let areaBadgeClass = '';
+                    if (m.area === 'Fuerza Máxima') areaBadgeClass = 'bg-red-50/60 text-red-700 border-red-100/40';
+                    else if (m.area === 'Potencia y Saltabilidad') areaBadgeClass = 'bg-emerald-50/60 text-emerald-700 border-emerald-100/40';
+                    else if (m.area === 'Reactividad y Rebote') areaBadgeClass = 'bg-violet-50/60 text-violet-700 border-violet-100/40';
+                    else if (m.area === 'Sprint y Aceleración') areaBadgeClass = 'bg-pink-50/60 text-pink-700 border-pink-100/40';
+                    else if (m.area === 'Consumo de Oxígeno') areaBadgeClass = 'bg-blue-50/60 text-blue-700 border-blue-100/40';
+                    else if (m.area === 'Cambio de Dirección') areaBadgeClass = 'bg-amber-50/60 text-amber-700 border-amber-100/40';
+                    else areaBadgeClass = 'bg-slate-100/60 text-slate-700 border-slate-200/40';
+
+                    return (
+                      <div key={m.title} className="p-4 bg-white hover:bg-slate-50/50 transition duration-150 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black text-slate-800">{m.title}</span>
+                            <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase border ${areaBadgeClass}`}>
+                              {m.area}
+                            </span>
+                          </div>
+                          
+                          {/* Percentile bar visualizer */}
+                          <div className="flex items-center gap-2 max-w-xs">
+                            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full rounded-full ${
+                                  m.level === 'Elite' ? 'bg-purple-600' :
+                                  m.level === 'Sobresaliente' ? 'bg-emerald-500' :
+                                  m.level === 'Promedio' ? 'bg-blue-500' :
+                                  m.level === 'Bajo Promedio' ? 'bg-orange-500' : 'bg-red-500'
+                                }`}
+                                style={{ width: `${m.percentile}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-[10px] font-black font-mono text-slate-400">P{Math.round(m.percentile)}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 justify-between sm:justify-end">
+                          <div className="text-right">
+                            <span className="text-sm font-black text-slate-900 italic tracking-tight">
+                              {m.value.toLocaleString('es-ES', { maximumFractionDigits: 1 })}
+                            </span>
+                            {m.unit && <span className="text-[9px] font-bold text-slate-400 uppercase ml-1">{m.unit}</span>}
+                          </div>
+
+                          <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase border ${levelBadgeClass} min-w-[100px] text-center`}>
+                            {m.level}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -3812,7 +4584,7 @@ const ORDERED_POSITIONS = [
 ];
 
 const SquadAnalytics = ({ 
-  anios, posiciones, players, gps, speed, imtp, vo2max, antropometria, test505 = [], cmjRebound = [] 
+  anios, posiciones, players, gps, speed, imtp, vo2max, antropometria, test505 = [], cmjRebound = [], selectedPlayerId = null
 }: { 
   anios: number[], 
   posiciones: string[], 
@@ -3823,12 +4595,16 @@ const SquadAnalytics = ({
   vo2max: VO2MaxData[], 
   antropometria: AntropometriaData[],
   test505?: any[],
-  cmjRebound?: CMJReboundData[]
+  cmjRebound?: CMJReboundData[],
+  selectedPlayerId?: number | null
 }) => {
-  const [selectedImtpMetrics, setSelectedImtpMetrics] = useState<string[]>(['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'cmj_rsi_mod', 'fuerza_cmj']);
-  const [selectedSpeedMetrics, setSelectedSpeedMetrics] = useState<string[]>(['tiempo_total', 'vel_10m', 'tiempo_10m', 'tiempo_20_30m']);
-  const [selectedVo2Metrics, setSelectedVo2Metrics] = useState<string[]>(['vo2_max', 'vam', 'fc_max', 'mts']);
-  const [selectedAntroMetrics, setSelectedAntroMetrics] = useState<string[]>(['masa_adiposa_pct', 'masa_muscular_pct', 'sum_pliegues_6_mm', 'masa_corporal_kg']);
+  const [selectedImtpMetrics, setSelectedImtpMetrics] = useState<string[]>(['imtp_fuerza_n', 'imtp_f_relativa_n_kg']);
+  const [selectedCmjMetrics, setSelectedCmjMetrics] = useState<string[]>(['cmj_rsi_mod', 'fuerza_cmj']);
+  const [selectedReboundMetrics, setSelectedReboundMetrics] = useState<string[]>(['rebound_rsi', 'rebound_contact_time_ms']);
+  const [selectedSpeedMetrics, setSelectedSpeedMetrics] = useState<string[]>(['tiempo_total', 'vel_10m']);
+  const [selectedVo2Metrics, setSelectedVo2Metrics] = useState<string[]>(['vo2_max', 'vam']);
+  const [selectedAgilityMetrics, setSelectedAgilityMetrics] = useState<string[]>(['t_cod_2m', 'vel_cod_kmh']);
+  const [selectedAntroMetrics, setSelectedAntroMetrics] = useState<string[]>(['masa_adiposa_pct', 'masa_muscular_pct']);
   const [selectedSquadPosiciones, setSelectedSquadPosiciones] = useState<string[]>([]);
   
   const [summaries, setSummaries] = useState<Record<string, string>>({});
@@ -3864,6 +4640,8 @@ const SquadAnalytics = ({
       case 'speed': sourceData = speed; break;
       case 'vo2max': sourceData = vo2max; break;
       case 'antropometria': sourceData = antropometria; break;
+      case 'test505': sourceData = test505; break;
+      case 'rebound': sourceData = cmjRebound; break;
     }
 
     const playerIds = filteredPlayers.map(p => p.player_id);
@@ -3949,7 +4727,6 @@ const SquadAnalytics = ({
             content={({ active, payload }) => {
               if (active && payload && payload.length) {
                 const d = payload[0].payload;
-                // Si es un punto de outlier, buscamos el objeto de la posición
                 const posData = data.find(p => p.name === d.name) || d;
                 return (
                   <div className="bg-white p-4 rounded-2xl shadow-xl border border-slate-100 text-[10px] font-black uppercase tracking-widest space-y-1">
@@ -4024,31 +4801,316 @@ const SquadAnalytics = ({
     );
   };
 
+  const GaussianBellChart = ({ 
+    metricKey, 
+    table, 
+    color 
+  }: { 
+    metricKey: string; 
+    table: string; 
+    color: string; 
+  }) => {
+    let sourceData: any[] = [];
+    switch (table) {
+      case 'imtp': sourceData = imtp; break;
+      case 'speed': sourceData = speed; break;
+      case 'vo2max': sourceData = vo2max; break;
+      case 'antropometria': sourceData = antropometria; break;
+      case 'test505': sourceData = test505; break;
+      case 'rebound': sourceData = cmjRebound; break;
+    }
 
-  const imtpOptions = METRICS_OPTIONS.filter(m => m.table === 'imtp');
+    const playerIds = filteredPlayers.map(p => p.player_id);
+    const relevantValues = sourceData
+      .filter(d => playerIds.includes(d.player_id))
+      .map(d => Number(d[metricKey]))
+      .filter(v => v != null && !isNaN(v) && v > 0);
+
+    if (relevantValues.length <= 1) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs gap-1.5 p-4 text-center">
+          <i className="fa-solid fa-chart-line text-lg text-slate-300"></i>
+          <span>Sin datos suficientes para calcular la Campana de Gauss</span>
+        </div>
+      );
+    }
+
+    const mean = relevantValues.reduce((sum, val) => sum + val, 0) / relevantValues.length;
+    const variance = relevantValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / (relevantValues.length - 1);
+    const sd = Math.sqrt(variance);
+    const finalSd = sd || (mean * 0.05 || 1);
+    const cv = (finalSd / mean) * 100;
+
+    const numPoints = 80;
+    const startX = mean - 3 * finalSd;
+    const endX = mean + 3 * finalSd;
+    const step = (endX - startX) / (numPoints - 1);
+
+    const chartData = [];
+    for (let i = 0; i < numPoints; i++) {
+      const x = startX + i * step;
+      const exponent = -0.5 * Math.pow((x - mean) / finalSd, 2);
+      const y = (1 / (finalSd * Math.sqrt(2 * Math.PI))) * Math.exp(exponent);
+      
+      chartData.push({
+        x: Number(x.toFixed(2)),
+        y: y,
+      });
+    }
+
+    const positionAverages = ORDERED_POSITIONS.map(pos => {
+      const posPlayerIds = filteredPlayers.filter(p => p.posicion === pos).map(p => p.player_id);
+      const posVals = sourceData
+        .filter(d => posPlayerIds.includes(d.player_id))
+        .map(d => Number(d[metricKey]))
+        .filter(v => v != null && !isNaN(v) && v > 0);
+      const posMean = posVals.length > 0 ? posVals.reduce((sum, v) => sum + v, 0) / posVals.length : 0;
+      return { name: pos, mean: posMean };
+    }).filter(p => p.mean > 0);
+
+    let playerValue: number | undefined = undefined;
+    if (selectedPlayerId) {
+      const playerRows = sourceData
+        .filter(d => d.player_id === selectedPlayerId)
+        .sort((a, b) => new Date(b.fecha || b.fecha_evaluacion || 0).getTime() - new Date(a.fecha || a.fecha_evaluacion || 0).getTime());
+      if (playerRows.length > 0 && playerRows[0][metricKey] != null) {
+        playerValue = Number(playerRows[0][metricKey]);
+      }
+    }
+
+    const selectedPlayer = players.find(p => p.player_id === selectedPlayerId);
+    const gradientId = `gaussGradient-${metricKey}`;
+
+    return (
+      <div className="h-full flex flex-col justify-between">
+        <div className="flex-1 h-44 relative">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 30, right: 15, left: 15, bottom: 5 }}>
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+                  {/* < -3σ (Extremo Izquierdo): 0,1% */}
+                  <stop offset="0%" stopColor={color} stopOpacity={0.03} />
+                  <stop offset="7.14%" stopColor={color} stopOpacity={0.03} />
+                  
+                  {/* -3σ a -2σ (Externo Izquierdo): 2,1% */}
+                  <stop offset="7.14%" stopColor={color} stopOpacity={0.15} />
+                  <stop offset="21.43%" stopColor={color} stopOpacity={0.15} />
+                  
+                  {/* -2σ a -1σ (Medio Izquierdo): 13,6% */}
+                  <stop offset="21.43%" stopColor={color} stopOpacity={0.4} />
+                  <stop offset="35.71%" stopColor={color} stopOpacity={0.4} />
+                  
+                  {/* -1σ a μ (Interno Izquierdo): 34,1% */}
+                  <stop offset="35.71%" stopColor={color} stopOpacity={0.75} />
+                  <stop offset="50%" stopColor={color} stopOpacity={0.75} />
+                  
+                  {/* μ a 1σ (Interno Derecho): 34,1% */}
+                  <stop offset="50%" stopColor={color} stopOpacity={0.75} />
+                  <stop offset="64.29%" stopColor={color} stopOpacity={0.75} />
+                  
+                  {/* 1σ a 2σ (Medio Derecho): 13,6% */}
+                  <stop offset="64.29%" stopColor={color} stopOpacity={0.4} />
+                  <stop offset="78.57%" stopColor={color} stopOpacity={0.4} />
+                  
+                  {/* 2σ a 3σ (Externo Derecho): 2,1% */}
+                  <stop offset="78.57%" stopColor={color} stopOpacity={0.15} />
+                  <stop offset="92.86%" stopColor={color} stopOpacity={0.15} />
+                  
+                  {/* > 3σ (Extremo Derecho): 0,1% */}
+                  <stop offset="92.86%" stopColor={color} stopOpacity={0.03} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0.03} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="x" 
+                type="number" 
+                domain={[startX, endX]} 
+                fontSize={9} 
+                fontWeight={800} 
+                stroke="#94a3b8"
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(v) => v.toLocaleString('es-ES', { maximumFractionDigits: 1 })}
+              />
+              <YAxis hide domain={[0, 'auto']} />
+              <Tooltip 
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const xVal = payload[0].payload.x;
+                    return (
+                      <div className="bg-white p-3 rounded-xl shadow-xl border border-slate-100 text-[9px] font-black uppercase tracking-widest space-y-1">
+                        <p className="text-slate-950 font-bold">Valor: {xVal.toLocaleString('es-ES', { maximumFractionDigits: 2 })}</p>
+                        <p className="text-slate-400">Densidad: {payload[0].value?.toLocaleString('es-ES', { maximumFractionDigits: 5 })}</p>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="y" 
+                stroke={color} 
+                strokeWidth={3} 
+                fill={`url(#${gradientId})`} 
+                isAnimationActive={false}
+              />
+              
+              {/* Líneas de Desviación Estándar (Dashed White) */}
+              <ReferenceLine 
+                x={mean - 3 * finalSd} 
+                stroke="#ffffff" 
+                strokeWidth={1.5} 
+                strokeDasharray="3 3"
+                label={{ value: '-3σ', position: 'top', fill: '#94a3b8', fontSize: 9, fontWeight: 900 }} 
+              />
+              <ReferenceLine 
+                x={mean - 2 * finalSd} 
+                stroke="#ffffff" 
+                strokeWidth={1.5} 
+                strokeDasharray="3 3"
+                label={{ value: '-2σ', position: 'top', fill: '#94a3b8', fontSize: 9, fontWeight: 900 }} 
+              />
+              <ReferenceLine 
+                x={mean - finalSd} 
+                stroke="#ffffff" 
+                strokeWidth={1.5} 
+                strokeDasharray="3 3"
+                label={{ value: '-1σ', position: 'top', fill: '#64748b', fontSize: 9, fontWeight: 900 }} 
+              />
+              <ReferenceLine 
+                x={mean} 
+                stroke="#ffffff" 
+                strokeWidth={2.5} 
+                strokeDasharray="3 3"
+                label={{ value: 'μ', position: 'top', fill: '#334155', fontSize: 11, fontWeight: 900 }} 
+              />
+              <ReferenceLine 
+                x={mean + finalSd} 
+                stroke="#ffffff" 
+                strokeWidth={1.5} 
+                strokeDasharray="3 3"
+                label={{ value: '1σ', position: 'top', fill: '#64748b', fontSize: 9, fontWeight: 900 }} 
+              />
+              <ReferenceLine 
+                x={mean + 2 * finalSd} 
+                stroke="#ffffff" 
+                strokeWidth={1.5} 
+                strokeDasharray="3 3"
+                label={{ value: '2σ', position: 'top', fill: '#94a3b8', fontSize: 9, fontWeight: 900 }} 
+              />
+              <ReferenceLine 
+                x={mean + 3 * finalSd} 
+                stroke="#ffffff" 
+                strokeWidth={1.5} 
+                strokeDasharray="3 3"
+                label={{ value: '3σ', position: 'top', fill: '#94a3b8', fontSize: 9, fontWeight: 900 }} 
+              />
+
+              {/* Etiquetas de Porcentaje por Sector (Transparent anchors) */}
+              <ReferenceLine 
+                x={mean - 3.25 * finalSd} 
+                stroke="none" 
+                label={{ value: '0,1%', position: 'insideBottom', fill: '#64748b', fontSize: 8, fontWeight: 950 }} 
+              />
+              <ReferenceLine 
+                x={mean - 2.5 * finalSd} 
+                stroke="none" 
+                label={{ value: '2,1%', position: 'insideBottom', fill: '#475569', fontSize: 8, fontWeight: 950 }} 
+              />
+              <ReferenceLine 
+                x={mean - 1.5 * finalSd} 
+                stroke="none" 
+                label={{ value: '13,6%', position: 'insideBottom', fill: '#1e293b', fontSize: 8, fontWeight: 950 }} 
+              />
+              <ReferenceLine 
+                x={mean - 0.5 * finalSd} 
+                stroke="none" 
+                label={{ value: '34,1%', position: 'insideBottom', fill: '#ffffff', fontSize: 8, fontWeight: 950 }} 
+              />
+              <ReferenceLine 
+                x={mean + 0.5 * finalSd} 
+                stroke="none" 
+                label={{ value: '34,1%', position: 'insideBottom', fill: '#ffffff', fontSize: 8, fontWeight: 950 }} 
+              />
+              <ReferenceLine 
+                x={mean + 1.5 * finalSd} 
+                stroke="none" 
+                label={{ value: '13,6%', position: 'insideBottom', fill: '#1e293b', fontSize: 8, fontWeight: 950 }} 
+              />
+              <ReferenceLine 
+                x={mean + 2.5 * finalSd} 
+                stroke="none" 
+                label={{ value: '2,1%', position: 'insideBottom', fill: '#475569', fontSize: 8, fontWeight: 950 }} 
+              />
+              <ReferenceLine 
+                x={mean + 3.25 * finalSd} 
+                stroke="none" 
+                label={{ value: '0,1%', position: 'insideBottom', fill: '#64748b', fontSize: 8, fontWeight: 950 }} 
+              />
+              {playerValue !== undefined && !isNaN(playerValue) && playerValue > 0 && (
+                <ReferenceLine 
+                  x={playerValue} 
+                  stroke="#ef4444" 
+                  strokeWidth={2.5}
+                  label={{ 
+                    value: selectedPlayer ? ((selectedPlayer as any).apodo || selectedPlayer.nombre).toUpperCase() : 'ATLETA', 
+                    position: 'insideTop', 
+                    fill: '#b91c1c', 
+                    fontSize: 8, 
+                    fontWeight: 950,
+                  }} 
+                />
+              )}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="grid grid-cols-4 gap-1.5 bg-slate-50 p-2 rounded-2xl border border-slate-100/60 text-center mt-2">
+          <div>
+            <p className="text-[6px] font-black uppercase text-slate-400 tracking-wider">Media</p>
+            <p className="text-[9px] font-black text-slate-700 italic">{mean.toLocaleString('es-ES', { maximumFractionDigits: 1 })}</p>
+          </div>
+          <div>
+            <p className="text-[6px] font-black uppercase text-slate-400 tracking-wider">Desv. Est. (SD)</p>
+            <p className="text-[9px] font-black text-slate-700 italic">±{finalSd.toLocaleString('es-ES', { maximumFractionDigits: 2 })}</p>
+          </div>
+          <div>
+            <p className="text-[6px] font-black uppercase text-slate-400 tracking-wider">CV (Homogen.)</p>
+            <p className={`text-[9px] font-black italic ${cv < 10 ? 'text-emerald-600' : cv < 20 ? 'text-blue-600' : 'text-amber-600'}`}>
+              {cv.toFixed(1)}%
+            </p>
+          </div>
+          <div>
+            <p className="text-[6px] font-black uppercase text-slate-400 tracking-wider">Rango Normal</p>
+            <p className="text-[8px] font-black text-slate-500">
+              {(mean - finalSd).toLocaleString('es-ES', { maximumFractionDigits: 0 })} - {(mean + finalSd).toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+  const imtpOptions = METRICS_OPTIONS.filter(m => m.table === 'imtp' && (m.key.startsWith('imtp_') || m.key === 'peso'));
+  const cmjOptions = METRICS_OPTIONS.filter(m => m.table === 'imtp' && !m.key.startsWith('imtp_') && m.key !== 'peso');
+  const reboundOptions = METRICS_OPTIONS.filter(m => m.table === 'rebound');
   const speedOptions = METRICS_OPTIONS.filter(m => m.table === 'speed');
   const vo2Options = METRICS_OPTIONS.filter(m => m.table === 'vo2max');
+  const agilityOptions = METRICS_OPTIONS.filter(m => m.table === 'test505');
   const antroOptions = METRICS_OPTIONS.filter(m => m.table === 'antropometria');
 
   return (
     <div className="space-y-12">
-      {/* FICHA DE ORIENTACIÓN GRUPAL */}
-      <FichaOrientacionGrupal
-        players={filteredPlayers as any}
-        imtp={imtp}
-        speed={speed}
-        vo2max={vo2max}
-        test505={test505}
-        cmjRebound={cmjRebound}
-      />
-
-      {/* SECCIÓN IMTP BOX PLOTS */}
+      {/* 1. EVALUACIÓN DE FUERZA MÁXIMA - IMTP */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Distribución Fuerza y Potencia por Posición</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Evaluación de Fuerza Máxima - IMTP</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 gap-8">
           {selectedImtpMetrics.map((metricKey, idx) => {
             const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
             return (
@@ -4073,7 +5135,6 @@ const SquadAnalytics = ({
                       const next = [...selectedImtpMetrics];
                       next[idx] = e.target.value;
                       setSelectedImtpMetrics(next);
-                      // Clear summary if metric changes
                       if (summaries[metricKey]) {
                         const newSummaries = { ...summaries };
                         delete newSummaries[metricKey];
@@ -4085,8 +5146,20 @@ const SquadAnalytics = ({
                     {imtpOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
                   </select>
                 </div>
-                <div className="h-64">
-                  <BoxPlotChart data={getBoxPlotData(metricKey, 'imtp')} color="#ef4444" />
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución Normal (Campana de Gauss)</p>
+                    <div className="h-72">
+                      <GaussianBellChart metricKey={metricKey} table="imtp" color="#ef4444" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución por Posición (Gráfico de Caja)</p>
+                    <div className="h-72">
+                      <BoxPlotChart data={getBoxPlotData(metricKey, 'imtp')} color="#ef4444" />
+                    </div>
+                  </div>
                 </div>
 
                 <AnimatePresence>
@@ -4123,13 +5196,197 @@ const SquadAnalytics = ({
         </div>
       </div>
 
-      {/* SECCIÓN SPEED BOX PLOTS */}
+      {/* 2. EVALUACIÓN DE POTENCIA Y SALTABILIDAD - CMJ */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Distribución Velocidad por Posición</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Evaluación de Potencia y Saltabilidad - CMJ</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 gap-8">
+          {selectedCmjMetrics.map((metricKey, idx) => {
+            const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
+            return (
+              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 relative group">
+                <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {label}
+                    </h4>
+                    <button 
+                      onClick={() => handleGenerateSummary(metricKey, 'imtp', label)}
+                      disabled={loadingSummaries[metricKey]}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${loadingSummaries[metricKey] ? 'bg-slate-100 text-slate-400 animate-pulse' : 'bg-pink-50 text-pink-500 hover:bg-pink-500 hover:text-white'}`}
+                      title="Generar resumen con IA"
+                    >
+                      <i className={`fa-solid ${loadingSummaries[metricKey] ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[10px]`}></i>
+                    </button>
+                  </div>
+                  <select 
+                    value={metricKey}
+                    onChange={(e) => {
+                      const next = [...selectedCmjMetrics];
+                      next[idx] = e.target.value;
+                      setSelectedCmjMetrics(next);
+                      if (summaries[metricKey]) {
+                        const newSummaries = { ...summaries };
+                        delete newSummaries[metricKey];
+                        setSummaries(newSummaries);
+                      }
+                    }}
+                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-pink-500 uppercase tracking-widest"
+                  >
+                    {cmjOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                  </select>
+                </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución Normal (Campana de Gauss)</p>
+                    <div className="h-72">
+                      <GaussianBellChart metricKey={metricKey} table="imtp" color="#ec4899" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución por Posición (Gráfico de Caja)</p>
+                    <div className="h-72">
+                      <BoxPlotChart data={getBoxPlotData(metricKey, 'imtp')} color="#ec4899" />
+                    </div>
+                  </div>
+                </div>
+
+                <AnimatePresence>
+                  {summaries[metricKey] && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="mt-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 w-1 h-full bg-pink-500"></div>
+                      <div className="flex items-start gap-3">
+                        <i className="fa-solid fa-robot text-pink-500 mt-1 text-xs"></i>
+                        <p className="text-[11px] font-bold text-slate-600 leading-relaxed italic">
+                          {summaries[metricKey]}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newSummaries = { ...summaries };
+                          delete newSummaries[metricKey];
+                          setSummaries(newSummaries);
+                        }}
+                        className="absolute top-2 right-2 text-slate-300 hover:text-slate-500"
+                      >
+                        <i className="fa-solid fa-xmark text-[10px]"></i>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. EVALUACIÓN DE REACTIVIDAD Y REBOTE - CMJ REBOUND */}
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Evaluación de Reactividad y Rebote - CMJ Rebound</h3>
+          <div className="h-px flex-1 bg-slate-100"></div>
+        </div>
+        <div className="grid grid-cols-1 gap-8">
+          {selectedReboundMetrics.map((metricKey, idx) => {
+            const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
+            return (
+              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 relative group">
+                <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {label}
+                    </h4>
+                    <button 
+                      onClick={() => handleGenerateSummary(metricKey, 'rebound', label)}
+                      disabled={loadingSummaries[metricKey]}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${loadingSummaries[metricKey] ? 'bg-slate-100 text-slate-400 animate-pulse' : 'bg-violet-50 text-violet-500 hover:bg-violet-500 hover:text-white'}`}
+                      title="Generar resumen con IA"
+                    >
+                      <i className={`fa-solid ${loadingSummaries[metricKey] ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[10px]`}></i>
+                    </button>
+                  </div>
+                  <select 
+                    value={metricKey}
+                    onChange={(e) => {
+                      const next = [...selectedReboundMetrics];
+                      next[idx] = e.target.value;
+                      setSelectedReboundMetrics(next);
+                      if (summaries[metricKey]) {
+                        const newSummaries = { ...summaries };
+                        delete newSummaries[metricKey];
+                        setSummaries(newSummaries);
+                      }
+                    }}
+                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-violet-500 uppercase tracking-widest"
+                  >
+                    {reboundOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                  </select>
+                </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución Normal (Campana de Gauss)</p>
+                    <div className="h-72">
+                      <GaussianBellChart metricKey={metricKey} table="rebound" color="#8b5cf6" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución por Posición (Gráfico de Caja)</p>
+                    <div className="h-72">
+                      <BoxPlotChart data={getBoxPlotData(metricKey, 'rebound')} color="#8b5cf6" />
+                    </div>
+                  </div>
+                </div>
+
+                <AnimatePresence>
+                  {summaries[metricKey] && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="mt-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 w-1 h-full bg-violet-500"></div>
+                      <div className="flex items-start gap-3">
+                        <i className="fa-solid fa-robot text-violet-500 mt-1 text-xs"></i>
+                        <p className="text-[11px] font-bold text-slate-600 leading-relaxed italic">
+                          {summaries[metricKey]}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newSummaries = { ...summaries };
+                          delete newSummaries[metricKey];
+                          setSummaries(newSummaries);
+                        }}
+                        className="absolute top-2 right-2 text-slate-300 hover:text-slate-500"
+                      >
+                        <i className="fa-solid fa-xmark text-[10px]"></i>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. EVALUACIÓN DE VELOCIDAD Y SPRINT LINEAL */}
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Evaluación de Velocidad y Sprint Lineal</h3>
+          <div className="h-px flex-1 bg-slate-100"></div>
+        </div>
+        <div className="grid grid-cols-1 gap-8">
           {selectedSpeedMetrics.map((metricKey, idx) => {
             const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
             return (
@@ -4165,8 +5422,20 @@ const SquadAnalytics = ({
                     {speedOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
                   </select>
                 </div>
-                <div className="h-64">
-                  <BoxPlotChart data={getBoxPlotData(metricKey, 'speed')} color="#f59e0b" />
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución Normal (Campana de Gauss)</p>
+                    <div className="h-72">
+                      <GaussianBellChart metricKey={metricKey} table="speed" color="#f59e0b" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución por Posición (Gráfico de Caja)</p>
+                    <div className="h-72">
+                      <BoxPlotChart data={getBoxPlotData(metricKey, 'speed')} color="#f59e0b" />
+                    </div>
+                  </div>
                 </div>
 
                 <AnimatePresence>
@@ -4203,13 +5472,13 @@ const SquadAnalytics = ({
         </div>
       </div>
 
-      {/* SECCIÓN VO2 BOX PLOTS */}
+      {/* 5. EVALUACIÓN AERÓBICA - VO2 MÁX */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Distribución VO2 Max por Posición</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Evaluación Aeróbica - VO2 Máx</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 gap-8">
           {selectedVo2Metrics.map((metricKey, idx) => {
             const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
             return (
@@ -4245,8 +5514,20 @@ const SquadAnalytics = ({
                     {vo2Options.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
                   </select>
                 </div>
-                <div className="h-64">
-                  <BoxPlotChart data={getBoxPlotData(metricKey, 'vo2max')} color="#6366f1" />
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución Normal (Campana de Gauss)</p>
+                    <div className="h-72">
+                      <GaussianBellChart metricKey={metricKey} table="vo2max" color="#6366f1" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución por Posición (Gráfico de Caja)</p>
+                    <div className="h-72">
+                      <BoxPlotChart data={getBoxPlotData(metricKey, 'vo2max')} color="#6366f1" />
+                    </div>
+                  </div>
                 </div>
 
                 <AnimatePresence>
@@ -4283,13 +5564,105 @@ const SquadAnalytics = ({
         </div>
       </div>
 
-      {/* SECCIÓN ANTROPOMETRÍA BOX PLOTS */}
+      {/* 6. EVALUACIÓN DE CAMBIO DE DIRECCIÓN - TEST 505 */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Distribución Antropometría por Posición</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Evaluación de Cambio de Dirección - Test 505</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 gap-8">
+          {selectedAgilityMetrics.map((metricKey, idx) => {
+            const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
+            return (
+              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 relative group">
+                <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {label}
+                    </h4>
+                    <button 
+                      onClick={() => handleGenerateSummary(metricKey, 'test505', label)}
+                      disabled={loadingSummaries[metricKey]}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${loadingSummaries[metricKey] ? 'bg-slate-100 text-slate-400 animate-pulse' : 'bg-cyan-50 text-cyan-500 hover:bg-cyan-500 hover:text-white'}`}
+                      title="Generar resumen con IA"
+                    >
+                      <i className={`fa-solid ${loadingSummaries[metricKey] ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[10px]`}></i>
+                    </button>
+                  </div>
+                  <select 
+                    value={metricKey}
+                    onChange={(e) => {
+                      const next = [...selectedAgilityMetrics];
+                      next[idx] = e.target.value;
+                      setSelectedAgilityMetrics(next);
+                      if (summaries[metricKey]) {
+                        const newSummaries = { ...summaries };
+                        delete newSummaries[metricKey];
+                        setSummaries(newSummaries);
+                      }
+                    }}
+                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-cyan-500 uppercase tracking-widest"
+                  >
+                    {agilityOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                  </select>
+                </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución Normal (Campana de Gauss)</p>
+                    <div className="h-72">
+                      <GaussianBellChart metricKey={metricKey} table="test505" color="#06b6d4" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución por Posición (Gráfico de Caja)</p>
+                    <div className="h-72">
+                      <BoxPlotChart data={getBoxPlotData(metricKey, 'test505')} color="#06b6d4" />
+                    </div>
+                  </div>
+                </div>
+
+                <AnimatePresence>
+                  {summaries[metricKey] && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="mt-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500"></div>
+                      <div className="flex items-start gap-3">
+                        <i className="fa-solid fa-robot text-cyan-500 mt-1 text-xs"></i>
+                        <p className="text-[11px] font-bold text-slate-600 leading-relaxed italic">
+                          {summaries[metricKey]}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newSummaries = { ...summaries };
+                          delete newSummaries[metricKey];
+                          setSummaries(newSummaries);
+                        }}
+                        className="absolute top-2 right-2 text-slate-300 hover:text-slate-500"
+                      >
+                        <i className="fa-solid fa-xmark text-[10px]"></i>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 7. MÉTRICAS ANTROPOMÉTRICAS */}
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Métricas Antropométricas</h3>
+          <div className="h-px flex-1 bg-slate-100"></div>
+        </div>
+        <div className="grid grid-cols-1 gap-8">
           {selectedAntroMetrics.map((metricKey, idx) => {
             const label = METRICS_OPTIONS.find(m => m.key === metricKey)?.label || '';
             return (
@@ -4325,8 +5698,20 @@ const SquadAnalytics = ({
                     {antroOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
                   </select>
                 </div>
-                <div className="h-64">
-                  <BoxPlotChart data={getBoxPlotData(metricKey, 'antropometria')} color="#10b981" />
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución Normal (Campana de Gauss)</p>
+                    <div className="h-72">
+                      <GaussianBellChart metricKey={metricKey} table="antropometria" color="#10b981" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Distribución por Posición (Gráfico de Caja)</p>
+                    <div className="h-72">
+                      <BoxPlotChart data={getBoxPlotData(metricKey, 'antropometria')} color="#10b981" />
+                    </div>
+                  </div>
                 </div>
 
                 <AnimatePresence>
@@ -5182,7 +6567,7 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
                     onChange={(e) => updateAxis(idx, 'x', e.target.value)}
                     className="bg-slate-50 border-none rounded-2xl px-4 py-2.5 text-xs font-black text-slate-600 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest transition-all"
                   >
-                    {METRICS_OPTIONS.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                    {METRICS_OPTIONS.map(opt => <option key={`${opt.table}-${opt.key}`} value={opt.key}>{opt.label}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -5192,7 +6577,7 @@ const Laboratorio = ({ players, imtp, speed, vo2max, antropometria, selectedAnio
                     onChange={(e) => updateAxis(idx, 'y', e.target.value)}
                     className="bg-slate-50 border-none rounded-2xl px-4 py-2.5 text-xs font-black text-slate-600 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest transition-all"
                   >
-                    {METRICS_OPTIONS.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                    {METRICS_OPTIONS.map(opt => <option key={`${opt.table}-${opt.key}`} value={opt.key}>{opt.label}</option>)}
                   </select>
                 </div>
 
@@ -5418,6 +6803,20 @@ const HealthLoad = ({ player, injury, gps }: { player?: PlayerData, injury?: Inj
 const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjRebound = [], players }: { imtp: IMTPData[], speed: SpeedTestData[], vo2max: VO2MaxData[], antropometria: AntropometriaData[], test505?: any[], cmjRebound?: CMJReboundData[], players: PlayerData[] }) => {
   const [tableType, setTableType] = useState<'imtp' | 'rebound' | 'speed' | 'vo2max' | 'antropometria' | 'test505' | 'comparativa'>('imtp');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key) {
+      if (sortConfig.direction === 'asc') {
+        direction = 'desc';
+      } else {
+        setSortConfig(null);
+        return;
+      }
+    }
+    setSortConfig({ key, direction });
+  };
 
   const [comparativeMetrics, setComparativeMetrics] = useState({
     fuerza: 'imtp_fuerza_n',
@@ -5692,6 +7091,53 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
     });
   }, [players, searchTerm]);
 
+  const sortedPlayersList = useMemo(() => {
+    let list = [...filteredPlayersList];
+    if (!sortConfig) return list;
+
+    const { key, direction } = sortConfig;
+    list.sort((a, b) => {
+      let valA: any;
+      let valB: any;
+
+      if (key === 'jugador') {
+        valA = `${a.nombre} ${a.apellido1}`.toLowerCase();
+        valB = `${b.nombre} ${b.apellido1}`.toLowerCase();
+      } else {
+        let metricKey = key;
+        if (key === 'fuerza') metricKey = comparativeMetrics.fuerza;
+        else if (key === 'velocidad') metricKey = comparativeMetrics.velocidad;
+        else if (key === 'resistencia') metricKey = comparativeMetrics.resistencia;
+        else if (key === 'antropometria') metricKey = comparativeMetrics.antropometria;
+        else if (key === 'agilidad') metricKey = comparativeMetrics.agilidad;
+
+        const evalsA = latestEvaluationsMap[a.player_id] || { imtp: null, speed: null, vo2max: null, antropometria: null, test505: null, rebound: null };
+        const evalsB = latestEvaluationsMap[b.player_id] || { imtp: null, speed: null, vo2max: null, antropometria: null, test505: null, rebound: null };
+
+        valA = resolveComparativeValueAndDate(evalsA, metricKey).value;
+        valB = resolveComparativeValueAndDate(evalsB, metricKey).value;
+      }
+
+      if (valA === undefined || valA === null || valA === '') return 1;
+      if (valB === undefined || valB === null || valB === '') return -1;
+
+      const numA = Number(valA);
+      const numB = Number(valB);
+
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return direction === 'asc' ? numA - numB : numB - numA;
+      } else {
+        const strA = String(valA).toLowerCase();
+        const strB = String(valB).toLowerCase();
+        if (strA < strB) return direction === 'asc' ? -1 : 1;
+        if (strA > strB) return direction === 'asc' ? 1 : -1;
+        return 0;
+      }
+    });
+
+    return list;
+  }, [filteredPlayersList, sortConfig, latestEvaluationsMap, comparativeMetrics]);
+
   const filteredData = useMemo(() => {
     let data: any[] = [];
     if (tableType === 'imtp') data = imtp;
@@ -5712,6 +7158,53 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
       return name.includes(searchTerm.toLowerCase());
     });
   }, [tableType, imtp, cmjRebound, speed, vo2max, antropometria, test505, searchTerm, playerMap]);
+
+  const sortedData = useMemo(() => {
+    let data = [...filteredData];
+    if (!sortConfig) return data;
+
+    const { key, direction } = sortConfig;
+    data.sort((a, b) => {
+      let valA: any;
+      let valB: any;
+
+      if (key === 'jugador') {
+        const playerA = playerMap[a.player_id];
+        const playerB = playerMap[b.player_id];
+        valA = playerA ? `${playerA.nombre} ${playerA.apellido1}`.toLowerCase() : '';
+        valB = playerB ? `${playerB.nombre} ${playerB.apellido1}`.toLowerCase() : '';
+      } else {
+        valA = resolveMetricValue(a, key);
+        valB = resolveMetricValue(b, key);
+      }
+
+      if (valA === undefined || valA === null || valA === '') return 1;
+      if (valB === undefined || valB === null || valB === '') return -1;
+
+      if (key.includes('fecha')) {
+        const timeA = new Date(valA).getTime();
+        const timeB = new Date(valB).getTime();
+        if (!isNaN(timeA) && !isNaN(timeB)) {
+          return direction === 'asc' ? timeA - timeB : timeB - timeA;
+        }
+      }
+
+      const numA = Number(valA);
+      const numB = Number(valB);
+
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return direction === 'asc' ? numA - numB : numB - numA;
+      } else {
+        const strA = String(valA).toLowerCase();
+        const strB = String(valB).toLowerCase();
+        if (strA < strB) return direction === 'asc' ? -1 : 1;
+        if (strA > strB) return direction === 'asc' ? 1 : -1;
+        return 0;
+      }
+    });
+
+    return data;
+  }, [filteredData, sortConfig, playerMap]);
 
   const columns = useMemo(() => {
     if (tableType === 'imtp') {
@@ -5970,12 +7463,42 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#0b1220] text-white font-black uppercase text-[10px] tracking-widest">
               <tr>
-                <th className="px-6 py-5 sticky left-0 bg-[#0b1220] z-10">Jugador</th>
+                <th 
+                  onClick={() => requestSort('jugador')}
+                  className="px-6 py-5 sticky left-0 bg-[#0b1220] z-10 cursor-pointer hover:bg-slate-800 transition-colors select-none"
+                >
+                  <div className="flex items-center gap-2">
+                    <span>Jugador</span>
+                    {sortConfig?.key === 'jugador' ? (
+                      sortConfig.direction === 'asc' ? (
+                        <i className="fa-solid fa-sort-up text-red-500"></i>
+                      ) : (
+                        <i className="fa-solid fa-sort-down text-red-500"></i>
+                      )
+                    ) : (
+                      <i className="fa-solid fa-sort text-slate-500 hover:text-white opacity-40 hover:opacity-100 transition-opacity"></i>
+                    )}
+                  </div>
+                </th>
                 {tableType === 'comparativa' ? (
                   <>
                     <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-slate-400 text-[8px] tracking-wider">Fuerza y Potencia</span>
+                        <div 
+                          onClick={() => requestSort('fuerza')}
+                          className="flex items-center justify-between cursor-pointer hover:text-red-500 transition-colors select-none"
+                        >
+                          <span className="text-slate-400 text-[8px] tracking-wider uppercase">Fuerza y Potencia</span>
+                          {sortConfig?.key === 'fuerza' ? (
+                            sortConfig.direction === 'asc' ? (
+                              <i className="fa-solid fa-sort-up text-red-500 text-[10px]"></i>
+                            ) : (
+                              <i className="fa-solid fa-sort-down text-red-500 text-[10px]"></i>
+                            )
+                          ) : (
+                            <i className="fa-solid fa-sort text-slate-500 hover:text-white text-[10px] opacity-40 hover:opacity-100 transition-opacity"></i>
+                          )}
+                        </div>
                         <select
                           value={comparativeMetrics.fuerza}
                           onChange={(e) => setComparativeMetrics(prev => ({ ...prev, fuerza: e.target.value }))}
@@ -5989,7 +7512,21 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
                     </th>
                     <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-slate-400 text-[8px] tracking-wider">Velocidad</span>
+                        <div 
+                          onClick={() => requestSort('velocidad')}
+                          className="flex items-center justify-between cursor-pointer hover:text-red-500 transition-colors select-none"
+                        >
+                          <span className="text-slate-400 text-[8px] tracking-wider uppercase">Velocidad</span>
+                          {sortConfig?.key === 'velocidad' ? (
+                            sortConfig.direction === 'asc' ? (
+                              <i className="fa-solid fa-sort-up text-red-500 text-[10px]"></i>
+                            ) : (
+                              <i className="fa-solid fa-sort-down text-red-500 text-[10px]"></i>
+                            )
+                          ) : (
+                            <i className="fa-solid fa-sort text-slate-500 hover:text-white text-[10px] opacity-40 hover:opacity-100 transition-opacity"></i>
+                          )}
+                        </div>
                         <select
                           value={comparativeMetrics.velocidad}
                           onChange={(e) => setComparativeMetrics(prev => ({ ...prev, velocidad: e.target.value }))}
@@ -6003,7 +7540,21 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
                     </th>
                     <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-slate-400 text-[8px] tracking-wider">Resistencia</span>
+                        <div 
+                          onClick={() => requestSort('resistencia')}
+                          className="flex items-center justify-between cursor-pointer hover:text-red-500 transition-colors select-none"
+                        >
+                          <span className="text-slate-400 text-[8px] tracking-wider uppercase">Resistencia</span>
+                          {sortConfig?.key === 'resistencia' ? (
+                            sortConfig.direction === 'asc' ? (
+                              <i className="fa-solid fa-sort-up text-red-500 text-[10px]"></i>
+                            ) : (
+                              <i className="fa-solid fa-sort-down text-red-500 text-[10px]"></i>
+                            )
+                          ) : (
+                            <i className="fa-solid fa-sort text-slate-500 hover:text-white text-[10px] opacity-40 hover:opacity-100 transition-opacity"></i>
+                          )}
+                        </div>
                         <select
                           value={comparativeMetrics.resistencia}
                           onChange={(e) => setComparativeMetrics(prev => ({ ...prev, resistencia: e.target.value }))}
@@ -6017,7 +7568,21 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
                     </th>
                     <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-slate-400 text-[8px] tracking-wider">Antropometría</span>
+                        <div 
+                          onClick={() => requestSort('antropometria')}
+                          className="flex items-center justify-between cursor-pointer hover:text-red-500 transition-colors select-none"
+                        >
+                          <span className="text-slate-400 text-[8px] tracking-wider uppercase">Antropometría</span>
+                          {sortConfig?.key === 'antropometria' ? (
+                            sortConfig.direction === 'asc' ? (
+                              <i className="fa-solid fa-sort-up text-red-500 text-[10px]"></i>
+                            ) : (
+                              <i className="fa-solid fa-sort-down text-red-500 text-[10px]"></i>
+                            )
+                          ) : (
+                            <i className="fa-solid fa-sort text-slate-500 hover:text-white text-[10px] opacity-40 hover:opacity-100 transition-opacity"></i>
+                          )}
+                        </div>
                         <select
                           value={comparativeMetrics.antropometria}
                           onChange={(e) => setComparativeMetrics(prev => ({ ...prev, antropometria: e.target.value }))}
@@ -6031,7 +7596,21 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
                     </th>
                     <th className="px-4 py-5 whitespace-nowrap min-w-[200px]">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-slate-400 text-[8px] tracking-wider">Agilidad</span>
+                        <div 
+                          onClick={() => requestSort('agilidad')}
+                          className="flex items-center justify-between cursor-pointer hover:text-red-500 transition-colors select-none"
+                        >
+                          <span className="text-slate-400 text-[8px] tracking-wider uppercase">Agilidad</span>
+                          {sortConfig?.key === 'agilidad' ? (
+                            sortConfig.direction === 'asc' ? (
+                              <i className="fa-solid fa-sort-up text-red-500 text-[10px]"></i>
+                            ) : (
+                              <i className="fa-solid fa-sort-down text-red-500 text-[10px]"></i>
+                            )
+                          ) : (
+                            <i className="fa-solid fa-sort text-slate-500 hover:text-white text-[10px] opacity-40 hover:opacity-100 transition-opacity"></i>
+                          )}
+                        </div>
                         <select
                           value={comparativeMetrics.agilidad}
                           onChange={(e) => setComparativeMetrics(prev => ({ ...prev, agilidad: e.target.value }))}
@@ -6045,15 +7624,35 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
                     </th>
                   </>
                 ) : (
-                  columns.map(col => (
-                    <th key={col.key} className="px-4 py-5 whitespace-nowrap">{col.label}</th>
-                  ))
+                  columns.map(col => {
+                    const isSorted = sortConfig?.key === col.key;
+                    return (
+                      <th 
+                        key={col.key} 
+                        onClick={() => requestSort(col.key)}
+                        className="px-4 py-5 whitespace-nowrap cursor-pointer hover:bg-slate-800 transition-colors select-none"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{col.label}</span>
+                          {isSorted ? (
+                            sortConfig!.direction === 'asc' ? (
+                              <i className="fa-solid fa-sort-up text-red-500"></i>
+                            ) : (
+                              <i className="fa-solid fa-sort-down text-red-500"></i>
+                            )
+                          ) : (
+                            <i className="fa-solid fa-sort text-slate-500 hover:text-white opacity-40 hover:opacity-100 transition-opacity"></i>
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })
                 )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {tableType === 'comparativa' ? (
-                filteredPlayersList.map((player, idx) => {
+                sortedPlayersList.map((player, idx) => {
                   const evals = latestEvaluationsMap[player.player_id] || { imtp: null, speed: null, vo2max: null, antropometria: null, test505: null, rebound: null };
                   
                   const fData = resolveComparativeValueAndDate(evals, comparativeMetrics.fuerza);
@@ -6178,7 +7777,7 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
                   );
                 })
               ) : (
-                filteredData.map((row, idx) => {
+                sortedData.map((row, idx) => {
                   const player = playerMap[row.player_id];
                   return (
                     <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
@@ -6226,7 +7825,7 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
             </tbody>
           </table>
         </div>
-        {((tableType === 'comparativa' && filteredPlayersList.length === 0) || (tableType !== 'comparativa' && filteredData.length === 0)) && (
+        {((tableType === 'comparativa' && sortedPlayersList.length === 0) || (tableType !== 'comparativa' && sortedData.length === 0)) && (
           <div className="p-20 text-center">
             <i className="fa-solid fa-folder-open text-4xl text-slate-100 mb-4"></i>
             <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">No se encontraron registros</p>

@@ -4,7 +4,7 @@ import { AthletePerformanceRecord, Category, User, MicrocicloDB, CATEGORY_ID_MAP
 import { supabase } from '../lib/supabase';
 import { triggerPushNotification } from '../lib/notifications';
 import { logActivity } from '../lib/activityLogger';
-import { normalizeClub } from '../lib/utils';
+import { normalizeClub, sortClubsByChileFirst } from '../lib/utils';
 import ClubBadge from './ClubBadge';
 
 interface MedicaAreaProps {
@@ -238,7 +238,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
         clubsMap.set(name, name);
       }
     });
-    return Array.from(clubsMap.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    const mapped = Array.from(clubsMap.entries()).map(([id, name]) => ({ id, name }));
+    return sortClubsByChileFirst(mapped, clubs);
   }, [dailyReports, clubs]);
 
   const filteredDatesBySearch = useMemo(() => {

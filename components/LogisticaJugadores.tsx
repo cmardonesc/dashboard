@@ -5,6 +5,7 @@ import { User, UserRole } from '../types';
 import { useClubs } from '../lib/useClubs';
 import { FALLBACK_CLUB_NAMES } from '../constants';
 import ClubBadge from './ClubBadge';
+import { sortClubsByChileFirst } from '../lib/utils';
 
 interface LogisticaJugadoresProps {
   onRefresh?: () => void;
@@ -121,7 +122,8 @@ const LogisticaJugadores: React.FC<LogisticaJugadoresProps> = ({ onRefresh }) =>
 
   const groupedClubs = useMemo(() => {
     const groups: Record<string, typeof dbClubs> = {};
-    dbClubs.forEach(c => {
+    const sortedClubs = sortClubsByChileFirst(dbClubs);
+    sortedClubs.forEach(c => {
       const country = (c.pais || 'OTROS').toUpperCase().trim();
       if (!groups[country]) {
         groups[country] = [];
@@ -138,7 +140,7 @@ const LogisticaJugadores: React.FC<LogisticaJugadoresProps> = ({ onRefresh }) =>
     // Asegurar que 'Extranjero' y 'S/C' estén si no vienen de la DB
     if (!names.includes('Extranjero')) names.push('Extranjero');
     if (!names.includes('S/C')) names.push('S/C');
-    return names; // Maintain country-first order from dbClubs
+    return sortClubsByChileFirst(names, dbClubs);
   }, [dbClubs, loadingClubs]);
 
   const POSITIONS = [

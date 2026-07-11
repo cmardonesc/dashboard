@@ -690,6 +690,45 @@ Proporciona un diagnóstico del estado de potencia, fuerza-velocidad y capacidad
       return res.status(500).json({ error: error.message });
     }
   });
+
+  // SUPABASE CLIENT PROXY
+  app.all("/api/supabase-proxy", async (req, res) => {
+    const targetUrl = req.headers['x-target-url'] as string;
+    if (!targetUrl) {
+      return res.status(400).json({ error: "Missing x-target-url header" });
+    }
+
+    try {
+      const headers: Record<string, string> = {};
+      Object.entries(req.headers).forEach(([key, val]) => {
+        const keyLower = key.toLowerCase();
+        if (!['host', 'connection', 'content-length', 'x-target-url', 'accept-encoding'].includes(keyLower) && typeof val === 'string') {
+          headers[key] = val;
+        }
+      });
+
+      const response = await axios({
+        method: req.method as any,
+        url: targetUrl,
+        headers,
+        data: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
+        responseType: 'arraybuffer',
+        validateStatus: () => true
+      });
+
+      Object.entries(response.headers).forEach(([key, val]) => {
+        const keyLower = key.toLowerCase();
+        if (!['transfer-encoding', 'content-encoding', 'connection', 'content-length'].includes(keyLower)) {
+          res.setHeader(key, val as any);
+        }
+      });
+
+      res.status(response.status).send(response.data);
+    } catch (err: any) {
+      console.error("Supabase proxy error:", err.message);
+      res.status(500).json({ error: "Supabase proxy failed", details: err.message });
+    }
+  });
  
   // VITE MIDDLEWARE
   if (process.env.NODE_ENV !== "production") {

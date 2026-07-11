@@ -308,7 +308,28 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           setCitedPlayerIds(Array.from(allCitedIds));
           setSelectedPlayersReport(allCitedIds);
         } else {
-          setSelectedPlayersReport(new Set());
+          // Si no hay microciclo activo, seleccionamos por defecto todos los jugadores
+          // que pertenecen a las categorías seleccionadas para el reporte
+          const fallbackIds = new Set<number>();
+          performanceRecords.forEach(r => {
+            if (r.player.player_id) {
+              const playerCat = r.player.category;
+              const playerAnio = r.player.anio;
+              const currentYear = new Date().getFullYear();
+              const age = playerAnio ? (currentYear - playerAnio) : null;
+              const playerCatFromAnio = age ? `sub_${age}` : null;
+              
+              const matchesCategory = selectedCategories.some(cat => 
+                cat === playerCatFromAnio || 
+                cat === playerAnio?.toString() || 
+                cat === playerCat
+              );
+              if (matchesCategory) {
+                fallbackIds.add(r.player.player_id);
+              }
+            }
+          });
+          setSelectedPlayersReport(fallbackIds);
         }
       } catch (err) {
         console.error("Error context sync:", err);
@@ -317,7 +338,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       }
     };
     fetchContext();
-  }, [selectedDate, selectedCategories]);
+  }, [selectedDate, selectedCategories, performanceRecords]);
 
   // Efecto: Cargar Tareas GPS para Reporte
   useEffect(() => {
@@ -657,7 +678,42 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // DERIVED DATA
   const rawCitadosPlayers = useMemo(() => {
     // 1. Jugadores citados (siempre visibles, para club de forma anonimizada)
-    const cited = performanceRecords.filter(r => r.player.player_id && citedPlayerIds.includes(r.player.player_id));
+    let cited = performanceRecords.filter(r => r.player.player_id && citedPlayerIds.includes(r.player.player_id));
+    
+    // Filtrar citados por las categorías seleccionadas si hay filtro activo
+    if (selectedCategories.length > 0) {
+      cited = cited.filter(r => {
+        const playerCat = r.player.category;
+        const playerAnio = r.player.anio;
+        const currentYear = new Date().getFullYear();
+        const age = playerAnio ? (currentYear - playerAnio) : null;
+        const playerCatFromAnio = age ? `sub_${age}` : null;
+        
+        return selectedCategories.some(cat => 
+          cat === playerCatFromAnio || 
+          cat === playerAnio?.toString() || 
+          cat === playerCat
+        );
+      });
+    }
+
+    // Fallback: si no hay jugadores citados (porque no hay microciclo activo),
+    // mostramos todos los jugadores de performanceRecords que pertenecen a las categorías seleccionadas
+    if (cited.length === 0 && selectedCategories.length > 0) {
+      cited = performanceRecords.filter(r => {
+        const playerCat = r.player.category;
+        const playerAnio = r.player.anio;
+        const currentYear = new Date().getFullYear();
+        const age = playerAnio ? (currentYear - playerAnio) : null;
+        const playerCatFromAnio = age ? `sub_${age}` : null;
+        
+        return selectedCategories.some(cat => 
+          cat === playerCatFromAnio || 
+          cat === playerAnio?.toString() || 
+          cat === playerCat
+        );
+      });
+    }
     
     // 2. Si es CLUB, asegurar que sus propios jugadores estén incluidos, incluso si no hay microciclo
     if (userRole === 'club') {
@@ -3357,6 +3413,123 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 { name: 'Acc/Decc AI Promedio', value: reportData.gpsAvg?.acc ? `${reportData.gpsAvg.acc.toFixed(1)}` : '—' },
               ];
 
+              const gpsList = reportData.gpsImportReport || [];
+              const needsGpsSplit = gpsList.length > 17;
+
+              let gpsPage1 = gpsList;
+              let gpsPage2: any[] = [];
+
+              if (needsGpsSplit) {
+                const half = Math.ceil(gpsList.length / 2);
+                gpsPage1 = gpsList.slice(0, half);
+                gpsPage2 = gpsList.slice(half);
+              }
+
+              const totalPages = needsGpsSplit ? 6 : 5;
+
+              const renderGpsPage = (pageNo: number, list: any[], isLast: boolean) => {
+                return (
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      <PrintHeader 
+                        selectedDate={selectedDate} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={pageNo} 
+                        total={totalPages} 
+                      />
+                      
+                      <section className="mt-4">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-[#02428c] pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
+                          <span>{pageNo}._ DESEMPEÑO GPS COMPLETO DE LA JORNADA {needsGpsSplit ? `(PARTE ${pageNo === 4 ? 'I' : 'II'})` : '(TOTAL DE CARGA EXTERNA)'}</span>
+                          {isLast && reportData.gpsAvg && (
+                            <span className="bg-[#02428c] text-white text-[10px] font-black tracking-widest px-3 py-1 rounded-full font-mono">
+                              DIST. PROMEDIO: {reportData.gpsAvg.dist.toFixed(0)} M | M/MIN HISTÓRICO: {reportData.gpsAvg.mpm.toFixed(1)}
+                            </span>
+                          )}
+                        </h3>
+
+                        <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
+                          <table className="w-full text-center border-separate border-spacing-0 bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
+                              <tr>
+                                <th className="px-4 py-2 text-left bg-[#0b1220] min-w-[140px]">ATLETA</th>
+                                <th className="px-1 py-2">CATEGORÍA</th>
+                                <th className="px-1 py-2">DURACIÓN (MIN)</th>
+                                <th className="px-1 py-2">DIST. TOTAL (M)</th>
+                                <th className="px-1 py-2">M/MIN</th>
+                                <th className="px-1 py-2">DIST. HSR (&gt;20)</th>
+                                <th className="px-1 py-2">DIST. AI (&gt;15)</th>
+                                <th className="px-1 py-2">DIST. SPRINT (&gt;25)</th>
+                                <th className="px-1 py-2">VEL. MÁX (KM/H)</th>
+                                <th className="px-1 py-2">ACC/DECC AI</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[7.5px] font-sans font-bold text-slate-900">
+                              {list.map((row: any, idx: number) => {
+                                const player = row.players;
+                                const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim() : `ID: ${row.player_id}`;
+
+                                const playerRef = obtenerReferenciaJugador(player);
+                                const refDistTotal = playerRef ? Number(playerRef['Total Distance (m)'] || playerRef.distancia_total || playerRef.dist_total_m) || null : null;
+                                const refMetrosMin = playerRef ? Number(playerRef['Metros/min'] || playerRef.metros_minuto || playerRef.m_por_min) || null : null;
+                                const refDistAI = playerRef ? Number(playerRef['AInt >15 km/h'] || playerRef.distancia_ai || playerRef.dist_ai_m_15_kmh) || null : null;
+                                const refDistMAI = playerRef ? Number(playerRef['MAInt >20km/h'] || playerRef.distancia_mai || playerRef.dist_mai_m_20_kmh) || null : null;
+                                const refDistSprint = playerRef ? Number(playerRef['Sprint >25 km/h'] || playerRef.distancia_sprint || playerRef.dist_sprint_m_25_kmh) || null : null;
+                                const refAccDecc = playerRef ? Number(playerRef['#Acc+Decc AI'] || playerRef.acc_decc_ai || playerRef.acc_decc_ai_n) || null : null;
+
+                                const styleDistTotal = getParamCellProps(row.dist_total_m, refDistTotal);
+                                const styleMetrosMin = getParamCellProps(row.m_por_min, refMetrosMin);
+                                const styleDistAI = getParamCellProps(row.dist_ai_m_15_kmh, refDistAI);
+                                const styleDistMAI = getParamCellProps(row.dist_mai_m_20_kmh, refDistMAI);
+                                const styleDistSprint = getParamCellProps(row.dist_sprint_m_25_kmh, refDistSprint);
+                                const styleAccDecc = getParamCellProps(row.acc_decc_ai_n, refAccDecc);
+
+                                return (
+                                  <tr key={`gps-rep-${pageNo}-${idx}`} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                    <td className="px-4 py-1 text-left font-sans font-black text-[#0b1220] truncate max-w-[140px] uppercase">{playerName}</td>
+                                    <td className="px-1 py-1 text-slate-500 font-sans font-bold text-center">
+                                      {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
+                                    </td>
+                                    <td className="px-1 py-1 text-slate-400 font-bold font-mono">{row.minutos?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 font-mono ${styleDistTotal.className}`} style={styleDistTotal.style}>{row.dist_total_m?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 font-mono ${styleMetrosMin.className}`} style={styleMetrosMin.style}>
+                                      {row.m_por_min?.toFixed(1) || '0.0'}
+                                    </td>
+                                    <td className={`px-1 py-1 font-mono ${styleDistMAI.className}`} style={styleDistMAI.style}>{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 font-mono ${styleDistAI.className}`} style={styleDistAI.style}>{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 font-mono ${styleDistSprint.className}`} style={styleDistSprint.style}>{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
+                                    <td className="px-1 py-1 text-red-655 font-extrabold font-mono">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
+                                    <td className={`px-1 py-1 font-mono ${styleAccDecc.className}`} style={styleAccDecc.style}>{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
+                                  </tr>
+                                );
+                              })}
+                              
+                              {/* FILA DE PROMEDIOS GRUPALES */}
+                              {isLast && reportData.gpsAvg && (
+                                <tr className="bg-[#0b1220] text-emerald-400 font-black italic">
+                                  <td className="px-4 py-1 text-left font-sans uppercase tracking-[0.1em] text-[8px] text-white">PROMEDIO GRUPAL</td>
+                                  <td className="px-1 py-1 text-[8px] font-sans text-slate-500">-</td>
+                                  <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.minutos.toFixed(0)}'</td>
+                                  <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.dist.toFixed(0)}M</td>
+                                  <td className="px-1 py-1 text-sm text-red-500 bg-[#0c1930] font-mono">{reportData.gpsAvg.mpm.toFixed(1)}</td>
+                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.hsr.toFixed(0)}M</td>
+                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.ai.toFixed(0)}M</td>
+                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.sprint.toFixed(0)}M</td>
+                                  <td className="px-1 py-1 text-sm text-red-500 font-mono">{reportData.gpsAvg.vmax.toFixed(1)}</td>
+                                  <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.acc.toFixed(1)}</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+                    <PrintFooter page={pageNo} />
+                  </div>
+                );
+              };
+
               return (
                 <>
                   {/* HOJA 1: PORTADA */}
@@ -3409,7 +3582,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
                     <div className="w-full flex justify-between items-center text-[8px] font-black tracking-widest text-slate-600 uppercase border-t border-slate-850 pt-4">
                       <span>ELITE FOOTBALL PERFORMANCE PRO • AMB</span>
-                      <span>HOJA 1 / 5</span>
+                      <span>HOJA 1 / {totalPages}</span>
                     </div>
                   </div>
 
@@ -3421,7 +3594,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                         activeMicrocycle={activeMicrocycle} 
                         page={2} 
-                        total={5} 
+                        total={totalPages} 
                       />
 
                       <section className="mt-2">
@@ -3434,7 +3607,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           {/* KPI 1: Check-ins */}
                           <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
                             <div className="flex justify-between items-center mb-1">
-                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-tight">CHECK-IN COMPLETADOS</span>
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-normal">CHECK-IN COMPLETADOS</span>
                               <span className="text-[9px] font-black text-[#02428c] leading-tight">
                                 {stats.checkInDone} <span className="text-[7px] font-bold text-slate-400">/ {currentCitadosPlayers.length}</span>
                               </span>
@@ -3450,39 +3623,39 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           {/* KPI 2: Alertas Dolor */}
                           <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
                             <div className="flex justify-between items-center mb-0.5">
-                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-tight">ALERTAS DOLOR MUSCULAR</span>
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-normal">ALERTAS DOLOR MUSCULAR</span>
                               <span className={`text-[10px] font-black leading-tight ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-800'}`}>
-                                {stats.sorenessAlerts} <span className="text-[7px] font-bold text-slate-400">alertas</span>
+                                {stats.sorenessAlerts} <span className="text-[7px] font-bold text-slate-400">ALERTAS</span>
                               </span>
                             </div>
                             <span className={`text-[5.5px] font-black uppercase ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-400'} leading-tight truncate`}>
-                              {stats.sorenessAlerts > 0 ? 'Requieren fisioterapia' : 'Sin sobrecargas clínicas'}
+                              {stats.sorenessAlerts > 0 ? 'REQUIEREN FISIOTERAPIA' : 'SIN SOBRECARGAS CLÍNICAS'}
                             </span>
                           </div>
 
                           {/* KPI 3: Alertas Salud */}
                           <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
                             <div className="flex justify-between items-center mb-0.5">
-                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-tight">ALERTAS ESTADO SALUD</span>
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-normal">ALERTAS ESTADO SALUD</span>
                               <span className={`text-[10px] font-black leading-tight ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-800'}`}>
-                                {stats.healthAlerts} <span className="text-[7px] font-bold text-slate-400">alertas</span>
+                                {stats.healthAlerts} <span className="text-[7px] font-bold text-slate-400">ALERTAS</span>
                               </span>
                             </div>
                             <span className={`text-[5.5px] font-black uppercase ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-400'} leading-tight truncate`}>
-                              {stats.healthAlerts > 0 ? 'Evaluación médica' : 'Plantel en óptimo estado'}
+                              {stats.healthAlerts > 0 ? 'EVALUACIÓN MÉDICA' : 'PLANTEL EN ÓPTIMO ESTADO'}
                             </span>
                           </div>
 
                           {/* KPI 4: Promedio Bienestar */}
                           <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
                             <div className="flex justify-between items-center mb-0.5">
-                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-tight">PROMEDIO BIENESTAR JORNADA</span>
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-normal">PROMEDIO BIENESTAR JORNADA</span>
                               <span className="text-[10px] font-black text-emerald-600 leading-tight">
                                 {wellnessDayAvg} <span className="text-[7px] font-bold text-slate-400">/ 5.0</span>
                               </span>
                             </div>
                             <span className="text-[5.5px] text-slate-400 font-bold uppercase tracking-wider leading-tight truncate">
-                              Puntuación general del día
+                              PUNTUACIÓN GENERAL DEL DÍA
                             </span>
                           </div>
                         </div>
@@ -3562,33 +3735,33 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 const isPending = !data;
 
                                 return (
-                                  <tr key={`lwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 h-[26px] hover:bg-slate-50/50">
-                                    <td className="px-2 py-1 text-left">
-                                      <span className="block font-black text-[#0b1220] text-[7px] uppercase truncate max-w-[85px] leading-tight">{player.name}</span>
-                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-wider truncate max-w-[85px] leading-none mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                  <tr key={`lwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 hover:bg-slate-50/50">
+                                    <td className="px-2 py-0.5 text-left">
+                                      <span className="block font-black text-[#0b1220] text-[7.4px] uppercase truncate max-w-[115px] leading-normal tracking-tighter">{player.name}</span>
+                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-tighter truncate max-w-[115px] leading-normal mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
                                     </td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.fatigue) : "text-slate-300"}`}>{data ? data.fatigue : "-"}</td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.sleep) : "text-slate-300"}`}>{data ? data.sleep : "-"}</td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.soreness) : "text-slate-300"}`}>{data ? data.soreness : "-"}</td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.stress || data.stres || 0) : "text-slate-300"}`}>{data ? (data.stress || data.stres || 0) : "-"}</td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.mood || data.ani || 0) : "text-slate-300"}`}>{data ? (data.mood || data.ani || 0) : "-"}</td>
-                                    <td className="px-0.5 py-1 text-center text-[7.5px] font-black text-[#0b1220] font-mono">
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.fatigue) : "text-slate-300"}`}>{data ? data.fatigue : "-"}</td>
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.sleep) : "text-slate-300"}`}>{data ? data.sleep : "-"}</td>
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.soreness) : "text-slate-300"}`}>{data ? data.soreness : "-"}</td>
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.stress || data.stres || 0) : "text-slate-300"}`}>{data ? (data.stress || data.stres || 0) : "-"}</td>
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.mood || data.ani || 0) : "text-slate-300"}`}>{data ? (data.mood || data.ani || 0) : "-"}</td>
+                                    <td className="px-0.25 py-0.5 text-center text-[7px] font-black text-[#0b1220] font-mono tracking-tighter">
                                       {avg ? avg.toFixed(1) : '-'}
                                     </td>
-                                    <td className={`px-2 py-1 text-left truncate max-w-[120px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
+                                    <td className={`px-1.5 py-0.5 text-left truncate max-w-[140px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
                                       {isPending ? (
                                         <span className="text-slate-300 font-bold">—</span>
                                       ) : hasAlert ? (
-                                        <span className="text-black font-extrabold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                        <span className="text-black font-extrabold text-[6.5px] uppercase tracking-tighter">{detailText}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                        <span className="text-slate-400 font-bold text-[6.5px] uppercase tracking-tighter">{detailText}</span>
                                       )}
                                     </td>
-                                    <td className="px-0.5 py-1 text-center">
+                                    <td className="px-0.25 py-0.5 text-center">
                                       {isPending ? (
-                                        <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5.5px] font-black border border-amber-100 uppercase">PEND</span>
+                                        <span className="px-1 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5px] font-black border border-amber-100 uppercase tracking-tighter">PEND</span>
                                       ) : (
-                                        <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-sm text-[5.5px] font-black border border-emerald-100 uppercase">OK</span>
+                                        <span className="px-1 py-0.5 bg-emerald-50 text-emerald-600 rounded-sm text-[5px] font-black border border-emerald-100 uppercase tracking-tighter">OK</span>
                                       )}
                                     </td>
                                   </tr>
@@ -3671,33 +3844,33 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 const isPending = !data;
 
                                 return (
-                                  <tr key={`rwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 h-[26px] hover:bg-slate-50/50">
-                                    <td className="px-2 py-1 text-left">
-                                      <span className="block font-black text-[#0b1220] text-[7px] uppercase truncate max-w-[85px] leading-tight">{player.name}</span>
-                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-wider truncate max-w-[85px] leading-none mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                  <tr key={`rwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 hover:bg-slate-50/50">
+                                    <td className="px-2 py-0.5 text-left">
+                                      <span className="block font-black text-[#0b1220] text-[7.4px] uppercase truncate max-w-[115px] leading-normal tracking-tighter">{player.name}</span>
+                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-tighter truncate max-w-[115px] leading-normal mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
                                     </td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.fatigue) : "text-slate-300"}`}>{data ? data.fatigue : "-"}</td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.sleep) : "text-slate-300"}`}>{data ? data.sleep : "-"}</td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.soreness) : "text-slate-300"}`}>{data ? data.soreness : "-"}</td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.stress || data.stres || 0) : "text-slate-300"}`}>{data ? (data.stress || data.stres || 0) : "-"}</td>
-                                    <td className={`px-0.5 py-1 text-center text-[7.5px] font-black ${data ? getScoreColor(data.mood || data.ani || 0) : "text-slate-300"}`}>{data ? (data.mood || data.ani || 0) : "-"}</td>
-                                    <td className="px-0.5 py-1 text-center text-[7.5px] font-black text-[#0b1220] font-mono">
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.fatigue) : "text-slate-300"}`}>{data ? data.fatigue : "-"}</td>
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.sleep) : "text-slate-300"}`}>{data ? data.sleep : "-"}</td>
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.soreness) : "text-slate-300"}`}>{data ? data.soreness : "-"}</td>
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.stress || data.stres || 0) : "text-slate-300"}`}>{data ? (data.stress || data.stres || 0) : "-"}</td>
+                                    <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.mood || data.ani || 0) : "text-slate-300"}`}>{data ? (data.mood || data.ani || 0) : "-"}</td>
+                                    <td className="px-0.25 py-0.5 text-center text-[7px] font-black text-[#0b1220] font-mono tracking-tighter">
                                       {avg ? avg.toFixed(1) : '-'}
                                     </td>
-                                    <td className={`px-2 py-1 text-left truncate max-w-[120px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
+                                    <td className={`px-1.5 py-0.5 text-left truncate max-w-[140px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
                                       {isPending ? (
                                         <span className="text-slate-300 font-bold">—</span>
                                       ) : hasAlert ? (
-                                        <span className="text-black font-extrabold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                        <span className="text-black font-extrabold text-[6.5px] uppercase tracking-tighter">{detailText}</span>
                                       ) : (
-                                        <span className="text-slate-400 font-bold text-[7px] uppercase tracking-tight">{detailText}</span>
+                                        <span className="text-slate-400 font-bold text-[6.5px] uppercase tracking-tighter">{detailText}</span>
                                       )}
                                     </td>
-                                    <td className="px-0.5 py-1 text-center">
+                                    <td className="px-0.25 py-0.5 text-center">
                                       {isPending ? (
-                                        <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5.5px] font-black border border-amber-100 uppercase">PEND</span>
+                                        <span className="px-1 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5px] font-black border border-amber-100 uppercase tracking-tighter">PEND</span>
                                       ) : (
-                                        <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-sm text-[5.5px] font-black border border-emerald-100 uppercase">OK</span>
+                                        <span className="px-1 py-0.5 bg-emerald-50 text-emerald-600 rounded-sm text-[5px] font-black border border-emerald-100 uppercase tracking-tighter">OK</span>
                                       )}
                                     </td>
                                   </tr>
@@ -3707,10 +3880,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           </table>
                         </div>
                       </div>
-                    </section>
+                      </section>
+                    </div>
+                    <PrintFooter page={2} />
                   </div>
-                  <PrintFooter page={2} />
-                </div>
 
                   {/* HOJA 3: CHECK OUT (PSE) */}
                   <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
@@ -3720,7 +3893,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                         activeMicrocycle={activeMicrocycle} 
                         page={3} 
-                        total={5} 
+                        total={totalPages} 
                       />
                       
                       <section className="mt-4">
@@ -3728,7 +3901,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           <span>3._ CONTROL DE CARGA INTERNA DE LA SESIÓN (CHECK-OUT PSE)</span>
                           {reportData.loadAvg && (
                             <span className="bg-red-600 text-white text-[10px] font-black tracking-widest px-3 py-1 rounded-full font-mono">
-                              DURACIÓN PROM: {reportData.loadAvg.duration.toFixed(0)} MIN | CARGA HISTÓRICA PROM: {reportData.loadAvg.load.toFixed(0)} u.a.
+                              DURACIÓN PROM: {reportData.loadAvg.duration.toFixed(0)} MIN | CARGA HISTÓRICA PROM: {reportData.loadAvg.load.toFixed(0)} U.A.
                             </span>
                           )}
                         </h3>
@@ -3777,15 +3950,15 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                   const loadDetails = [allMolestias, allEnfermedad].filter(Boolean).join(' | ');
 
                                   return (
-                                    <tr key={`lload-${player.player_id}-${idx}`} className="border-b border-slate-50 h-[24px] hover:bg-slate-50/50">
-                                      <td className="px-3 py-1 text-left font-black text-[#0b1220] truncate max-w-[120px]">{player.name}</td>
-                                      <td className="px-1 py-1 text-slate-400 italic font-black font-mono">{sessions.length}</td>
-                                      <td className={`px-1 py-1 text-center font-black font-mono text-[7.5px] ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "—"}</td>
-                                      <td className="px-1 py-1 text-slate-500 italic font-black font-mono">{totalMin}'</td>
-                                      <td className={`px-1 py-1 text-center font-black font-mono text-[7.5px] ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "0"}</td>
-                                      <td className="px-2 py-1 truncate text-[7px] max-w-[124px]" title={loadDetails}>
+                                    <tr key={`lload-${player.player_id}-${idx}`} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                      <td className="px-1.5 py-0.5 text-left font-black text-[#0b1220] truncate max-w-[125px] tracking-tighter text-[7.5px] uppercase">{player.name}</td>
+                                      <td className="px-0.5 py-0.5 text-slate-400 italic font-black font-mono text-[7px] tracking-tighter text-center">{sessions.length}</td>
+                                      <td className={`px-0.5 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "—"}</td>
+                                      <td className="px-0.5 py-0.5 text-slate-500 italic font-black font-mono text-[7px] tracking-tighter text-center">{totalMin}'</td>
+                                      <td className={`px-0.5 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "0"}</td>
+                                      <td className="px-1.5 py-0.5 truncate text-[6.5px] max-w-[145px] tracking-tighter" title={loadDetails}>
                                         {loadDetails ? (
-                                          <span className="text-red-500 font-bold bg-amber-50 px-1 border border-amber-100 rounded text-[6.5px] tracking-tight">{loadDetails.toUpperCase()}</span>
+                                          <span className="text-red-500 font-black bg-amber-50 px-0.5 border border-amber-100 rounded text-[6px] tracking-tighter">{loadDetails.toUpperCase()}</span>
                                         ) : (
                                           <span className="text-slate-300">-</span>
                                         )}
@@ -3840,15 +4013,15 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                   const loadDetails = [allMolestias, allEnfermedad].filter(Boolean).join(' | ');
 
                                   return (
-                                    <tr key={`rload-${player.player_id}-${idx}`} className="border-b border-slate-50 h-[24px] hover:bg-slate-50/50">
-                                      <td className="px-3 py-1 text-left font-black text-[#0b1220] truncate max-w-[120px]">{player.name}</td>
-                                      <td className="px-1 py-1 text-slate-400 italic font-black font-mono">{sessions.length}</td>
-                                      <td className={`px-1 py-1 text-center font-black font-mono text-[7.5px] ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "—"}</td>
-                                      <td className="px-1 py-1 text-slate-500 italic font-black font-mono">{totalMin}'</td>
-                                      <td className={`px-1 py-1 text-center font-black font-mono text-[7.5px] ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "0"}</td>
-                                      <td className="px-2 py-1 truncate text-[7px] max-w-[124px]" title={loadDetails}>
+                                    <tr key={`rload-${player.player_id}-${idx}`} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                      <td className="px-1.5 py-0.5 text-left font-black text-[#0b1220] truncate max-w-[125px] tracking-tighter text-[7.5px] uppercase">{player.name}</td>
+                                      <td className="px-0.5 py-0.5 text-slate-400 italic font-black font-mono text-[7px] tracking-tighter text-center">{sessions.length}</td>
+                                      <td className={`px-0.5 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "—"}</td>
+                                      <td className="px-0.5 py-0.5 text-slate-500 italic font-black font-mono text-[7px] tracking-tighter text-center">{totalMin}'</td>
+                                      <td className={`px-0.5 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "0"}</td>
+                                      <td className="px-1.5 py-0.5 truncate text-[6.5px] max-w-[145px] tracking-tighter" title={loadDetails}>
                                         {loadDetails ? (
-                                          <span className="text-red-500 font-bold bg-amber-50 px-1 border border-amber-100 rounded text-[6.5px] tracking-tight">{loadDetails.toUpperCase()}</span>
+                                          <span className="text-red-500 font-black bg-amber-50 px-0.5 border border-amber-100 rounded text-[6px] tracking-tighter">{loadDetails.toUpperCase()}</span>
                                         ) : (
                                           <span className="text-slate-300">-</span>
                                         )}
@@ -3865,124 +4038,29 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     <PrintFooter page={3} />
                   </div>
 
-                  {/* HOJA 4: DATOS GPS */}
+                  {/* HOJA 4: DATOS GPS (Can render on single or split pages) */}
+                  {renderGpsPage(4, gpsPage1, !needsGpsSplit)}
+
+                  {needsGpsSplit && renderGpsPage(5, gpsPage2, true)}
+
+                  {/* HOJA DE PRONÓSTICO / COMPARATIVA DE CARGA */}
                   <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
                     <div>
                       <PrintHeader 
                         selectedDate={selectedDate} 
                         selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                         activeMicrocycle={activeMicrocycle} 
-                        page={4} 
-                        total={5} 
-                      />
-                      
-                      <section className="mt-4">
-                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-[#02428c] pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
-                          <span>4._ DESEMPEÑO GPS COMPLETO DE LA JORNADA (TOTAL DE CARGA EXTERNA)</span>
-                          {reportData.gpsAvg && (
-                            <span className="bg-[#02428c] text-white text-[10px] font-black tracking-widest px-3 py-1 rounded-full font-mono">
-                              DIST. PROMEDIO: {reportData.gpsAvg.dist.toFixed(0)}m | m/min HISTÓRICO: {reportData.gpsAvg.mpm.toFixed(1)}
-                            </span>
-                          )}
-                        </h3>
-
-                        <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm max-h-[120mm]">
-                          <table className="w-full text-center border-separate border-spacing-0 bg-white">
-                            <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
-                              <tr>
-                                <th className="px-4 py-2 text-left bg-[#0b1220] min-w-[140px]">ATLETA</th>
-                                <th className="px-1 py-2">CATEGORÍA</th>
-                                <th className="px-1 py-2">DURACIÓN (MIN)</th>
-                                <th className="px-1 py-2">DIST. TOTAL (M)</th>
-                                <th className="px-1 py-2">M/MIN</th>
-                                <th className="px-1 py-2">DIST. HSR (&gt;20)</th>
-                                <th className="px-1 py-2">DIST. AI (&gt;15)</th>
-                                <th className="px-1 py-2">DIST. SPRINT (&gt;25)</th>
-                                <th className="px-1 py-2">VEL. MÁX (KM/H)</th>
-                                <th className="px-1 py-2">ACC/DECC AI</th>
-                              </tr>
-                            </thead>
-                            <tbody className="text-[8px] font-mono font-black text-slate-900 italic">
-                              {reportData.gpsImportReport.map((row: any, idx: number) => {
-                                const player = row.players;
-                                const playerName = player ? `${player.nombre} ${player.apellido1} ${player.apellido2 || ''}`.trim() : `ID: ${row.player_id}`;
-
-                                const playerRef = obtenerReferenciaJugador(player);
-                                const refDistTotal = playerRef ? Number(playerRef['Total Distance (m)'] || playerRef.distancia_total || playerRef.dist_total_m) || null : null;
-                                const refMetrosMin = playerRef ? Number(playerRef['Metros/min'] || playerRef.metros_minuto || playerRef.m_por_min) || null : null;
-                                const refDistAI = playerRef ? Number(playerRef['AInt >15 km/h'] || playerRef.distancia_ai || playerRef.dist_ai_m_15_kmh) || null : null;
-                                const refDistMAI = playerRef ? Number(playerRef['MAInt >20km/h'] || playerRef.distancia_mai || playerRef.dist_mai_m_20_kmh) || null : null;
-                                const refDistSprint = playerRef ? Number(playerRef['Sprint >25 km/h'] || playerRef.distancia_sprint || playerRef.dist_sprint_m_25_kmh) || null : null;
-                                const refAccDecc = playerRef ? Number(playerRef['#Acc+Decc AI'] || playerRef.acc_decc_ai || playerRef.acc_decc_ai_n) || null : null;
-
-                                const styleDistTotal = getParamCellProps(row.dist_total_m, refDistTotal);
-                                const styleMetrosMin = getParamCellProps(row.m_por_min, refMetrosMin);
-                                const styleDistAI = getParamCellProps(row.dist_ai_m_15_kmh, refDistAI);
-                                const styleDistMAI = getParamCellProps(row.dist_mai_m_20_kmh, refDistMAI);
-                                const styleDistSprint = getParamCellProps(row.dist_sprint_m_25_kmh, refDistSprint);
-                                const styleAccDecc = getParamCellProps(row.acc_decc_ai_n, refAccDecc);
-
-                                return (
-                                  <tr key={`gps-rep-${idx}`} className="border-b border-slate-50 h-[24px] hover:bg-slate-50/50 font-black">
-                                    <td className="px-4 py-1 text-left font-sans font-black text-[#0b1220] truncate max-w-[140px]">{playerName}</td>
-                                    <td className="px-1 py-1 text-slate-500 font-sans font-bold text-center">
-                                      {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
-                                    </td>
-                                    <td className="px-1 py-1 text-slate-400 font-bold">{row.minutos?.toFixed(0) || '0'}</td>
-                                    <td className={`px-1 py-1 ${styleDistTotal.className}`} style={styleDistTotal.style}>{row.dist_total_m?.toFixed(0) || '0'}</td>
-                                    <td className={`px-1 py-1 ${styleMetrosMin.className}`} style={styleMetrosMin.style}>
-                                      {row.m_por_min?.toFixed(1) || '0.0'}
-                                    </td>
-                                    <td className={`px-1 py-1 ${styleDistMAI.className}`} style={styleDistMAI.style}>{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
-                                    <td className={`px-1 py-1 ${styleDistAI.className}`} style={styleDistAI.style}>{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
-                                    <td className={`px-1 py-1 ${styleDistSprint.className}`} style={styleDistSprint.style}>{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
-                                    <td className="px-1 py-1 text-red-655 font-extrabold font-mono">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
-                                    <td className={`px-1 py-1 ${styleAccDecc.className}`} style={styleAccDecc.style}>{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
-                                  </tr>
-                                );
-                              })}
-                              
-                              {/* FILA DE PROMEDIOS GRUPALES */}
-                              {reportData.gpsAvg && (
-                                <tr className="bg-[#0b1220] text-emerald-400 font-black italic h-[26px]">
-                                  <td className="px-4 py-1 text-left font-sans uppercase tracking-[0.1em] text-[8px] text-white">Promedio Grupal</td>
-                                  <td className="px-1 py-1 text-[8px] font-sans text-slate-500">-</td>
-                                  <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.minutos.toFixed(0)}'</td>
-                                  <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.dist.toFixed(0)}m</td>
-                                  <td className="px-1 py-1 text-sm text-red-500 bg-[#0c1930] font-mono">{reportData.gpsAvg.mpm.toFixed(1)}</td>
-                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.hsr.toFixed(0)}m</td>
-                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.ai.toFixed(0)}m</td>
-                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.sprint.toFixed(0)}m</td>
-                                  <td className="px-1 py-1 text-sm text-red-500 font-mono">{reportData.gpsAvg.vmax.toFixed(1)}</td>
-                                  <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.acc.toFixed(1)}</td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </section>
-                    </div>
-                    <PrintFooter page={4} />
-                  </div>
-
-                  {/* HOJA 5: PRONÓSTICO DE CARGA (3 COLUMNAS) */}
-                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
-                    <div>
-                      <PrintHeader 
-                        selectedDate={selectedDate} 
-                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
-                        activeMicrocycle={activeMicrocycle} 
-                        page={5} 
-                        total={5} 
+                        page={totalPages} 
+                        total={totalPages} 
                       />
                       
                       <section className="mt-4 text-slate-900">
                         <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-650 pl-3 mb-4 uppercase tracking-widest italic">
-                          5._ COMPARATIVA CLASIFICATORIA: PRONÓSTICO DE CARGA (PREDICTIVO VS REAL)
+                          {totalPages}._ COMPARATIVA CLASIFICATORIA: PRONÓSTICO DE CARGA (PREDICTIVO VS REAL)
                         </h3>
                         
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-6">
-                          * Tabla de contraste estructurada estrictamente en 3 columnas para validar la planificación predictiva versus la realidad física cuantificada.
+                          * TABLA DE CONTRASTE ESTRUCTURADA ESTRICTAMENTE EN 3 COLUMNAS PARA VALIDAR LA PLANIFICACIÓN PREDICTIVA VERSUS LA REALIDAD FÍSICA CUANTIFICADA.
                         </p>
 
                         <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm max-w-4xl mx-auto">
@@ -4008,7 +4086,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         </div>
                       </section>
                     </div>
-                    <PrintFooter page={5} />
+                    <PrintFooter page={totalPages} />
                   </div>
                 </>
               );
@@ -4019,6 +4097,31 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
       {/* ESTILOS GLOBALES DE IMPRESIÓN */}
       <style>{`
+        /* UNIFY ALL FONTS FOR PRINT AND SCREEN PDF VIEW */
+        @media screen, print {
+          .print-page-section,
+          .print-page-section * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+          }
+          
+          /* Specific overrides for Bebas Neue and Mono font tags */
+          .font-bebas, 
+          .font-bebas *,
+          [class*="font-['Bebas_Neue']"],
+          [class*="font-['Bebas_Neue']"] *,
+          [class*="font-bebas"],
+          [class*="font-bebas"] * {
+            font-family: 'Bebas Neue', 'Inter', -apple-system, sans-serif !important;
+          }
+
+          .font-mono,
+          .font-mono *,
+          [class*="font-mono"],
+          [class*="font-mono"] * {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+          }
+        }
+
         @media screen {
           .print-page-section {
             width: 100% !important;
