@@ -46,11 +46,12 @@ interface FisicaAreaProps {
   userClubId?: number | null;
   highlightPlayerId?: number | null;
   clubs?: any[];
+  categoryName?: string | null;
 }
 
 type MainTab = 'carga_interna' | 'carga_externa' | 'reporte_diario';
 
-export default function FisicaArea({ performanceRecords, view = 'wellness', userRole, userClub, userClubId, highlightPlayerId, clubs = [] }: FisicaAreaProps) {
+export default function FisicaArea({ performanceRecords, view = 'wellness', userRole, userClub, userClubId, highlightPlayerId, clubs = [], categoryName }: FisicaAreaProps) {
   const activeMainTab: MainTab = useMemo(() => {
     if (view === 'external_total') return 'carga_externa';
     if (view === 'report') return 'reporte_diario';
@@ -67,6 +68,17 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   const [selectedCategories, setSelectedCategories] = useState<string[]>(Object.values(Category));
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [athleteSearch, setAthleteSearch] = useState(''); 
+
+  // Sincronizar selección de categoría con la prop categoryName del padre
+  useEffect(() => {
+    if (categoryName) {
+      const formattedPropName = categoryName.trim().toLowerCase().replace('sub ', 'sub_');
+      const matchingCat = Object.values(Category).find(c => c.toLowerCase() === formattedPropName);
+      if (matchingCat) {
+        setSelectedCategories([matchingCat]);
+      }
+    }
+  }, [categoryName]);
 
   // Filtro de búsqueda interno específico del Reporte Diario
   const [reportPlayerSearch, setReportPlayerSearch] = useState('');
@@ -442,6 +454,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               // Prioritize category from active citation
               if (playerCategoryMap[gps.player_id]) {
                 player.categoria = playerCategoryMap[gps.player_id];
+              } else if (player.category) {
+                player.categoria = player.category;
               } else if (!player.categoria && player.anio) {
                 const age = 2026 - player.anio;
                 if (age <= 13) player.categoria = 'sub_13';
@@ -793,6 +807,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   }, [rawCitadosPlayers, selectedDate]);
 
   const reportData = useMemo(() => {
+    const currentCitadosIds = new Set(currentCitadosPlayers.map(r => r.player.player_id!));
     const filteredRecords = currentCitadosPlayers.filter(r => selectedPlayersReport.has(r.player.player_id!));
     
     const wellnessList = filteredRecords.map(r => ({
@@ -819,7 +834,9 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     };
 
     const tasksMap: Record<string, any> = {};
-    const filteredDailyTasks = dailyTaskGps.filter(t => selectedPlayersReport.has(t.player_id));
+    const filteredDailyTasks = dailyTaskGps.filter(t => 
+      selectedPlayersReport.has(t.player_id) && currentCitadosIds.has(t.player_id)
+    );
 
     filteredDailyTasks.forEach(t => {
       if (!tasksMap[t.tarea]) {
@@ -872,7 +889,9 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     });
 
     // NUEVO: Datos de gps_import para el reporte (Totales Reales)
-    const gpsImportReport = anonymizedGpsImport.filter(row => selectedPlayersReport.has(row.player_id));
+    const gpsImportReport = anonymizedGpsImport.filter(row => 
+      selectedPlayersReport.has(row.player_id) && currentCitadosIds.has(row.player_id)
+    );
 
     // NUEVO: Cálculo de Promedios para Wellness
     const wellValid = wellnessList.filter(w => w.data);
@@ -1213,7 +1232,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       const player = row.players;
       
       // Filtro por Categoría
-      if (selectedCategories.length > 0 && player?.categoria) {
+      if (selectedCategories.length > 0) {
+        if (!player || !player.categoria) return false;
         const matchesCategory = selectedCategories.some(cat => cat.toLowerCase() === player.categoria.toLowerCase());
         if (!matchesCategory) return false;
       }
@@ -1960,6 +1980,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   } else {
                     setSelectedCategories(Object.values(Category));
                   }
+                  setShowCategoryDropdown(false);
                 }}
                 className={`p-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-left transition-all flex justify-between items-center ${selectedCategories.length === Object.values(Category).length ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
               >
@@ -1967,19 +1988,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 {selectedCategories.length === Object.values(Category).length && <i className="fa-solid fa-check"></i>}
               </button>
               {Object.values(Category).map(cat => {
-                const isSelected = selectedCategories.includes(cat);
+                const isSelected = selectedCategories.length === 1 && selectedCategories[0] === cat;
                 return (
                   <button
                     key={cat}
                     onClick={() => {
-                      setSelectedCategories(prev => {
-                        if (isSelected) {
-                          const newSel = prev.filter(c => c !== cat);
-                          return newSel.length === 0 ? [Category.SUB_17] : newSel;
-                        } else {
-                          return [...prev, cat];
-                        }
-                      });
+                      setSelectedCategories([cat]);
+                      setShowCategoryDropdown(false);
                     }}
                     className={`p-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-left transition-all flex justify-between items-center ${isSelected ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
                   >
@@ -3235,11 +3250,36 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Seleccione los atletas que desea incluir en el documento oficial.</p>
                 </div>
                 <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-full border border-slate-100 shadow-inner">
-                  <button onClick={() => setSelectedPlayersReport(new Set(citedPlayerIds))} className="px-8 py-3 bg-[#0b1220] text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-md">Seleccionar Todo</button>
+                  <button 
+                    onClick={() => {
+                      const next = new Set(selectedPlayersReport);
+                      currentCitadosPlayers.forEach(p => {
+                        if (p.player.player_id) next.add(p.player.player_id);
+                      });
+                      setSelectedPlayersReport(next);
+                    }} 
+                    className="px-6 py-3 bg-[#0b1220] text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-md"
+                  >
+                    Seleccionar Todo
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const next = new Set(selectedPlayersReport);
+                      currentCitadosPlayers.forEach(p => {
+                        if (p.player.player_id) next.delete(p.player.player_id);
+                      });
+                      setSelectedPlayersReport(next);
+                    }} 
+                    className="px-6 py-3 bg-slate-200 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-slate-300 transition-all shadow-md"
+                  >
+                    Quitar Todo
+                  </button>
                   <div className="h-8 w-px bg-slate-200 mx-2"></div>
                   <div className="pr-4">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Incluidos</span>
-                    <span className="text-sm font-black text-[#0b1220] italic">{selectedPlayersReport.size}</span>
+                    <span className="text-sm font-black text-[#0b1220] italic">
+                      {currentCitadosPlayers.filter(p => p.player.player_id && selectedPlayersReport.has(p.player.player_id)).length}
+                    </span>
                   </div>
                   <div className="flex gap-4">
                     <button 
@@ -3487,7 +3527,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
                                 return (
                                   <tr key={`gps-rep-${pageNo}-${idx}`} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                    <td className="px-4 py-1 text-left font-sans font-black text-[#0b1220] truncate max-w-[140px] uppercase">{playerName}</td>
+                                    <td className="px-4 py-1 text-left font-sans font-black text-[#0b1220] overflow-visible whitespace-nowrap max-w-[140px] uppercase">{playerName}</td>
                                     <td className="px-1 py-1 text-slate-500 font-sans font-bold text-center">
                                       {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
                                     </td>
@@ -3567,13 +3607,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         </div>
                         <div className="text-center border-x border-slate-800 px-4">
                           <span className="text-[9px] font-black text-slate-500 tracking-widest block uppercase">CATEGORÍA OFICIAL</span>
-                          <span className="text-sm font-black text-red-500 uppercase italic mt-2 block truncate">
+                          <span className="text-sm font-black text-red-500 uppercase italic mt-2 block overflow-visible whitespace-nowrap">
                             {selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories.map(c => c.replace('SUB_', 'SUB ')).join(', ').toUpperCase()}
                           </span>
                         </div>
                         <div className="text-center">
                           <span className="text-[9px] font-black text-slate-500 tracking-widest block uppercase">MICROCICLO ACTIVO</span>
-                          <span className="text-sm font-black text-white uppercase italic mt-2 block truncate">
+                          <span className="text-sm font-black text-white uppercase italic mt-2 block overflow-visible whitespace-nowrap">
                             {activeMicrocycle?.nombre_display || (activeMicrocycle ? `MICROCICLO #${activeMicrocycle.micro_number || activeMicrocycle.id}` : 'SIN MICROCICLO ACTIVO')}
                           </span>
                         </div>
@@ -3628,7 +3668,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 {stats.sorenessAlerts} <span className="text-[7px] font-bold text-slate-400">ALERTAS</span>
                               </span>
                             </div>
-                            <span className={`text-[5.5px] font-black uppercase ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-400'} leading-tight truncate`}>
+                            <span className={`text-[5.5px] font-black uppercase ${stats.sorenessAlerts > 0 ? 'text-red-500' : 'text-slate-400'} leading-tight overflow-visible whitespace-nowrap`}>
                               {stats.sorenessAlerts > 0 ? 'REQUIEREN FISIOTERAPIA' : 'SIN SOBRECARGAS CLÍNICAS'}
                             </span>
                           </div>
@@ -3641,7 +3681,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 {stats.healthAlerts} <span className="text-[7px] font-bold text-slate-400">ALERTAS</span>
                               </span>
                             </div>
-                            <span className={`text-[5.5px] font-black uppercase ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-400'} leading-tight truncate`}>
+                            <span className={`text-[5.5px] font-black uppercase ${stats.healthAlerts > 0 ? 'text-amber-500' : 'text-slate-400'} leading-tight overflow-visible whitespace-nowrap`}>
                               {stats.healthAlerts > 0 ? 'EVALUACIÓN MÉDICA' : 'PLANTEL EN ÓPTIMO ESTADO'}
                             </span>
                           </div>
@@ -3654,7 +3694,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 {wellnessDayAvg} <span className="text-[7px] font-bold text-slate-400">/ 5.0</span>
                               </span>
                             </div>
-                            <span className="text-[5.5px] text-slate-400 font-bold uppercase tracking-wider leading-tight truncate">
+                            <span className="text-[5.5px] text-slate-400 font-bold uppercase tracking-wider leading-tight overflow-visible whitespace-nowrap">
                               PUNTUACIÓN GENERAL DEL DÍA
                             </span>
                           </div>
@@ -3737,8 +3777,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 return (
                                   <tr key={`lwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 hover:bg-slate-50/50">
                                     <td className="px-2 py-0.5 text-left">
-                                      <span className="block font-black text-[#0b1220] text-[7.4px] uppercase truncate max-w-[115px] leading-normal tracking-tighter">{player.name}</span>
-                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-tighter truncate max-w-[115px] leading-normal mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                      <span className="block font-black text-[#0b1220] text-[7.4px] uppercase overflow-visible whitespace-nowrap max-w-[115px] leading-normal tracking-tighter">{player.name}</span>
+                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-tighter overflow-visible whitespace-nowrap max-w-[115px] leading-normal mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
                                     </td>
                                     <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.fatigue) : "text-slate-300"}`}>{data ? data.fatigue : "-"}</td>
                                     <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.sleep) : "text-slate-300"}`}>{data ? data.sleep : "-"}</td>
@@ -3748,7 +3788,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                     <td className="px-0.25 py-0.5 text-center text-[7px] font-black text-[#0b1220] font-mono tracking-tighter">
                                       {avg ? avg.toFixed(1) : '-'}
                                     </td>
-                                    <td className={`px-1.5 py-0.5 text-left truncate max-w-[140px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
+                                    <td className={`px-1.5 py-0.5 text-left overflow-visible whitespace-nowrap max-w-[140px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
                                       {isPending ? (
                                         <span className="text-slate-300 font-bold">—</span>
                                       ) : hasAlert ? (
@@ -3846,8 +3886,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 return (
                                   <tr key={`rwell-${player.player_id}-${idx}`} className="border-b border-slate-100/60 hover:bg-slate-50/50">
                                     <td className="px-2 py-0.5 text-left">
-                                      <span className="block font-black text-[#0b1220] text-[7.4px] uppercase truncate max-w-[115px] leading-normal tracking-tighter">{player.name}</span>
-                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-tighter truncate max-w-[115px] leading-normal mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                      <span className="block font-black text-[#0b1220] text-[7.4px] uppercase overflow-visible whitespace-nowrap max-w-[115px] leading-normal tracking-tighter">{player.name}</span>
+                                      <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-tighter overflow-visible whitespace-nowrap max-w-[115px] leading-normal mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
                                     </td>
                                     <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.fatigue) : "text-slate-300"}`}>{data ? data.fatigue : "-"}</td>
                                     <td className={`px-0.25 py-0.5 text-center text-[7px] font-black tracking-tighter ${data ? getScoreColor(data.sleep) : "text-slate-300"}`}>{data ? data.sleep : "-"}</td>
@@ -3857,7 +3897,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                     <td className="px-0.25 py-0.5 text-center text-[7px] font-black text-[#0b1220] font-mono tracking-tighter">
                                       {avg ? avg.toFixed(1) : '-'}
                                     </td>
-                                    <td className={`px-1.5 py-0.5 text-left truncate max-w-[140px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
+                                    <td className={`px-1.5 py-0.5 text-left overflow-visible whitespace-nowrap max-w-[140px] transition-all ${hasAlert ? 'bg-red-100 text-black rounded-sm' : ''}`}>
                                       {isPending ? (
                                         <span className="text-slate-300 font-bold">—</span>
                                       ) : hasAlert ? (
@@ -3896,51 +3936,110 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         total={totalPages} 
                       />
                       
-                      <section className="mt-4">
-                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-655 pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
+                      <section className="mt-2">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-655 pl-3 mb-3 uppercase tracking-widest italic flex items-center justify-between">
                           <span>3._ CONTROL DE CARGA INTERNA DE LA SESIÓN (CHECK-OUT PSE)</span>
-                          {reportData.loadAvg && (
-                            <span className="bg-red-600 text-white text-[10px] font-black tracking-widest px-3 py-1 rounded-full font-mono">
-                              DURACIÓN PROM: {reportData.loadAvg.duration.toFixed(0)} MIN | CARGA HISTÓRICA PROM: {reportData.loadAvg.load.toFixed(0)} U.A.
-                            </span>
-                          )}
                         </h3>
 
-                        <div className="grid grid-cols-2 gap-6">
+                        {/* Grid de KPIs / Estadísticas Clave (Idéntico en estructura a Hoja 2) */}
+                        <div className="grid grid-cols-4 gap-2.5 mb-2.5">
+                          {/* KPI 1: Check-outs */}
+                          <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-normal">CHECK-OUT COMPLETADOS</span>
+                              <span className="text-[9px] font-black text-[#02428c] leading-tight">
+                                {stats.checkOutDone} <span className="text-[7px] font-bold text-slate-400">/ {currentCitadosPlayers.length}</span>
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-200 rounded-full h-1 overflow-hidden">
+                              <div 
+                                className="bg-[#02428c] h-full rounded-full transition-all duration-500" 
+                                style={{ width: `${currentCitadosPlayers.length > 0 ? (stats.checkOutDone / currentCitadosPlayers.length) * 100 : 0}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          {/* KPI 2: RPE Promedio */}
+                          <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-normal">RPE PROMEDIO SESIÓN</span>
+                              <span className="text-[10px] font-black leading-tight text-slate-800">
+                                {reportData.loadAvg ? reportData.loadAvg.rpe.toFixed(1) : '—'} <span className="text-[7px] font-bold text-slate-400">/ 10</span>
+                              </span>
+                            </div>
+                            <span className="text-[5.5px] text-slate-400 font-bold uppercase tracking-wider leading-tight overflow-visible whitespace-nowrap">
+                              PERCEPCIÓN DE ESFUERZO GRUPAL
+                            </span>
+                          </div>
+
+                          {/* KPI 3: Duración Promedio */}
+                          <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-normal">DURACIÓN PROMEDIO</span>
+                              <span className="text-[10px] font-black leading-tight text-slate-800">
+                                {reportData.loadAvg ? reportData.loadAvg.duration.toFixed(0) : '—'} <span className="text-[7px] font-bold text-slate-400">MIN</span>
+                              </span>
+                            </div>
+                            <span className="text-[5.5px] text-slate-400 font-bold uppercase tracking-wider leading-tight overflow-visible whitespace-nowrap">
+                              TIEMPO EFECTIVO DE TRABAJO
+                            </span>
+                          </div>
+
+                          {/* KPI 4: Carga Promedio */}
+                          <div className="p-2 bg-slate-50 border border-slate-100/80 rounded-lg flex flex-col justify-center shadow-xs">
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-wider leading-normal">CARGA PROMEDIO JORNADA</span>
+                              <span className="text-[10px] font-black text-emerald-600 leading-tight">
+                                {reportData.loadAvg ? reportData.loadAvg.load.toFixed(0) : '—'} <span className="text-[7px] font-bold text-slate-400">u.a.</span>
+                              </span>
+                            </div>
+                            <span className="text-[5.5px] text-slate-400 font-bold uppercase tracking-wider leading-tight overflow-visible whitespace-nowrap">
+                              CARGA INTERNA TOTAL DEL DÍA
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
                           {/* Left loads table */}
-                          <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
+                          <div className="overflow-hidden rounded-xl border border-slate-100 shadow-sm">
                             <table className="w-full text-center border-separate border-spacing-0 bg-white">
-                              <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em] select-none">
+                              <thead className="bg-[#0b1220] text-white text-[6.5px] font-black uppercase tracking-[0.05em] select-none">
                                 <tr>
-                                  <th className="px-3 py-2 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('name'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <th className="px-2 py-1 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('name'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                                     <span className="inline-flex items-center gap-1">
                                       ATLETA
                                       <i className={`fa-solid ${sortField === 'name' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
                                     </span>
                                   </th>
-                                  <th className="px-1 py-2 text-center">SESIONES</th>
-                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('rpe'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <th className="px-0.5 py-1 text-center">SES</th>
+                                  <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('rpe'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                                     <span className="inline-flex items-center gap-0.5 justify-center">
-                                      RPE PROMEDIO
+                                      RPE
                                       <i className={`fa-solid ${sortField === 'rpe' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
                                     </span>
                                   </th>
-                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('duration'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('duration'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                                     <span className="inline-flex items-center gap-0.5 justify-center">
-                                      DURACIÓN (MIN)
+                                      DUR
                                       <i className={`fa-solid ${sortField === 'duration' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
                                     </span>
                                   </th>
-                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('load'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('load'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                                     <span className="inline-flex items-center gap-0.5 justify-center">
-                                      CARGA (U.A.)
+                                      CARGA
                                       <i className={`fa-solid ${sortField === 'load' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
                                     </span>
                                   </th>
-                                  <th className="px-2 py-2 text-left">SITUACIÓN CLÍNICA / DETALLE</th>
+                                  <th className="px-2 py-1 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('pse_molestias'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-1">
+                                      ZONA MOLESTIA / SÍNTOMAS
+                                      <i className={`fa-solid ${sortField === 'pse_molestias' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-0.5 py-1 text-center">ESTADO</th>
                                 </tr>
                               </thead>
-                              <tbody className="text-[8px] font-bold text-slate-900">
+                              <tbody className="text-[7px] font-bold text-slate-900">
                                 {leftLoads.map(({ player, sessions }: any, idx: number) => {
                                   const rpeAvg = sessions.length ? sessions.reduce((acc: any, c: any) => acc + c.rpe, 0) / sessions.length : 0;
                                   const totalMin = sessions.reduce((acc: any, c: any) => acc + c.duration, 0);
@@ -3948,19 +4047,32 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                   const allMolestias = Array.from(new Set(sessions.map((s: any) => s.molestias).filter((m: any) => m && m.trim() !== ''))).join(', ');
                                   const allEnfermedad = Array.from(new Set(sessions.map((s: any) => s.enfermedad).filter((e: any) => e && e.trim() !== ''))).join(', ');
                                   const loadDetails = [allMolestias, allEnfermedad].filter(Boolean).join(' | ');
+                                  const isPending = sessions.length === 0;
 
                                   return (
-                                    <tr key={`lload-${player.player_id}-${idx}`} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                      <td className="px-1.5 py-0.5 text-left font-black text-[#0b1220] truncate max-w-[125px] tracking-tighter text-[7.5px] uppercase">{player.name}</td>
-                                      <td className="px-0.5 py-0.5 text-slate-400 italic font-black font-mono text-[7px] tracking-tighter text-center">{sessions.length}</td>
-                                      <td className={`px-0.5 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "—"}</td>
-                                      <td className="px-0.5 py-0.5 text-slate-500 italic font-black font-mono text-[7px] tracking-tighter text-center">{totalMin}'</td>
-                                      <td className={`px-0.5 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "0"}</td>
-                                      <td className="px-1.5 py-0.5 truncate text-[6.5px] max-w-[145px] tracking-tighter" title={loadDetails}>
-                                        {loadDetails ? (
-                                          <span className="text-red-500 font-black bg-amber-50 px-0.5 border border-amber-100 rounded text-[6px] tracking-tighter">{loadDetails.toUpperCase()}</span>
+                                    <tr key={`lload-${player.player_id}-${idx}`} className="border-b border-slate-100/60 hover:bg-slate-50/50">
+                                      <td className="px-2 py-0.5 text-left">
+                                        <span className="block font-black text-[#0b1220] text-[7.4px] uppercase overflow-visible whitespace-nowrap max-w-[115px] leading-normal tracking-tighter">{player.name}</span>
+                                        <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-tighter overflow-visible whitespace-nowrap max-w-[115px] leading-normal mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                      </td>
+                                      <td className="px-0.25 py-0.5 text-slate-400 font-black font-mono text-[7px] tracking-tighter text-center">{sessions.length}</td>
+                                      <td className={`px-0.25 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "-"}</td>
+                                      <td className="px-0.25 py-0.5 text-slate-500 font-black font-mono text-[7px] tracking-tighter text-center">{totalMin ? `${totalMin}'` : "-"}</td>
+                                      <td className={`px-0.25 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "-"}</td>
+                                      <td className={`px-1.5 py-0.5 text-left overflow-visible whitespace-nowrap max-w-[140px] transition-all ${loadDetails ? 'bg-red-100 text-black rounded-sm' : ''}`}>
+                                        {isPending ? (
+                                          <span className="text-slate-300 font-bold">—</span>
+                                        ) : loadDetails ? (
+                                          <span className="text-black font-extrabold text-[6.5px] uppercase tracking-tighter">{loadDetails.toUpperCase()}</span>
                                         ) : (
-                                          <span className="text-slate-300">-</span>
+                                          <span className="text-slate-400 font-bold text-[6.5px] uppercase tracking-tighter">SIN MOL. | SANO</span>
+                                        )}
+                                      </td>
+                                      <td className="px-0.25 py-0.5 text-center">
+                                        {isPending ? (
+                                          <span className="px-1 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5px] font-black border border-amber-100 uppercase tracking-tighter">PEND</span>
+                                        ) : (
+                                          <span className="px-1 py-0.5 bg-emerald-50 text-emerald-600 rounded-sm text-[5px] font-black border border-emerald-100 uppercase tracking-tighter">OK</span>
                                         )}
                                       </td>
                                     </tr>
@@ -3971,39 +4083,45 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           </div>
 
                           {/* Right loads table */}
-                          <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
+                          <div className="overflow-hidden rounded-xl border border-slate-100 shadow-sm">
                             <table className="w-full text-center border-separate border-spacing-0 bg-white">
-                              <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em] select-none">
+                              <thead className="bg-[#0b1220] text-white text-[6.5px] font-black uppercase tracking-[0.05em] select-none">
                                 <tr>
-                                  <th className="px-3 py-2 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('name'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <th className="px-2 py-1 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('name'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                                     <span className="inline-flex items-center gap-1">
                                       ATLETA
                                       <i className={`fa-solid ${sortField === 'name' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
                                     </span>
                                   </th>
-                                  <th className="px-1 py-2 text-center">SESIONES</th>
-                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('rpe'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <th className="px-0.5 py-1 text-center">SES</th>
+                                  <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('rpe'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                                     <span className="inline-flex items-center gap-0.5 justify-center">
-                                      RPE PROMEDIO
+                                      RPE
                                       <i className={`fa-solid ${sortField === 'rpe' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
                                     </span>
                                   </th>
-                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('duration'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('duration'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                                     <span className="inline-flex items-center gap-0.5 justify-center">
-                                      DURACIÓN (MIN)
+                                      DUR
                                       <i className={`fa-solid ${sortField === 'duration' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
                                     </span>
                                   </th>
-                                  <th className="px-1 py-2 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('load'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                  <th className="px-0.5 py-1 cursor-pointer hover:bg-slate-800 transition-colors text-center" onClick={() => { setSortField('load'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                                     <span className="inline-flex items-center gap-0.5 justify-center">
-                                      CARGA (U.A.)
+                                      CARGA
                                       <i className={`fa-solid ${sortField === 'load' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
                                     </span>
                                   </th>
-                                  <th className="px-2 py-2 text-left">SITUACIÓN CLÍNICA / DETALLE</th>
+                                  <th className="px-2 py-1 text-left cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => { setSortField('pse_molestias'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                                    <span className="inline-flex items-center gap-1">
+                                      ZONA MOLESTIA / SÍNTOMAS
+                                      <i className={`fa-solid ${sortField === 'pse_molestias' ? (sortDirection === 'asc' ? 'fa-sort-up text-red-500' : 'fa-sort-down text-red-500') : 'fa-sort text-slate-500'} text-[6px] print:hidden`}></i>
+                                    </span>
+                                  </th>
+                                  <th className="px-0.5 py-1 text-center">ESTADO</th>
                                 </tr>
                               </thead>
-                              <tbody className="text-[8px] font-bold text-slate-900">
+                              <tbody className="text-[7px] font-bold text-slate-900">
                                 {rightLoads.map(({ player, sessions }: any, idx: number) => {
                                   const rpeAvg = sessions.length ? sessions.reduce((acc: any, c: any) => acc + c.rpe, 0) / sessions.length : 0;
                                   const totalMin = sessions.reduce((acc: any, c: any) => acc + c.duration, 0);
@@ -4011,19 +4129,32 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                   const allMolestias = Array.from(new Set(sessions.map((s: any) => s.molestias).filter((m: any) => m && m.trim() !== ''))).join(', ');
                                   const allEnfermedad = Array.from(new Set(sessions.map((s: any) => s.enfermedad).filter((e: any) => e && e.trim() !== ''))).join(', ');
                                   const loadDetails = [allMolestias, allEnfermedad].filter(Boolean).join(' | ');
+                                  const isPending = sessions.length === 0;
 
                                   return (
-                                    <tr key={`rload-${player.player_id}-${idx}`} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                      <td className="px-1.5 py-0.5 text-left font-black text-[#0b1220] truncate max-w-[125px] tracking-tighter text-[7.5px] uppercase">{player.name}</td>
-                                      <td className="px-0.5 py-0.5 text-slate-400 italic font-black font-mono text-[7px] tracking-tighter text-center">{sessions.length}</td>
-                                      <td className={`px-0.5 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "—"}</td>
-                                      <td className="px-0.5 py-0.5 text-slate-500 italic font-black font-mono text-[7px] tracking-tighter text-center">{totalMin}'</td>
-                                      <td className={`px-0.5 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "0"}</td>
-                                      <td className="px-1.5 py-0.5 truncate text-[6.5px] max-w-[145px] tracking-tighter" title={loadDetails}>
-                                        {loadDetails ? (
-                                          <span className="text-red-500 font-black bg-amber-50 px-0.5 border border-amber-100 rounded text-[6px] tracking-tighter">{loadDetails.toUpperCase()}</span>
+                                    <tr key={`rload-${player.player_id}-${idx}`} className="border-b border-slate-100/60 hover:bg-slate-50/50">
+                                      <td className="px-2 py-0.5 text-left">
+                                        <span className="block font-black text-[#0b1220] text-[7.4px] uppercase overflow-visible whitespace-nowrap max-w-[115px] leading-normal tracking-tighter">{player.name}</span>
+                                        <span className="block text-[5.5px] font-black text-slate-400 uppercase tracking-tighter overflow-visible whitespace-nowrap max-w-[115px] leading-normal mt-0.5">{player.club_name || player.club || 'SIN CLUB'}</span>
+                                      </td>
+                                      <td className="px-0.25 py-0.5 text-slate-400 font-black font-mono text-[7px] tracking-tighter text-center">{sessions.length}</td>
+                                      <td className={`px-0.25 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${rpeAvg ? "" : "text-slate-300"}`} style={rpeAvg ? getRpeStyle(rpeAvg) : undefined}>{rpeAvg ? rpeAvg.toFixed(1) : "-"}</td>
+                                      <td className="px-0.25 py-0.5 text-slate-500 font-black font-mono text-[7px] tracking-tighter text-center">{totalMin ? `${totalMin}'` : "-"}</td>
+                                      <td className={`px-0.25 py-0.5 text-center font-black font-mono text-[7px] tracking-tighter ${totalLoad ? "" : "text-slate-300"}`} style={totalLoad ? getCargaStyle(totalLoad) : undefined}>{totalLoad || "-"}</td>
+                                      <td className={`px-1.5 py-0.5 text-left overflow-visible whitespace-nowrap max-w-[140px] transition-all ${loadDetails ? 'bg-red-100 text-black rounded-sm' : ''}`}>
+                                        {isPending ? (
+                                          <span className="text-slate-300 font-bold">—</span>
+                                        ) : loadDetails ? (
+                                          <span className="text-black font-extrabold text-[6.5px] uppercase tracking-tighter">{loadDetails.toUpperCase()}</span>
                                         ) : (
-                                          <span className="text-slate-300">-</span>
+                                          <span className="text-slate-400 font-bold text-[6.5px] uppercase tracking-tighter">SIN MOL. | SANO</span>
+                                        )}
+                                      </td>
+                                      <td className="px-0.25 py-0.5 text-center">
+                                        {isPending ? (
+                                          <span className="px-1 py-0.5 bg-amber-50 text-amber-600 rounded-sm text-[5px] font-black border border-amber-100 uppercase tracking-tighter">PEND</span>
+                                        ) : (
+                                          <span className="px-1 py-0.5 bg-emerald-50 text-emerald-600 rounded-sm text-[5px] font-black border border-emerald-100 uppercase tracking-tighter">OK</span>
                                         )}
                                       </td>
                                     </tr>

@@ -6,9 +6,44 @@ import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
 import { GoogleGenAI } from "@google/genai";
+import { createClient } from "@supabase/supabase-js";
+import fs from "fs";
  
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize Supabase Client Safely
+let supabaseUrl = '';
+let supabaseKey = '';
+
+try {
+  const envPath = path.join(process.cwd(), '.env');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    const lines = envContent.split('\n');
+    for (const line of lines) {
+      const parts = line.split('=');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const val = parts.slice(1).join('=').trim().replace(/['"]/g, '');
+        if (key === 'VITE_SUPABASE_URL') supabaseUrl = val;
+        if (key === 'VITE_SUPABASE_ANON_KEY') supabaseKey = val;
+      }
+    }
+  }
+} catch (e) {}
+
+if (!supabaseUrl || !supabaseKey) {
+  supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+  supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+}
+
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+if (supabase) {
+  console.log("🟢 [SUPABASE PROXY] Local Supabase client initialized successfully with URL:", supabaseUrl);
+} else {
+  console.warn("⚠️ [SUPABASE PROXY] Could not initialize Supabase client (keys missing)");
+}
  
 let transporter: nodemailer.Transporter | null = null;
  
@@ -511,8 +546,34 @@ async function startServer() {
       }
     }
 
+    // Try to fetch real players from Supabase to construct real-player stats
+    let activePlayerPool = [...playerPool];
+    if (supabase) {
+      try {
+        console.log(`📡 [SUPABASE] Fetching real players to map Catapult stats...`);
+        const { data: dbPlayers, error: dbErr } = await supabase
+          .from('players')
+          .select('nombre, apellido1, apellido2')
+          .order('apellido1', { ascending: true });
+        
+        if (!dbErr && dbPlayers && dbPlayers.length > 0) {
+          console.log(`✅ [SUPABASE] Found ${dbPlayers.length} real players. Customizing playerPool.`);
+          activePlayerPool = dbPlayers.map((dp: any, index: number) => {
+            const template = playerPool[index % playerPool.length];
+            const fullName = `${dp.nombre} ${dp.apellido1 || ''} ${dp.apellido2 || ''}`.trim();
+            return {
+              ...template,
+              name: fullName
+            };
+          });
+        }
+      } catch (err: any) {
+        console.error("❌ Error fetching players from Supabase:", err.message);
+      }
+    }
+
     // Build exactly "athleteCount" high-fidelity records
-    const finalStats = playerPool.slice(0, athleteCount).map(p => ({
+    const finalStats = activePlayerPool.slice(0, athleteCount).map(p => ({
       athlete_name: p.name.toUpperCase(),
       name: p.name,
       duration: p.duration,

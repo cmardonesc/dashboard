@@ -251,6 +251,8 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
               catName = REVERSE_CATEGORY_ID_MAP[citationCatId].toUpperCase().replace('_', ' ');
             } else if (p?.categoria) {
               catName = p.categoria.toUpperCase().replace('_', ' ');
+            } else if (p?.category) {
+              catName = p.category.toUpperCase().replace('_', ' ');
             } else if (defaultCategory) {
               catName = defaultCategory.toUpperCase().replace('_', ' ');
             }
@@ -331,6 +333,22 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
     });
     return Array.from(cats).sort();
   }, [sessionData]);
+
+  // Sincronizar selección de categoría con la prop categoryName del padre
+  useEffect(() => {
+    if (categoryName && sessionData.length > 0) {
+      const formattedPropName = categoryName.trim().toUpperCase();
+      const matchingCat = detectedCategories.find(c => c.toUpperCase() === formattedPropName);
+      if (matchingCat) {
+        setSelectedCategory(matchingCat);
+      } else {
+        const partialMatch = detectedCategories.find(c => c.toUpperCase().includes(formattedPropName) || formattedPropName.includes(c.toUpperCase()));
+        if (partialMatch) {
+          setSelectedCategory(partialMatch);
+        }
+      }
+    }
+  }, [categoryName, detectedCategories, sessionData.length]);
 
   const filteredSessionData = useMemo(() => {
     if (selectedCategory === 'TODAS') return sessionData;

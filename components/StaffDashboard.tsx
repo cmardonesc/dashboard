@@ -498,6 +498,10 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
     const todayStr = getLocalDateString();
     const activeMicrocycles = realMicrocycles.filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
 
+    const selectedCategoryName = selectedCategoryId 
+      ? Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === selectedCategoryId)?.[0].replace('_', ' ').toUpperCase()
+      : null;
+
   const renderPlayerName = (p: any, id?: number) => {
     let displayName = '';
     const playerId = p?.player_id || id;
@@ -1342,17 +1346,14 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       case 'dinamicas':
         return <DinamicasArea />;
       case 'fisica_wellness':
-        return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="wellness" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} categoryName={selectedCategoryName} />;
       case 'fisica_pse':
-        return <FisicaArea performanceRecords={performanceRecords} view="pse" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="pse" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} categoryName={selectedCategoryName} />;
       case 'fisica_carga_externa_total':
-        return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="external_total" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} categoryName={selectedCategoryName} />;
       case 'fisica_carga_externa_tareas':
         return <CargaTareasArea performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
       case 'fisica_gps_intelligence':
-        const selectedCategoryName = selectedCategoryId 
-          ? Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === selectedCategoryId)?.[0].replace('_', ' ').toUpperCase()
-          : null;
         return <GPSIntelligenceDashboard 
           performanceRecords={filteredPerformanceRecords} 
           clubs={clubs} 
@@ -1362,7 +1363,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
           userClubId={userClubId}
         />;
       case 'fisica_reporte':
-        return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} />;
+        return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} categoryName={selectedCategoryName} />;
       case 'fisica_pronostico':
         return <PronosticoCargas clubs={clubs} />;
       case 'nutricion_resumen_grupal':

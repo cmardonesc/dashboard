@@ -1700,6 +1700,13 @@ export default function DataImportArea() {
 
         const rawStatus = findVal(a, ['Bakestatus', 'status', 'Status', 'baking_status']) || findVal(item, ['Bakestatus', 'status', 'Status']) || 'Ready';
 
+        let parsedAthleteCount = 0;
+        const statusStr = String(rawStatus || "");
+        const statusMatch = statusStr.match(/baked \d+-\d+-(\d+)/) || statusStr.match(/(\d+)$/);
+        if (statusMatch) {
+          parsedAthleteCount = parseInt(statusMatch[1], 10);
+        }
+
         return {
           ...item,
           ...a,
@@ -1708,7 +1715,7 @@ export default function DataImportArea() {
           modifiedDate: mDate,
           startTime,
           endTime,
-          athleteCount: Number(athleteCount) || 0,
+          athleteCount: parsedAthleteCount || Number(athleteCount) || 1,
           duration: Number(durationMin) || 0,
           bakestatus: formatBakeStatus(rawStatus)
         };
@@ -1772,7 +1779,7 @@ export default function DataImportArea() {
           const first = group[0];
           
           // De cada grupo, conserva solo una tarjeta representativa y muestra en ella el conteo total de entradas del grupo como número de atletas
-          const totalAthleteCount = group.length;
+          const totalAthleteCount = group.reduce((sum, act) => sum + (act.athleteCount || 1), 0);
 
           // Usar el campo Identifier del primer item del grupo como ID representativo
           const reprId = first.Identifier || first.id || first.activity_id || first.activityId || 'unknown-session';
