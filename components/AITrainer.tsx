@@ -1,8 +1,5 @@
 
 import React, { useState } from 'react';
-import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface Exercise {
   name: string;
@@ -49,15 +46,23 @@ const AITrainer: React.FC = () => {
       }
       Solo devuelve el JSON, sin texto adicional.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json"
-        }
+      const response = await fetch("/api/gemini/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          config: {
+            responseMimeType: "application/json"
+          }
+        })
       });
 
-      const rawText = response.text || '{}';
+      if (!response.ok) {
+        throw new Error(`Proxy error: ${response.status}`);
+      }
+
+      const resData = await response.json();
+      const rawText = resData.text || '{}';
       let data;
       try {
         data = JSON.parse(rawText);

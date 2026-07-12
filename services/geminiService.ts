@@ -1,9 +1,6 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
 import { AthletePerformanceRecord } from '../types';
 
 export const getPerformanceInsights = async (data: AthletePerformanceRecord[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const summary = data.map(record => ({
     name: record.player.name,
     category: record.player.category,
@@ -26,12 +23,18 @@ export const getPerformanceInsights = async (data: AthletePerformanceRecord[]) =
       Formatea la respuesta en Markdown limpio con viñetas. Sé profesional, directo y utiliza terminología futbolística. RESPONDE SIEMPRE EN ESPAÑOL.
     `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
+    const response = await fetch("/api/gemini/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
     });
 
-    return response.text || "No se pudieron generar los informes en este momento.";
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const resData = await response.json();
+    return resData.text || "No se pudieron generar los informes en este momento.";
   } catch (error) {
     console.warn("Gemini API Error (fallback triggered):", error);
     
@@ -59,7 +62,6 @@ ${riskString}
 };
 
 export const queryCoachAssistant = async (query: string, data: AthletePerformanceRecord[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const context = data.map(r => ({
     name: r.player.name,
     wellness: r.wellness.slice(-3),
@@ -78,12 +80,18 @@ export const queryCoachAssistant = async (query: string, data: AthletePerformanc
       Responde de forma concisa, profesional y basada en los datos proporcionados. Si no tienes datos suficientes para responder algo específico, menciónalo.
     `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
+    const response = await fetch("/api/gemini/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
     });
 
-    return response.text || "No tengo una respuesta clara basada en los datos actuales.";
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const resData = await response.json();
+    return resData.text || "No tengo una respuesta clara basada en los datos actuales.";
   } catch (error) {
     console.warn("Gemini Assistant API Error (fallback triggered):", error);
     
@@ -185,7 +193,6 @@ export const getWeatherForecast = async (city: string, country: string): Promise
     return { data: weatherCache[cacheKey].data, sources: [] };
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const prompt = `
       Proporciona el pronóstico del tiempo detallado para ${city}, ${country}.
@@ -215,53 +222,61 @@ export const getWeatherForecast = async (city: string, country: string): Promise
       Usa clases de FontAwesome para los iconos (fa-sun, fa-cloud, fa-cloud-rain, fa-moon, etc.).
     `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            city: { type: Type.STRING },
-            currentTemp: { type: Type.NUMBER },
-            condition: { type: Type.STRING },
-            precipitation: { type: Type.STRING },
-            humidity: { type: Type.STRING },
-            wind: { type: Type.STRING },
-            hourly: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  time: { type: Type.STRING },
-                  temp: { type: Type.NUMBER }
-                },
-                required: ["time", "temp"]
+    const response = await fetch("/api/gemini/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              city: { type: "string" },
+              currentTemp: { type: "number" },
+              condition: { type: "string" },
+              precipitation: { type: "string" },
+              humidity: { type: "string" },
+              wind: { type: "string" },
+              hourly: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    time: { type: "string" },
+                    temp: { type: "number" }
+                  },
+                  required: ["time", "temp"]
+                }
+              },
+              daily: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    day: { type: "string" },
+                    icon: { type: "string" },
+                    high: { type: "number" },
+                    low: { type: "number" },
+                    isToday: { type: "boolean" }
+                  },
+                  required: ["day", "icon", "high", "low"]
+                }
               }
             },
-            daily: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  day: { type: Type.STRING },
-                  icon: { type: Type.STRING },
-                  high: { type: Type.NUMBER },
-                  low: { type: Type.NUMBER },
-                  isToday: { type: Type.BOOLEAN }
-                },
-                required: ["day", "icon", "high", "low"]
-              }
-            }
-          },
-          required: ["city", "currentTemp", "condition", "precipitation", "humidity", "wind", "hourly", "daily"]
+            required: ["city", "currentTemp", "condition", "precipitation", "humidity", "wind", "hourly", "daily"]
+          }
         }
-      },
+      })
     });
 
-    const jsonText = response.text || "{}";
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const resData = await response.json();
+    const jsonText = resData.text || "{}";
     let data: WeatherData;
     try {
       const extracted = extractFirstJsonObject(jsonText);
@@ -277,7 +292,7 @@ export const getWeatherForecast = async (city: string, country: string): Promise
         throw parseError;
       }
     }
-    const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const sources = resData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
     // Cache the successful response
     weatherCache[cacheKey] = { data, timestamp: now };
@@ -349,7 +364,6 @@ export const getWeatherForecast = async (city: string, country: string): Promise
 };
 
 export const getChartSummary = async (chartTitle: string, data: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const prompt = `
       Actúa como un Científico del Deporte de élite.
@@ -364,12 +378,18 @@ export const getChartSummary = async (chartTitle: string, data: any) => {
       Sé directo, profesional y utiliza terminología técnica deportiva. RESPONDE SIEMPRE EN ESPAÑOL.
     `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
+    const response = await fetch("/api/gemini/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
     });
 
-    return response.text || "No se pudo generar el resumen del gráfico.";
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const resData = await response.json();
+    return resData.text || "No se pudo generar el resumen del gráfico.";
   } catch (error) {
     console.warn("Gemini Chart API Error (fallback triggered):", error);
     
@@ -390,7 +410,6 @@ export const getChartSummary = async (chartTitle: string, data: any) => {
 };
 
 export const getAthleteFootprintSummary = async (player: any, metrics: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const prompt = `
       Actúa como un Director de Ciencias del Deporte de una Selección Nacional de Fútbol.
@@ -413,12 +432,18 @@ export const getAthleteFootprintSummary = async (player: any, metrics: any) => {
       Formatea la respuesta en Markdown elegante. Sé muy profesional, directo y utiliza terminología de alto rendimiento. RESPONDE SIEMPRE EN ESPAÑOL.
     `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
+    const response = await fetch("/api/gemini/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
     });
 
-    return response.text || "No se pudo generar el perfil ejecutivo en este momento.";
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const resData = await response.json();
+    return resData.text || "No se pudo generar el perfil ejecutivo en este momento.";
   } catch (error) {
     console.warn("Gemini Footprint API Error (fallback triggered):", error);
     
@@ -440,7 +465,6 @@ Futbolista de alto valor antropométrico y neuromuscular, proyectando un nivel �
 };
 
 export const askAthleteAiAssistant = async (player: any, metrics: any, query: string, chatHistory: { role: 'user' | 'model', text: string }[] = []) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const formattedHistory = chatHistory.map(h => `${h.role === 'user' ? 'Entrenador' : 'Científico'}: ${h.text}`).join("\n");
     const prompt = `
@@ -459,15 +483,20 @@ export const askAthleteAiAssistant = async (player: any, metrics: any, query: st
       Responde siempre en español. No inventes datos que no existan, mantente fiel a la fisiología deportiva y al contexto técnico. Enfatiza consejos prácticos.
     `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
+    const response = await fetch("/api/gemini/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
     });
 
-    return response.text || "Lo siento, no pude procesar la consulta en este momento.";
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const resData = await response.json();
+    return resData.text || "Lo siento, no pude procesar la consulta en este momento.";
   } catch (error) {
     console.error("Error consulting athlete assistant:", error);
     return `**Ejemplo de Orientación Práctica - ${player.nombre || 'Atleta'}**:\n\nPara optimizar su perfil de ${player.posicion || 'Atleta'}, te recomiendo:\n1. **Estímulos Neuromusculares**: Trabajos de aceleración pura (0-15 metros) con recuperaciones completas de 90 segundos entre repeticiones.\n2. **Plan aeróbico adaptativo**: Fraccionamientos cortos en cinta o campo (ej: 15s alta intensidad / 15s trote regenerativo).\n\nConsúltame nuevamente si necesitas dosificaciones específicas del volumen de carga.`;
   }
 };
-

@@ -6801,7 +6801,7 @@ const HealthLoad = ({ player, injury, gps }: { player?: PlayerData, injury?: Inj
 };
 
 const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjRebound = [], players }: { imtp: IMTPData[], speed: SpeedTestData[], vo2max: VO2MaxData[], antropometria: AntropometriaData[], test505?: any[], cmjRebound?: CMJReboundData[], players: PlayerData[] }) => {
-  const [tableType, setTableType] = useState<'imtp' | 'rebound' | 'speed' | 'vo2max' | 'antropometria' | 'test505' | 'comparativa'>('imtp');
+  const [tableType, setTableType] = useState<'imtp' | 'cmj' | 'rebound' | 'speed' | 'vo2max' | 'antropometria' | 'test505' | 'comparativa'>('imtp');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
@@ -7141,6 +7141,7 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
   const filteredData = useMemo(() => {
     let data: any[] = [];
     if (tableType === 'imtp') data = imtp;
+    else if (tableType === 'cmj') data = imtp;
     else if (tableType === 'rebound') data = cmjRebound;
     else if (tableType === 'speed') data = speed;
     else if (tableType === 'vo2max') data = vo2max;
@@ -7222,6 +7223,11 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
         { label: 'IMTP RFD 200ms', key: 'imtp_rfd_200ms' },
         { label: 'IMTP Asimetría %', key: 'imtp_asimetria' },
         { label: 'IMTP Débil', key: 'imtp_debil' },
+        { label: 'Observaciones', key: 'observaciones' },
+      ];
+    } else if (tableType === 'cmj') {
+      return [
+        { label: 'Fecha', key: 'fecha_test' },
         { label: 'CMJ Fuerza Pico Conc', key: 'concentric_peak_force_n' },
         { label: 'CMJ RSI Mod', key: 'rsi_modified_m_s' },
         { label: 'CMJ Altura (IM)', key: 'jump_height_impmom_cm' },
@@ -7425,7 +7431,8 @@ const DataTable = ({ imtp, speed, vo2max, antropometria, test505 = [], cmjReboun
       <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-6">
         <div className="flex flex-wrap gap-2">
           {[
-            { id: 'imtp', label: 'Fuerza y Potencia & Saltos', icon: 'fa-bolt' },
+            { id: 'imtp', label: 'IMTP', icon: 'fa-bolt' },
+            { id: 'cmj', label: 'CMJ', icon: 'fa-arrows-up-from-line' },
             { id: 'rebound', label: 'CMJ Rebound', icon: 'fa-arrows-spin' },
             { id: 'speed', label: 'Velocidad', icon: 'fa-gauge-high' },
             { id: 'vo2max', label: 'Resistencia', icon: 'fa-wind' },

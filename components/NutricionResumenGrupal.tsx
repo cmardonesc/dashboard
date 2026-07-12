@@ -2,7 +2,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AthletePerformanceRecord, NutritionData } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { GoogleGenAI } from "@google/genai";
 import { normalizeClub, getDriveDirectLink } from '../lib/utils';
 import ClubBadge from './ClubBadge';
 import jsPDF from 'jspdf';
@@ -531,12 +530,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     if (filteredData.length === 0) return;
     setIsGenerating(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      const model = ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: [{
-          parts: [{
-            text: `Actúa como un Nutricionista Deportivo de Élite. Analiza los siguientes datos grupales de un equipo de fútbol y redacta un resumen ejecutivo breve (máximo 150 palabras). 
+      const prompt = `Actúa como un Nutricionista Deportivo de Élite. Analiza los siguientes datos grupales de un equipo de fútbol y redacta un resumen ejecutivo breve (máximo 150 palabras). 
             Datos:
             - Total de jugadores evaluados: ${filteredData.length}
             - Promedio Masa Muscular %: ${(filteredData.reduce((acc, curr) => acc + (curr.data.masa_muscular_pct || 0), 0) / filteredData.length).toFixed(1)}%
@@ -546,12 +540,20 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
             Enfócate en el estado general del grupo y recomendaciones rápidas basándote en que:
             - Masa Muscular: >54% es excelente, <50% es bajo.
             - Masa Grasa: <16% es excelente, >20% es elevado.
-            - 6 Pliegues: <35mm es excelente, >50mm es elevado.`
-          }]
-        }]
+            - 6 Pliegues: <35mm es excelente, >50mm es elevado.`;
+
+      const response = await fetch("/api/gemini/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
       });
-      const response = await model;
-      setAiSummary(response.text || 'No se pudo generar el resumen.');
+
+      if (!response.ok) {
+        throw new Error(`Proxy error: ${response.status}`);
+      }
+
+      const resData = await response.json();
+      setAiSummary(resData.text || 'No se pudo generar el resumen.');
     } catch (error) {
       console.warn("AI Nutrition Summary Error (fallback triggered):", error);
       const muscleAvg = (filteredData.reduce((acc, curr) => acc + (curr.data.masa_muscular_pct || 0), 0) / filteredData.length);

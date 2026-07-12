@@ -638,10 +638,32 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       let saveError;
       try {
-        const { error } = await supabase
+        // Consultar si ya existe un reporte de competencia para este jugador en esta fecha
+        const { data: existingReport, error: checkError } = await supabase
           .from('match_reports')
-          .insert(payload);
-        saveError = error;
+          .select('id')
+          .eq('player_id', player.player_id)
+          .eq('fecha', selectedDate)
+          .maybeSingle();
+
+        if (checkError) {
+          console.error("Error comprobando reporte de competencia existente:", checkError);
+        }
+
+        if (existingReport?.id) {
+          console.log(`📝 Sincronizando reporte de competencia: actualizando fila existente ${existingReport.id}`);
+          const { error } = await supabase
+            .from('match_reports')
+            .update(payload)
+            .eq('id', existingReport.id);
+          saveError = error;
+        } else {
+          console.log(`➕ Sincronizando reporte de competencia: insertando nuevo registro`);
+          const { error } = await supabase
+            .from('match_reports')
+            .insert(payload);
+          saveError = error;
+        }
       } catch (err: any) {
         saveError = err;
       }
@@ -656,7 +678,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             player_id: player.player_id,
             session_date: selectedDate,
             rpe: Math.max(1, Number(data.rpe) || 0), // Garantiza un mínimo de 1 para cumplir la restricción check de internal_load
-            duration_min: Number(matchMinutesValue) || 90,
+            duration_min: (matchMinutesValue !== undefined && matchMinutesValue !== null) ? Number(matchMinutesValue) : 90,
             type: 'MATCH',
             molestias: `[Partido vs ${data.rival || 'Desconocido'} - Resultado: ${matchResultValue || 'Titular'}] | ` + (data.sorenessAreas.join(', ') || 'Sin molestias'),
             enfermedad: data.illnessSymptoms.join(', ') || null,

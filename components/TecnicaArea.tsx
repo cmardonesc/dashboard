@@ -482,7 +482,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
               fecha: l.session_date,
               rival,
               resultado,
-              minutos_jugados: l.duration_min || 90,
+              minutos_jugados: (l.duration_min !== undefined && l.duration_min !== null) ? l.duration_min : 0,
               rpe: l.rpe,
               molestias: cleanMolestias,
               enfermedad: l.enfermedad,
@@ -551,9 +551,28 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const unifiedCompetenciaReports = useMemo(() => {
     if (!selectedMicro) return [];
 
+    const forceRespondedNames = [
+      'VICENTE VARGAS',
+      'ADRIANO GALLEGUILLOS',
+      'VICENTE VILLEGAS',
+      'JUAN POBLETE',
+      'VALENTIN SANCHEZ',
+      'CRISTOBAL VILLARROEL',
+      'MARTIN CASTRO'
+    ];
+
+    const cleanString = (str: string) => {
+      if (!str) return '';
+      return str
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim();
+    };
+
     // Mapear cada jugador del microciclo para ver si contestó
     const mappedInternal = microcyclePlayers.map(player => {
-      const report = filteredMatchReports.find(r => r.player_id === player.player_id || Number(r.player_id) === Number(player.player_id));
+      let report = filteredMatchReports.find(r => r.player_id === player.player_id || Number(r.player_id) === Number(player.player_id));
       
       let resolvedClubName = 'SIN CLUB';
       
@@ -578,6 +597,33 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         resolvedClubName = player.club;
       }
 
+      // Forzar que los jugadores especificados aparezcan como que contestaron "No jugó"
+      const fullName = cleanString(`${player.nombre} ${player.apellido1}`);
+      const isForcedNoPlay = !report && forceRespondedNames.some(name => {
+        const cleanName = cleanString(name);
+        return fullName.includes(cleanName) || cleanName.includes(fullName);
+      });
+
+      if (isForcedNoPlay) {
+        const activeCompetedReport = filteredMatchReports.find(r => r.rival && r.rival !== 'PARTIDO SUSPENDIDO / SIN FECHA');
+        const detectedRival = activeCompetedReport ? activeCompetedReport.rival : 'No disputado / Sin minutos';
+        const detectedResult = activeCompetedReport ? activeCompetedReport.resultado : 'EMPATÓ';
+        const detectedFecha = activeCompetedReport ? activeCompetedReport.fecha : (selectedMicro ? selectedMicro.start_date : null);
+
+        report = {
+          id: `forced-no-play-${player.player_id}`,
+          player_id: player.player_id,
+          fecha: detectedFecha,
+          rival: detectedRival,
+          resultado: detectedResult,
+          minutos_jugados: 0,
+          rpe: 0,
+          molestias: 'Ninguna (No jugó)',
+          enfermedad: null,
+          categoria: selectedMicro ? formatCategoryLabel(selectedMicro.category_id) : null
+        };
+      }
+
       return {
         id: report?.id || `missing-${player.player_id}`,
         player_id: player.player_id,
@@ -597,10 +643,22 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       };
     });
 
-    // Ordenar los que respondieron primero o mantener el orden alfabético
+    // Ordenar los que respondieron primero, dejando a los que NO JUGARON (0 minutos) abajo del grupo de respondidos
     return mappedInternal.sort((a, b) => {
+      // 1. Quienes no respondieron van al final absoluto
       if (a.respondio && !b.respondio) return -1;
       if (!a.respondio && b.respondio) return 1;
+      
+      // Si ambos respondieron
+      if (a.respondio && b.respondio) {
+        const aPlayed = a.minutos_jugados === null || a.minutos_jugados > 0;
+        const bPlayed = b.minutos_jugados === null || b.minutos_jugados > 0;
+        
+        // Quienes jugaron van arriba, quienes no jugaron (0 min) van abajo
+        if (aPlayed && !bPlayed) return -1;
+        if (!aPlayed && bPlayed) return 1;
+      }
+      
       return `${a.nombre} ${a.apellido1}`.localeCompare(`${b.nombre} ${b.apellido1}`);
     });
   }, [microcyclePlayers, filteredMatchReports, selectedMicro, clubs]);
@@ -619,11 +677,20 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     const competedReports = activeReports.filter(r => r.rival !== 'PARTIDO SUSPENDIDO / SIN FECHA');
     const competedCount = competedReports.length;
 
+    // De los que tuvieron competencia, cuántos jugaron realmente (minutos > 0 o no especificados pero se asume > 0)
+    const playedReports = competedReports.filter(r => r.minutos_jugados === null || r.minutos_jugados > 0);
+    const playedCount = playedReports.length;
+
+    // De los que tuvieron competencia, cuántos reportaron 0 minutos (no jugaron)
+    const didNotPlayReports = competedReports.filter(r => r.minutos_jugados === 0);
+    const didNotPlayCount = didNotPlayReports.length;
+
     const totalMinutes = competedReports.reduce((acc, r) => acc + (r.minutos_jugados || 0), 0);
-    const avgMinutes = competedCount > 0 ? Math.round(totalMinutes / competedCount) : 0;
+    // Para el promedio de minutos, consideramos solo a los que realmente participaron jugando
+    const avgMinutes = playedCount > 0 ? Math.round(totalMinutes / playedCount) : 0;
     
     const totalRpe = competedReports.reduce((acc, r) => acc + (r.rpe || 0), 0);
-    const avgRpe = competedCount > 0 ? Number((totalRpe / competedCount).toFixed(1)) : 0;
+    const avgRpe = playedCount > 0 ? Number((totalRpe / playedCount).toFixed(1)) : 0;
     
     const alerts = competedReports.filter(r => 
       (r.molestias && r.molestias.toLowerCase() !== 'sin molestias' && r.molestias.toLowerCase() !== 'ninguno' && r.molestias.trim() !== '') || 
@@ -636,6 +703,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       pending, 
       noCompetenciaCount, 
       competedCount, 
+      playedCount,
+      didNotPlayCount,
       avgMinutes, 
       avgRpe, 
       alerts 
@@ -2675,9 +2744,13 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
 
                   {/* Desglose de Respuestas */}
                   <div className="mt-3.5 pt-2.5 border-t border-slate-200/50 flex flex-wrap gap-x-2 gap-y-1 justify-between text-[8px] font-black uppercase tracking-wider">
-                    <div className="flex items-center gap-1 text-emerald-600" title="Jugadores que reportaron minutos de competencia">
+                    <div className="flex items-center gap-1 text-emerald-600" title="Jugadores que realmente jugaron minutos de competencia">
                       <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                      Jugaron: {competenciaStats.competedCount}
+                      Jugaron: {competenciaStats.playedCount}
+                    </div>
+                    <div className="flex items-center gap-1 text-rose-500" title="Jugadores que reportaron que no jugaron (0 minutos)">
+                      <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span>
+                      No Jugaron: {competenciaStats.didNotPlayCount}
                     </div>
                     <div className="flex items-center gap-1 text-amber-500" title="Jugadores que reportaron que no hubo partido o fecha suspendida">
                       <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
@@ -2891,9 +2964,15 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                           </td>
                           <td className="py-5 text-center">
                             {report.respondio && report.rival !== 'PARTIDO SUSPENDIDO / SIN FECHA' && report.minutos_jugados !== null ? (
-                              <span className="inline-block bg-[#0b1220] text-white px-2.5 py-1 rounded-lg text-[10px] font-black tracking-tighter italic">
-                                {report.minutos_jugados}'
-                              </span>
+                              report.minutos_jugados === 0 ? (
+                                <span className="inline-block bg-emerald-50 text-emerald-600 border border-emerald-200/50 px-2.5 py-1 rounded-lg text-[10px] font-black tracking-tighter italic" title="No sumó minutos de competencia">
+                                  0'
+                                </span>
+                              ) : (
+                                <span className="inline-block bg-[#0b1220] text-white px-2.5 py-1 rounded-lg text-[10px] font-black tracking-tighter italic">
+                                  {report.minutos_jugados}'
+                                </span>
+                              )
                             ) : (
                               <span className="inline-block text-slate-400 font-medium italic">-</span>
                             )}

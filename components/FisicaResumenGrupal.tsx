@@ -56,13 +56,27 @@ export const ALL_METRIC_CONFIGS: Record<string, MetricConfig> = {
   t_desacel_2m: { key: 't_desacel_2m', label: '505 T. Desacel 2m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 2.10, normal: 2.40 } },
   t_cod_2m: { key: 't_cod_2m', label: '505 T. COD 2m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 2.10, normal: 2.40 } },
   t_reacel_1_2m: { key: 't_reacel_1_2m', label: '505 T. Reacel 1.2m', unit: 's', lowerIsBetter: true, thresholds: { excellent: 2.10, normal: 2.40 } },
-  z_score_acel: { key: 'z_score_acel', label: '505 Z-Score Acel', unit: '', lowerIsBetter: false, thresholds: { excellent: 1.5, normal: 0.5 } }
+  z_score_acel: { key: 'z_score_acel', label: '505 Z-Score Acel', unit: '', lowerIsBetter: false, thresholds: { excellent: 1.5, normal: 0.5 } },
+
+  // CMJ Rebound (Fuerza Reactiva)
+  rebound_rsi: { key: 'rebound_rsi', label: 'Rebound RSI', unit: '', lowerIsBetter: false, thresholds: { excellent: 2.2, normal: 1.5 } },
+  rebound_contact_time_ms: { key: 'rebound_contact_time_ms', label: 'Contact Time', unit: 'ms', lowerIsBetter: true, thresholds: { excellent: 150, normal: 200 } },
+  rebound_flight_time_ms: { key: 'rebound_flight_time_ms', label: 'Flight Time', unit: 'ms', lowerIsBetter: false, thresholds: { excellent: 450, normal: 350 } },
+
+  // Antropometría (Composición Corporal)
+  masa_corporal_kg: { key: 'masa_corporal_kg', label: 'Masa Corporal', unit: 'kg', lowerIsBetter: false, thresholds: { excellent: 78, normal: 72 } },
+  talla_cm: { key: 'talla_cm', label: 'Talla', unit: 'cm', lowerIsBetter: false, thresholds: { excellent: 185, normal: 175 } },
+  masa_muscular_pct: { key: 'masa_muscular_pct', label: 'Masa Muscular', unit: '%', lowerIsBetter: false, thresholds: { excellent: 50, normal: 45 } },
+  masa_adiposa_pct: { key: 'masa_adiposa_pct', label: 'Masa Adiposa', unit: '%', lowerIsBetter: true, thresholds: { excellent: 10, normal: 13 } },
+  masa_osea_pct: { key: 'masa_osea_pct', label: 'Masa Ósea', unit: '%', lowerIsBetter: false, thresholds: { excellent: 15, normal: 12 } }
 };
 
 export const METRICS_IMTP = ['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'imtp_asimetria', 'fuerza_cmj'];
 export const METRICS_CMJ = ['cmj_rsi_mod', 'cmj_altura_salto_im', 'cmj_peak_pot_relativa'];
+export const METRICS_REBOUND = ['rebound_rsi', 'rebound_contact_time_ms', 'rebound_flight_time_ms'];
 export const METRICS_SPEED = ['tiempo_10m', 'vel_10m', 'tiempo_10_20m', 'tiempo_20_30m', 'tiempo_total'];
 export const METRICS_VO2 = ['vo2_max', 'vam', 'fc_max', 'mts', 'vt2_fc'];
+export const METRICS_ANTROPOMETRIA = ['masa_corporal_kg', 'talla_cm', 'masa_muscular_pct', 'masa_adiposa_pct', 'masa_osea_pct'];
 export const METRICS_TEST505 = ['t_acel_2m', 't_desacel_2m', 't_cod_2m', 't_reacel_1_2m', 'z_score_acel'];
 
 const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, userClub, userClubId, clubs = [] }) => {
@@ -74,11 +88,16 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
     return localDate.toISOString().split('T')[0];
   });
 
+  // Selected active evaluation tab state
+  const [evaluationTab, setEvaluationTab] = useState<'imtp' | 'cmj' | 'rebound' | 'speed' | 'vo2' | 'antropometria' | 'test505'>('cmj');
+
   // Dynamic Selected Metric Column States
   const [imtpMetric, setImtpMetric] = useState<string>('imtp_fuerza_n');
   const [cmjMetric, setCmjMetric] = useState<string>('cmj_rsi_mod');
+  const [reboundMetric, setReboundMetric] = useState<string>('rebound_rsi');
   const [speedMetric, setSpeedMetric] = useState<string>('tiempo_total');
   const [vo2Metric, setVo2Metric] = useState<string>('vo2_max');
+  const [antropometriaMetric, setAntropometriaMetric] = useState<string>('masa_corporal_kg');
   const [test505Metric, setTest505Metric] = useState<string>('t_cod_2m');
 
   // Filter States
@@ -102,9 +121,12 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   // Data States
   const [players, setPlayers] = useState<any[]>([]);
   const [imtpData, setImtpData] = useState<any[]>([]);
+  const [cmjData, setCmjData] = useState<any[]>([]);
   const [speedData, setSpeedData] = useState<any[]>([]);
   const [vo2maxData, setVo2maxData] = useState<any[]>([]);
   const [test505Data, setTest505Data] = useState<any[]>([]);
+  const [reboundData, setReboundData] = useState<any[]>([]);
+  const [antropometriaData, setAntropometriaData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // AI & UI States
@@ -177,6 +199,31 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
             }
             return newItem;
           });
+        } else if (tableName === 'evaluaciones_cmj') {
+          processedData = data.map((item: any) => {
+            const newItem = { ...item };
+            if (newItem.concentric_peak_force_n !== undefined && newItem.concentric_peak_force_n !== null) {
+              newItem.fuerza_cmj = Number(newItem.concentric_peak_force_n);
+            } else if (newItem.fuerza_cmj !== undefined && newItem.fuerza_cmj !== null) {
+              newItem.concentric_peak_force_n = Number(newItem.fuerza_cmj);
+            }
+            if (newItem.rsi_modified_m_s !== undefined && newItem.rsi_modified_m_s !== null) {
+              newItem.cmj_rsi_mod = Number(newItem.rsi_modified_m_s);
+            } else if (newItem.cmj_rsi_mod !== undefined && newItem.cmj_rsi_mod !== null) {
+              newItem.rsi_modified_m_s = Number(newItem.cmj_rsi_mod);
+            }
+            if (newItem.jump_height_impmom_cm !== undefined && newItem.jump_height_impmom_cm !== null) {
+              newItem.cmj_altura_salto_im = Number(newItem.jump_height_impmom_cm);
+            } else if (newItem.cmj_altura_salto_im !== undefined && newItem.cmj_altura_salto_im !== null) {
+              newItem.jump_height_impmom_cm = Number(newItem.cmj_altura_salto_im);
+            }
+            if (newItem.peak_power_bm_w_kg !== undefined && newItem.peak_power_bm_w_kg !== null) {
+              newItem.cmj_peak_pot_relativa = Number(newItem.peak_power_bm_w_kg);
+            } else if (newItem.cmj_peak_pot_relativa !== undefined && newItem.cmj_peak_pot_relativa !== null) {
+              newItem.peak_power_bm_w_kg = Number(newItem.cmj_peak_pot_relativa);
+            }
+            return newItem;
+          });
         }
         allData = [...allData, ...processedData];
         if (data.length < pageSize) {
@@ -194,36 +241,25 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pData, imtpRes, cmjRes, sData, vData, t505Res] = await Promise.all([
+      const [pData, imtpRes, cmjRes, reboundRes, sData, vData, t505Res, antroRes] = await Promise.all([
         fetchFullTable('players', 'player_id, nombre, apellido1, apellido2, anio, id_club, posicion'),
         fetchFullTable('evaluaciones_imtp'),
         fetchFullTable('evaluaciones_cmj'),
+        fetchFullTable('evaluaciones_cmj_rebound'),
         fetchFullTable('velocidad_tests'),
         fetchFullTable('vo2max_tests'),
         fetchFullTable('test_505'),
+        fetchFullTable('antropometria'),
       ]);
 
       setPlayers(pData || []);
-
-      // Merge IMTP and CMJ datasets (both have player_id and fecha_test)
-      const mergedMap = new Map<string, any>();
-      (imtpRes || []).forEach((item: any) => {
-        const key = `${item.player_id}_${item.fecha_test}`;
-        mergedMap.set(key, { ...item });
-      });
-      (cmjRes || []).forEach((item: any) => {
-        const key = `${item.player_id}_${item.fecha_test}`;
-        const existing = mergedMap.get(key);
-        if (existing) {
-          mergedMap.set(key, { ...existing, ...item });
-        } else {
-          mergedMap.set(key, { ...item });
-        }
-      });
-      setImtpData(Array.from(mergedMap.values()));
+      setImtpData(imtpRes || []);
+      setCmjData(cmjRes || []);
+      setReboundData(reboundRes || []);
       setSpeedData(sData || []);
       setVo2maxData(vData || []);
       setTest505Data(t505Res || []);
+      setAntropometriaData(antroRes || []);
     } catch (e) {
       console.error("Error loading physical evaluations data:", e);
     } finally {
@@ -260,9 +296,15 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
 
   // Initialize Dates
   useEffect(() => {
-    if (imtpData.length > 0 && !hasInitializedDates.current) {
+    if ((imtpData.length > 0 || cmjData.length > 0) && !hasInitializedDates.current) {
       let latestDateStr = '';
       imtpData.forEach(item => {
+        const dStr = item.fecha_test || item.fecha;
+        if (dStr && (!latestDateStr || dStr > latestDateStr)) {
+          latestDateStr = dStr;
+        }
+      });
+      cmjData.forEach(item => {
         const dStr = item.fecha_test || item.fecha;
         if (dStr && (!latestDateStr || dStr > latestDateStr)) {
           latestDateStr = dStr;
@@ -286,6 +328,18 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
           latestDateStr = dStr;
         }
       });
+      reboundData.forEach(item => {
+        const dStr = item.fecha_test || item.fecha;
+        if (dStr && (!latestDateStr || dStr > latestDateStr)) {
+          latestDateStr = dStr;
+        }
+      });
+      antropometriaData.forEach(item => {
+        const dStr = item.fecha_medicion || item.fecha;
+        if (dStr && (!latestDateStr || dStr > latestDateStr)) {
+          latestDateStr = dStr;
+        }
+      });
 
       if (latestDateStr) {
         try {
@@ -301,7 +355,7 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         }
       }
     }
-  }, [imtpData, speedData, vo2maxData, test505Data]);
+  }, [imtpData, cmjData, reboundData, speedData, vo2maxData, test505Data, antropometriaData]);
 
   // Unique filters data lists
   const availableClubs = useMemo(() => {
@@ -357,6 +411,18 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         return d && d >= startDate && d <= endDate;
       }).sort((a, b) => new Date(b.fecha_test || b.fecha).getTime() - new Date(a.fecha_test || a.fecha).getTime());
 
+      const playerCmjs = cmjData.filter(c => {
+        if (c.player_id !== player.player_id) return false;
+        const d = c.fecha_test || c.fecha;
+        return d && d >= startDate && d <= endDate;
+      }).sort((a, b) => new Date(b.fecha_test || b.fecha).getTime() - new Date(a.fecha_test || a.fecha).getTime());
+
+      const playerRebounds = reboundData.filter(r => {
+        if (r.player_id !== player.player_id) return false;
+        const d = r.fecha_test || r.fecha;
+        return d && d >= startDate && d <= endDate;
+      }).sort((a, b) => new Date(b.fecha_test || b.fecha).getTime() - new Date(a.fecha_test || a.fecha).getTime());
+
       const playerSpeeds = speedData.filter(s => {
         if (s.player_id !== player.player_id) return false;
         const d = s.fecha;
@@ -369,6 +435,12 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         return d && d >= startDate && d <= endDate;
       }).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
+      const playerAntros = antropometriaData.filter(an => {
+        if (an.player_id !== player.player_id) return false;
+        const d = an.fecha_medicion || an.fecha;
+        return d && d >= startDate && d <= endDate;
+      }).sort((a, b) => new Date(b.fecha_medicion || b.fecha).getTime() - new Date(a.fecha_medicion || a.fecha).getTime());
+
       const playerTest505 = test505Data.filter(t => {
         if (t.player_id !== player.player_id) return false;
         const d = t.fecha;
@@ -377,8 +449,11 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
 
       // Grab latest in selected date range
       const latestImtp = playerImtps[0];
+      const latestCmj = playerCmjs[0];
+      const latestRebound = playerRebounds[0];
       const latestSpeed = playerSpeeds[0];
       const latestVo2 = playerVo2max[0];
+      const latestAntro = playerAntros[0];
       const latestTest505 = playerTest505[0];
 
       return {
@@ -389,16 +464,30 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         posicion: player.posicion || 'N/A',
         anio: player.anio || 'N/A',
         
+        // Raw records for full parameter display
+        latestImtp,
+        latestCmj,
+        latestRebound,
+        latestSpeed,
+        latestVo2,
+        latestAntro,
+        latestTest505,
+
         // IMTP Metrics
         imtp_fuerza_n: latestImtp?.imtp_fuerza_n || 0,
         imtp_f_relativa_n_kg: latestImtp?.imtp_f_relativa_n_kg || 0,
         imtp_asimetria: latestImtp?.imtp_asimetria || 0,
-        fuerza_cmj: latestImtp?.fuerza_cmj || 0,
+        fuerza_cmj: latestCmj?.fuerza_cmj || 0,
 
         // CMJ Metrics
-        cmj_rsi_mod: latestImtp?.cmj_rsi_mod || 0,
-        cmj_altura_salto_im: latestImtp?.cmj_altura_salto_im || 0,
-        cmj_peak_pot_relativa: latestImtp?.cmj_peak_pot_relativa || 0,
+        cmj_rsi_mod: latestCmj?.cmj_rsi_mod || 0,
+        cmj_altura_salto_im: latestCmj?.cmj_altura_salto_im || 0,
+        cmj_peak_pot_relativa: latestCmj?.cmj_peak_pot_relativa || 0,
+
+        // Rebound Metrics
+        rebound_rsi: latestRebound?.rebound_rsi || 0,
+        rebound_contact_time_ms: latestRebound?.rebound_contact_time_ms || 0,
+        rebound_flight_time_ms: latestRebound?.rebound_flight_time_ms || 0,
 
         // Speed Metrics
         tiempo_10m: latestSpeed?.tiempo_10m || 0,
@@ -414,6 +503,17 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         mts: latestVo2?.mts || 0,
         vt2_fc: latestVo2?.vt2_fc || 0,
 
+        // Antropometria Metrics
+        masa_corporal_kg: latestAntro?.masa_corporal_kg || 0,
+        talla_cm: latestAntro?.talla_cm || 0,
+        talla_sentada_cm: latestAntro?.talla_sentada_cm || 0,
+        masa_muscular_kg: latestAntro?.masa_muscular_kg || 0,
+        masa_muscular_pct: latestAntro?.masa_muscular_pct || 0,
+        masa_adiposa_kg: latestAntro?.masa_adiposa_kg || 0,
+        masa_adiposa_pct: latestAntro?.masa_adiposa_pct || 0,
+        masa_osea_kg: latestAntro?.masa_osea_kg || 0,
+        masa_osea_pct: latestAntro?.masa_osea_pct || 0,
+
         // Test 505 Metrics
         t_acel_2m: latestTest505?.t_acel_2m || 0,
         t_desacel_2m: latestTest505?.t_desacel_2m || 0,
@@ -423,12 +523,15 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
 
         // Dates
         imtp_date: latestImtp?.fecha_test || 'N/A',
+        cmj_date: latestCmj?.fecha_test || 'N/A',
+        rebound_date: latestRebound?.fecha_test || 'N/A',
         speed_date: latestSpeed?.fecha || 'N/A',
         vo2_date: latestVo2?.fecha || 'N/A',
+        antropometria_date: latestAntro?.fecha_medicion || 'N/A',
         test505_date: latestTest505?.fecha || 'N/A'
       };
     });
-  }, [players, imtpData, speedData, vo2maxData, test505Data, startDate, endDate, clubs]);
+  }, [players, imtpData, cmjData, reboundData, speedData, vo2maxData, antropometriaData, test505Data, startDate, endDate, clubs]);
 
   // Apply Sidebar / Dropdown Filters
   const filteredProfiles = useMemo(() => {
@@ -548,8 +651,10 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
       let metricKey = sortConfig.key;
       if (sortConfig.key === 'imtp') metricKey = imtpMetric;
       else if (sortConfig.key === 'cmj') metricKey = cmjMetric;
+      else if (sortConfig.key === 'rebound') metricKey = reboundMetric;
       else if (sortConfig.key === 'speed') metricKey = speedMetric;
       else if (sortConfig.key === 'vo2') metricKey = vo2Metric;
+      else if (sortConfig.key === 'antropometria') metricKey = antropometriaMetric;
       else if (sortConfig.key === 'test505') metricKey = test505Metric;
 
       switch (sortConfig.key) {
@@ -566,18 +671,32 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
           bVal = b.posicion || '';
           break;
         default: {
+          let rawValA: any;
+          let rawValB: any;
+
+          if (sortConfig.key.includes('.')) {
+            const [mainKey, subKey] = sortConfig.key.split('.');
+            rawValA = a[mainKey]?.[subKey];
+            rawValB = b[mainKey]?.[subKey];
+          } else {
+            rawValA = a[metricKey];
+            rawValB = b[metricKey];
+          }
+
           const config = ALL_METRIC_CONFIGS[metricKey];
           if (config?.lowerIsBetter) {
-            aVal = a[metricKey] || 999;
-            if (aVal === 0) aVal = 999;
-            bVal = b[metricKey] || 999;
-            if (bVal === 0) bVal = 999;
+            aVal = (rawValA !== undefined && rawValA !== null && rawValA !== 0) ? rawValA : 999999;
+            bVal = (rawValB !== undefined && rawValB !== null && rawValB !== 0) ? rawValB : 999999;
           } else {
-            aVal = a[metricKey] || 0;
-            bVal = b[metricKey] || 0;
+            aVal = rawValA || 0;
+            bVal = rawValB || 0;
           }
           break;
         }
+      }
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
       }
 
       if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -586,7 +705,7 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
     });
 
     return data;
-  }, [filteredProfiles, sortConfig, imtpMetric, cmjMetric, speedMetric, vo2Metric, test505Metric]);
+  }, [filteredProfiles, sortConfig, imtpMetric, cmjMetric, reboundMetric, speedMetric, vo2Metric, antropometriaMetric, test505Metric]);
 
   const getAverageForMetric = (metricKey: string) => {
     const validProfiles = filteredProfiles.filter(p => p[metricKey] > 0);
@@ -855,6 +974,597 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
       doc.save(`Resumen_Grupal_Evaluaciones_Fisicas_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (err) {
       console.error("Error creating physical evaluation PDF:", err);
+    }
+  };
+
+  interface TableColumn {
+    header: string;
+    key: string;
+    render: (profile: any) => React.ReactNode;
+  }
+
+  const getMetricsForActiveTab = () => {
+    switch (evaluationTab) {
+      case 'imtp': return METRICS_IMTP;
+      case 'cmj': return METRICS_CMJ;
+      case 'rebound': return METRICS_REBOUND;
+      case 'speed': return METRICS_SPEED;
+      case 'vo2': return METRICS_VO2;
+      case 'antropometria': return METRICS_ANTROPOMETRIA;
+      case 'test505': return METRICS_TEST505;
+      default: return METRICS_CMJ;
+    }
+  };
+
+  const getMetricSelectState = () => {
+    switch (evaluationTab) {
+      case 'imtp': return { value: imtpMetric, setValue: setImtpMetric };
+      case 'cmj': return { value: cmjMetric, setValue: setCmjMetric };
+      case 'rebound': return { value: reboundMetric, setValue: setReboundMetric };
+      case 'speed': return { value: speedMetric, setValue: setSpeedMetric };
+      case 'vo2': return { value: vo2Metric, setValue: setVo2Metric };
+      case 'antropometria': return { value: antropometriaMetric, setValue: setAntropometriaMetric };
+      case 'test505': return { value: test505Metric, setValue: setTest505Metric };
+      default: return { value: cmjMetric, setValue: setCmjMetric };
+    }
+  };
+
+  const getChartsForTab = () => {
+    switch (evaluationTab) {
+      case 'imtp':
+        return ['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'imtp_asimetria'];
+      case 'cmj':
+        return ['cmj_rsi_mod', 'cmj_altura_salto_im', 'cmj_peak_pot_relativa'];
+      case 'rebound':
+        return ['rebound_rsi', 'rebound_contact_time_ms', 'rebound_flight_time_ms'];
+      case 'speed':
+        return ['tiempo_10m', 'vel_10m', 'tiempo_total'];
+      case 'vo2':
+        return ['vo2_max', 'vam', 'fc_max'];
+      case 'antropometria':
+        return ['masa_corporal_kg', 'masa_muscular_pct', 'masa_adiposa_pct'];
+      case 'test505':
+        return ['t_acel_2m', 't_desacel_2m', 't_cod_2m'];
+      default:
+        return [];
+    }
+  };
+
+  const dynamicChartDataForMetric = (metricKey: string) => {
+    const dist = { Excelente: 0, Normal: 0, Bajo: 0 };
+    filteredProfiles.forEach(p => {
+      const val = p[metricKey];
+      const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS[metricKey]);
+      if (status.label !== 'Sin Datos' && status.label in dist) {
+        dist[status.label as keyof typeof dist]++;
+      }
+    });
+    return [
+      { name: 'Excelente', value: dist.Excelente, color: '#10b981' },
+      { name: 'Normal', value: dist.Normal, color: '#f59e0b' },
+      { name: 'Bajo', value: dist.Bajo, color: '#ef4444' }
+    ].filter(item => item.value > 0);
+  };
+
+  const activeTabStats = useMemo(() => {
+    const activeCharts = getChartsForTab();
+    const stats: Array<{ label: string; value: string; unit: string; metricKey: string }> = [];
+    
+    activeCharts.forEach(metricKey => {
+      const config = ALL_METRIC_CONFIGS[metricKey];
+      if (config) {
+        stats.push({
+          label: config.label,
+          value: getAverageForMetric(metricKey),
+          unit: config.unit,
+          metricKey
+        });
+      }
+    });
+    
+    return stats;
+  }, [filteredProfiles, evaluationTab, imtpMetric, cmjMetric, reboundMetric, speedMetric, vo2Metric, antropometriaMetric, test505Metric]);
+
+  const getActiveTabDateString = (profile: any) => {
+    switch (evaluationTab) {
+      case 'imtp': return profile.imtp_date;
+      case 'cmj': return profile.cmj_date;
+      case 'rebound': return profile.rebound_date;
+      case 'speed': return profile.speed_date;
+      case 'vo2': return profile.vo2_date;
+      case 'antropometria': return profile.antropometria_date;
+      case 'test505': return profile.test505_date;
+      default: return 'N/A';
+    }
+  };
+
+  const getTableColumns = (): TableColumn[] => {
+    switch (evaluationTab) {
+      case 'imtp':
+        return [
+          {
+            header: 'Peso (kg)',
+            key: 'latestImtp.peso',
+            render: (p) => p.latestImtp?.peso || p.latestImtp?.['PESO (kg)'] || '-'
+          },
+          {
+            header: 'Fuerza Máxima',
+            key: 'latestImtp.imtp_fuerza_n',
+            render: (p) => p.latestImtp?.imtp_fuerza_n ? `${p.latestImtp.imtp_fuerza_n} N` : '-'
+          },
+          {
+            header: 'F. Relativa',
+            key: 'latestImtp.imtp_f_relativa_n_kg',
+            render: (p) => p.latestImtp?.imtp_f_relativa_n_kg ? `${p.latestImtp.imtp_f_relativa_n_kg} N/kg` : '-'
+          },
+          {
+            header: 'Asimetría',
+            key: 'latestImtp.imtp_asimetria',
+            render: (p) => {
+              const asim = p.latestImtp?.imtp_asimetria;
+              if (asim === undefined || asim === null) return '-';
+              const status = getPhysicalStatusDynamic(asim, ALL_METRIC_CONFIGS.imtp_asimetria);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{asim.toFixed(1)}%</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Lado Débil',
+            key: 'latestImtp.imtp_debil',
+            render: (p) => p.latestImtp?.imtp_debil || '-'
+          },
+          {
+            header: 'Force 50ms',
+            key: 'latestImtp.Force (Net of BW) at 50ms [N]',
+            render: (p) => p.latestImtp?.['Force (Net of BW) at 50ms [N]'] ? `${p.latestImtp['Force (Net of BW) at 50ms [N]']} N` : '-'
+          },
+          {
+            header: 'Force 100ms',
+            key: 'latestImtp.Force (Net of BW) at 100ms [N]',
+            render: (p) => p.latestImtp?.['Force (Net of BW) at 100ms [N]'] ? `${p.latestImtp['Force (Net of BW) at 100ms [N]']} N` : '-'
+          },
+          {
+            header: 'RFD 150ms',
+            key: 'latestImtp.RFD - 150ms [N/s]',
+            render: (p) => p.latestImtp?.['RFD - 150ms [N/s]'] ? `${p.latestImtp['RFD - 150ms [N/s]']} N/s` : '-'
+          }
+        ];
+
+      case 'cmj':
+        return [
+          {
+            header: 'Peso (kg)',
+            key: 'latestCmj.bw_kg',
+            render: (p) => p.latestCmj?.bw_kg || '-'
+          },
+          {
+            header: 'Altura Salto',
+            key: 'latestCmj.cmj_altura_salto_im',
+            render: (p) => {
+              const val = p.latestCmj?.cmj_altura_salto_im || p.cmj_altura_salto_im;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.cmj_altura_salto_im);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(1)} cm</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'RSI Mod',
+            key: 'latestCmj.cmj_rsi_mod',
+            render: (p) => {
+              const val = p.latestCmj?.cmj_rsi_mod || p.cmj_rsi_mod;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.cmj_rsi_mod);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)}</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Peak Pot. Rel.',
+            key: 'latestCmj.cmj_peak_pot_relativa',
+            render: (p) => {
+              const val = p.latestCmj?.cmj_peak_pot_relativa || p.cmj_peak_pot_relativa;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.cmj_peak_pot_relativa);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(1)} W/kg</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Fuerza CMJ (N)',
+            key: 'latestCmj.fuerza_cmj',
+            render: (p) => p.latestCmj?.fuerza_cmj || p.fuerza_cmj || '-'
+          },
+          {
+            header: 'Peak Power (W)',
+            key: 'latestCmj.peak_power_w',
+            render: (p) => p.latestCmj?.peak_power_w ? `${p.latestCmj.peak_power_w} W` : '-'
+          },
+          {
+            header: 'Profundidad (cm)',
+            key: 'latestCmj.countermovement_depth_cm',
+            render: (p) => p.latestCmj?.countermovement_depth_cm ? `${p.latestCmj.countermovement_depth_cm} cm` : '-'
+          },
+          {
+            header: 'Con. Duración',
+            key: 'latestCmj.concentric_duration_ms',
+            render: (p) => p.latestCmj?.concentric_duration_ms ? `${p.latestCmj.concentric_duration_ms} ms` : '-'
+          }
+        ];
+
+      case 'rebound':
+        return [
+          {
+            header: 'Peso (kg)',
+            key: 'latestRebound.bw_kg',
+            render: (p) => p.latestRebound?.bw_kg || '-'
+          },
+          {
+            header: 'Rebound RSI',
+            key: 'latestRebound.rebound_rsi',
+            render: (p) => {
+              const val = p.latestRebound?.rebound_rsi || p.rebound_rsi;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.rebound_rsi);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)}</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Contact Time',
+            key: 'latestRebound.rebound_contact_time_ms',
+            render: (p) => {
+              const val = p.latestRebound?.rebound_contact_time_ms || p.rebound_contact_time_ms;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.rebound_contact_time_ms);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val} ms</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Flight Time',
+            key: 'latestRebound.rebound_flight_time_ms',
+            render: (p) => {
+              const val = p.latestRebound?.rebound_flight_time_ms || p.rebound_flight_time_ms;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.rebound_flight_time_ms);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val} ms</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Repeticiones',
+            key: 'latestRebound.reps',
+            render: (p) => p.latestRebound?.reps || '-'
+          }
+        ];
+
+      case 'speed':
+        return [
+          {
+            header: 'Tiempo 10m',
+            key: 'latestSpeed.tiempo_10m',
+            render: (p) => {
+              const val = p.latestSpeed?.tiempo_10m || p.tiempo_10m;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.tiempo_10m);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} s</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Velocidad 10m',
+            key: 'latestSpeed.vel_10m',
+            render: (p) => {
+              const val = p.latestSpeed?.vel_10m || p.vel_10m;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.vel_10m);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} m/s</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Tiempo 10-20m',
+            key: 'latestSpeed.tiempo_10_20m',
+            render: (p) => p.latestSpeed?.tiempo_10_20m ? `${p.latestSpeed.tiempo_10_20m.toFixed(2)} s` : '-'
+          },
+          {
+            header: 'Tiempo 20-30m',
+            key: 'latestSpeed.tiempo_20_30m',
+            render: (p) => p.latestSpeed?.tiempo_20_30m ? `${p.latestSpeed.tiempo_20_30m.toFixed(2)} s` : '-'
+          },
+          {
+            header: 'Tiempo Total 30m',
+            key: 'latestSpeed.tiempo_total',
+            render: (p) => {
+              const val = p.latestSpeed?.tiempo_total || p.tiempo_total;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.tiempo_total);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} s</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          }
+        ];
+
+      case 'vo2':
+        return [
+          {
+            header: 'VO2 Max',
+            key: 'latestVo2.vo2_max',
+            render: (p) => {
+              const val = p.latestVo2?.vo2_max || p.vo2_max;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.vo2_max);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(1)} ml/kg/min</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'VMA',
+            key: 'latestVo2.vam',
+            render: (p) => {
+              const val = p.latestVo2?.vam || p.vam;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.vam);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(1)} km/h</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'FC Máxima',
+            key: 'latestVo2.fc_max',
+            render: (p) => {
+              const val = p.latestVo2?.fc_max || p.fc_max;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.fc_max);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val} bpm</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'VT1 Vel',
+            key: 'latestVo2.vt1_vel',
+            render: (p) => p.latestVo2?.vt1_vel ? `${p.latestVo2.vt1_vel} km/h` : '-'
+          },
+          {
+            header: 'VT2 Vel',
+            key: 'latestVo2.vt2_vel',
+            render: (p) => p.latestVo2?.vt2_vel ? `${p.latestVo2.vt2_vel} km/h` : '-'
+          },
+          {
+            header: 'VT2 FC',
+            key: 'latestVo2.vt2_fc',
+            render: (p) => p.latestVo2?.vt2_fc ? `${p.latestVo2.vt2_fc} bpm` : '-'
+          }
+        ];
+
+      case 'antropometria':
+        return [
+          {
+            header: 'Masa Corporal',
+            key: 'latestAntro.masa_corporal_kg',
+            render: (p) => {
+              const val = p.latestAntro?.masa_corporal_kg || p.masa_corporal_kg;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.masa_corporal_kg);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(1)} kg</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Talla (cm)',
+            key: 'latestAntro.talla_cm',
+            render: (p) => p.latestAntro?.talla_cm || p.talla_cm || '-'
+          },
+          {
+            header: 'Talla Sentada',
+            key: 'latestAntro.talla_sentada_cm',
+            render: (p) => p.latestAntro?.talla_sentada_cm || p.talla_sentada_cm || '-'
+          },
+          {
+            header: 'Masa Muscular',
+            key: 'latestAntro.masa_muscular_pct',
+            render: (p) => {
+              const val = p.latestAntro?.masa_muscular_pct || p.masa_muscular_pct;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.masa_muscular_pct);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(1)}%</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Masa Adiposa',
+            key: 'latestAntro.masa_adiposa_pct',
+            render: (p) => {
+              const val = p.latestAntro?.masa_adiposa_pct || p.masa_adiposa_pct;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.masa_adiposa_pct);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(1)}%</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'Masa Ósea',
+            key: 'latestAntro.masa_osea_pct',
+            render: (p) => {
+              const val = p.latestAntro?.masa_osea_pct || p.masa_osea_pct;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.masa_osea_pct);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(1)}%</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          }
+        ];
+
+      case 'test505':
+        return [
+          {
+            header: 'T. Acel 2m',
+            key: 'latestTest505.t_acel_2m',
+            render: (p) => {
+              const val = p.latestTest505?.t_acel_2m || p.t_acel_2m;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.t_acel_2m);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} s</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'T. Desacel 2m',
+            key: 'latestTest505.t_desacel_2m',
+            render: (p) => {
+              const val = p.latestTest505?.t_desacel_2m || p.t_desacel_2m;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.t_desacel_2m);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} s</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'T. COD 2m',
+            key: 'latestTest505.t_cod_2m',
+            render: (p) => {
+              const val = p.latestTest505?.t_cod_2m || p.t_cod_2m;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.t_cod_2m);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} s</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
+            header: 'T. Reacel 1.2m',
+            key: 'latestTest505.t_reacel_1_2m',
+            render: (p) => p.latestTest505?.t_reacel_1_2m ? `${p.latestTest505.t_reacel_1_2m.toFixed(2)} s` : '-'
+          },
+          {
+            header: 'Z-Score Acel',
+            key: 'latestTest505.z_score_acel',
+            render: (p) => p.latestTest505?.z_score_acel !== undefined ? p.latestTest505.z_score_acel.toFixed(2) : '-'
+          }
+        ];
+
+      default:
+        return [];
     }
   };
 
@@ -1232,210 +1942,158 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
 
       </div>
 
-      {/* AI Summary Box Card */}
-      {filteredProfiles.length > 0 && (
-        <div className="bg-[#0b1220] text-white p-6 rounded-3xl border border-slate-800 shadow-xl flex flex-col md:flex-row items-start gap-6 relative overflow-hidden">
-          <div className="absolute right-0 top-0 w-64 h-64 bg-red-600/10 blur-[100px] pointer-events-none rounded-full"></div>
-          <div className="flex items-center justify-center bg-red-600/10 border border-red-500/30 p-4 rounded-2xl shrink-0">
-            <i className="fa-solid fa-wand-magic-sparkles text-2xl text-red-500 animate-pulse"></i>
-          </div>
-          <div className="flex-1 space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-black uppercase tracking-widest text-red-500">Resumen Ejecutivo de Rendimiento Físico</h2>
-              {isGenerating && (
-                <span className="text-[10px] font-black uppercase tracking-widest bg-red-950/60 text-red-400 px-2 py-0.5 rounded border border-red-500/20 flex items-center gap-1.5">
-                  <i className="fa-solid fa-spinner animate-spin"></i>
-                  Sincronizando
-                </span>
-              )}
-            </div>
-            
-            <div className="prose prose-sm prose-invert max-w-none text-slate-300 text-xs leading-relaxed font-medium">
-              {aiSummary ? (
-                aiSummary.split('\n').map((line, idx) => {
-                  if (line.startsWith('###')) {
-                    return <h3 key={idx} className="text-white font-black text-sm uppercase tracking-wide mt-3 mb-1">{line.replace('###', '').trim()}</h3>;
-                  }
-                  if (line.startsWith('**')) {
-                    return <p key={idx} className="mt-2 text-white font-black">{line}</p>;
-                  }
-                  return <p key={idx} className="mt-1">{line}</p>;
-                })
-              ) : (
-                <div className="h-20 flex items-center justify-center">
-                  <span className="text-slate-400 text-xs">Preparando diagnóstico de rendimiento...</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Bento Grid Stats Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        
+
+      {/* Sub-navigation tabs for physical evaluations */}
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+        <button
+          onClick={() => setEvaluationTab('cmj')}
+          className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-lg transition-all ${
+            evaluationTab === 'cmj'
+              ? 'bg-red-600 text-white shadow-md shadow-red-600/10'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Saltabilidad (CMJ)
+        </button>
+        <button
+          onClick={() => setEvaluationTab('imtp')}
+          className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-lg transition-all ${
+            evaluationTab === 'imtp'
+              ? 'bg-red-600 text-white shadow-md shadow-red-600/10'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Fuerza Máxima (IMTP)
+        </button>
+        <button
+          onClick={() => setEvaluationTab('rebound')}
+          className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-lg transition-all ${
+            evaluationTab === 'rebound'
+              ? 'bg-red-600 text-white shadow-md shadow-red-600/10'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Fuerza Reactiva (CMJ Rebound)
+        </button>
+        <button
+          onClick={() => setEvaluationTab('speed')}
+          className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-lg transition-all ${
+            evaluationTab === 'speed'
+              ? 'bg-red-600 text-white shadow-md shadow-red-600/10'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Velocidad
+        </button>
+        <button
+          onClick={() => setEvaluationTab('vo2')}
+          className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-lg transition-all ${
+            evaluationTab === 'vo2'
+              ? 'bg-red-600 text-white shadow-md shadow-red-600/10'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Resistencia (VO2 Max)
+        </button>
+        <button
+          onClick={() => setEvaluationTab('antropometria')}
+          className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-lg transition-all ${
+            evaluationTab === 'antropometria'
+              ? 'bg-red-600 text-white shadow-md shadow-red-600/10'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Antropometría
+        </button>
+        <button
+          onClick={() => setEvaluationTab('test505')}
+          className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-lg transition-all ${
+            evaluationTab === 'test505'
+              ? 'bg-red-600 text-white shadow-md shadow-red-600/10'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Agilidad (Test 505)
+        </button>
+      </div>
+
+      {/* Dynamic Stats Summary Cards for the active evaluation */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
           <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Total Plantel</span>
           <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">{statsAverages.totalEvaluated}</div>
+            <div className="text-2xl font-black text-slate-900 leading-none">{filteredProfiles.length}</div>
             <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Deportistas</span>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[imtpMetric].label}>
-            Prom. {ALL_METRIC_CONFIGS[imtpMetric].label}
-          </span>
-          <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">
-              {statsAverages.avgImtp} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[imtpMetric].unit}</span>
+        {activeTabStats.map((stat) => (
+          <div key={stat.metricKey} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={stat.label}>
+              Prom. {stat.label}
+            </span>
+            <div className="mt-3">
+              <div className="text-2xl font-black text-slate-900 leading-none">
+                {stat.value} <span className="text-xs font-bold text-slate-500">{stat.unit}</span>
+              </div>
+              <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Promedio Grupal</span>
             </div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Fuerza (IMTP)</span>
           </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[cmjMetric].label}>
-            Prom. {ALL_METRIC_CONFIGS[cmjMetric].label}
-          </span>
-          <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">
-              {statsAverages.avgCmj} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[cmjMetric].unit}</span>
-            </div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Potencia (CMJ)</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[speedMetric].label}>
-            Prom. {ALL_METRIC_CONFIGS[speedMetric].label}
-          </span>
-          <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">
-              {statsAverages.avgSpeed} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[speedMetric].unit}</span>
-            </div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Velocidad & Sprint</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[vo2Metric].label}>
-            Prom. {ALL_METRIC_CONFIGS[vo2Metric].label}
-          </span>
-          <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">
-              {statsAverages.avgVo2} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[vo2Metric].unit}</span>
-            </div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Capacidad Aeróbica</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate" title={ALL_METRIC_CONFIGS[test505Metric].label}>
-            Prom. {ALL_METRIC_CONFIGS[test505Metric].label}
-          </span>
-          <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 leading-none">
-              {statsAverages.avgTest505} <span className="text-xs font-bold text-slate-500">{ALL_METRIC_CONFIGS[test505Metric].unit}</span>
-            </div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase mt-1 inline-block">Test 505 Agilidad</span>
-          </div>
-        </div>
-
+        ))}
       </div>
 
-      {/* Interactive Pie Charts Grid */}
-      {chartData && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest mb-4">
-              Distribución Fuerza Máxima (IMTP)
-            </h3>
-            <div className="h-44">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={chartData.imtp}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={renderCustomizedLabel}
-                    outerRadius={65}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {chartData.imtp.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" height={36} iconSize={8} className="text-[10px]" />
-                </PieChart>
-              </ResponsiveContainer>
+      {/* Interactive Pie Charts Grid for the Active Evaluation */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {getChartsForTab().map((metricKey) => {
+          const config = ALL_METRIC_CONFIGS[metricKey];
+          if (!config) return null;
+          const dataForChart = dynamicChartDataForMetric(metricKey);
+
+          return (
+            <div key={metricKey} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+              <div>
+                <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest mb-1 truncate">
+                  Distribución {config.label}
+                </h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">
+                  Parámetro clave en {config.unit ? `${config.label} (${config.unit})` : config.label}
+                </p>
+              </div>
+              <div className="h-48 mt-4">
+                {dataForChart.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 font-bold">
+                    Sin Datos Evaluados
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={dataForChart}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={renderCustomizedLabel}
+                        outerRadius={65}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {dataForChart.map((entry: any, index: number) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend verticalAlign="bottom" height={36} iconSize={8} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
             </div>
-          </div>
+          );
+        })}
+      </div>
 
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest mb-4">
-              Distribución Potencia Salto (CMJ)
-            </h3>
-            <div className="h-44">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={chartData.cmj}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={renderCustomizedLabel}
-                    outerRadius={65}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {chartData.cmj.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" height={36} iconSize={8} className="text-[10px]" />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest mb-4">
-              Distribución Velocidad (30m)
-            </h3>
-            <div className="h-44">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={chartData.speed}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={renderCustomizedLabel}
-                    outerRadius={65}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {chartData.speed.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" height={36} iconSize={8} className="text-[10px]" />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* Main Grid Table Area with 5 Physical Evaluation Columns */}
+      {/* Main Grid Table Area with Columns Specific to the Active Evaluation */}
       <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -1459,133 +2117,28 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                 >
                   Posición {getSortIcon('posicion')}
                 </th>
-                
-                {/* 1. IMTP Evaluation Column (Customizable) */}
-                <th className="px-6 py-3 text-left border-l border-slate-100 bg-red-50/5 min-w-[200px]">
-                  <div className="flex flex-col gap-1">
-                    <div 
-                      onClick={() => requestSort('imtp')}
-                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
-                    >
-                      <span>Fuerza Máxima (IMTP)</span>
-                      <span>{getSortIcon('imtp')}</span>
-                    </div>
-                    <select
-                      value={imtpMetric}
-                      onChange={(e) => setImtpMetric(e.target.value)}
-                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
-                    >
-                      {METRICS_IMTP.map(m => (
-                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
-                          {ALL_METRIC_CONFIGS[m].label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-wider select-none">
+                  Fecha Test
                 </th>
-
-                {/* 2. CMJ Evaluation Column (Customizable) */}
-                <th className="px-6 py-3 text-left border-l border-slate-100 bg-slate-50/30 min-w-[200px]">
-                  <div className="flex flex-col gap-1">
-                    <div 
-                      onClick={() => requestSort('cmj')}
-                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
-                    >
-                      <span>Saltabilidad (CMJ)</span>
-                      <span>{getSortIcon('cmj')}</span>
+                {getTableColumns().map((col) => (
+                  <th 
+                    key={col.header}
+                    onClick={() => col.key && requestSort(col.key)}
+                    className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-wider cursor-pointer group hover:bg-slate-100 transition-all select-none border-l border-slate-100"
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span>{col.header}</span>
+                      <span>{getSortIcon(col.key)}</span>
                     </div>
-                    <select
-                      value={cmjMetric}
-                      onChange={(e) => setCmjMetric(e.target.value)}
-                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
-                    >
-                      {METRICS_CMJ.map(m => (
-                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
-                          {ALL_METRIC_CONFIGS[m].label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </th>
-
-                {/* 3. Speed Evaluation Column (Customizable) */}
-                <th className="px-6 py-3 text-left border-l border-slate-100 bg-slate-50/30 min-w-[200px]">
-                  <div className="flex flex-col gap-1">
-                    <div 
-                      onClick={() => requestSort('speed')}
-                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
-                    >
-                      <span>Velocidad & Sprint</span>
-                      <span>{getSortIcon('speed')}</span>
-                    </div>
-                    <select
-                      value={speedMetric}
-                      onChange={(e) => setSpeedMetric(e.target.value)}
-                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
-                    >
-                      {METRICS_SPEED.map(m => (
-                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
-                          {ALL_METRIC_CONFIGS[m].label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </th>
-
-                {/* 4. VO2 Max Evaluation Column (Customizable) */}
-                <th className="px-6 py-3 text-left border-l border-slate-100 bg-slate-50/30 min-w-[200px]">
-                  <div className="flex flex-col gap-1">
-                    <div 
-                      onClick={() => requestSort('vo2')}
-                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
-                    >
-                      <span>Capacidad Aeróbica</span>
-                      <span>{getSortIcon('vo2')}</span>
-                    </div>
-                    <select
-                      value={vo2Metric}
-                      onChange={(e) => setVo2Metric(e.target.value)}
-                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
-                    >
-                      {METRICS_VO2.map(m => (
-                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
-                          {ALL_METRIC_CONFIGS[m].label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </th>
-
-                {/* 5. Test 505 Evaluation Column (Customizable) */}
-                <th className="px-6 py-3 text-left border-l border-slate-100 bg-slate-50/30 min-w-[200px]">
-                  <div className="flex flex-col gap-1">
-                    <div 
-                      onClick={() => requestSort('test505')}
-                      className="flex items-center justify-between text-[9px] text-red-600 font-extrabold uppercase tracking-widest cursor-pointer select-none hover:text-red-700 transition-all group"
-                    >
-                      <span>Agilidad (Test 505)</span>
-                      <span>{getSortIcon('test505')}</span>
-                    </div>
-                    <select
-                      value={test505Metric}
-                      onChange={(e) => setTest505Metric(e.target.value)}
-                      className="bg-transparent border-none p-0 pr-6 text-xs font-black text-slate-800 focus:ring-0 focus:outline-none cursor-pointer uppercase font-sans truncate"
-                    >
-                      {METRICS_TEST505.map(m => (
-                        <option key={m} value={m} className="normal-case text-slate-700 bg-white font-semibold">
-                          {ALL_METRIC_CONFIGS[m].label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </th>
+                  </th>
+                ))}
               </tr>
             </thead>
             
             <tbody className="divide-y divide-slate-100 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10">
+                  <td colSpan={12} className="text-center py-10">
                     <div className="flex items-center justify-center gap-2 text-slate-400">
                       <i className="fa-solid fa-spinner animate-spin text-lg text-red-500"></i>
                       <span>Cargando evaluaciones físicas...</span>
@@ -1594,26 +2147,15 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                 </tr>
               ) : sortedFilteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-slate-400 text-xs">
+                  <td colSpan={12} className="text-center py-12 text-slate-400 text-xs">
                     Ninguna evaluación física coincide con los filtros de búsqueda establecidos.
                   </td>
                 </tr>
               ) : (
                 sortedFilteredData.map((profile) => {
-                  const imtpConfig = ALL_METRIC_CONFIGS[imtpMetric];
-                  const cmjConfig = ALL_METRIC_CONFIGS[cmjMetric];
-                  const speedConfig = ALL_METRIC_CONFIGS[speedMetric];
-                  const vo2Config = ALL_METRIC_CONFIGS[vo2Metric];
-                  const test505Config = ALL_METRIC_CONFIGS[test505Metric];
-
-                  const imtpStat = getPhysicalStatusDynamic(profile[imtpMetric], imtpConfig);
-                  const cmjStat = getPhysicalStatusDynamic(profile[cmjMetric], cmjConfig);
-                  const speedStat = getPhysicalStatusDynamic(profile[speedMetric], speedConfig);
-                  const vo2Stat = getPhysicalStatusDynamic(profile[vo2Metric], vo2Config);
-                  const test505Stat = getPhysicalStatusDynamic(profile[test505Metric], test505Config);
-
                   const isMyClub = userRole !== 'club' || (userClub && normalizeClub(profile.club_name) === normalizeClub(userClub));
                   const nameToDisplay = isMyClub ? profile.player_name : `Jugador [${profile.player_id}]`;
+                  const testDate = getActiveTabDateString(profile) || '-';
 
                   return (
                     <tr key={profile.player_id} className="hover:bg-slate-50/50 transition-all">
@@ -1636,126 +2178,14 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                       <td className="px-6 py-4 text-xs font-bold text-slate-500">
                         {profile.posicion}
                       </td>
-                      
-                      {/* 1. IMTP Customizable Column */}
-                      <td className="px-6 py-4 border-l border-slate-100 bg-red-50/5">
-                        <div className="flex items-center gap-1.5">
-                          {profile[imtpMetric] > 0 ? (
-                            <>
-                              <span className="text-xs font-black text-slate-900">
-                                {imtpConfig.key.includes('asimetria') || imtpConfig.key.includes('rsi') || imtpConfig.key.includes('asimetria')
-                                  ? profile[imtpMetric].toFixed(2)
-                                  : profile[imtpMetric]} {imtpConfig.unit}
-                              </span>
-                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${imtpStat.color}`}>
-                                {imtpStat.label}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </div>
-                        {profile[imtpMetric] > 0 && (
-                          <div className="text-[8px] text-slate-400 font-bold mt-0.5">
-                            Eval: {profile.imtp_date}
-                          </div>
-                        )}
+                      <td className="px-6 py-4 text-xs font-bold text-slate-500">
+                        {testDate}
                       </td>
-
-                      {/* 2. CMJ Customizable Column */}
-                      <td className="px-6 py-4 border-l border-slate-100">
-                        <div className="flex items-center gap-1.5">
-                          {profile[cmjMetric] > 0 ? (
-                            <>
-                              <span className="text-xs font-black text-slate-900">
-                                {cmjConfig.key.includes('asimetria') || cmjConfig.key.includes('rsi') || cmjConfig.key.includes('asimetria')
-                                  ? profile[cmjMetric].toFixed(2)
-                                  : profile[cmjMetric]} {cmjConfig.unit}
-                              </span>
-                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${cmjStat.color}`}>
-                                {cmjStat.label}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </div>
-                        {profile[cmjMetric] > 0 && (
-                          <div className="text-[8px] text-slate-400 font-bold mt-0.5">
-                            Eval: {profile.imtp_date}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 3. Speed Customizable Column */}
-                      <td className="px-6 py-4 border-l border-slate-100">
-                        <div className="flex items-center gap-1.5">
-                          {profile[speedMetric] > 0 ? (
-                            <>
-                              <span className="text-xs font-black text-slate-900">
-                                {profile[speedMetric].toFixed(2)} {speedConfig.unit}
-                              </span>
-                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${speedStat.color}`}>
-                                {speedStat.label}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </div>
-                        {profile[speedMetric] > 0 && (
-                          <div className="text-[8px] text-slate-400 font-bold mt-0.5">
-                            Eval: {profile.speed_date}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 4. VO2 Max Customizable Column */}
-                      <td className="px-6 py-4 border-l border-slate-100">
-                        <div className="flex items-center gap-1.5">
-                          {profile[vo2Metric] > 0 ? (
-                            <>
-                              <span className="text-xs font-black text-slate-900">
-                                {profile[vo2Metric]} {vo2Config.unit}
-                              </span>
-                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${vo2Stat.color}`}>
-                                {vo2Stat.label}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </div>
-                        {profile[vo2Metric] > 0 && (
-                          <div className="text-[8px] text-slate-400 font-bold mt-0.5">
-                            Eval: {profile.vo2_date}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 5. Test 505 Customizable Column */}
-                      <td className="px-6 py-4 border-l border-slate-100">
-                        <div className="flex items-center gap-1.5">
-                          {profile[test505Metric] > 0 ? (
-                            <>
-                              <span className="text-xs font-black text-slate-900">
-                                {profile[test505Metric].toFixed(2)} {test505Config.unit}
-                              </span>
-                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${test505Stat.color}`}>
-                                {test505Stat.label}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </div>
-                        {profile[test505Metric] > 0 && (
-                          <div className="text-[8px] text-slate-400 font-bold mt-0.5">
-                            Eval: {profile.test505_date}
-                          </div>
-                        )}
-                      </td>
-
+                      {getTableColumns().map((col, index) => (
+                        <td key={index} className="px-6 py-4 text-xs font-bold text-slate-700 border-l border-slate-100">
+                          {col.render(profile)}
+                        </td>
+                      ))}
                     </tr>
                   );
                 })

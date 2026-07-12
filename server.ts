@@ -670,6 +670,28 @@ Proporciona un diagnóstico del estado de potencia, fuerza-velocidad y capacidad
       return res.status(500).json({ error: error.message });
     }
   });
+
+  // GENERAL GEMINI GENERATE PROXY
+  app.post("/api/gemini/generate", async (req, res) => {
+    try {
+      const { prompt, config } = req.body;
+      const ai = getAiClient();
+      if (!ai) {
+        return res.status(503).json({ error: "Gemini API key not configured" });
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: config || undefined,
+      });
+
+      return res.json({ text: response.text, candidates: response.candidates });
+    } catch (error: any) {
+      console.error("[GEMINI GENERATE PROXY ERROR]:", error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
  
   // SEND NOMINA EMAIL
   app.post("/api/send-nomina", async (req, res) => {
