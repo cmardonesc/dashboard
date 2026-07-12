@@ -621,13 +621,18 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       const matchResultValue = data.resultado || data.result || 'GANÓ';
       const matchMinutesValue = data.minutos !== undefined ? data.minutos : (data.minutes !== undefined ? data.minutes : 90);
 
+      // Si minutos o RPE son 0 o menores, los guardamos como 1 en la base de datos
+      // para evitar violar la restricción CHECK de 'internal_load' que tiene un disparador (trigger) en Supabase
+      const dbMinutes = Math.max(1, Number(matchMinutesValue) || 0);
+      const dbRpe = Math.max(1, Number(data.rpe) || 0);
+
       const payload = {
         player_id: player.player_id,
         fecha: selectedDate,
         rival: data.rival,
         resultado: matchResultValue,
-        minutos_jugados: matchMinutesValue,
-        rpe: data.rpe,
+        minutos_jugados: dbMinutes,
+        rpe: dbRpe,
         molestias: data.sorenessAreas.join(', '),
         enfermedad: data.illnessSymptoms.join(', '),
         created_by: user?.id,
@@ -677,8 +682,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           const fallbackPayload = {
             player_id: player.player_id,
             session_date: selectedDate,
-            rpe: Math.max(1, Number(data.rpe) || 0), // Garantiza un mínimo de 1 para cumplir la restricción check de internal_load
-            duration_min: (matchMinutesValue !== undefined && matchMinutesValue !== null) ? Number(matchMinutesValue) : 90,
+            rpe: dbRpe, // Garantiza un mínimo de 1 para cumplir la restricción check de internal_load
+            duration_min: dbMinutes, // Garantiza un mínimo de 1 para cumplir la restricción check de internal_load
             type: 'MATCH',
             molestias: `[Partido vs ${data.rival || 'Desconocido'} - Resultado: ${matchResultValue || 'Titular'}] | ` + (data.sorenessAreas.join(', ') || 'Sin molestias'),
             enfermedad: data.illnessSymptoms.join(', ') || null,

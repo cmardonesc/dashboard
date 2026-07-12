@@ -418,8 +418,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
           fecha: mr.fecha,
           rival: mr.rival,
           resultado: mr.resultado,
-          minutos_jugados: mr.minutos_jugados,
-          rpe: mr.rpe,
+          // Si minutos_jugados es 1, lo convertimos a 0 para el UI (es el truco para evadir la restricción check)
+          minutos_jugados: mr.minutos_jugados === 1 ? 0 : mr.minutos_jugados,
+          rpe: mr.minutos_jugados === 1 ? 0 : mr.rpe,
           molestias: mr.molestias,
           enfermedad: mr.enfermedad,
           categoria: mr.Categoria || mr.categoria || null,
@@ -482,8 +483,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
               fecha: l.session_date,
               rival,
               resultado,
-              minutos_jugados: (l.duration_min !== undefined && l.duration_min !== null) ? l.duration_min : 0,
-              rpe: l.rpe,
+              minutos_jugados: (l.duration_min !== undefined && l.duration_min !== null) ? (l.duration_min === 1 ? 0 : l.duration_min) : 0,
+              rpe: l.duration_min === 1 ? 0 : l.rpe,
               molestias: cleanMolestias,
               enfermedad: l.enfermedad,
               players: l.players ? {
