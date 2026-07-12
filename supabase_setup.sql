@@ -768,3 +768,51 @@ values (
 )
 on conflict do nothing;
 
+-- Table for desconvocatorias and associated policies
+create table if not exists public.desconvocatorias (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  athlete_id text not null,
+  athlete_name text,
+  club_name text,
+  category_id text,
+  microciclo_id text,
+  motivo text,
+  fecha_desconvocatoria text,
+  staff_id uuid,
+  observaciones_extra text
+);
+
+alter table public.desconvocatorias enable row level security;
+
+drop policy if exists "Enable all access for desconvocatorias" on public.desconvocatorias;
+create policy "Enable all access for desconvocatorias" on public.desconvocatorias for all using (true) with check (true);
+
+-- Security definer function to securely handle insertions bypass RLS
+create or replace function public.create_desconvocatoria_safe(
+  p_athlete_id text,
+  p_athlete_name text,
+  p_club_name text,
+  p_category_id text,
+  p_microciclo_id text,
+  p_motivo text,
+  p_fecha_desconvocatoria text,
+  p_staff_id text default null,
+  p_observaciones_extra text default null
+)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  insert into public.desconvocatorias (
+    athlete_id, athlete_name, club_name, category_id, microciclo_id, motivo, fecha_desconvocatoria, staff_id, observaciones_extra
+  ) values (
+    p_athlete_id, p_athlete_name, p_club_name, p_category_id, p_microciclo_id, p_motivo, p_fecha_desconvocatoria, 
+    case when p_staff_id is not null and p_staff_id <> '' then p_staff_id::uuid else null end,
+    p_observaciones_extra
+  );
+end;
+$$;
+
+

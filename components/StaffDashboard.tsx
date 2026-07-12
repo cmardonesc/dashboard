@@ -65,6 +65,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
 }) => {
   const [realMicrocycles, setRealMicrocycles] = useState<any[]>([]);
   const [citData, setCitData] = useState<any[]>([]);
+  const [desconvocatorias, setDesconvocatorias] = useState<any[]>([]);
   const [dailyActivities, setDailyActivities] = useState<any[]>([]);
   const [medicalReportsToday, setMedicalReportsToday] = useState<any[]>([]);
   const [kinesicTreatmentsToday, setKinesicTreatmentsToday] = useState<any[]>([]);
@@ -172,13 +173,20 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         const end = mc.end_date.substring(0, 10);
         
         if (today >= start && today <= end) {
-          map.set(String(c.player_id), mc.category_id);
+          // Check if player is desconvocado for this microcycle
+          const isDesconvocado = desconvocatorias.some(d => 
+            Number(d.athlete_id) === Number(c.player_id) && 
+            Number(d.microciclo_id) === Number(mc.id)
+          );
+          if (!isDesconvocado) {
+            map.set(String(c.player_id), mc.category_id);
+          }
         }
       }
     });
 
     return map;
-  }, [citData, realMicrocycles]);
+  }, [citData, realMicrocycles, desconvocatorias]);
 
   const wellnessDataToday = useMemo(() => {
     return performanceRecords
@@ -271,6 +279,15 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         .in('microcycle_id', activeMcIds);
       
       if (citRes) setCitData(citRes);
+
+      const { data: descRes } = await supabase
+        .from('desconvocatorias')
+        .select('athlete_id, microciclo_id')
+        .in('microciclo_id', activeMcIds);
+      
+      if (descRes) setDesconvocatorias(descRes);
+    } else {
+      setDesconvocatorias([]);
     }
 
     // 3. Fetch Weekly Activities (Cronograma from Area Tecnica)
