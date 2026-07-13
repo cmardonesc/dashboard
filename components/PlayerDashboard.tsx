@@ -303,7 +303,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         fatigue: data.fatigue,
         stress: data.stress,
         mood: data.mood,
-        soreness: data.sorenessAreas.length > 0 ? 2 : 5,
+        soreness: data.soreness,
         molestias: data.sorenessAreas.join(', '),
         enfermedad: data.illnessSymptoms.join(', '),
         created_by: user?.id

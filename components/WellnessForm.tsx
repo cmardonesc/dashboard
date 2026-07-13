@@ -7,7 +7,7 @@ interface WellnessFormProps {
   submitting?: boolean;
 }
 
-type WellnessStep = 'fatigue' | 'sleep' | 'stress' | 'mood' | 'soreness' | 'illness';
+type WellnessStep = 'fatigue' | 'sleep' | 'stress' | 'mood' | 'soreness' | 'sorenessAreas' | 'illness';
 
 const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => {
   const [step, setStep] = useState<WellnessStep>('fatigue');
@@ -17,11 +17,12 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => 
     sleep: 3,
     stress: 3,
     mood: 3,
+    soreness: 3,
     sorenessAreas: [] as string[],
     illnessSymptoms: [] as string[]
   });
 
-  const stepsOrder: WellnessStep[] = ['fatigue', 'sleep', 'stress', 'mood', 'soreness', 'illness'];
+  const stepsOrder: WellnessStep[] = ['fatigue', 'sleep', 'stress', 'mood', 'soreness', 'sorenessAreas', 'illness'];
 
   const handleNext = () => {
     const currentIndex = stepsOrder.indexOf(step);
@@ -62,8 +63,8 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => 
     }));
   };
 
-  const renderScaleStep = (title: string, question: string, currentVal: number, key: keyof typeof formData) => {
-    const options = [
+  const renderScaleStep = (title: string, question: string, currentVal: number, key: keyof typeof formData, customOptions?: { label: string; value: number; emoji: string }[]) => {
+    const options = customOptions || [
       { label: 'EXCELENTE', value: 5, emoji: '⚡' },
       { label: 'BIEN', value: 4, emoji: '🔋' },
       { label: 'NORMAL', value: 3, emoji: '😐' },
@@ -238,7 +239,14 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => 
       {step === 'sleep' && renderScaleStep('SUEÑO', '¿Cómo calificarías tu descanso?', formData.sleep, 'sleep')}
       {step === 'stress' && renderScaleStep('ESTRÉS', '¿Qué tan estresado te sientes hoy?', formData.stress, 'stress')}
       {step === 'mood' && renderScaleStep('ÁNIMO', '¿Cuál es tu estado de ánimo?', formData.mood, 'mood')}
-      {step === 'soreness' && renderSorenessStep()}
+      {step === 'soreness' && renderScaleStep('DOLOR MUSCULAR', 'Dolor muscular: ¿Sientes agujetas o molestias?', formData.soreness, 'soreness', [
+        { label: 'SIN DOLOR', value: 5, emoji: '⚡' },
+        { label: 'LEVE', value: 4, emoji: '🔋' },
+        { label: 'MODERADO', value: 3, emoji: '😐' },
+        { label: 'FUERTE', value: 2, emoji: '📉' },
+        { label: 'MUY FUERTE', value: 1, emoji: '🪫' },
+      ])}
+      {step === 'sorenessAreas' && renderSorenessStep()}
       {step === 'illness' && renderIllnessStep()}
 
       <style>{`

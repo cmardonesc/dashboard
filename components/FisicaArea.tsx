@@ -90,6 +90,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // Estados de Contexto
   const [activeMicrocycle, setActiveMicrocycle] = useState<any>(null);
   const [citedPlayerIds, setCitedPlayerIds] = useState<number[]>([]);
+  const [playerCitedCategoryMap, setPlayerCitedCategoryMap] = useState<Record<number, Category>>({});
   const [loadingContext, setLoadingContext] = useState(false);
 
   // Filtros específicos del Reporte Diario
@@ -286,9 +287,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       setLoadingContext(true);
       setActiveMicrocycle(null);
       setCitedPlayerIds([]);
+      setPlayerCitedCategoryMap({});
 
       try {
         const allCitedIds = new Set<number>();
+        const citedCatMap: Record<number, Category> = {};
         let primaryMicro = null;
 
         for (const cat of selectedCategories) {
@@ -310,7 +313,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               .eq('microcycle_id', mc.id);
 
             if (citaciones) {
-              citaciones.forEach(c => allCitedIds.add(c.player_id));
+              citaciones.forEach(c => {
+                allCitedIds.add(c.player_id);
+                citedCatMap[c.player_id] = cat as Category;
+              });
             }
           }
         }
@@ -318,6 +324,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         if (primaryMicro) {
           setActiveMicrocycle(primaryMicro);
           setCitedPlayerIds(Array.from(allCitedIds));
+          setPlayerCitedCategoryMap(citedCatMap);
           setSelectedPlayersReport(allCitedIds);
         } else {
           // Si no hay microciclo activo, seleccionamos por defecto todos los jugadores
@@ -329,10 +336,23 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               const playerAnio = r.player.anio;
               const currentYear = new Date().getFullYear();
               const age = playerAnio ? (currentYear - playerAnio) : null;
-              const playerCatFromAnio = age ? `sub_${age}` : null;
+              
+              let calculatedCat: Category | null = null;
+              if (age !== null) {
+                if (age <= 13) calculatedCat = Category.SUB_13;
+                else if (age === 14) calculatedCat = Category.SUB_14;
+                else if (age === 15) calculatedCat = Category.SUB_15;
+                else if (age === 16) calculatedCat = Category.SUB_16;
+                else if (age === 17) calculatedCat = Category.SUB_17;
+                else if (age === 18) calculatedCat = Category.SUB_18;
+                else if (age <= 20) calculatedCat = Category.SUB_20;
+                else if (age <= 21) calculatedCat = Category.SUB_21;
+                else if (age <= 23) calculatedCat = Category.SUB_23;
+                else calculatedCat = Category.ADULTA;
+              }
               
               const matchesCategory = selectedCategories.some(cat => 
-                cat === playerCatFromAnio || 
+                cat === calculatedCat || 
                 cat === playerAnio?.toString() || 
                 cat === playerCat
               );
@@ -701,10 +721,25 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         const playerAnio = r.player.anio;
         const currentYear = new Date().getFullYear();
         const age = playerAnio ? (currentYear - playerAnio) : null;
-        const playerCatFromAnio = age ? `sub_${age}` : null;
+        
+        let calculatedCat: Category | null = null;
+        if (age !== null) {
+          if (age <= 13) calculatedCat = Category.SUB_13;
+          else if (age === 14) calculatedCat = Category.SUB_14;
+          else if (age === 15) calculatedCat = Category.SUB_15;
+          else if (age === 16) calculatedCat = Category.SUB_16;
+          else if (age === 17) calculatedCat = Category.SUB_17;
+          else if (age === 18) calculatedCat = Category.SUB_18;
+          else if (age <= 20) calculatedCat = Category.SUB_20;
+          else if (age <= 21) calculatedCat = Category.SUB_21;
+          else if (age <= 23) calculatedCat = Category.SUB_23;
+          else calculatedCat = Category.ADULTA;
+        }
+
+        const effectiveCategory = (r.player.player_id && playerCitedCategoryMap[r.player.player_id]) || calculatedCat || playerCat;
         
         return selectedCategories.some(cat => 
-          cat === playerCatFromAnio || 
+          cat === effectiveCategory || 
           cat === playerAnio?.toString() || 
           cat === playerCat
         );
@@ -719,10 +754,25 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         const playerAnio = r.player.anio;
         const currentYear = new Date().getFullYear();
         const age = playerAnio ? (currentYear - playerAnio) : null;
-        const playerCatFromAnio = age ? `sub_${age}` : null;
+        
+        let calculatedCat: Category | null = null;
+        if (age !== null) {
+          if (age <= 13) calculatedCat = Category.SUB_13;
+          else if (age === 14) calculatedCat = Category.SUB_14;
+          else if (age === 15) calculatedCat = Category.SUB_15;
+          else if (age === 16) calculatedCat = Category.SUB_16;
+          else if (age === 17) calculatedCat = Category.SUB_17;
+          else if (age === 18) calculatedCat = Category.SUB_18;
+          else if (age <= 20) calculatedCat = Category.SUB_20;
+          else if (age <= 21) calculatedCat = Category.SUB_21;
+          else if (age <= 23) calculatedCat = Category.SUB_23;
+          else calculatedCat = Category.ADULTA;
+        }
+
+        const effectiveCategory = (r.player.player_id && playerCitedCategoryMap[r.player.player_id]) || calculatedCat || playerCat;
         
         return selectedCategories.some(cat => 
-          cat === playerCatFromAnio || 
+          cat === effectiveCategory || 
           cat === playerAnio?.toString() || 
           cat === playerCat
         );

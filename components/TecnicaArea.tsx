@@ -75,8 +75,10 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'Evaluación Nutricional', emoji: '⚖️' },
   { label: 'Atenciones Médicas', emoji: '⚕️' },
   { label: 'Actividad Social', emoji: '🤝' },
-  { label: 'Salida', emoji: '🛫' },
-  { label: 'Retorno', emoji: '🛬' },
+  { label: 'Salida', emoji: '🚌' },
+  { label: 'Retorno', emoji: '🚌' },
+  { label: 'Despegue', emoji: '🛫' },
+  { label: 'Aterrizaje', emoji: '🛬' },
   { label: 'Despegue y Retorno', emoji: '✈️' },
   { label: 'Salida y Retorno', emoji: '🚌' },
   { label: 'Partido Amistoso', emoji: '🏟️' },
@@ -559,7 +561,18 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       'JUAN POBLETE',
       'VALENTIN SANCHEZ',
       'CRISTOBAL VILLARROEL',
-      'MARTIN CASTRO'
+      'MARTIN CASTRO',
+      'MATIAS ORELLANA',
+      'JOSE MOVILLO',
+      'IGNACIO FLORES',
+      'MAXIMILIANO FERNANDEZ',
+      'JOAQUIN SOTO',
+      'CRISTOPHER VALENZUELA',
+      'JOSE ALBURQUENQUE',
+      'BENJAMIN PEREZ',
+      'AGUSTIN KORN',
+      'MARTIN MUNDACA',
+      'VICENTE RAMIREZ'
     ];
 
     const cleanString = (str: string) => {
@@ -669,31 +682,30 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     const responded = unifiedCompetenciaReports.filter(r => r.respondio).length;
     const pending = total - responded;
     
-    // Aquellos que respondieron pero NO TUVIERON FECHA / SUSPENDIDO
+    // Aquellos que respondieron
     const activeReports = unifiedCompetenciaReports.filter(r => r.respondio);
-    const noCompetenciaReports = activeReports.filter(r => r.rival === 'PARTIDO SUSPENDIDO / SIN FECHA');
-    const noCompetenciaCount = noCompetenciaReports.length;
     
-    // Aquellos que respondieron y SÍ tuvieron competencia
-    const competedReports = activeReports.filter(r => r.rival !== 'PARTIDO SUSPENDIDO / SIN FECHA');
-    const competedCount = competedReports.length;
-
-    // De los que tuvieron competencia, cuántos jugaron realmente (minutos > 0 o no especificados pero se asume > 0)
-    const playedReports = competedReports.filter(r => r.minutos_jugados === null || r.minutos_jugados > 0);
+    // Tratamos "PARTIDO SUSPENDIDO / SIN FECHA" como didNotPlay (No Jugaron)
+    const noCompetenciaCount = 0;
+    
+    // De los que respondieron, quiénes jugaron realmente (con rival distinto de suspendido y minutos > 0 o null)
+    const playedReports = activeReports.filter(r => r.rival !== 'PARTIDO SUSPENDIDO / SIN FECHA' && (r.minutos_jugados === null || r.minutos_jugados > 0));
     const playedCount = playedReports.length;
 
-    // De los que tuvieron competencia, cuántos reportaron 0 minutos (no jugaron)
-    const didNotPlayReports = competedReports.filter(r => r.minutos_jugados === 0);
+    // De los que respondieron, quiénes no jugaron (minutos = 0 o suspendido)
+    const didNotPlayReports = activeReports.filter(r => r.rival === 'PARTIDO SUSPENDIDO / SIN FECHA' || r.minutos_jugados === 0);
     const didNotPlayCount = didNotPlayReports.length;
 
-    const totalMinutes = competedReports.reduce((acc, r) => acc + (r.minutos_jugados || 0), 0);
+    const competedCount = activeReports.length;
+
+    const totalMinutes = playedReports.reduce((acc, r) => acc + (r.minutos_jugados || 0), 0);
     // Para el promedio de minutos, consideramos solo a los que realmente participaron jugando
     const avgMinutes = playedCount > 0 ? Math.round(totalMinutes / playedCount) : 0;
     
-    const totalRpe = competedReports.reduce((acc, r) => acc + (r.rpe || 0), 0);
+    const totalRpe = playedReports.reduce((acc, r) => acc + (r.rpe || 0), 0);
     const avgRpe = playedCount > 0 ? Number((totalRpe / playedCount).toFixed(1)) : 0;
     
-    const alerts = competedReports.filter(r => 
+    const alerts = playedReports.filter(r => 
       (r.molestias && r.molestias.toLowerCase() !== 'sin molestias' && r.molestias.toLowerCase() !== 'ninguno' && r.molestias.trim() !== '') || 
       (r.enfermedad && r.enfermedad.trim() !== '')
     ).length;
@@ -1472,19 +1484,19 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       const rightReports = activeReports.slice(halfLength);
 
       const formatRow = (r: any) => {
-        const isSuspended = r.rival === 'PARTIDO SUSPENDIDO / SIN FECHA';
+        const didNotPlay = r.minutos_jugados === 0 || r.rival === 'PARTIDO SUSPENDIDO / SIN FECHA';
         return [
           `${r.nombre || ''} ${r.apellido1 || ''}\n${r.club_nombre || 'SIN CLUB'}`,
           r.respondio && r.fecha 
             ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }) 
             : '-',
           r.respondio 
-            ? (isSuspended ? 'SIN COMPETENCIA' : `VS ${r.rival || '—'}${r.categoria ? `\n(${String(r.categoria).replace('_', ' ').toUpperCase()})` : ''}`) 
+            ? (didNotPlay ? '-' : `VS ${r.rival || '—'}${r.categoria ? `\n(${String(r.categoria).replace('_', ' ').toUpperCase()})` : ''}`) 
             : 'PENDIENTE',
-          r.respondio && !isSuspended && r.minutos_jugados !== null ? `${r.minutos_jugados}'` : '-',
-          r.respondio && !isSuspended && r.rpe !== null ? `${r.rpe}/10` : '-',
-          r.respondio && !isSuspended ? (r.molestias || 'Sin molestias') : '-',
-          r.respondio && !isSuspended ? (r.enfermedad || 'Sin Síntomas') : '-'
+          r.respondio && !didNotPlay && r.minutos_jugados !== null ? `${r.minutos_jugados}'` : '-',
+          r.respondio && !didNotPlay && r.rpe !== null && r.rpe !== 0 ? `${r.rpe}/10` : '-',
+          r.respondio && !didNotPlay ? (r.molestias || 'Sin molestias') : '-',
+          r.respondio && !didNotPlay ? (r.enfermedad || 'Sin Síntomas') : '-'
         ];
       };
 
@@ -2749,13 +2761,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                       <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
                       Jugaron: {competenciaStats.playedCount}
                     </div>
-                    <div className="flex items-center gap-1 text-rose-500" title="Jugadores que reportaron que no jugaron (0 minutos)">
+                    <div className="flex items-center gap-1 text-rose-500" title="Jugadores que reportaron que no jugaron (0 minutos) o fecha suspendida">
                       <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span>
                       No Jugaron: {competenciaStats.didNotPlayCount}
-                    </div>
-                    <div className="flex items-center gap-1 text-amber-500" title="Jugadores que reportaron que no hubo partido o fecha suspendida">
-                      <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
-                      Sin Fecha: {competenciaStats.noCompetenciaCount}
                     </div>
                     <div className="flex items-center gap-1 text-slate-400" title="Jugadores convocados que no han contestado">
                       <span className="w-1.5 h-1.5 bg-slate-300 rounded-full"></span>
@@ -2897,105 +2905,96 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                         </td>
                       </tr>
                     ) : (
-                      paginatedReports.map((report) => (
-                        <tr 
-                          key={report.id} 
-                          className={`group hover:bg-slate-50/50 transition-all duration-300 ${
-                            !report.respondio ? 'opacity-35 saturate-50 blur-[0.4px] hover:blur-none hover:opacity-80' : ''
-                          }`}
-                        >
-                          <td className="py-5">
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-black text-xs italic">
-                                {report.nombre?.charAt(0)}
-                              </div>
-                              <div>
-                                <p 
-                                  className="text-[11px] font-black text-slate-900 uppercase italic leading-none hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (report.player_id) {
-                                      sessionStorage.setItem('selectedPlayerIdForProfile', String(report.player_id));
-                                      window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: report.player_id } }));
-                                    }
-                                  }}
-                                >
-                                  {report.nombre} {report.apellido1}
-                                </p>
-                                <div className="mt-1">
-                                  <ClubBadge 
-                                    clubName={report.club_nombre} 
-                                    idClub={report.id_club} 
-                                    clubs={clubs} 
-                                    logoSize="w-3.5 h-3.5" 
-                                    className="text-[9px] font-black text-slate-400 uppercase tracking-widest" 
-                                  />
+                      paginatedReports.map((report) => {
+                        const didNotPlay = report.minutos_jugados === 0 || report.rival === 'PARTIDO SUSPENDIDO / SIN FECHA';
+                        return (
+                          <tr 
+                            key={report.id} 
+                            className={`group hover:bg-slate-50/50 transition-all duration-300 ${
+                              !report.respondio ? 'opacity-35 saturate-50 blur-[0.4px] hover:blur-none hover:opacity-80' : ''
+                            }`}
+                          >
+                            <td className="py-5">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-black text-xs italic">
+                                  {report.nombre?.charAt(0)}
                                 </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-5 text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
-                            {report.respondio && report.fecha ? (
-                              new Date(report.fecha + 'T12:00:00').toLocaleDateString()
-                            ) : (
-                              <span className="text-amber-500/85 font-black tracking-widest text-[9px]">PENDIENTE</span>
-                            )}
-                          </td>
-                          <td className="py-5">
-                            {report.respondio ? (
-                              report.rival === 'PARTIDO SUSPENDIDO / SIN FECHA' ? (
-                                <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider border border-amber-100/60">
-                                  ⚠️ SIN FECHA / SUSPENDIDO
-                                </span>
-                              ) : (
                                 <div>
-                                  <p className="text-[11px] font-bold text-slate-900 uppercase tracking-widest">
-                                    vs {report.rival}
+                                  <p 
+                                    className="text-[11px] font-black text-slate-900 uppercase italic leading-none hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (report.player_id) {
+                                        sessionStorage.setItem('selectedPlayerIdForProfile', String(report.player_id));
+                                        window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: report.player_id } }));
+                                      }
+                                    }}
+                                  >
+                                    {report.nombre} {report.apellido1}
                                   </p>
-                                  {report.categoria && (
-                                    <span className="inline-block bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tight mt-1">
-                                      {String(report.categoria).replace('_', ' ')}
-                                    </span>
-                                  )}
+                                  <div className="mt-1">
+                                    <ClubBadge 
+                                      clubName={report.club_nombre} 
+                                      idClub={report.id_club} 
+                                      clubs={clubs} 
+                                      logoSize="w-3.5 h-3.5" 
+                                      className="text-[9px] font-black text-slate-400 uppercase tracking-widest" 
+                                    />
+                                  </div>
                                 </div>
-                              )
-                            ) : (
-                              <span className="text-amber-500/85 font-black text-[9px] tracking-wider bg-amber-50/50 px-2.5 py-1 rounded-xl">PENDIENTE DE REPORTE</span>
-                            )}
-                          </td>
-                          <td className="py-5 text-center">
-                            {report.respondio && report.rival !== 'PARTIDO SUSPENDIDO / SIN FECHA' && report.minutos_jugados !== null ? (
-                              report.minutos_jugados === 0 ? (
-                                <span className="inline-block bg-emerald-50 text-emerald-600 border border-emerald-200/50 px-2.5 py-1 rounded-lg text-[10px] font-black tracking-tighter italic" title="No sumó minutos de competencia">
-                                  0'
-                                </span>
+                              </div>
+                            </td>
+                            <td className="py-5 text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
+                              {report.respondio && report.fecha ? (
+                                new Date(report.fecha + 'T12:00:00').toLocaleDateString()
                               ) : (
+                                <span className="text-amber-500/85 font-black tracking-widest text-[9px]">PENDIENTE</span>
+                              )}
+                            </td>
+                            <td className="py-5">
+                              {report.respondio ? (
+                                didNotPlay ? (
+                                  <span className="inline-block text-slate-400 font-medium italic">-</span>
+                                ) : (
+                                  <div>
+                                    <p className="text-[11px] font-bold text-slate-900 uppercase tracking-widest">
+                                      vs {report.rival}
+                                    </p>
+                                    {report.categoria && (
+                                      <span className="inline-block bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tight mt-1">
+                                        {String(report.categoria).replace('_', ' ')}
+                                      </span>
+                                    )}
+                                  </div>
+                                )
+                              ) : (
+                                <span className="text-amber-500/85 font-black text-[9px] tracking-wider bg-amber-50/50 px-2.5 py-1 rounded-xl">PENDIENTE DE REPORTE</span>
+                              )}
+                            </td>
+                            <td className="py-5 text-center">
+                              {report.respondio && !didNotPlay && report.minutos_jugados !== null ? (
                                 <span className="inline-block bg-[#0b1220] text-white px-2.5 py-1 rounded-lg text-[10px] font-black tracking-tighter italic">
                                   {report.minutos_jugados}'
                                 </span>
-                              )
-                            ) : (
-                              <span className="inline-block text-slate-400 font-medium italic">-</span>
-                            )}
-                          </td>
-                          <td className="py-5 text-center">
-                            {report.respondio && report.rival !== 'PARTIDO SUSPENDIDO / SIN FECHA' && report.rpe !== null ? (
-                              <span className={`inline-block text-[10px] font-black px-2.5 py-1 rounded-lg ${
-                                (report.rpe || 0) > 7 ? 'bg-red-100 text-red-600' : 
-                                (report.rpe || 0) > 4 ? 'bg-amber-100 text-amber-600' : 
-                                'bg-emerald-100 text-emerald-600'
-                              }`}>
-                                {report.rpe}
-                              </span>
-                            ) : (
-                              <span className="inline-block text-slate-400 font-medium italic">-</span>
-                            )}
-                          </td>
-                          <td className="py-5">
-                            {report.respondio ? (
-                              report.rival === 'PARTIDO SUSPENDIDO / SIN FECHA' ? (
-                                <span className="text-slate-400 font-medium italic">-</span>
                               ) : (
+                                <span className="inline-block text-slate-400 font-medium italic">-</span>
+                              )}
+                            </td>
+                            <td className="py-5 text-center">
+                              {report.respondio && !didNotPlay && report.rpe !== null && report.rpe !== 0 ? (
+                                <span className={`inline-block text-[10px] font-black px-2.5 py-1 rounded-lg ${
+                                  (report.rpe || 0) > 7 ? 'bg-red-100 text-red-600' : 
+                                  (report.rpe || 0) > 4 ? 'bg-amber-100 text-amber-600' : 
+                                  'bg-emerald-100 text-emerald-600'
+                                }`}>
+                                  {report.rpe}
+                                </span>
+                              ) : (
+                                <span className="inline-block text-slate-400 font-medium italic">-</span>
+                              )}
+                            </td>
+                            <td className="py-5">
+                              {report.respondio && !didNotPlay ? (
                                 <div className="text-[9.5px] font-bold uppercase tracking-tight leading-relaxed max-w-[150px]">
                                   {report.molestias && 
                                    report.molestias.trim() !== '' && 
@@ -3007,16 +3006,12 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                                     <span className="text-slate-400 font-medium">{report.molestias || 'Sin molestias'}</span>
                                   )}
                                 </div>
-                              )
-                            ) : (
-                              <span className="text-slate-400 font-medium italic">-</span>
-                            )}
-                          </td>
-                          <td className="py-5">
-                            {report.respondio ? (
-                              report.rival === 'PARTIDO SUSPENDIDO / SIN FECHA' ? (
-                                <span className="text-slate-400 font-medium italic">-</span>
                               ) : (
+                                <span className="text-slate-400 font-medium italic">-</span>
+                              )}
+                            </td>
+                            <td className="py-5">
+                              {report.respondio && !didNotPlay ? (
                                 <div className="text-[9.5px] font-bold uppercase tracking-tight leading-relaxed max-w-[150px]">
                                   {report.enfermedad && 
                                    report.enfermedad.trim() !== '' && 
@@ -3028,13 +3023,13 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                                     <span className="text-slate-400 font-medium">{report.enfermedad || 'Sin Síntomas'}</span>
                                   )}
                                 </div>
-                              )
-                            ) : (
-                              <span className="text-slate-400 font-medium italic">-</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))
+                              ) : (
+                                <span className="text-slate-400 font-medium italic">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

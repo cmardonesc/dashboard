@@ -8,6 +8,7 @@ import ClubBadge from './ClubBadge';
 import Markdown from 'react-markdown';
 import { ALL_METRIC_CONFIGS } from './FisicaResumenGrupal';
 import { FichaOrientacionAtleta, FichaOrientacionGrupal } from './FichasOrientacion';
+import { AthletePrescription } from './AthletePrescription';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Cell, BarChart, Bar, LineChart, Line, Legend,
@@ -318,7 +319,6 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         aData,
         vData,
         injData,
-        gData,
         mData,
         lData,
         t505Res,
@@ -331,7 +331,6 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         fetchFullTable('antropometria'),
         fetchFullTable('vo2max_tests'),
         fetchFullTable('lesionados'),
-        fetchFullTable('gps_import'),
         fetchFullTable('medical_daily_reports'),
         fetchFullTable('internal_load'),
         fetchFullTable('test_505'),
@@ -381,7 +380,6 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
       if (aData) setAntropometria(aData);
       if (vData) setVo2maxData(vData);
       if (injData) setInjuries(injData);
-      if (gData) setGpsData(gData);
       if (mData) setMedicalReports(mData);
       if (lData) setInternalLoads(lData);
       if (t505Res) setTest505Data(t505Res);
@@ -392,6 +390,35 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
       setLoading(false);
     }
   };
+
+  // Load GPS data for the selected player dynamically on-demand
+  useEffect(() => {
+    if (!selectedPlayerId) {
+      setGpsData([]);
+      return;
+    }
+
+    const fetchGpsForPlayer = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('gps_import')
+          .select('*')
+          .eq('player_id', selectedPlayerId)
+          .order('fecha', { ascending: false });
+
+        if (error) {
+          console.error(`Error fetching from gps_import for player ${selectedPlayerId}:`, error);
+          return;
+        }
+
+        setGpsData(data || []);
+      } catch (err) {
+        console.error("Error fetching gps_import for player:", err);
+      }
+    };
+
+    fetchGpsForPlayer();
+  }, [selectedPlayerId]);
 
   const availableAnios = useMemo(() => {
     let filteredPlayers = players;
@@ -3512,6 +3539,22 @@ const AthleteHuella = ({
           </div>
         </div>
       </div>
+
+      {player && (
+        <AthletePrescription
+          player={player as any}
+          latestVam={(() => {
+            if (!vo2max || vo2max.length === 0) return null;
+            const sorted = [...vo2max].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+            return sorted[0]?.vam || null;
+          })()}
+          latestImtp={(() => {
+            if (!imtp || imtp.length === 0) return null;
+            const sorted = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime());
+            return sorted[0]?.imtp_fuerza_n || null;
+          })()}
+        />
+      )}
     </div>
   );
 };

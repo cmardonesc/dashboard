@@ -335,11 +335,18 @@ export default function App() {
         
         let category: Category = Category.SUB_17; // Default
         if (p.anio) {
-          const year = Number(p.anio);
-          if (year === 2011) category = Category.SUB_15;
-          else if (year === 2009 || year === 2010) category = Category.SUB_16;
-          else if (year === 2007 || year === 2008) category = Category.SUB_17;
-          else if (year >= 2012) category = Category.SUB_13;
+          const currentYear = new Date().getFullYear();
+          const age = currentYear - Number(p.anio);
+          if (age <= 13) category = Category.SUB_13;
+          else if (age === 14) category = Category.SUB_14;
+          else if (age === 15) category = Category.SUB_15;
+          else if (age === 16) category = Category.SUB_16;
+          else if (age === 17) category = Category.SUB_17;
+          else if (age === 18) category = Category.SUB_18;
+          else if (age <= 20) category = Category.SUB_20;
+          else if (age <= 21) category = Category.SUB_21;
+          else if (age <= 23) category = Category.SUB_23;
+          else category = Category.ADULTA;
         }
 
         let clubId = p.id_club || p.club_id;
