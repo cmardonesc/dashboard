@@ -5,6 +5,7 @@ import { BODY_PARTS } from '../constants';
 
 interface MatchReportFormProps {
   onSubmit: (data: any) => void;
+  onClose?: () => void;
   defaultCategory?: Category;
 }
 
@@ -35,7 +36,7 @@ const CHILEAN_TEAMS = [
   'San Luis de Quillota',
 ];
 
-const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCategory }) => {
+const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, onClose, defaultCategory }) => {
   const [step, setStep] = useState<MatchStep>('context');
   const [view, setView] = useState<'ANTERIOR' | 'POSTERIOR'>('ANTERIOR');
   const [noMatchOrSuspended, setNoMatchOrSuspended] = useState(false);
@@ -111,7 +112,11 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, defaultCate
     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="flex justify-between items-center mb-10">
         <h2 className="text-xl font-black italic uppercase tracking-tighter text-slate-900">DATOS PARTIDO 🏟️</h2>
-        <button type="button" className="text-slate-400 hover:text-slate-900"><i className="fa-solid fa-xmark text-xl"></i></button>
+        {onClose && (
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-900 transition-colors">
+            <i className="fa-solid fa-xmark text-xl"></i>
+          </button>
+        )}
       </div>
 
       <div className="space-y-6">

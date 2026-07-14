@@ -295,6 +295,12 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         .gte('end_date', today)
         .maybeSingle();
       
+      let maxEva = null;
+      if (data.sorenessAreas && data.sorenessAreas.length > 0) {
+        const scores = data.sorenessAreas.map((area: string) => data.evaScores?.[area] || 5);
+        maxEva = Math.max(...scores);
+      }
+
       const payload = {
         player_id: player.player_id,
         microcycle_id: activeMC?.id || null,
@@ -304,9 +310,12 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         stress: data.stress,
         mood: data.mood,
         soreness: data.soreness,
-        molestias: data.sorenessAreas.join(', '),
+        molestias: data.sorenessAreas.length > 0 
+          ? data.sorenessAreas.map((area: string) => `${area} (EVA: ${data.evaScores?.[area] || 5})`).join(', ')
+          : '',
         enfermedad: data.illnessSymptoms.join(', '),
-        created_by: user?.id
+        created_by: user?.id,
+        eva: maxEva
       };
 
       const { error } = await supabase
@@ -1064,13 +1073,13 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           </div>
         )
       case 'reportes_wellness':
-        return <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300"><WellnessForm onSubmit={handleWellnessSubmit} submitting={submitting} /></div>
+        return <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300"><WellnessForm onSubmit={handleWellnessSubmit} onClose={() => setActiveMenu('inicio')} submitting={submitting} /></div>
       case 'reportes_load':
-        return <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300"><TrainingLoadForm onSubmit={handleLoadSubmit} submitting={submitting} /></div>
+        return <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300"><TrainingLoadForm onSubmit={handleLoadSubmit} onClose={() => setActiveMenu('inicio')} submitting={submitting} /></div>
       case 'reportes_match':
         return (
           <div className="w-full max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <MatchReportForm onSubmit={handleMatchSubmit} defaultCategory={player?.category as Category} />
+            <MatchReportForm onSubmit={handleMatchSubmit} onClose={() => setActiveMenu('inicio')} defaultCategory={player?.category as Category} />
           </div>
         )
       case 'nutricion_antropometria':

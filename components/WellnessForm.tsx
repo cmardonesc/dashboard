@@ -4,14 +4,16 @@ import { BODY_PARTS } from '../constants';
 
 interface WellnessFormProps {
   onSubmit: (data: any) => void;
+  onClose?: () => void;
   submitting?: boolean;
 }
 
-type WellnessStep = 'fatigue' | 'sleep' | 'stress' | 'mood' | 'soreness' | 'sorenessAreas' | 'illness';
+type WellnessStep = 'fatigue' | 'sleep' | 'stress' | 'mood' | 'soreness' | 'sorenessAreas' | 'eva' | 'illness';
 
-const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => {
+const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, onClose, submitting }) => {
   const [step, setStep] = useState<WellnessStep>('fatigue');
   const [view, setView] = useState<'ANTERIOR' | 'POSTERIOR'>('ANTERIOR');
+  const [currentEvaAreaIndex, setCurrentEvaAreaIndex] = useState<number>(-1);
   const [formData, setFormData] = useState({
     fatigue: 3,
     sleep: 3,
@@ -19,24 +21,76 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => 
     mood: 3,
     soreness: 3,
     sorenessAreas: [] as string[],
+    evaScores: {} as Record<string, number>,
     illnessSymptoms: [] as string[]
   });
 
-  const stepsOrder: WellnessStep[] = ['fatigue', 'sleep', 'stress', 'mood', 'soreness', 'sorenessAreas', 'illness'];
+  const stepsOrder: WellnessStep[] = ['fatigue', 'sleep', 'stress', 'mood', 'soreness', 'sorenessAreas', 'eva', 'illness'];
 
   const handleNext = () => {
-    const currentIndex = stepsOrder.indexOf(step);
-    if (currentIndex < stepsOrder.length - 1) {
-      setStep(stepsOrder[currentIndex + 1]);
+    if (step === 'sorenessAreas') {
+      if (formData.sorenessAreas.length > 0) {
+        setCurrentEvaAreaIndex(0);
+        setStep('eva');
+      } else {
+        setStep('illness');
+      }
+    } else if (step === 'eva') {
+      if (currentEvaAreaIndex < formData.sorenessAreas.length - 1) {
+        setCurrentEvaAreaIndex(prev => prev + 1);
+      } else {
+        setStep('illness');
+      }
     } else {
-      onSubmit(formData);
+      const currentIndex = stepsOrder.indexOf(step);
+      if (currentIndex < stepsOrder.length - 1) {
+        const nextStep = stepsOrder[currentIndex + 1];
+        if (nextStep === 'eva') {
+          // Fallback if we hit this from standard order
+          if (formData.sorenessAreas.length > 0) {
+            setCurrentEvaAreaIndex(0);
+            setStep('eva');
+          } else {
+            setStep('illness');
+          }
+        } else {
+          setStep(nextStep);
+        }
+      } else {
+        onSubmit(formData);
+      }
     }
   };
 
   const handleBack = () => {
-    const currentIndex = stepsOrder.indexOf(step);
-    if (currentIndex > 0) {
-      setStep(stepsOrder[currentIndex - 1]);
+    if (step === 'eva') {
+      if (currentEvaAreaIndex > 0) {
+        setCurrentEvaAreaIndex(prev => prev - 1);
+      } else {
+        setStep('sorenessAreas');
+      }
+    } else if (step === 'illness') {
+      if (formData.sorenessAreas.length > 0) {
+        setCurrentEvaAreaIndex(formData.sorenessAreas.length - 1);
+        setStep('eva');
+      } else {
+        setStep('sorenessAreas');
+      }
+    } else {
+      const currentIndex = stepsOrder.indexOf(step);
+      if (currentIndex > 0) {
+        const prevStep = stepsOrder[currentIndex - 1];
+        if (prevStep === 'eva') {
+          if (formData.sorenessAreas.length > 0) {
+            setCurrentEvaAreaIndex(formData.sorenessAreas.length - 1);
+            setStep('eva');
+          } else {
+            setStep('sorenessAreas');
+          }
+        } else {
+          setStep(prevStep);
+        }
+      }
     }
   };
 
@@ -76,7 +130,11 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => 
       <div className="animate-in fade-in slide-in-from-right-4 duration-300">
         <div className="flex justify-between items-center mb-10">
           <h2 className="text-xl font-black italic uppercase tracking-tighter text-slate-900">{title}</h2>
-          <button type="button" className="text-slate-400 hover:text-slate-900"><i className="fa-solid fa-xmark text-xl"></i></button>
+          {onClose && (
+            <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-900 transition-colors">
+              <i className="fa-solid fa-xmark text-xl"></i>
+            </button>
+          )}
         </div>
         
         <p className="text-slate-600 font-bold mb-8 text-lg">{question}</p>
@@ -110,9 +168,16 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => 
 
     return (
       <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900 text-center mb-6">
-          ¿MOLESTIAS FÍSICAS? 🩹
-        </h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900">
+            ¿MOLESTIAS FÍSICAS? 🩹
+          </h2>
+          {onClose && (
+            <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-900 transition-colors">
+              <i className="fa-solid fa-xmark text-xl"></i>
+            </button>
+          )}
+        </div>
 
         <div className="flex bg-slate-100 p-1 rounded-2xl mb-6">
           <button 
@@ -180,9 +245,16 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => 
 
     return (
       <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900 text-center mb-10">
-          ¿ESTADO DE SALUD? 🤒
-        </h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900">
+            ¿ESTADO DE SALUD? 🤒
+          </h2>
+          {onClose && (
+            <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-900 transition-colors">
+              <i className="fa-solid fa-xmark text-xl"></i>
+            </button>
+          )}
+        </div>
         
         <p className="text-center text-slate-500 font-bold mb-8 text-sm italic">Marca si sientes algún síntoma:</p>
 
@@ -233,6 +305,98 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => 
     );
   };
 
+  const renderEvaStep = () => {
+    const area = formData.sorenessAreas[currentEvaAreaIndex];
+    if (!area) return null;
+    const currentValue = formData.evaScores[area] || 5;
+
+    const getIntensityInfo = (v: number) => {
+      if (v <= 2) return { label: 'Muy Leve', emoji: '🟢', color: 'text-emerald-500', btnColor: 'bg-emerald-500 text-white border-emerald-500' };
+      if (v <= 4) return { label: 'Leve / Soportable', emoji: '🟡', color: 'text-yellow-500', btnColor: 'bg-yellow-500 text-white border-yellow-500' };
+      if (v <= 6) return { label: 'Moderado', emoji: '🟠', color: 'text-orange-500', btnColor: 'bg-orange-500 text-white border-orange-500' };
+      if (v <= 8) return { label: 'Dolor Fuerte', emoji: '🔴', color: 'text-red-500', btnColor: 'bg-red-500 text-white border-red-500' };
+      return { label: 'Dolor Extremo / Limitante', emoji: '🔥', color: 'text-rose-600', btnColor: 'bg-rose-600 text-white border-rose-600 animate-pulse' };
+    };
+
+    const info = getIntensityInfo(currentValue);
+
+    return (
+      <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-black italic uppercase tracking-tighter text-slate-900">NIVEL DE DOLOR 📉</h2>
+          <div className="flex items-center gap-3">
+            <span className="text-[9px] font-black text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full uppercase tracking-wider">
+              {currentEvaAreaIndex + 1} de {formData.sorenessAreas.length}
+            </span>
+            {onClose && (
+              <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-900 transition-colors">
+                <i className="fa-solid fa-xmark text-xl"></i>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <p className="text-slate-500 font-black text-xs uppercase tracking-widest mb-1">¿Cuánto te duele?</p>
+        <h3 className="text-2xl font-black italic text-red-600 uppercase tracking-tight mb-6">
+          {area}
+        </h3>
+
+        {/* Selected Value Indicator */}
+        <div className="bg-slate-50 border border-slate-100 p-6 rounded-[24px] mb-6 flex flex-col items-center justify-center shadow-sm">
+          <span className="text-5xl mb-2 select-none">{info.emoji}</span>
+          <span className="text-4xl font-black text-slate-900 leading-none mb-1">{currentValue}</span>
+          <span className={`text-[9px] font-black uppercase tracking-widest ${info.color}`}>
+            {info.label}
+          </span>
+        </div>
+
+        {/* 1-10 Horizontal Scale Buttons */}
+        <div className="flex justify-between gap-1 mb-8 overflow-x-auto py-2 px-1 custom-scrollbar">
+          {Array.from({ length: 10 }, (_, i) => i + 1).map((val) => {
+            const isSelected = currentValue === val;
+            const valInfo = getIntensityInfo(val);
+            return (
+              <button
+                key={val}
+                type="button"
+                onClick={() => {
+                  setFormData(prev => ({
+                    ...prev,
+                    evaScores: { ...prev.evaScores, [area]: val }
+                  }));
+                }}
+                className={`w-9 h-9 md:w-10 md:h-10 rounded-full font-black text-xs flex items-center justify-center shrink-0 border transition-all ${
+                  isSelected 
+                    ? `${valInfo.btnColor} shadow-md scale-110` 
+                    : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400'
+                }`}
+              >
+                {val}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-4">
+          <button 
+            type="button" 
+            onClick={handleBack} 
+            className="flex-1 py-5 bg-slate-50 text-slate-400 rounded-[20px] text-[10px] font-black uppercase tracking-widest"
+          >
+            ATRÁS
+          </button>
+          <button 
+            type="button" 
+            onClick={handleNext} 
+            className="flex-[2] py-5 bg-[#0b1220] text-white rounded-[20px] text-[10px] font-black uppercase tracking-widest shadow-lg"
+          >
+            {currentEvaAreaIndex < formData.sorenessAreas.length - 1 ? 'SIGUIENTE ZONA ➡️' : 'CONTINUAR ➡️'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="bg-white p-6 md:p-10 rounded-[32px] md:rounded-[48px] shadow-2xl border border-slate-100 w-full max-w-md mx-auto min-h-[500px] md:min-h-[600px] flex flex-col justify-center">
       {step === 'fatigue' && renderScaleStep('FATIGA', '¿Cómo te sientes de energía?', formData.fatigue, 'fatigue')}
@@ -247,6 +411,7 @@ const WellnessForm: React.FC<WellnessFormProps> = ({ onSubmit, submitting }) => 
         { label: 'MUY FUERTE', value: 1, emoji: '🪫' },
       ])}
       {step === 'sorenessAreas' && renderSorenessStep()}
+      {step === 'eva' && renderEvaStep()}
       {step === 'illness' && renderIllnessStep()}
 
       <style>{`
