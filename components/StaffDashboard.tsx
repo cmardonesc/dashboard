@@ -1365,7 +1365,13 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       case 'fisica_reporte':
         return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} categoryName={selectedCategoryName} />;
       case 'fisica_pronostico':
-        return <PronosticoCargas clubs={clubs} />;
+        return (
+          <PronosticoCargas 
+            clubs={clubs} 
+            selectedCategoryId={selectedCategoryId}
+            onCategoryChange={(catId) => setSelectedCategoryId(catId)}
+          />
+        );
       case 'nutricion_resumen_grupal':
         return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'fisica_resumen_grupal':

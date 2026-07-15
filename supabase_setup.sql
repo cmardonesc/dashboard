@@ -815,4 +815,22 @@ begin
 end;
 $$;
 
+-- Table for gps_planificaciones
+create table if not exists public.gps_planificaciones (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  microcycle_id bigint not null unique references public.microcycles(id) on delete cascade,
+  days_count integer default 7,
+  planned_data jsonb default '{}'::jsonb,
+  intensities_data jsonb default '{}'::jsonb,
+  n_micros integer default 0
+);
+
+alter table public.gps_planificaciones enable row level security;
+
+drop policy if exists "Enable all access for gps_planificaciones" on public.gps_planificaciones;
+create policy "Enable all access for gps_planificaciones" on public.gps_planificaciones for all using (true) with check (true);
+
+
 

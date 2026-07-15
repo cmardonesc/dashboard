@@ -79,8 +79,8 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'Retorno', emoji: '🚌' },
   { label: 'Despegue', emoji: '🛫' },
   { label: 'Aterrizaje', emoji: '🛬' },
-  { label: 'Despegue y Retorno', emoji: '✈️' },
-  { label: 'Salida y Retorno', emoji: '🚌' },
+  { label: 'Test de Hidratación', emoji: '💧' },
+  { label: 'Llegada', emoji: '📍' },
   { label: 'Partido Amistoso', emoji: '🏟️' },
   { label: 'Partido Oficial', emoji: '🏆' },
   { label: 'Citación', emoji: '📢' },
@@ -2565,6 +2565,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                   </button>
                 ))}
               </div>
+              {activityForm.type === 'OTRA' && (
+                <input required placeholder="Especificar Actividad (Ej: Reunión, Charla)..." className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black" value={activityForm.customType} onChange={e => setActivityForm({...activityForm, customType: e.target.value})} />
+              )}
               <button type="submit" disabled={savingActivity} className="w-full py-6 rounded-[32px] bg-red-600 text-white text-xs font-black uppercase tracking-widest shadow-2xl hover:bg-red-700 transition-all">
                 {savingActivity ? 'Guardando...' : (editingActivityId ? 'Actualizar Actividad' : 'Confirmar y Agendar')}
               </button>

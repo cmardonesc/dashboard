@@ -694,10 +694,13 @@ export default function DinamicasArea() {
               <i className="fa-solid fa-person-running text-2xl relative z-10"></i>
             </div>
             <div>
-              <h2 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">
-                Dinámicas <span className="text-red-600">GPS</span>
-              </h2>
-              <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.25em] italic">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">
+                  Dinámicas
+                </h2>
+                <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-md font-black border border-red-200 uppercase tracking-wider">En Desarrollo</span>
+              </div>
+              <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.25em] italic mt-1">
                 Gráficos de Caja y Dispersión de Ejercicios
               </p>
             </div>
@@ -781,7 +784,7 @@ export default function DinamicasArea() {
             <i className="fa-solid fa-database text-3xl"></i>
           </div>
           <div>
-            <h3 className="text-lg font-black uppercase text-slate-900 tracking-tight">Módulo de Dinámicas GPS</h3>
+            <h3 className="text-lg font-black uppercase text-slate-900 tracking-tight">Módulo de Dinámicas</h3>
             <p className="text-slate-400 text-xs mt-2 leading-relaxed">
               La tabla <code className="bg-slate-100 text-red-500 px-1.5 py-0.5 rounded font-mono">drill_gps_data</code> está vacía o pendiente de configuración. Haz clic en el botón de abajo para sembrar registros realistas de prueba para La Roja.
             </p>

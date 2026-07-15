@@ -60,7 +60,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
 
   const menuItems = [
     { id: 'inicio', label: 'Inicio', icon: 'fa-solid fa-house' },
-    { id: 'dinamicas', label: 'Dinámicas GPS', icon: 'fa-solid fa-person-running' },
+    { id: 'dinamicas', label: 'Dinámicas', icon: 'fa-solid fa-person-running' },
     { id: 'perfil_jugador', label: 'Perfil Jugador', icon: 'fa-solid fa-id-card' },
   ];
 
@@ -170,19 +170,33 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
       <nav className="flex-1 px-3 space-y-2 mt-4">
         {filteredMenuItems.map((item) => {
           const isActive = activeMenu === item.id;
+          const isDinamicas = item.id === 'dinamicas';
           return (
             <button
               key={item.id}
               onClick={() => handleMenuClick(item.id as MenuId)}
               title={isCollapsed ? item.label : ''}
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 group ${
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 group ${
                 isActive 
                   ? 'bg-red-900/20 text-[#CF1B2B]' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                  : isDinamicas
+                    ? 'text-red-500 hover:bg-red-950/15 hover:text-red-400'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-white'
               }`}
             >
-              <i className={`${item.icon} text-xl ${isCollapsed ? '' : 'w-6'} ${isActive ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
-              {!isCollapsed && <span className="font-bold text-sm tracking-tight">{item.label}</span>}
+              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
+                <i className={`${item.icon} text-xl ${isCollapsed ? '' : 'w-6'} ${
+                  isActive 
+                    ? 'text-[#CF1B2B]' 
+                    : isDinamicas
+                      ? 'text-red-500 group-hover:text-red-400'
+                      : 'text-slate-500 group-hover:text-white'
+                }`}></i>
+                {!isCollapsed && <span className="font-bold text-sm tracking-tight">{item.label}</span>}
+              </div>
+              {!isCollapsed && isDinamicas && (
+                <span className="text-[8px] bg-red-950/60 text-red-400 px-1 py-0.5 rounded-md font-bold border border-red-500/30">En Desarrollo</span>
+              )}
             </button>
           );
         })}

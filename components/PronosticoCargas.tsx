@@ -2,6 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Category, CATEGORY_ID_MAP } from '../types';
+import jsPDF from 'jspdf';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
+import { FEDERATION_LOGO } from '../constants';
+import { getDriveDirectLink } from '../lib/utils';
 
 // Defined metrics for the table
 interface MetricDef {
@@ -28,7 +32,7 @@ const METRICS: MetricDef[] = [
   },
   {
     id: 'dist_ai_m_15_kmh',
-    label: 'HSR ≥15 km/h',
+    label: 'MAI >15 km/h',
     unit: 'm',
     fallback: {
       Baja: [100, 200, 300],
@@ -38,7 +42,7 @@ const METRICS: MetricDef[] = [
   },
   {
     id: 'dist_mai_m_20_kmh',
-    label: 'MAI ≥20 km/h',
+    label: 'HSR >20 km/h',
     unit: 'm',
     fallback: {
       Baja: [20, 50, 80],
@@ -48,7 +52,7 @@ const METRICS: MetricDef[] = [
   },
   {
     id: 'dist_sprint_m_25_kmh',
-    label: 'Sprint ≥25 km/h',
+    label: 'Sprint >25 km/h',
     unit: 'm',
     fallback: {
       Baja: [0, 10, 20],
@@ -83,7 +87,15 @@ const CATEGORY_LABELS: Record<Category, string> = {
 
 type Intensity = 'Baja' | 'Media' | 'Alta';
 
-export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
+export default function PronosticoCargas({ 
+  clubs,
+  selectedCategoryId,
+  onCategoryChange
+}: { 
+  clubs: any[];
+  selectedCategoryId?: number | null;
+  onCategoryChange?: (categoryId: number | null) => void;
+}) {
   // Selectors State
   const [selectedCategory, setSelectedCategory] = useState<Category | ''>('');
   const [selectedMicrocycle, setSelectedMicrocycle] = useState<any | null>(null);
@@ -142,13 +154,20 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
         let initialCat = availableCategories[0];
         let initialMc = null;
 
-        // Try to find if there is an active microcycle today
-        const activeTodayMc = microcycles.find(m => todayStr >= m.start_date && todayStr <= m.end_date);
-        if (activeTodayMc) {
-          const foundCat = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === activeTodayMc.category_id)?.[0] as Category | undefined;
-          if (foundCat) {
-            initialCat = foundCat;
-            initialMc = activeTodayMc;
+        if (selectedCategoryId) {
+          const catEntry = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === selectedCategoryId);
+          if (catEntry && availableCategories.includes(catEntry[0] as Category)) {
+            initialCat = catEntry[0] as Category;
+          }
+        } else {
+          // Try to find if there is an active microcycle today
+          const activeTodayMc = microcycles.find(m => todayStr >= m.start_date && todayStr <= m.end_date);
+          if (activeTodayMc) {
+            const foundCat = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === activeTodayMc.category_id)?.[0] as Category | undefined;
+            if (foundCat) {
+              initialCat = foundCat;
+              initialMc = activeTodayMc;
+            }
           }
         }
 
@@ -167,7 +186,30 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
         }
       }
     }
-  }, [microcycles]);
+  }, [microcycles, selectedCategoryId]);
+
+  // Sincronizar selección del padre cuando cambia dinámicamente
+  useEffect(() => {
+    if (selectedCategoryId && microcycles.length > 0) {
+      const catEntry = Object.entries(CATEGORY_ID_MAP).find(([_, val]) => val === selectedCategoryId);
+      if (catEntry) {
+        const cat = catEntry[0] as Category;
+        if (cat !== selectedCategory) {
+          setSelectedCategory(cat);
+          const catId = CATEGORY_ID_MAP[cat];
+          const categoryMicros = microcycles
+            .filter(m => m.category_id === catId)
+            .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
+          
+          if (categoryMicros.length > 0) {
+            setSelectedMicrocycle(categoryMicros[0]);
+          } else {
+            setSelectedMicrocycle(null);
+          }
+        }
+      }
+    }
+  }, [selectedCategoryId, microcycles, selectedCategory]);
 
   // List of microcycles filtered by category
   const filteredMicrocycles = useMemo(() => {
@@ -215,6 +257,10 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
     setSelectedCategory(cat);
     
     const catId = CATEGORY_ID_MAP[cat];
+    if (onCategoryChange) {
+      onCategoryChange(catId);
+    }
+    
     const categoryMicros = microcycles
       .filter(m => m.category_id === catId)
       .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
@@ -356,65 +402,6 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
     };
   }, [gpsImportRows, microcycles, selectedCategory]);
 
-  // 3. Load / Persist planned values & daily intensities from localStorage on config changes
-  useEffect(() => {
-    if (!selectedMicrocycle) {
-      setPlannedValues({});
-      setDayIntensities({});
-      return;
-    }
-
-    // Load values
-    const valuesKey = `gps_planning_mc_values_${selectedMicrocycle.id}`;
-    const storedValues = localStorage.getItem(valuesKey);
-    if (storedValues) {
-      try {
-        setPlannedValues(JSON.parse(storedValues));
-      } catch (e) {
-        setPlannedValues({});
-      }
-    } else {
-      setPlannedValues({});
-    }
-
-    // Load intensities
-    const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
-    const storedIntensities = localStorage.getItem(intensitiesKey);
-    if (storedIntensities) {
-      try {
-        setDayIntensities(JSON.parse(storedIntensities));
-      } catch (e) {
-        setDayIntensities({});
-      }
-    } else {
-      setDayIntensities({});
-    }
-  }, [selectedMicrocycle]);
-
-  // Handle individual day's intensity change
-  const handleDayIntensityChange = (dayIdx: number, intensity: Intensity) => {
-    if (!selectedMicrocycle) return;
-    setDayIntensities(prev => {
-      const updated = { ...prev, [dayIdx]: intensity };
-      const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
-      localStorage.setItem(intensitiesKey, JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  // Handle plan inputs safely
-  const handlePlanChange = (dayIndex: number, metricId: string, value: string) => {
-    if (!selectedMicrocycle) return;
-    const num = Math.max(0, parseFloat(value) || 0);
-    const key = `${dayIndex}_${metricId}`;
-    setPlannedValues(prev => {
-      const updated = { ...prev, [key]: num };
-      const valuesKey = `gps_planning_mc_values_${selectedMicrocycle.id}`;
-      localStorage.setItem(valuesKey, JSON.stringify(updated));
-      return updated;
-    });
-  };
-
   // Helper to retrieve recommended range for a specific day and metric
   const getRecommendation = (dayIdx: number, metricId: string) => {
     const intensity = dayIntensities[dayIdx] || 'Media';
@@ -443,6 +430,480 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
       p75: fallbackRange ? fallbackRange[2] : 0,
       source: 'Modelo'
     };
+  };
+
+  // Selector de métricas para el gráfico semanal
+  const [selectedChartMetric, setSelectedChartMetric] = useState<string>('dist_total_m');
+
+  // Preparar datos para el gráfico
+  const chartData = useMemo(() => {
+    if (!selectedMicrocycle) return [];
+    return Array.from({ length: daysCount }).map((_, dIdx) => {
+      const dayInfo = getDayDetails(dIdx);
+      const row: any = {
+        name: `Día ${dIdx + 1}`,
+        fullLabel: dayInfo.label,
+      };
+      
+      METRICS.forEach(metric => {
+        const rec = getRecommendation(dIdx, metric.id);
+        const percentage = plannedValues[`${dIdx}_${metric.id}`] || 0;
+        const factor = 1 + (percentage / 100);
+        const adjP50 = Math.round(rec.p50 * factor);
+        const adjP25 = Math.round(rec.p25 * factor);
+        const adjP75 = Math.round(rec.p75 * factor);
+        row[metric.id] = adjP50;
+        row[`${metric.id}_min`] = adjP25;
+        row[`${metric.id}_max`] = adjP75;
+        row[`${metric.id}_pct`] = percentage;
+        row[`${metric.id}_rel`] = Math.round(factor * 100);
+        row[`${metric.id}_rec`] = rec.p50;
+      });
+      
+      return row;
+    });
+  }, [daysCount, selectedMicrocycle, plannedValues, dayIntensities, referencesByIntensity, confidenceState]);
+
+  // Función para descargar PDF de Planificación y Pronóstico
+  const handleDownloadPDF = () => {
+    if (!selectedMicrocycle) return;
+    
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const width = doc.internal.pageSize.getWidth();
+    const height = doc.internal.pageSize.getHeight();
+    const margin = 15;
+
+    // Colores corporativos (idénticos a FisicaArea / check-in check-out)
+    const primaryColor = [2, 66, 140] as [number, number, number];
+    const secondaryColor = [226, 35, 26] as [number, number, number];
+    const darkColor = [26, 35, 51] as [number, number, number];
+    
+    // --- TOP COLOR BAR ---
+    doc.setFillColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+    doc.rect(0, 0, width, 4, 'F');
+    
+    // --- CONTAINER HEADER (DARK NAVY RIBBON) ---
+    doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
+    doc.rect(margin, 8, width - (margin * 2), 16, 'F');
+    
+    // Left Title Block
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.rect(margin, 8, 70, 16, 'F');
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text('REPORTE DE PLANIFICACIÓN DE CARGAS', margin + 4, 18);
+
+    // Logo
+    const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+    try {
+      doc.addImage(logoUrl, 'PNG', margin + 76, 9, 14, 14);
+    } catch (e) {
+      console.error("Error loading logo for PDF:", e);
+    }
+
+    // Category text / Selection name
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text('SELECCIÓN NACIONAL', margin + 96, 15);
+    
+    doc.setFontSize(8);
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+    const catLabelStr = selectedCategory 
+      ? CATEGORY_LABELS[selectedCategory].toUpperCase() 
+      : 'LA ROJA';
+    doc.text(catLabelStr, margin + 96, 19);
+
+    // --- METADATA BOXES ---
+    const boxY = 28;
+    const boxW = (width - (margin * 2) - 8) / 3;
+    const boxH = 10;
+
+    // Box 1: Proceso / Microciclo
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(margin, boxY, boxW, boxH, 1.5, 1.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.5);
+    doc.setTextColor(140, 140, 140);
+    doc.text('PROCESO / MICROCICLO', margin + 4, boxY + 3.5);
+    doc.setFontSize(7);
+    doc.setTextColor(40, 40, 40);
+    const microText = `MICROCICLO #${selectedMicrocycle.micro_number || selectedMicrocycle.id}`;
+    doc.text(microText.toUpperCase(), margin + 4, boxY + 7.5);
+
+    // Box 2: Periodo / Fecha
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(margin + boxW + 4, boxY, boxW, boxH, 1.5, 1.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.5);
+    doc.setTextColor(140, 140, 140);
+    doc.text('PERIODO DE TRABAJO', margin + boxW + 8, boxY + 3.5);
+    doc.setFontSize(7);
+    doc.setTextColor(40, 40, 40);
+    const rangeText = `DEL ${new Date(selectedMicrocycle.start_date + 'T12:00:00').toLocaleDateString('es-ES')} AL ${new Date(selectedMicrocycle.end_date + 'T12:00:00').toLocaleDateString('es-ES')}`;
+    doc.text(rangeText.toUpperCase(), margin + boxW + 8, boxY + 7.5);
+
+    // Box 3: Referencia
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(margin + (boxW * 2) + 8, boxY, boxW, boxH, 1.5, 1.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.5);
+    doc.setTextColor(140, 140, 140);
+    doc.text('HISTORIAL DE SOPORTE', margin + (boxW * 2) + 12, boxY + 3.5);
+    doc.setFontSize(7);
+    doc.setTextColor(40, 40, 40);
+    const refText = `${nMicros} MICROCICLOS DE REFERENCIA`;
+    doc.text(refText.toUpperCase(), margin + (boxW * 2) + 12, boxY + 7.5);
+
+    // --- TABLE ---
+    const tableYStart = 44;
+    doc.setFillColor(11, 18, 32);
+    doc.rect(margin, tableYStart, width - (margin * 2), 8, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("DÍA", margin + 3, tableYStart + 5.5);
+    doc.text("INTENSIDAD", margin + 30, tableYStart + 5.5);
+    doc.text("DISTANCIA (M)", margin + 75, tableYStart + 5.5, { align: 'right' });
+    doc.text("HSR (M)", margin + 105, tableYStart + 5.5, { align: 'right' });
+    doc.text("MAI (M)", margin + 130, tableYStart + 5.5, { align: 'right' });
+    doc.text("SPRINT (M)", margin + 155, tableYStart + 5.5, { align: 'right' });
+    doc.text("ACC/DEC", margin + 180, tableYStart + 5.5, { align: 'right' });
+    
+    let currentY = tableYStart + 8;
+    
+    chartData.forEach((row, idx) => {
+      if (idx % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, currentY, width - (margin * 2), 7.5, 'F');
+      }
+      
+      doc.setDrawColor(241, 245, 249);
+      doc.line(margin, currentY + 7.5, width - margin, currentY + 7.5);
+      
+      doc.setTextColor(15, 23, 42);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.text(`Día ${idx + 1}`, margin + 3, currentY + 5);
+      
+      const intensity = dayIntensities[idx] || 'Media';
+      doc.setFont("helvetica", "normal");
+      
+      if (intensity === 'Alta') {
+        doc.setTextColor(220, 38, 38);
+        doc.setFont("helvetica", "bold");
+      } else if (intensity === 'Baja') {
+        doc.setTextColor(217, 119, 6);
+      } else {
+        doc.setTextColor(5, 150, 105);
+      }
+      doc.text(intensity.toUpperCase(), margin + 30, currentY + 5);
+      
+      doc.setTextColor(15, 23, 42);
+      doc.setFont("helvetica", "normal");
+      
+      const distVal = row['dist_total_m'] || 0;
+      const maiVal = row['dist_ai_m_15_kmh'] || 0;
+      const hsrVal = row['dist_mai_m_20_kmh'] || 0;
+      const sprintVal = row['dist_sprint_m_25_kmh'] || 0;
+      const accVal = row['acc_decc_ai_n'] || 0;
+      
+      doc.text(distVal.toLocaleString(), margin + 75, currentY + 5, { align: 'right' });
+      doc.text(hsrVal.toLocaleString(), margin + 105, currentY + 5, { align: 'right' });
+      doc.text(maiVal.toLocaleString(), margin + 130, currentY + 5, { align: 'right' });
+      doc.text(sprintVal.toLocaleString(), margin + 155, currentY + 5, { align: 'right' });
+      doc.text(accVal.toLocaleString(), margin + 180, currentY + 5, { align: 'right' });
+      
+      currentY += 7.5;
+    });
+
+    // --- FIVE SEPARATE COMPACT CHARTS GRID (3x2 GRID) ---
+    const chartYStart = currentY + 6;
+    
+    // Modern brand color variants map for [Min, Max]
+    const metricColorsMap: Record<string, { min: [number, number, number], max: [number, number, number] }> = {
+      "dist_total_m": { min: [112, 163, 227], max: [2, 66, 140] },       // Dist Total (Blue)
+      "dist_ai_m_15_kmh": { min: [252, 211, 77], max: [245, 158, 11] },  // MAI (Amber)
+      "dist_mai_m_20_kmh": { min: [255, 143, 138], max: [226, 35, 26] },   // HSR (Red)
+      "dist_sprint_m_25_kmh": { min: [110, 231, 183], max: [16, 185, 129] },// Sprint (Emerald)
+      "acc_decc_ai_n": { min: [192, 132, 252], max: [139, 92, 246] }     // Acc/Dec (Purple)
+    };
+
+    const drawSmallChart = (
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+      title: string,
+      metricId: string,
+      unit: string
+    ) => {
+      const colors = metricColorsMap[metricId] || { min: [200, 200, 200], max: [100, 100, 100] };
+
+      // 1. Background Bento Card with a subtle border
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(x, y, w, h, 2, 2, 'D');
+
+      // 2. Premium left vertical border accent strip matching the metric color
+      doc.setFillColor(colors.max[0], colors.max[1], colors.max[2]);
+      doc.rect(x, y + 0.1, 1.5, h - 0.2, 'F');
+
+      // 3. Title
+      doc.setTextColor(15, 23, 42);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text(title.toUpperCase(), x + 4.5, y + 6);
+
+      // 4. Subtle Mini Legend inside each bento box (Min vs Max)
+      const legendX = x + w - 24;
+      const legendY = y + 6;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(5);
+
+      // Min Legend
+      doc.setFillColor(colors.min[0], colors.min[1], colors.min[2]);
+      doc.rect(legendX, legendY - 1.6, 2, 1.8, 'F');
+      doc.setTextColor(100, 116, 139);
+      doc.text("Mín", legendX + 2.5, legendY - 0.2);
+
+      // Max Legend
+      doc.setFillColor(colors.max[0], colors.max[1], colors.max[2]);
+      doc.rect(legendX + 10, legendY - 1.6, 2, 1.8, 'F');
+      doc.setTextColor(15, 23, 42);
+      doc.text("Máx", legendX + 12.5, legendY - 0.2);
+
+      // Inner chart coordinates
+      const cX = x + 11;
+      const cY = y + 10;
+      const cW = w - 16;
+      const cH = h - 17;
+
+      // Find max value in both min and max to auto-scale the chart correctly
+      const maxVals = chartData.map(r => r[`${metricId}_max`] as number || r[metricId] as number || 0);
+      const maxVal = Math.max(...maxVals, 1);
+      const scaleMax = Math.ceil(maxVal * 1.30); // 30% headroom for text labels above bars
+
+      // Y axis grid lines (0, 50%, 100%)
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.15);
+      for (let i = 0; i <= 2; i++) {
+        const gridY = cY + cH - (i * (cH / 2));
+        doc.line(cX, gridY, cX + cW, gridY);
+        const tickVal = Math.round((scaleMax / 2) * i);
+        doc.setTextColor(148, 163, 184);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(4.8);
+        doc.text(`${tickVal.toLocaleString()}${unit ? ' ' + unit : ''}`, cX - 2.5, gridY + 0.8, { align: 'right' });
+      }
+
+      // Draw dual bars and top labels for each day
+      const totalDays = chartData.length;
+      const daySpacing = cW / totalDays;
+      const groupW = daySpacing * 0.72; // width of the dual-bar group
+      const barW = (groupW - 0.8) / 2;  // width of each individual bar
+
+      chartData.forEach((row, idx) => {
+        const valMin = row[`${metricId}_min`] as number || 0;
+        const valMax = row[`${metricId}_max`] as number || 0;
+
+        const barHMin = (valMin / scaleMax) * cH;
+        const barHMax = (valMax / scaleMax) * cH;
+
+        const dayCenter = cX + (idx * daySpacing) + (daySpacing / 2);
+        const barXMin = dayCenter - barW - 0.4;
+        const barXMax = dayCenter + 0.4;
+
+        const barYMin = cY + cH - barHMin;
+        const barYMax = cY + cH - barHMax;
+
+        // Draw Min Bar (Softened capsule layout)
+        doc.setFillColor(colors.min[0], colors.min[1], colors.min[2]);
+        doc.roundedRect(barXMin, barYMin, barW, barHMin, 0.4, 0.4, 'F');
+
+        // Draw Max Bar
+        doc.setFillColor(colors.max[0], colors.max[1], colors.max[2]);
+        doc.roundedRect(barXMax, barYMax, barW, barHMax, 0.4, 0.4, 'F');
+
+        // Draw Value Label on top of Min Bar (fine/clean styling)
+        doc.setTextColor(100, 116, 139);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(4.5);
+        doc.text(valMin.toLocaleString(), barXMin + (barW / 2), barYMin - 0.8, { align: 'center' });
+
+        // Draw Value Label on top of Max Bar (bold, high-contrast)
+        doc.setTextColor(15, 23, 42);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(4.8);
+        doc.text(valMax.toLocaleString(), barXMax + (barW / 2), barYMax - 0.8, { align: 'center' });
+
+        // Draw Day Indicator (centered below the group)
+        doc.setTextColor(148, 163, 184);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(5.5);
+        doc.text(`D${idx + 1}`, dayCenter, cY + cH + 4.2, { align: 'center' });
+      });
+    };
+
+    const drawRecommendationsBox = (x: number, y: number, w: number, h: number) => {
+      doc.setFillColor(250, 252, 254);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(x, y, w, h, 2, 2, 'FD');
+
+      // Bento matching vertical ribbon
+      doc.setFillColor(2, 66, 140);
+      doc.rect(x, y + 0.1, 1.5, h - 0.2, 'F');
+
+      doc.setTextColor(2, 66, 140);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text("ORIENTACIONES METODOLÓGICAS", x + 5, y + 6);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(5.5);
+      doc.setTextColor(71, 85, 105);
+
+      const bulletPoints = [
+        "Las referencias se adaptan según el porcentaje objetivo.",
+        "Los valores Mín/Máx definen la ventana óptima de trabajo.",
+        "Controlar la fatiga del jugador mediante la escala PSE diaria.",
+        "Monitorear asimetrías y cargas acumuladas preventivas."
+      ];
+
+      bulletPoints.forEach((text, bIdx) => {
+        // Draw elegant circular bullet
+        doc.setFillColor(226, 35, 26); // La Roja Red for bullets
+        doc.ellipse(x + 6, y + 13 + (bIdx * 5), 0.5, 0.5, 'F');
+
+        doc.setTextColor(71, 85, 105);
+        doc.text(text, x + 9, y + 14.5 + (bIdx * 5));
+      });
+    };
+
+    const chartW = 86;
+    const chartH = 36;
+    const col2X = margin + chartW + 8; // 15 + 86 + 8 = 109
+
+    // Row 1
+    drawSmallChart(margin, chartYStart, chartW, chartH, "Distancia Total", "dist_total_m", "m");
+    drawSmallChart(col2X, chartYStart, chartW, chartH, "MAI >15 km/h", "dist_ai_m_15_kmh", "m");
+
+    // Row 2
+    drawSmallChart(margin, chartYStart + 40, chartW, chartH, "HSR >20 km/h", "dist_mai_m_20_kmh", "m");
+    drawSmallChart(col2X, chartYStart + 40, chartW, chartH, "Sprint >25 km/h", "dist_sprint_m_25_kmh", "m");
+
+    // Row 3
+    drawSmallChart(margin, chartYStart + 80, chartW, chartH, "Acc / Dec", "acc_decc_ai_n", "");
+    drawRecommendationsBox(col2X, chartYStart + 80, chartW, chartH);
+
+    const noteY = chartYStart + 120;
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(margin, noteY, width - (margin * 2), 16, 2, 2, 'F');
+    
+    doc.setTextColor(100, 116, 139);
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7.5);
+    doc.text("Nota de Confidencialidad: Este documento contiene pronósticos y planificaciones internas para la Selección Chilena de Fútbol. Las referencias de carga", margin + 5, noteY + 5.5);
+    doc.text("están basadas en percentiles históricos reales de rendimiento y deben ser consideradas con carácter consultivo y preventivo.", margin + 5, noteY + 10);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.text("LA ROJA PERFORMANCE PRO © 2026", margin, height - 10);
+    doc.text("PÁG 1 / 1", width - margin, height - 10, { align: 'right' });
+    
+    const sanitizedCat = selectedCategory ? CATEGORY_LABELS[selectedCategory].replace(/\s+/g, '_') : 'La_Roja';
+    doc.save(`Planificacion_Cargas_${sanitizedCat}_MC${selectedMicrocycle.micro_number || selectedMicrocycle.id}.pdf`);
+  };
+
+  // 3. Load / Persist planned values & daily intensities from localStorage and Supabase on config changes
+  useEffect(() => {
+    if (!selectedMicrocycle) {
+      setPlannedValues({});
+      setDayIntensities({});
+      return;
+    }
+
+    const loadData = async () => {
+      // Load values & intensities from localStorage immediately for fast responsive UI
+      const valuesKey = `gps_planning_mc_values_${selectedMicrocycle.id}`;
+      const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
+      
+      let localValues = {};
+      let localIntensities = {};
+
+      const storedValues = localStorage.getItem(valuesKey);
+      if (storedValues) {
+        try {
+          localValues = JSON.parse(storedValues);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      const storedIntensities = localStorage.getItem(intensitiesKey);
+      if (storedIntensities) {
+        try {
+          localIntensities = JSON.parse(storedIntensities);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      setPlannedValues(localValues);
+      setDayIntensities(localIntensities);
+
+      // Try fetching from Supabase for sync
+      try {
+        const { data, error } = await supabase
+          .from('gps_planificaciones')
+          .select('planned_data, intensities_data')
+          .eq('microcycle_id', selectedMicrocycle.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data) {
+          const vals = data.planned_data || {};
+          const ints = data.intensities_data || {};
+          setPlannedValues(vals);
+          setDayIntensities(ints);
+          localStorage.setItem(valuesKey, JSON.stringify(vals));
+          localStorage.setItem(intensitiesKey, JSON.stringify(ints));
+        }
+      } catch (err: any) {
+        console.log("Supabase planning load bypassed (using offline local state):", err?.message || err);
+      }
+    };
+
+    loadData();
+  }, [selectedMicrocycle]);
+
+  // Handle individual day's intensity change
+  const handleDayIntensityChange = (dayIdx: number, intensity: Intensity) => {
+    if (!selectedMicrocycle) return;
+    setDayIntensities(prev => {
+      const updated = { ...prev, [dayIdx]: intensity };
+      const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
+      localStorage.setItem(intensitiesKey, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Handle plan inputs safely (now slider values -50% to +50%)
+  const handlePlanChange = (dayIndex: number, metricId: string, value: string) => {
+    if (!selectedMicrocycle) return;
+    const num = parseFloat(value) || 0;
+    const key = `${dayIndex}_${metricId}`;
+    setPlannedValues(prev => {
+      const updated = { ...prev, [key]: num };
+      const valuesKey = `gps_planning_mc_values_${selectedMicrocycle.id}`;
+      localStorage.setItem(valuesKey, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // Helper to determine indicator color based on user input vs recommended range
@@ -481,6 +942,9 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
     const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
     localStorage.setItem(valuesKey, JSON.stringify(plannedValues));
     localStorage.setItem(intensitiesKey, JSON.stringify(dayIntensities));
+
+    // Despachar evento personalizado para notificar a otros componentes (como el Reporte de Sesión) que la planificación fue actualizada
+    window.dispatchEvent(new CustomEvent('gps-planning-updated', { detail: { microcycleId: selectedMicrocycle.id } }));
 
     try {
       // Prepare payload to attempt Supabase write
@@ -659,6 +1123,124 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
         </div>
       ) : (
         <div className="space-y-8">
+          {/* SECCIÓN DE GRÁFICO DE CONTROL Y DESCARGA DE REPORTE */}
+          <div className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-sm space-y-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-100 pb-6">
+              <div>
+                <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">
+                  Ondulación de la Carga Semanal
+                </h3>
+                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">
+                  Gráfico del pronóstico de cargas del microciclo seleccionado
+                </p>
+              </div>
+
+              {/* Controles del gráfico y botón PDF */}
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Botón de Descarga de Reporte PDF */}
+                <button
+                  onClick={handleDownloadPDF}
+                  className="bg-[#0b1220] hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md shadow-slate-900/10 hover:shadow-lg border border-slate-800 h-[40px]"
+                >
+                  <i className="fa-solid fa-file-pdf text-red-500 text-sm"></i>
+                  <span>Descargar PDF</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Contenedor del Gráfico de Columnas */}
+            <div className="h-[320px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 20, right: 10, left: -10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="fullLabel" 
+                    tickFormatter={(val) => {
+                      const parts = val.split(' ');
+                      return parts[0] ? `${parts[0].slice(0, 3)} ${parts[1] || ''}`.toUpperCase() : val;
+                    }}
+                    tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                  />
+                  <YAxis 
+                    tickFormatter={(val) => `${val}%`}
+                    tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                    domain={[0, 'auto']}
+                  />
+                  <Tooltip 
+                    cursor={{ fill: 'rgba(15, 23, 42, 0.03)' }}
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-[#0b1220] text-white p-4 rounded-2xl border border-slate-800 text-xs shadow-2xl space-y-2.5 font-sans min-w-[260px]">
+                            <p className="font-black uppercase tracking-widest text-red-500 border-b border-slate-800 pb-1.5">{data.fullLabel.toUpperCase()}</p>
+                            <div className="space-y-2">
+                              {METRICS.map(m => {
+                                const val = data[m.id] || 0;
+                                const pct = data[`${m.id}_pct`] || 0;
+                                return (
+                                  <div key={m.id} className="flex items-center justify-between gap-4">
+                                    <span className="text-slate-400 font-bold">{m.label}:</span>
+                                    <div className="text-right flex items-center gap-1.5">
+                                      <span className="font-black text-white">{val.toLocaleString()} {m.unit}</span>
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${pct >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                                        {pct >= 0 ? '+' : ''}{pct}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="text-[9px] text-slate-500 border-t border-slate-800 pt-1.5 leading-relaxed">
+                              * El % indica el ajuste de carga respecto al valor recomendado base (100%).
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar dataKey="dist_total_m_rel" name="Distancia Total" fill="#02428C" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dist_ai_m_15_kmh_rel" name="MAI >15 km/h" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dist_mai_m_20_kmh_rel" name="HSR >20 km/h" fill="#E2231A" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dist_sprint_m_25_kmh_rel" name="Sprint >25 km/h" fill="#10B981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="acc_decc_ai_n_rel" name="Acc / Dec" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Leyenda e Información rápida */}
+            <div className="flex flex-wrap items-center justify-between gap-4 text-[10px] font-black uppercase tracking-widest text-slate-400 border-t border-slate-100 pt-4">
+              <div className="flex flex-wrap items-center gap-5">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded bg-[#02428C] inline-block"></span>
+                  <span className="text-slate-600">Distancia Total</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded bg-[#F59E0B] inline-block"></span>
+                  <span className="text-slate-600">{"MAI >15 km/h"}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded bg-[#E2231A] inline-block"></span>
+                  <span className="text-slate-600">{"HSR >20 km/h"}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded bg-[#10B981] inline-block"></span>
+                  <span className="text-slate-600">{"Sprint >25 km/h"}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded bg-[#8B5CF6] inline-block"></span>
+                  <span className="text-slate-600">Acc / Dec</span>
+                </span>
+              </div>
+              <div className="text-slate-500">
+                * Las barras representan el <span className="text-[#0b1220] font-black">% de Carga Programada</span> respecto al valor basal de referencia (100%).
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-8">
             {/* Each day is a dedicated, stylish module containing its planning table */}
             {Array.from({ length: daysCount }).map((_, dIdx) => {
@@ -666,10 +1248,8 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
               const dayInfo = getDayDetails(dIdx);
               const dayIntensity = dayIntensities[dIdx] || 'Media';
               
-              // Calculate Day total planned distance to show a summary status indicator
-              const dayDistPlanned = plannedValues[`${dIdx}_dist_total_m`] || 0;
-              const distRecommendation = getRecommendation(dIdx, 'dist_total_m');
-              const distStatus = getInputIndicator(dayDistPlanned, distRecommendation);
+              // Calculate Day total range adjustment (using dist_total_m adjustment as a proxy summary)
+              const distAdj = plannedValues[`${dIdx}_dist_total_m`] || 0;
 
               return (
                 <div
@@ -718,12 +1298,14 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
 
                       <div className="flex items-center gap-4">
                         <div className="text-right">
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Distancia Total Planificada</span>
-                          <span className="text-sm font-black text-white">{dayDistPlanned.toLocaleString()} m</span>
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Ajuste Distancia</span>
+                          <span className="text-sm font-black text-white">{distAdj > 0 ? `+${distAdj}` : distAdj}%</span>
                         </div>
-                        {dayDistPlanned > 0 && (
-                          <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border whitespace-nowrap ${distStatus.border}`}>
-                            {distStatus.text}
+                        {distAdj !== 0 && (
+                          <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border whitespace-nowrap ${
+                            distAdj > 0 ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/10' : 'border-amber-500/20 text-amber-400 bg-amber-500/10'
+                          }`}>
+                            {distAdj > 0 ? 'Aumento Carga' : 'Reducción Carga'}
                           </span>
                         )}
                       </div>
@@ -736,16 +1318,20 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
                       <thead>
                         <tr className="border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50">
                           <th className="px-8 py-4 w-1/4">Métrica de Rendimiento</th>
-                          <th className="px-8 py-4 w-1/3">Rango Recomendado (P25 - P75)</th>
-                          <th className="px-8 py-4 w-1/3">Carga Planificada</th>
-                          <th className="px-8 py-4 text-center w-12">Soporte</th>
+                          <th className="px-8 py-4 w-[60%]">Rango Recomendado y Ajuste (P25 - P75)</th>
+                          <th className="px-8 py-4 text-center w-24">Soporte</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {METRICS.map(metric => {
                           const rec = getRecommendation(dIdx, metric.id);
-                          const userVal = plannedValues[`${dIdx}_${metric.id}`] || 0;
-                          const status = getInputIndicator(userVal, rec);
+                          const percentage = plannedValues[`${dIdx}_${metric.id}`] || 0;
+                          
+                          // Calculate adjusted values based on the slider percentage
+                          const factor = 1 + (percentage / 100);
+                          const adjP25 = Math.round(rec.p25 * factor);
+                          const adjP50 = Math.round(rec.p50 * factor);
+                          const adjP75 = Math.round(rec.p75 * factor);
 
                           return (
                             <tr key={metric.id} className="hover:bg-slate-50/50 transition-colors">
@@ -755,52 +1341,51 @@ export default function PronosticoCargas({ clubs }: { clubs: any[] }) {
                                 <div className="text-slate-400 text-[9px] uppercase font-black tracking-widest mt-0.5">{metric.unit}</div>
                               </td>
 
-                              {/* Recommended Range (P25–P75 and median) */}
+                              {/* Recommended Range + Slider */}
                               <td className="px-8 py-5">
-                                <div>
-                                  <div className="flex items-baseline gap-1.5">
-                                    <span className="text-lg font-black text-slate-800">{rec.p25.toLocaleString()}</span>
-                                    <span className="text-xs text-slate-400 font-bold">a</span>
-                                    <span className="text-lg font-black text-slate-800">{rec.p75.toLocaleString()}</span>
-                                    <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider ml-1">{metric.unit}</span>
-                                  </div>
-                                  <div className="flex items-center gap-3 mt-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                    <span>Mediana (P50): <strong className="text-slate-700 font-black">{rec.p50.toLocaleString()} {metric.unit}</strong></span>
-                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                                    <span>Origen: <strong className="text-red-600 font-black">{rec.source.toUpperCase()}</strong></span>
-                                  </div>
-                                </div>
-                              </td>
-
-                              {/* Plan Input editable field */}
-                              <td className="px-8 py-5">
-                                <div className="flex items-center gap-4">
-                                  <div className="relative flex-1 max-w-[200px]">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      placeholder="0"
-                                      value={userVal || ''}
-                                      onChange={(e) => handlePlanChange(dIdx, metric.id, e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-100 hover:border-slate-200 focus:border-red-500 focus:ring-2 focus:ring-red-100 rounded-xl px-4 py-3 text-sm font-black text-slate-900 outline-none transition-all text-right pr-12"
-                                    />
-                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400 uppercase select-none">
-                                      {metric.unit}
+                                <div className="space-y-3">
+                                  {/* Range Numbers */}
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-baseline gap-1.5">
+                                      <span className="text-lg font-black text-slate-800">{adjP25.toLocaleString()}</span>
+                                      <span className="text-xs text-slate-400 font-bold">a</span>
+                                      <span className="text-lg font-black text-slate-800">{adjP75.toLocaleString()}</span>
+                                      <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider ml-1">{metric.unit}</span>
+                                    </div>
+                                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider ${
+                                      percentage > 0 
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                                        : percentage < 0 
+                                        ? 'bg-amber-50 text-amber-700 border border-amber-100' 
+                                        : 'bg-slate-50 text-slate-600 border border-slate-100'
+                                    }`}>
+                                      {percentage === 0 ? 'Sin Ajustar' : `${percentage > 0 ? '+' : ''}${percentage}%`}
                                     </span>
                                   </div>
 
-                                  <AnimatePresence mode="wait">
-                                    {userVal > 0 && (
-                                      <motion.span
-                                        initial={{ opacity: 0, scale: 0.9 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        exit={{ opacity: 0, scale: 0.9 }}
-                                        className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border whitespace-nowrap min-w-[110px] text-center ${status.border}`}
-                                      >
-                                        {status.text}
-                                      </motion.span>
-                                    )}
-                                  </AnimatePresence>
+                                  {/* Slider Component */}
+                                  <div className="flex items-center gap-4">
+                                    <span className="text-[10px] font-bold text-slate-400 w-10">-50%</span>
+                                    <input
+                                      type="range"
+                                      min="-50"
+                                      max="50"
+                                      step="5"
+                                      value={percentage}
+                                      onChange={(e) => handlePlanChange(dIdx, metric.id, e.target.value)}
+                                      className="flex-1 accent-red-600 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                    <span className="text-[10px] font-bold text-slate-400 w-10 text-right">+50%</span>
+                                  </div>
+
+                                  {/* Additional helper metadata */}
+                                  <div className="flex items-center gap-3 text-[9px] font-black text-slate-400 uppercase tracking-widest pt-1 border-t border-slate-50">
+                                    <span>Base original: <strong className="text-slate-500 font-black">{rec.p25.toLocaleString()} - {rec.p75.toLocaleString()} {metric.unit}</strong></span>
+                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                    <span>Mediana Base (P50): <strong className="text-slate-500 font-black">{rec.p50.toLocaleString()} {metric.unit}</strong></span>
+                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                    <span>Origen: <strong className="text-red-600 font-black">{rec.source.toUpperCase()}</strong></span>
+                                  </div>
                                 </div>
                               </td>
 

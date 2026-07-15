@@ -34,7 +34,8 @@ async function check() {
     'clubes',
     'microcycles',
     'gps_tareas',
-    'antropometria'
+    'antropometria',
+    'gps_planificaciones'
   ];
 
   for (const table of tables) {

@@ -496,13 +496,28 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   [anonymizedPlayers, selectedPlayerId]);
 
   const selectablePlayers = useMemo(() => {
-    return filteredByClubScopePlayers.filter(p => {
+    let basePlayers = filteredByClubScopePlayers;
+    
+    if (userRole === 'club' && (activeTab === 'huella' || activeTab === 'individual')) {
+      basePlayers = anonymizedPlayers.filter(p => {
+        if (userClubId) {
+          return p.id_club === userClubId;
+        } else if (userClub) {
+          const uClubNorm = normalizeClub(userClub);
+          const pClub = (p as any).club || (p as any).club_name || '';
+          return pClub && normalizeClub(pClub) === uClubNorm;
+        }
+        return false;
+      });
+    }
+
+    return basePlayers.filter(p => {
       const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
       const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
       const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
       return yearMatch && posMatch;
     });
-  }, [filteredByClubScopePlayers, selectedAnios, selectedPosiciones]);
+  }, [filteredByClubScopePlayers, anonymizedPlayers, userRole, activeTab, userClub, userClubId, selectedAnios, selectedPosiciones]);
 
   useEffect(() => {
     if (selectedPlayerId !== null && !selectablePlayers.some(p => p.player_id === selectedPlayerId)) {

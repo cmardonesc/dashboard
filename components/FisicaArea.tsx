@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { AthletePerformanceRecord, Category, CATEGORY_ID_MAP } from '../types';
 import { supabase } from '../lib/supabase';
 import { normalizeClub, getDriveDirectLink } from '../lib/utils';
@@ -134,6 +134,129 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     };
     fetchReferences();
   }, []);
+
+  // NUEVO: Estados para Planificación y Pronóstico de Cargas
+  const [plannedValues, setPlannedValues] = useState<any>({});
+  const [dayIntensities, setDayIntensities] = useState<any>({});
+
+  const METRIC_FALLBACKS: Record<string, Record<'Baja' | 'Media' | 'Alta', [number, number, number]>> = {
+    dist_total_m: {
+      Baja: [3000, 4000, 5000],
+      Media: [5000, 6500, 8000],
+      Alta: [8000, 10000, 12000]
+    },
+    dist_ai_m_15_kmh: {
+      Baja: [100, 200, 300],
+      Media: [300, 500, 700],
+      Alta: [700, 1000, 1400]
+    },
+    dist_mai_m_20_kmh: {
+      Baja: [20, 50, 80],
+      Media: [80, 120, 180],
+      Alta: [180, 250, 350]
+    },
+    dist_sprint_m_25_kmh: {
+      Baja: [0, 10, 20],
+      Media: [20, 40, 60],
+      Alta: [60, 100, 150]
+    },
+    acc_decc_ai_n: {
+      Baja: [40, 60, 80],
+      Media: [80, 110, 140],
+      Alta: [140, 180, 220]
+    }
+  };
+
+  const fetchPlanning = useCallback(async (ignore = { val: false }) => {
+    if (!activeMicrocycle?.id) {
+      setPlannedValues({});
+      setDayIntensities({});
+      return;
+    }
+
+    // 1. Cargar desde localStorage de inmediato para rendimiento fluido y estado offline
+    const valuesKey = `gps_planning_mc_values_${activeMicrocycle.id}`;
+    const intensitiesKey = `gps_planning_mc_intensities_${activeMicrocycle.id}`;
+    const storedValues = localStorage.getItem(valuesKey);
+    const storedIntensities = localStorage.getItem(intensitiesKey);
+    
+    let localValues = {};
+    let localIntensities = {};
+
+    if (storedValues) {
+      try {
+        localValues = JSON.parse(storedValues);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    if (storedIntensities) {
+      try {
+        localIntensities = JSON.parse(storedIntensities);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    if (ignore.val) return;
+    // Establecer valores locales de inmediato
+    setPlannedValues(localValues);
+    setDayIntensities(localIntensities);
+
+    // 2. Intentar sincronizar con la base de datos de Supabase de manera asíncrona
+    try {
+      const { data, error } = await supabase
+        .from('gps_planificaciones')
+        .select('planned_data, intensities_data')
+        .eq('microcycle_id', activeMicrocycle.id)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (ignore.val) return;
+      if (data) {
+        const vals = data.planned_data || {};
+        const ints = data.intensities_data || {};
+        setPlannedValues(vals);
+        setDayIntensities(ints);
+        localStorage.setItem(valuesKey, JSON.stringify(vals));
+        localStorage.setItem(intensitiesKey, JSON.stringify(ints));
+      }
+    } catch (err: any) {
+      console.log("Supabase planning load bypassed (using offline local state):", err?.message || err);
+      // NO sobreescribimos los valores locales con objetos vacíos aquí, preservando la planificación local.
+    }
+  }, [activeMicrocycle?.id]);
+
+  useEffect(() => {
+    const ignore = { val: false };
+    fetchPlanning(ignore);
+    return () => {
+      ignore.val = true;
+    };
+  }, [fetchPlanning]);
+
+  // Escuchar actualizaciones externas de la planificación para sincronización en tiempo real
+  useEffect(() => {
+    const handleUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (!customEvent.detail?.microcycleId || customEvent.detail?.microcycleId === activeMicrocycle?.id) {
+        fetchPlanning();
+      }
+    };
+    window.addEventListener('gps-planning-updated', handleUpdate);
+    return () => {
+      window.removeEventListener('gps-planning-updated', handleUpdate);
+    };
+  }, [activeMicrocycle?.id, fetchPlanning]);
+
+  const getDayIndex = () => {
+    if (!activeMicrocycle || !selectedDate) return -1;
+    const start = new Date(activeMicrocycle.start_date + 'T00:00:00');
+    const current = new Date(selectedDate + 'T00:00:00');
+    const diffTime = current.getTime() - start.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
 
   const handleGpsSort = (field: string) => {
     if (gpsSortField === field) {
@@ -283,11 +406,14 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
   // Efecto: Sincronizar Microciclo y Nómina
   useEffect(() => {
+    let active = true;
     const fetchContext = async () => {
       setLoadingContext(true);
-      setActiveMicrocycle(null);
-      setCitedPlayerIds([]);
-      setPlayerCitedCategoryMap({});
+      if (active) {
+        setActiveMicrocycle(null);
+        setCitedPlayerIds([]);
+        setPlayerCitedCategoryMap({});
+      }
 
       try {
         const allCitedIds = new Set<number>();
@@ -304,6 +430,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             .gte('end_date', selectedDate)
             .maybeSingle();
 
+          if (!active) return;
+
           if (mc) {
             if (!primaryMicro) primaryMicro = mc; // Keep the first one found as primary for display
             
@@ -311,6 +439,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               .from('citaciones')
               .select('player_id')
               .eq('microcycle_id', mc.id);
+
+            if (!active) return;
 
             if (citaciones) {
               citaciones.forEach(c => {
@@ -320,6 +450,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             }
           }
         }
+
+        if (!active) return;
 
         if (primaryMicro) {
           setActiveMicrocycle(primaryMicro);
@@ -366,10 +498,15 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       } catch (err) {
         console.error("Error context sync:", err);
       } finally {
-        setLoadingContext(false);
+        if (active) {
+          setLoadingContext(false);
+        }
       }
     };
     fetchContext();
+    return () => {
+      active = false;
+    };
   }, [selectedDate, selectedCategories, performanceRecords]);
 
   // Efecto: Cargar Tareas GPS para Reporte
@@ -3495,16 +3632,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
               const gpsParameters = [
                 { name: 'Distancia Total Promedio (m)', value: reportData.gpsAvg?.dist ? `${reportData.gpsAvg.dist.toFixed(0)} m` : '—' },
-                { name: 'm/min Promedio', value: reportData.gpsAvg?.mpm ? `${reportData.gpsAvg.mpm.toFixed(1)} m/min` : '—' },
                 { name: 'Distancia HSR Promedio (m)', value: reportData.gpsAvg?.hsr ? `${reportData.gpsAvg.hsr.toFixed(0)} m` : '—' },
                 { name: 'Distancia Sprint Promedio (m)', value: reportData.gpsAvg?.sprint ? `${reportData.gpsAvg.sprint.toFixed(0)} m` : '—' },
-                { name: 'Número de Sprints Promedio', value: reportData.gpsAvg?.nsp ? `${reportData.gpsAvg.nsp.toFixed(1)}` : '—' },
-                { name: 'Velocidad Máxima Esperable (km/h)', value: reportData.gpsAvg?.vmax ? `${reportData.gpsAvg.vmax.toFixed(1)} km/h` : '—' },
                 { name: 'Acc/Decc AI Promedio', value: reportData.gpsAvg?.acc ? `${reportData.gpsAvg.acc.toFixed(1)}` : '—' },
               ];
 
               const gpsList = reportData.gpsImportReport || [];
-              const needsGpsSplit = gpsList.length > 17;
+              const needsGpsSplit = gpsList.length > 25;
 
               let gpsPage1 = gpsList;
               let gpsPage2: any[] = [];
@@ -3515,7 +3649,131 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 gpsPage2 = gpsList.slice(half);
               }
 
-              const totalPages = needsGpsSplit ? 6 : 5;
+              const gpsByPositionPageNo = needsGpsSplit ? 6 : 5;
+              const comparePageNo = needsGpsSplit ? 7 : 6;
+              const nextDayForecastPageNo = needsGpsSplit ? 8 : 7;
+              const totalPages = needsGpsSplit ? 8 : 7;
+
+              const getNextDayDate = (dateStr: string) => {
+                try {
+                  const d = new Date(dateStr + 'T12:00:00');
+                  d.setDate(d.getDate() + 1);
+                  const year = d.getFullYear();
+                  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                  const day = d.getDate().toString().padStart(2, '0');
+                  return `${year}-${month}-${day}`;
+                } catch {
+                  return dateStr;
+                }
+              };
+
+              const getNextDayFormatted = (dateStr: string) => {
+                try {
+                  const d = new Date(dateStr + 'T12:00:00');
+                  d.setDate(d.getDate() + 1);
+                  const weekday = d.toLocaleDateString('es-ES', { weekday: 'long' });
+                  const day = d.getDate().toString().padStart(2, '0');
+                  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                  return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)} ${day}/${month}`;
+                } catch {
+                  return dateStr;
+                }
+              };
+
+              const nextDayIdx = getDayIndex() !== -1 ? getDayIndex() + 1 : -1;
+              const nextIntensity = (nextDayIdx !== -1 && dayIntensities) ? (dayIntensities[nextDayIdx] || 'Media') : 'Media';
+
+              const nextDayGpsParams = [
+                { id: 'dist_total_m', name: 'DISTANCIA TOTAL PROMEDIO OBJETIVO' },
+                { id: 'dist_ai_m_15_kmh', name: 'DISTANCIA HSR PROMEDIO OBJETIVO (>15 KM/H)' },
+                { id: 'dist_sprint_m_25_kmh', name: 'DISTANCIA SPRINT PROMEDIO OBJETIVO (>25 KM/H)' },
+                { id: 'acc_decc_ai_n', name: 'ACC/DECC AI PROMEDIO OBJETIVO' },
+              ].map(item => {
+                const percentage = (nextDayIdx !== -1 && plannedValues) ? (plannedValues[`${nextDayIdx}_${item.id}`] || 0) : 0;
+                const factor = 1 + (percentage / 100);
+                const baseRange = METRIC_FALLBACKS[item.id]?.[nextIntensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
+                const adjustedRange = [
+                  Math.round(baseRange[0] * factor),
+                  Math.round(baseRange[1] * factor),
+                  Math.round(baseRange[2] * factor)
+                ];
+                const unit = item.id.includes('dist_') ? ' m' : '';
+                return {
+                  name: item.name,
+                  range: `${adjustedRange[0]} - ${adjustedRange[2]}${unit}`,
+                  percentage
+                };
+              });
+
+              // Agrupar métricas de GPS por posición
+              const gpsByPositionData = (() => {
+                const groups: Record<string, {
+                  minutos: number[];
+                  dist_total_m: number[];
+                  m_por_min: number[];
+                  dist_mai_m_20_kmh: number[];
+                  dist_ai_m_15_kmh: number[];
+                  dist_sprint_m_25_kmh: number[];
+                  vel_max_kmh: number[];
+                  acc_decc_ai_n: number[];
+                  count: number;
+                }> = {};
+
+                gpsList.forEach((row: any) => {
+                  const rawPos = row.players?.posicion || 'S/D';
+                  const pos = rawPos.trim().toUpperCase();
+                  if (!groups[pos]) {
+                    groups[pos] = {
+                      minutos: [],
+                      dist_total_m: [],
+                      m_por_min: [],
+                      dist_mai_m_20_kmh: [],
+                      dist_ai_m_15_kmh: [],
+                      dist_sprint_m_25_kmh: [],
+                      vel_max_kmh: [],
+                      acc_decc_ai_n: [],
+                      count: 0
+                    };
+                  }
+                  
+                  groups[pos].count += 1;
+                  if (row.minutos !== undefined && row.minutos !== null) groups[pos].minutos.push(row.minutos);
+                  if (row.dist_total_m !== undefined && row.dist_total_m !== null) groups[pos].dist_total_m.push(row.dist_total_m);
+                  if (row.m_por_min !== undefined && row.m_por_min !== null) groups[pos].m_por_min.push(row.m_por_min);
+                  if (row.dist_mai_m_20_kmh !== undefined && row.dist_mai_m_20_kmh !== null) groups[pos].dist_mai_m_20_kmh.push(row.dist_mai_m_20_kmh);
+                  if (row.dist_ai_m_15_kmh !== undefined && row.dist_ai_m_15_kmh !== null) groups[pos].dist_ai_m_15_kmh.push(row.dist_ai_m_15_kmh);
+                  if (row.dist_sprint_m_25_kmh !== undefined && row.dist_sprint_m_25_kmh !== null) groups[pos].dist_sprint_m_25_kmh.push(row.dist_sprint_m_25_kmh);
+                  if (row.vel_max_kmh !== undefined && row.vel_max_kmh !== null) groups[pos].vel_max_kmh.push(row.vel_max_kmh);
+                  if (row.acc_decc_ai_n !== undefined && row.acc_decc_ai_n !== null) groups[pos].acc_decc_ai_n.push(row.acc_decc_ai_n);
+                });
+
+                const getAvg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+                const getMax = (arr: number[]) => arr.length ? Math.max(...arr) : 0;
+
+                const order = ['ARQUERO', 'DEFENSA', 'MEDIOCAMPO', 'DELANTERO'];
+
+                return Object.entries(groups)
+                  .map(([pos, g]) => ({
+                    posicion: pos,
+                    count: g.count,
+                    minutos: getAvg(g.minutos),
+                    dist_total_m: getAvg(g.dist_total_m),
+                    m_por_min: getAvg(g.m_por_min),
+                    dist_mai_m_20_kmh: getAvg(g.dist_mai_m_20_kmh),
+                    dist_ai_m_15_kmh: getAvg(g.dist_ai_m_15_kmh),
+                    dist_sprint_m_25_kmh: getAvg(g.dist_sprint_m_25_kmh),
+                    vel_max_kmh: getMax(g.vel_max_kmh),
+                    acc_decc_ai_n: getAvg(g.acc_decc_ai_n)
+                  }))
+                  .sort((a, b) => {
+                    const idxA = order.indexOf(a.posicion);
+                    const idxB = order.indexOf(b.posicion);
+                    if (idxA === -1 && idxB === -1) return a.posicion.localeCompare(b.posicion);
+                    if (idxA === -1) return 1;
+                    if (idxB === -1) return -1;
+                    return idxA - idxB;
+                  });
+              })();
 
               const renderGpsPage = (pageNo: number, list: any[], isLast: boolean) => {
                 return (
@@ -3623,14 +3881,14 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               return (
                 <>
                   {/* HOJA 1: PORTADA */}
-                  <div className="print-page-section flex flex-col justify-between items-center text-center bg-[#0b1220] border border-slate-850 text-white p-12 min-h-[170mm] print:h-[200mm]">
+                  <div className="print-page-section flex flex-col justify-between items-center text-center bg-[#961215] border border-red-900 text-white p-12 min-h-[170mm] print:h-[200mm]">
                     <div className="w-full flex justify-between items-center opacity-80">
-                      <span className="text-[10px] font-black tracking-[0.25em] text-red-500 uppercase">LA ROJA PERFORMANCE HUB</span>
-                      <span className="text-[10px] font-black tracking-widest text-[#02428c] uppercase bg-white/15 px-3 py-1 rounded-full">CONFIDENCIAL</span>
+                      <span className="text-[10px] font-black tracking-[0.25em] text-red-100 uppercase">LA ROJA PERFORMANCE HUB</span>
+                      <span className="text-[10px] font-black tracking-widest text-white uppercase bg-white/15 px-3 py-1 rounded-full">CONFIDENCIAL</span>
                     </div>
 
                     <div className="my-auto space-y-10 max-w-3xl">
-                      <div className="w-32 h-32 bg-white p-4 rounded-full shadow-2xl mx-auto flex items-center justify-center border-4 border-red-650">
+                      <div className="w-32 h-32 bg-white p-4 rounded-full shadow-2xl mx-auto flex items-center justify-center border-4 border-slate-100">
                         <img 
                           src={getDriveDirectLink(FEDERATION_LOGO)} 
                           alt="Federation Logo" 
@@ -3643,26 +3901,26 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter italic text-white font-['Bebas_Neue']">
                           REPORTE TÉCNICO DE RENDIMIENTO
                         </h1>
-                        <p className="text-sm font-bold text-slate-400 uppercase tracking-[0.25em] mt-2">
+                        <p className="text-sm font-bold text-red-100/90 uppercase tracking-[0.25em] mt-2">
                           MONITOREO CIENTÍFICO Y CONTROL DE CARGAS
                         </p>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-6 pt-10 border-t border-slate-800">
+                      <div className="grid grid-cols-3 gap-6 pt-10 border-t border-white/15">
                         <div className="text-center">
-                          <span className="text-[9px] font-black text-slate-500 tracking-widest block uppercase">FECHA REPORTE</span>
+                          <span className="text-[9px] font-black text-white/70 tracking-widest block uppercase">FECHA REPORTE</span>
                           <span className="text-sm font-black text-white uppercase italic mt-2 block">
                             {new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
                           </span>
                         </div>
-                        <div className="text-center border-x border-slate-800 px-4">
-                          <span className="text-[9px] font-black text-slate-500 tracking-widest block uppercase">CATEGORÍA OFICIAL</span>
-                          <span className="text-sm font-black text-red-500 uppercase italic mt-2 block overflow-visible whitespace-nowrap">
+                        <div className="text-center border-x border-white/15 px-4">
+                          <span className="text-[9px] font-black text-white/70 tracking-widest block uppercase">CATEGORÍA OFICIAL</span>
+                          <span className="text-sm font-black text-white uppercase italic mt-2 block overflow-visible whitespace-nowrap">
                             {selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories.map(c => c.replace('SUB_', 'SUB ')).join(', ').toUpperCase()}
                           </span>
                         </div>
                         <div className="text-center">
-                          <span className="text-[9px] font-black text-slate-500 tracking-widest block uppercase">MICROCICLO ACTIVO</span>
+                          <span className="text-[9px] font-black text-white/70 tracking-widest block uppercase">MICROCICLO ACTIVO</span>
                           <span className="text-sm font-black text-white uppercase italic mt-2 block overflow-visible whitespace-nowrap">
                             {activeMicrocycle?.nombre_display || (activeMicrocycle ? `MICROCICLO #${activeMicrocycle.micro_number || activeMicrocycle.id}` : 'SIN MICROCICLO ACTIVO')}
                           </span>
@@ -3670,7 +3928,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       </div>
                     </div>
 
-                    <div className="w-full flex justify-between items-center text-[8px] font-black tracking-widest text-slate-600 uppercase border-t border-slate-850 pt-4">
+                    <div className="w-full flex justify-between items-center text-[8px] font-black tracking-widest text-red-200/60 uppercase border-t border-white/10 pt-4">
                       <span>ELITE FOOTBALL PERFORMANCE PRO • AMB</span>
                       <span>HOJA 1 / {totalPages}</span>
                     </div>
@@ -4224,6 +4482,82 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
                   {needsGpsSplit && renderGpsPage(5, gpsPage2, true)}
 
+                  {/* NUEVA HOJA: RENDIMIENTO GPS POR POSICIÓN */}
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      <PrintHeader 
+                        selectedDate={selectedDate} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={gpsByPositionPageNo} 
+                        total={totalPages} 
+                      />
+
+                      <section className="mt-4">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-650 pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
+                          <span>{gpsByPositionPageNo}._ DESEMPEÑO GPS PROMEDIO POR POSICIÓN</span>
+                        </h3>
+
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-4">
+                          * ANÁLISIS AGRUPADO DE LA CARGA EXTERNA POR DEMARCACIÓN TÁCTICA PARA EVALUAR COMPORTAMIENTO DE GRUPOS.
+                        </p>
+
+                        {/* TABLA DE PROMEDIOS POR POSICIÓN */}
+                        <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm mb-6">
+                          <table className="w-full text-center border-separate border-spacing-0 bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
+                              <tr>
+                                <th className="px-4 py-2.5 text-left bg-[#0b1220] min-w-[140px]">POSICIÓN</th>
+                                <th className="px-1 py-2.5">JUGADORES</th>
+                                <th className="px-1 py-2.5">DURACIÓN PROMEDIO</th>
+                                <th className="px-1 py-2.5">DIST. TOTAL (M)</th>
+                                <th className="px-1 py-2.5">M/MIN</th>
+                                <th className="px-1 py-2.5">DIST. HSR (&gt;20)</th>
+                                <th className="px-1 py-2.5">DIST. AI (&gt;15)</th>
+                                <th className="px-1 py-2.5">DIST. SPRINT (&gt;25)</th>
+                                <th className="px-1 py-2.5">VEL. MÁXIMA</th>
+                                <th className="px-1 py-2.5">ACC/DECC AI</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[7.5px] font-sans font-bold text-slate-900">
+                              {gpsByPositionData.map((row: any, idx: number) => {
+                                const pos = row.posicion;
+                                const theme = {
+                                  'ARQUERO': { bg: 'bg-amber-50', text: 'text-amber-800' },
+                                  'DEFENSA': { bg: 'bg-blue-50', text: 'text-blue-800' },
+                                  'MEDIOCAMPO': { bg: 'bg-emerald-50', text: 'text-emerald-800' },
+                                  'DELANTERO': { bg: 'bg-rose-50', text: 'text-rose-800' },
+                                }[pos as string] || { bg: 'bg-slate-50', text: 'text-slate-800' };
+
+                                return (
+                                  <tr key={`gps-pos-${idx}`} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                    <td className="px-4 py-2 text-left font-black text-[#0b1220]">
+                                      <span className={`px-2 py-0.5 rounded text-[7px] font-black uppercase tracking-wider ${theme.bg} ${theme.text}`}>
+                                        {pos}
+                                      </span>
+                                    </td>
+                                    <td className="px-1 py-2 text-slate-500 font-sans font-bold text-center">
+                                      {row.count} {row.count === 1 ? 'Jugador' : 'Jugadores'}
+                                    </td>
+                                    <td className="px-1 py-2 text-slate-400 font-bold font-mono">{row.minutos.toFixed(0)}'</td>
+                                    <td className="px-1 py-2 text-slate-900 font-mono font-black">{row.dist_total_m.toFixed(0)} m</td>
+                                    <td className="px-1 py-2 text-red-500 bg-red-50/35 font-mono font-black">{row.m_por_min.toFixed(1)}</td>
+                                    <td className="px-1 py-2 text-[#02428c] font-mono font-bold">{row.dist_mai_m_20_kmh.toFixed(0)} m</td>
+                                    <td className="px-1 py-2 text-emerald-600 font-mono font-bold">{row.dist_ai_m_15_kmh.toFixed(0)} m</td>
+                                    <td className="px-1 py-2 text-indigo-600 font-mono font-bold">{row.dist_sprint_m_25_kmh.toFixed(0)} m</td>
+                                    <td className="px-1 py-2 text-red-655 font-extrabold font-mono">{row.vel_max_kmh.toFixed(1)} km/h</td>
+                                    <td className="px-1 py-2 text-slate-700 font-mono font-bold">{row.acc_decc_ai_n.toFixed(1)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+                    <PrintFooter page={gpsByPositionPageNo} />
+                  </div>
+
                   {/* HOJA DE PRONÓSTICO / COMPARATIVA DE CARGA */}
                   <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
                     <div>
@@ -4231,13 +4565,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                         selectedDate={selectedDate} 
                         selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
                         activeMicrocycle={activeMicrocycle} 
-                        page={totalPages} 
+                        page={comparePageNo} 
                         total={totalPages} 
                       />
                       
                       <section className="mt-4 text-slate-900">
                         <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-650 pl-3 mb-4 uppercase tracking-widest italic">
-                          {totalPages}._ COMPARATIVA CLASIFICATORIA: PRONÓSTICO DE CARGA (PREDICTIVO VS REAL)
+                          {comparePageNo}._ COMPARATIVA CLASIFICATORIA: PRONÓSTICO DE CARGA (PREDICTIVO VS REAL)
                         </h3>
                         
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-6">
@@ -4254,20 +4588,177 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                               </tr>
                             </thead>
                             <tbody className="text-[11px] font-black uppercase text-slate-800">
-                              {gpsParameters.map((param, index) => (
-                                <tr key={`param-p5-${index}`} className="border-b border-slate-100 h-13 hover:bg-slate-50/50">
-                                  <td className="px-6 py-3 text-left text-slate-900 font-bold">{param.name}</td>
-                                  {/* Columna Pronóstico en blanco para poder escribir */}
-                                  <td className="px-6 py-3 border-x border-slate-100 bg-slate-50/20"></td>
-                                  <td className="px-6 py-3 text-[#02428c] font-black italic bg-blue-50/20 font-mono">{param.value}</td>
-                                </tr>
-                              ))}
+                              {gpsParameters.map((param, index) => {
+                                const dayIdx = getDayIndex();
+                                const intensity = (dayIdx !== -1 && dayIntensities) ? (dayIntensities[dayIdx] || 'Media') : 'Media';
+
+                                const getParamMapping = (paramName: string) => {
+                                  if (paramName.includes('Distancia Total')) {
+                                    return {
+                                      metricId: 'dist_total_m',
+                                      realValue: reportData.gpsAvg?.dist || 0,
+                                      unit: 'm'
+                                    };
+                                  }
+                                  if (paramName.includes('Distancia HSR')) {
+                                    return {
+                                      metricId: 'dist_ai_m_15_kmh',
+                                      realValue: reportData.gpsAvg?.hsr || 0,
+                                      unit: 'm'
+                                    };
+                                  }
+                                  if (paramName.includes('Distancia Sprint')) {
+                                    return {
+                                      metricId: 'dist_sprint_m_25_kmh',
+                                      realValue: reportData.gpsAvg?.sprint || 0,
+                                      unit: 'm'
+                                    };
+                                  }
+                                  if (paramName.includes('Acc/Decc')) {
+                                    return {
+                                      metricId: 'acc_decc_ai_n',
+                                      realValue: reportData.gpsAvg?.acc || 0,
+                                      unit: ''
+                                    };
+                                  }
+                                  return null;
+                                };
+
+                                const mapping = getParamMapping(param.name);
+                                const percentage = (mapping && dayIdx !== -1 && plannedValues) ? (plannedValues[`${dayIdx}_${mapping.metricId}`] || 0) : 0;
+                                const factor = 1 + (percentage / 100);
+                                
+                                let baseRange = null;
+                                let adjustedRange = null;
+                                let statusBadge = null;
+
+                                if (mapping) {
+                                  baseRange = METRIC_FALLBACKS[mapping.metricId]?.[intensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
+                                  adjustedRange = [
+                                    Math.round(baseRange[0] * factor),
+                                    Math.round(baseRange[1] * factor),
+                                    Math.round(baseRange[2] * factor)
+                                  ];
+                                  
+                                  const [adjP25, adjP50, adjP75] = adjustedRange;
+                                  const realVal = mapping.realValue;
+
+                                  if (realVal > 0 && (adjP25 >= 0 && adjP75 > 0)) {
+                                    if (realVal >= adjP25 && realVal <= adjP75) {
+                                      statusBadge = {
+                                        text: 'EN RANGO ÓPTIMO',
+                                        style: 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                      };
+                                    } else if (realVal < adjP25) {
+                                      if (realVal < 0.7 * adjP25) {
+                                        statusBadge = {
+                                          text: 'MUY BAJO',
+                                          style: 'bg-blue-50 text-blue-700 border border-blue-200'
+                                        };
+                                      } else {
+                                        statusBadge = {
+                                          text: 'CARGA BAJA',
+                                          style: 'bg-amber-50 text-amber-700 border border-amber-200'
+                                        };
+                                      }
+                                    } else {
+                                      if (realVal <= 1.15 * adjP75) {
+                                        statusBadge = {
+                                          text: 'CARGA ELEVADA',
+                                          style: 'bg-orange-50 text-orange-700 border border-orange-200'
+                                        };
+                                      } else {
+                                        statusBadge = {
+                                          text: 'SOBRECARGA',
+                                          style: 'bg-red-50 text-red-700 border border-red-200'
+                                        };
+                                      }
+                                    }
+                                  }
+                                }
+
+                                return (
+                                  <tr key={`param-p5-${index}`} className="border-b border-slate-100 h-13 hover:bg-slate-50/50">
+                                    <td className="px-6 py-3 text-left text-slate-900 font-bold">{param.name}</td>
+                                    <td className="px-6 py-3 border-x border-slate-100 bg-slate-50/20">
+                                      {mapping && adjustedRange ? (
+                                        <div className="flex flex-col items-center justify-center py-1.5">
+                                          {statusBadge && (
+                                            <div className="mb-1">
+                                              <span className={`text-[10px] font-black px-2.5 py-0.5 rounded uppercase tracking-wider ${statusBadge.style}`}>
+                                                {statusBadge.text}
+                                              </span>
+                                            </div>
+                                          )}
+                                          <span className="text-[10.5px] font-bold text-slate-600 uppercase tracking-wide">
+                                            RANGO ÓPTIMO: {adjustedRange[0]} - {adjustedRange[2]} {mapping.unit}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400 italic font-medium">—</span>
+                                      )}
+                                    </td>
+                                    <td className="px-6 py-3 text-[#02428c] font-black italic bg-blue-50/20 font-mono">{param.value}</td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
                       </section>
                     </div>
-                    <PrintFooter page={totalPages} />
+                    <PrintFooter page={comparePageNo} />
+                  </div>
+
+                  {/* NUEVA HOJA: PRONÓSTICO DEL DÍA SIGUIENTE */}
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      <PrintHeader 
+                        selectedDate={getNextDayDate(selectedDate)} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={nextDayForecastPageNo} 
+                        total={totalPages} 
+                      />
+                      
+                      <section className="mt-4 text-slate-900">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-650 pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
+                          <span>{nextDayForecastPageNo}._ PRONÓSTICO DE CARGA PREVENTIVA PARA MAÑANA ({getNextDayFormatted(selectedDate)})</span>
+                          <span className={`px-2.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                            nextIntensity === 'Alta' ? 'bg-red-50 text-red-700 border border-red-200' :
+                            nextIntensity === 'Media' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                            'bg-blue-50 text-blue-700 border border-blue-200'
+                          }`}>
+                            INTENSIDAD PLANIFICADA: {nextIntensity}
+                          </span>
+                        </h3>
+                        
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-6">
+                          * PLANIFICACIÓN FÍSICA PREDICTIVA Y OBJETIVOS DE CARGA EXTERNA SELECCIONADOS PARA LA PRÓXIMA JORNADA DE ENTRENAMIENTO.
+                        </p>
+
+                        <div className="grid grid-cols-4 gap-3 mt-6 mb-6">
+                          {nextDayGpsParams.map((param: any, idx: number) => {
+                            return (
+                              <div key={`next-param-${idx}`} className="p-4 rounded-xl border border-slate-100 bg-slate-50/30 flex flex-col justify-between">
+                                <div className="text-[8px] font-black text-slate-500 uppercase tracking-wider mb-2 leading-snug">
+                                  {param.name}
+                                </div>
+                                <div>
+                                  <div className="text-[13px] font-black text-[#0b1220] font-mono tracking-tight">
+                                    {param.range}
+                                  </div>
+                                  <div className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wider mt-1">
+                                    DIFERENCIAL: {param.percentage > 0 ? `+${param.percentage}%` : `${param.percentage}%`}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    </div>
+                    <PrintFooter page={nextDayForecastPageNo} />
                   </div>
                 </>
               );
@@ -4323,6 +4814,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           .print-page-section.bg-\\[\\#0b1220\\] {
             background-color: #0b1220 !important;
           }
+          .print-page-section.bg-\\[\\#961215\\] {
+            background-color: #961215 !important;
+            background: #961215 !important;
+          }
         }
 
         @media print {
@@ -4353,6 +4848,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             display: flex !important;
             flex-direction: column !important;
             justify-content: space-between !important;
+          }
+          .print-page-section.bg-\\[\\#961215\\] {
+            background-color: #961215 !important;
+            background: #961215 !important;
           }
 
           table { page-break-inside: avoid !important; }
