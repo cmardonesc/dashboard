@@ -1791,7 +1791,7 @@ export default function DataImportArea() {
             activity_id: reprId,
             activityId: reprId,
             athleteCount: totalAthleteCount,
-            name: getFormattedSessionName(first),
+            name: (first.name && String(first.name).trim() !== '') ? String(first.name).trim() : getFormattedSessionName(first),
             _originalGroup: group
           });
         }
@@ -1801,7 +1801,7 @@ export default function DataImportArea() {
       noTimeActivities.forEach((act: any) => {
         deduplicatedActivities.push({
           ...act,
-          name: getFormattedSessionName(act)
+          name: (act.name && String(act.name).trim() !== '') ? String(act.name).trim() : getFormattedSessionName(act)
         });
       });
 
