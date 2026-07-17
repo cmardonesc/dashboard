@@ -2,9 +2,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AthletePerformanceRecord, Category, User, MicrocicloDB, CATEGORY_ID_MAP, UserRole, REVERSE_CATEGORY_ID_MAP } from '../types';
 import { supabase } from '../lib/supabase';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { triggerPushNotification } from '../lib/notifications';
 import { logActivity } from '../lib/activityLogger';
-import { normalizeClub, sortClubsByChileFirst } from '../lib/utils';
+import { normalizeClub, sortClubsByChileFirst, getDriveDirectLink } from '../lib/utils';
+import { FEDERATION_LOGO } from '../constants';
 import ClubBadge from './ClubBadge';
 
 interface MedicaAreaProps {
@@ -63,6 +66,9 @@ interface DBInjury {
   fecha_alta: string;
   observaciones: string;
   ultimo_control: string;
+  lugar_rehabilitacion?: string;
+  procedimientos?: any[];
+  actualizaciones_medicas?: any[];
   players?: {
     nombre: string;
     apellido1: string;
@@ -131,14 +137,24 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     mecanismo: 'No Contacto',
     diagnostico_clinico: '',
     diagnostico_funcional: '',
-    estado: 'Activo',
+    estado: 'Kinesiología',
     disponibilidad: 'No Disponible',
     restricciones: '',
     fecha_estimada_retorno: '',
     fecha_alta: '',
     ultimo_control: new Date().toISOString().split('T')[0],
-    observaciones: ''
+    observaciones: '',
+    lugar_rehabilitacion: 'CLUB'
   });
+
+  const [procType, setProcType] = useState<'EXAMEN' | 'PROCEDIMIENTO' | 'CIRUGIA'>('EXAMEN');
+  const [procDate, setProcDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [procDescription, setProcDescription] = useState<string>('');
+  const [proceduresList, setProceduresList] = useState<{ id: string; type: 'EXAMEN' | 'PROCEDIMIENTO' | 'CIRUGIA'; date: string; description: string }[]>([]);
+
+  const [updateDate, setUpdateDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [updateText, setUpdateText] = useState<string>('');
+  const [medicalUpdates, setMedicalUpdates] = useState<{ id: string; date: string; description: string }[]>([]);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [showConfirmDelete, setShowConfirmDelete] = useState<{ id: string, name: string } | null>(null);
@@ -147,6 +163,9 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [selectedGpsPlayer, setSelectedGpsPlayer] = useState<DBInjury | null>(null);
+
+  const [sortField, setSortField] = useState<string>('fecha_estimada_retorno');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [currentStaffEmail, setCurrentStaffEmail] = useState<string>('');
   const [loggedStaffName, setLoggedStaffName] = useState<string>('');
@@ -176,15 +195,559 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     return namePart.charAt(0).toUpperCase() + namePart.slice(1);
   };
 
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    if (sortField !== field) {
+      return <i className="fa-solid fa-sort text-slate-400/50 ml-1.5 transition-colors group-hover/th:text-white"></i>;
+    }
+    return sortDirection === 'asc' 
+      ? <i className="fa-solid fa-sort-up text-red-500 ml-1.5"></i> 
+      : <i className="fa-solid fa-sort-down text-red-500 ml-1.5"></i>;
+  };
+
   const filteredInjuries = useMemo(() => {
-    if (!selectedCategoryId) return dbInjuries;
-    return dbInjuries.filter(i => i.category_id === selectedCategoryId);
-  }, [dbInjuries, selectedCategoryId]);
+    let result = [...dbInjuries];
+    if (selectedCategoryId) {
+      result = result.filter(i => i.category_id === selectedCategoryId);
+    }
+    
+    if (!sortField) return result;
+
+    return result.sort((a, b) => {
+      let valA: any = '';
+      let valB: any = '';
+
+      if (sortField === 'atleta') {
+        valA = `${a.players?.nombre || ''} ${a.players?.apellido1 || ''} ${a.players?.apellido2 || ''}`.trim().toLowerCase();
+        valB = `${b.players?.nombre || ''} ${b.players?.apellido1 || ''} ${b.players?.apellido2 || ''}`.trim().toLowerCase();
+      } else if (sortField === 'localizacion') {
+        valA = (a.localizacion || '').toLowerCase();
+        valB = (b.localizacion || '').toLowerCase();
+      } else if (sortField === 'diagnostico_clinico') {
+        valA = (a.diagnostico_clinico || '').toLowerCase();
+        valB = (b.diagnostico_clinico || '').toLowerCase();
+      } else if (sortField === 'estado') {
+        valA = (a.estado || '').toLowerCase();
+        valB = (b.estado || '').toLowerCase();
+      } else if (sortField === 'disponibilidad') {
+        valA = (a.disponibilidad || '').toLowerCase();
+        valB = (b.disponibilidad || '').toLowerCase();
+      } else if (sortField === 'fecha_estimada_retorno') {
+        valA = a.fecha_estimada_retorno ? new Date(a.fecha_estimada_retorno).getTime() : 0;
+        valB = b.fecha_estimada_retorno ? new Date(b.fecha_estimada_retorno).getTime() : 0;
+      } else if (sortField === 'severidad') {
+        const calculateDays = (dateStr?: string) => {
+          if (!dateStr) return 0;
+          const start = new Date(dateStr);
+          const today = new Date();
+          start.setHours(0,0,0,0);
+          today.setHours(0,0,0,0);
+          const diff = today.getTime() - start.getTime();
+          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+          return days >= 0 ? days : 0;
+        };
+        valA = calculateDays(a.fecha_inicio);
+        valB = calculateDays(b.fecha_inicio);
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [dbInjuries, selectedCategoryId, sortField, sortDirection]);
 
   const handleToggleDate = (date: string) => {
     setSelectedDates(prev =>
       prev.includes(date) ? prev.filter(d => d !== date) : [...prev, date]
     );
+  };
+
+  const generateInjuryPDF = (injury: DBInjury) => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const athleteName = `${injury.players?.nombre || ''} ${injury.players?.apellido1 || ''} ${injury.players?.apellido2 || ''}`.trim().toUpperCase();
+    const position = (injury.players?.posicion || 'NO REGISTRA').toUpperCase();
+    const club = (injury.players?.club || 'NO REGISTRA').toUpperCase();
+    const catId = injury.category_id;
+    const categoryName = catId ? (REVERSE_CATEGORY_ID_MAP[catId] || `SUB-${catId}`) : 'SELECCIÓN';
+
+    // Helper for formatting dates inside the PDF
+    const formatPDFDate = (dStr?: string) => {
+      if (!dStr) return 'PENDIENTE / NO REGISTRA';
+      try {
+        const parts = dStr.split('T')[0].split('-');
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return dStr;
+      } catch (e) {
+        return dStr || 'PENDIENTE';
+      }
+    };
+
+    // Calculate elapsed injury days
+    const calculateDays = (dateStr?: string) => {
+      if (!dateStr) return 0;
+      const start = new Date(dateStr);
+      const today = new Date();
+      start.setHours(0,0,0,0);
+      today.setHours(0,0,0,0);
+      const diff = today.getTime() - start.getTime();
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      return days >= 0 ? days : 0;
+    };
+
+    const daysElapsed = calculateDays(injury.fecha_inicio);
+
+    // --- PDF DRAWING (WELLNESS FORMAT & STYLING) ---
+    // Top Color Bar (Red accent from Wellness format)
+    doc.setFillColor(226, 35, 26);
+    doc.rect(0, 0, 210, 4, 'F');
+
+    // Header Banner (Dark Navy ribbon)
+    doc.setFillColor(26, 35, 51);
+    doc.rect(10, 8, 190, 18, 'F');
+
+    // Left Title Block (Primary Blue from Wellness)
+    doc.setFillColor(2, 66, 140);
+    doc.rect(10, 8, 70, 18, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text('ÁREA MÉDICA DE SELECCIÓN', 14, 19);
+
+    // Federation Logo (Direct image link from Google Drive)
+    const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+    try {
+      doc.addImage(logoUrl, 'PNG', 84, 9, 16, 16);
+    } catch (e) {
+      console.error("Error loading logo for PDF:", e);
+    }
+
+    // Right Header Text
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text('LA ROJA PERFORMANCE HUB', 104, 15);
+
+    doc.setFontSize(7.5);
+    doc.setTextColor(226, 35, 26);
+    doc.text('CONTROL CLÍNICO DE LESIÓN', 104, 20);
+
+    // Document Timestamp on far right
+    const todayStr = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    doc.setFontSize(6.5);
+    doc.setTextColor(160, 174, 192);
+    doc.text(`Generado: ${todayStr}`, 162, 19);
+
+    // Athlete details container (Gray-filled rounded box)
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(10, 31, 190, 15, 1.5, 1.5, 'F');
+
+    // Athlete Labels
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(110, 110, 110);
+    doc.text("ATLETA", 15, 36);
+    doc.text("CLUB", 65, 36);
+    doc.text("POSICIÓN", 115, 36);
+    doc.text("CATEGORÍA", 160, 36);
+
+    // Athlete Values
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(26, 35, 51);
+    doc.text(athleteName, 15, 41);
+    doc.text(club, 65, 41);
+    doc.text(position, 115, 41);
+    doc.text(categoryName.toUpperCase(), 160, 41);
+
+    // --- SECTION 1: DETALLES DE INGRESO CLÍNICO ---
+    const sec1Y = 51;
+    doc.setFillColor(2, 66, 140); // Blue banner
+    doc.rect(10, sec1Y, 190, 6, 'F');
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text("1. INGRESO CLÍNICO Y DETALLES DE LA LESIÓN", 14, sec1Y + 4.2);
+
+    // Inner container
+    doc.setFillColor(250, 251, 253);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(10, sec1Y + 6, 190, 44, 1, 1, 'FD');
+
+    // Value columns
+    doc.setFontSize(7);
+    doc.setTextColor(120, 120, 120);
+    doc.text("FECHA DE INGRESO (INICIO):", 15, sec1Y + 12);
+    doc.text("MOMENTO DE LESIÓN:", 15, sec1Y + 18);
+    doc.text("LOCALIZACIÓN ANATÓMICA:", 15, sec1Y + 24);
+    doc.text("LADO AFECTADO:", 15, sec1Y + 30);
+    doc.text("TIPO DE LESIÓN:", 105, sec1Y + 12);
+    doc.text("MECANISMO DE LESIÓN:", 105, sec1Y + 18);
+    doc.text("SEVERIDAD ACUMULADA:", 105, sec1Y + 24);
+
+    doc.setTextColor(26, 35, 51);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.text(formatPDFDate(injury.fecha_inicio), 62, sec1Y + 12);
+    doc.text((injury.momento_lesion || 'NO ESPECIFICADO').toUpperCase(), 62, sec1Y + 18);
+    doc.text((injury.localizacion || 'NO ESPECIFICADO').toUpperCase(), 62, sec1Y + 24);
+    doc.text((injury.lado || 'NO ESPECIFICADO').toUpperCase(), 62, sec1Y + 30);
+    doc.text((injury.tipo_lesion || 'NO ESPECIFICADO').toUpperCase(), 145, sec1Y + 12);
+    doc.text((injury.mecanismo || 'NO ESPECIFICADO').toUpperCase(), 145, sec1Y + 18);
+    doc.text(`${daysElapsed} DÍAS TRANSCURRIDOS`, 145, sec1Y + 24);
+
+    // Diagnosticos
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(120, 120, 120);
+    doc.text("DIAGNÓSTICO CLÍNICO:", 15, sec1Y + 37);
+    doc.text("DIAGNÓSTICO FUNCIONAL:", 15, sec1Y + 43);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(26, 35, 51);
+    doc.text(injury.diagnostico_clinico || 'SIN REGISTRO DETALLADO', 55, sec1Y + 37);
+    doc.text(injury.diagnostico_funcional || 'SIN REGISTRO DETALLADO', 55, sec1Y + 43);
+
+
+    // --- SECTION 2: SEGUIMIENTO CLÍNICO, PROCEDIMIENTOS Y EVOLUCIÓN ---
+    const sec2Y = 104;
+    doc.setFillColor(26, 35, 51); // Navy banner
+    doc.rect(10, sec2Y, 190, 6, 'F');
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text("2. SEGUIMIENTO, PROCEDIMIENTOS Y NOTAS EVOLUTIVAS", 14, sec2Y + 4.2);
+
+    doc.setFillColor(250, 251, 253);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(10, sec2Y + 6, 190, 44, 1, 1, 'FD');
+
+    // List procedures
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(2, 66, 140);
+    doc.text("ÚLTIMOS PROCEDIMIENTOS / EXÁMENES:", 15, sec2Y + 12);
+
+    let procs = injury.procedimientos || [];
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(40, 40, 40);
+    if (procs.length === 0) {
+      doc.text("• No se han registrado procedimientos ni exámenes adicionales en esta ficha.", 18, sec2Y + 17);
+    } else {
+      procs.slice(0, 2).forEach((p: any, index: number) => {
+        doc.text(`• [${formatPDFDate(p.date)}] [${p.type}] ${p.description || ''}`, 18, sec2Y + 17 + (index * 4.5));
+      });
+    }
+
+    // List updates
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(2, 66, 140);
+    doc.text("ÚLTIMAS ACTUALIZACIONES MÉDICAS Y EVOLUTIVAS:", 15, sec2Y + 29);
+
+    let updates = injury.actualizaciones_medicas || [];
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(40, 40, 40);
+    if (updates.length === 0) {
+      doc.text("• No se han registrado notas evolutivas adicionales para este caso clínico.", 18, sec2Y + 34);
+    } else {
+      updates.slice(0, 2).forEach((u: any, index: number) => {
+        doc.text(`• [${formatPDFDate(u.date)}] ${u.description || ''}`, 18, sec2Y + 34 + (index * 4.5));
+      });
+    }
+
+
+    // --- SECTION 3: PLAN DE RETORNO Y ALTA DEPORTIVA ---
+    const sec3Y = 157;
+    doc.setFillColor(226, 35, 26); // Red banner
+    doc.rect(10, sec3Y, 190, 6, 'F');
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text("3. PRONÓSTICO DE RETORNO Y PLAN DE ALTA", 14, sec3Y + 4.2);
+
+    doc.setFillColor(250, 251, 253);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(10, sec3Y + 6, 190, 44, 1, 1, 'FD');
+
+    doc.setFontSize(7);
+    doc.setTextColor(120, 120, 120);
+    doc.setFont("helvetica", "bold");
+    doc.text("ESTADO CLÍNICO ACTUAL:", 15, sec3Y + 12);
+    doc.text("DISPONIBILIDAD DEPORTIVA:", 15, sec3Y + 18);
+    doc.text("LUGAR DE REHABILITACIÓN:", 15, sec3Y + 24);
+    doc.text("ÚLTIMO CONTROL REALIZADO:", 15, sec3Y + 30);
+
+    doc.text("PRONÓSTICO ESTIMADO RETORNO:", 105, sec3Y + 12);
+    doc.text("FECHA DE ALTA DEPORTIVA:", 105, sec3Y + 18);
+    doc.text("RESTRICCIONES / OBSERVACIONES:", 105, sec3Y + 24);
+
+    doc.setTextColor(26, 35, 51);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.text((injury.estado || 'KINESIOLOGÍA').toUpperCase(), 62, sec3Y + 12);
+    
+    // Highlight disponibilidad
+    doc.setFont("helvetica", "bold");
+    if (injury.disponibilidad.toLowerCase().includes('no')) {
+      doc.setTextColor(220, 38, 38); // red
+    } else {
+      doc.setTextColor(5, 150, 105); // green
+    }
+    doc.text(injury.disponibilidad.toUpperCase(), 62, sec3Y + 18);
+    
+    doc.setTextColor(26, 35, 51);
+    doc.setFont("helvetica", "bold");
+    doc.text((injury.lugar_rehabilitacion || 'CLUB').toUpperCase(), 62, sec3Y + 24);
+    doc.text(formatPDFDate(injury.ultimo_control), 62, sec3Y + 30);
+
+    doc.text(formatPDFDate(injury.fecha_estimada_retorno), 160, sec3Y + 12);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(5, 150, 105); // green for Alta date
+    doc.text(injury.fecha_alta ? formatPDFDate(injury.fecha_alta) : 'PENDIENTE / EN PROCESO', 160, sec3Y + 18);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(7);
+    
+    // Multi-line for restrictions
+    const restrictionsText = injury.restricciones || 'Sin restricciones especiales. Listo para progresión de carga y adaptación.';
+    const splitRestrictions = doc.splitTextToSize(restrictionsText, 85);
+    doc.text(splitRestrictions, 105, sec3Y + 24);
+
+    // Signature blocks
+    const sigY = 214;
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.2);
+    doc.line(25, sigY + 15, 85, sigY + 15);
+    doc.line(125, sigY + 15, 185, sigY + 15);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(110, 110, 110);
+    doc.text("FIRMA JUGADOR", 46, sigY + 19);
+    doc.text("FIRMA RESPONSABLE MÉDICO", 142, sigY + 19);
+
+    // Footer branding
+    doc.setFillColor(26, 35, 51); // Navy
+    doc.rect(10, 255, 190, 15, 'F');
+    
+    // Top line red for footer
+    doc.setFillColor(226, 35, 26); // Red
+    doc.rect(10, 255, 190, 1, 'F');
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text("ESTE DOCUMENTO CONSTITUYE UN REGISTRO OFICIAL DE CONTROL CLÍNICO DEL DEPARTAMENTO MÉDICO DE SELECCIÓN.", 15, 262);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(160, 174, 192);
+    doc.text("FEDERACIÓN DE FÚTBOL DE CHILE - LA ROJA PERFORMANCE HUB - CONFIDENCIAL", 15, 266);
+
+    // Save PDF
+    doc.save(`FICHA_MEDICA_${athleteName.replace(/\s+/g, '_')}_${formatPDFDate(injury.fecha_inicio).replace(/\//g, '-')}.pdf`);
+  };
+
+  const generateInjuredPlayersTablePDF = () => {
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 10;
+
+    // --- TOP COLOR BAR ---
+    doc.setFillColor(226, 35, 26); // Red
+    doc.rect(0, 0, pageWidth, 4, 'F');
+
+    // --- HEADER BANNER (DARK NAVY RIBBON) ---
+    doc.setFillColor(26, 35, 51); // Dark Navy
+    doc.rect(margin, 8, pageWidth - (margin * 2), 16, 'F');
+
+    // Left Title Block (Blue)
+    doc.setFillColor(2, 66, 140); // Blue
+    doc.rect(margin, 8, 80, 16, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text('REPORTE MÉDICO CONSOLIDADO', margin + 4, 18);
+
+    // Federation Logo in the middle-ish
+    const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+    try {
+      doc.addImage(logoUrl, 'PNG', margin + 86, 9, 14, 14);
+    } catch (e) {
+      console.error("Error loading logo for PDF:", e);
+    }
+
+    // Right Header Text
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+    doc.text('LA ROJA PERFORMANCE HUB', margin + 106, 15);
+
+    doc.setFontSize(8);
+    doc.setTextColor(226, 35, 26);
+    doc.text('INFORME DE ATLETAS LESIONADOS Y SEGUIMIENTO CLÍNICO', margin + 106, 20);
+
+    // Document Timestamp on the right
+    const todayStr = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    doc.setFontSize(7.5);
+    doc.setTextColor(160, 174, 192);
+    doc.text(`Fecha: ${todayStr}`, pageWidth - margin - 50, 18);
+
+    // --- METADATA BAR ---
+    const catLabel = selectedCategoryId 
+      ? (REVERSE_CATEGORY_ID_MAP[selectedCategoryId] || `SUB-${selectedCategoryId}`).toUpperCase() 
+      : 'TODAS LAS CATEGORÍAS';
+    
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(margin, 28, pageWidth - (margin * 2), 10, 1, 1, 'F');
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(110, 110, 110);
+    doc.text('FILTRADO POR CATEGORÍA:', margin + 4, 34);
+    doc.text('TOTAL CASOS ACTIVOS:', margin + 120, 34);
+
+    doc.setTextColor(26, 35, 51);
+    doc.setFontSize(8);
+    doc.text(catLabel, margin + 43, 34);
+    doc.text(`${filteredInjuries.length} ATLETAS`, margin + 155, 34);
+
+    // Helper for formatting dates inside the PDF
+    const formatPDFDate = (dStr?: string) => {
+      if (!dStr) return 'No definido';
+      try {
+        const parts = dStr.split('T')[0].split('-');
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return dStr;
+      } catch (e) {
+        return dStr || 'No definido';
+      }
+    };
+
+    // Calculate elapsed injury days
+    const calculateDays = (dateStr?: string) => {
+      if (!dateStr) return 0;
+      const start = new Date(dateStr);
+      const today = new Date();
+      start.setHours(0,0,0,0);
+      today.setHours(0,0,0,0);
+      const diff = today.getTime() - start.getTime();
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      return days >= 0 ? days : 0;
+    };
+
+    // Prepare table data
+    const tableRows = filteredInjuries.map(injury => {
+      const athleteName = `${injury.players?.nombre || ''} ${injury.players?.apellido1 || ''} ${injury.players?.apellido2 || ''}`.trim().toUpperCase();
+      const position = (injury.players?.posicion || 'NO REGISTRA').toUpperCase();
+      const club = (injury.players?.club || 'NO REGISTRA').toUpperCase();
+      const daysElapsed = calculateDays(injury.fecha_inicio);
+
+      return [
+        `${athleteName}\n(${position} - ${club})`,
+        (injury.localizacion || 'NO ESPECIFICADO').toUpperCase(),
+        (injury.diagnostico_clinico || 'SIN REGISTRO').toUpperCase(),
+        (injury.estado || 'KINESIOLOGÍA').toUpperCase(),
+        injury.disponibilidad.toUpperCase(),
+        formatPDFDate(injury.fecha_estimada_retorno),
+        `${daysElapsed} DÍAS`
+      ];
+    });
+
+    // Generate table with jspdf-autotable
+    autoTable(doc, {
+      startY: 42,
+      margin: { left: margin, right: margin },
+      head: [['ATLETA', 'LOCALIZACIÓN', 'DIAGNÓSTICO', 'ESTADO', 'DISPONIBILIDAD', 'PRONÓSTICO ALTA', 'SEVERIDAD']],
+      body: tableRows,
+      theme: 'striped',
+      headStyles: {
+        fillColor: [26, 35, 51],
+        textColor: [255, 255, 255],
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        halign: 'left',
+        cellPadding: 3
+      },
+      styles: {
+        fontSize: 7,
+        cellPadding: 3,
+        valign: 'middle',
+        textColor: [50, 50, 50]
+      },
+      columnStyles: {
+        0: { cellWidth: 55, fontStyle: 'bold' }, // Athlete details
+        1: { cellWidth: 35 }, // Location
+        2: { cellWidth: 75 }, // Diagnosis
+        3: { cellWidth: 30 }, // Clinical State
+        4: { cellWidth: 30 }, // Availability
+        5: { cellWidth: 30 }, // Return forecast
+        6: { cellWidth: 22 }  // Severity
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const val = String(data.cell.raw || '').toLowerCase();
+          if (val.includes('no')) {
+            data.cell.styles.textColor = [220, 38, 38]; // Red
+            data.cell.styles.fontStyle = 'bold';
+          } else if (val.includes('parcial')) {
+            data.cell.styles.textColor = [245, 158, 11]; // Orange/Yellow
+            data.cell.styles.fontStyle = 'bold';
+          } else {
+            data.cell.styles.textColor = [5, 150, 105]; // Green
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      }
+    });
+
+    // Footer branding on bottom
+    const footerY = pageHeight - 15;
+    doc.setFillColor(26, 35, 51); // Dark Navy
+    doc.rect(margin, footerY, pageWidth - (margin * 2), 10, 'F');
+    
+    // Top line red for footer
+    doc.setFillColor(226, 35, 26); // Red
+    doc.rect(margin, footerY, pageWidth - (margin * 2), 0.8, 'F');
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
+    doc.text("ESTE DOCUMENTO CONSTITUYE UN INFORME CLÍNICO DE CONTROL DEL DEPARTAMENTO MÉDICO DE SELECCIÓN.", margin + 5, footerY + 6);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(160, 174, 192);
+    doc.text("CONFIDENCIAL - FEDERACIÓN DE FÚTBOL DE CHILE", pageWidth - margin - 75, footerY + 6);
+
+    // Save PDF
+    doc.save(`REPORTE_LESIONADOS_${catLabel.replace(/\s+/g, '_')}_${todayStr.split(' ')[0].replace(/\//g, '-')}.pdf`);
   };
 
   const filteredDailyReports = useMemo(() => {
@@ -828,6 +1391,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     setEditingInjuryId(null);
     setEditingDailyReportId(null);
     setExams([]);
+    setMedicalUpdates([]);
+    setProceduresList([]);
+    setProcType('EXAMEN');
+    setProcDate(new Date().toISOString().split('T')[0]);
+    setProcDescription('');
+    setUpdateDate(new Date().toISOString().split('T')[0]);
+    setUpdateText('');
     setNewExam({
       id: '',
       date: new Date().toISOString().split('T')[0],
@@ -843,13 +1413,14 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       mecanismo: 'No Contacto',
       diagnostico_clinico: '',
       diagnostico_funcional: '',
-      estado: 'Activo',
+      estado: 'Kinesiología',
       disponibilidad: 'No Disponible',
       restricciones: '',
       fecha_estimada_retorno: '',
       fecha_alta: '',
       ultimo_control: new Date().toISOString().split('T')[0],
-      observaciones: ''
+      observaciones: '',
+      lugar_rehabilitacion: 'CLUB'
     });
     setView('report_injury');
     setSearchTerm('');
@@ -887,8 +1458,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     });
     setEditingInjuryId(injury.id);
 
+    let lugarRehab = injury.lugar_rehabilitacion || 'CLUB';
+    let loadedUpdates: { id: string; date: string; description: string }[] = injury.actualizaciones_medicas || [];
+    let loadedProcedures: { id: string; type: 'EXAMEN' | 'PROCEDIMIENTO' | 'CIRUGIA'; date: string; description: string }[] = injury.procedimientos || [];
+
     const parts = (injury.observaciones || '').split('\n\n[[EXAMS_DATA]]\n');
-    const obsText = parts[0];
+    let obsText = parts[0];
     let loadedExams: MedicalExam[] = [];
     if (parts.length > 1) {
       try {
@@ -897,7 +1472,34 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
         console.error("Error parsing exams:", e);
       }
     }
+
+    if (obsText.includes('\n\n[[METADATA_V2]]\n')) {
+      const metaParts = obsText.split('\n\n[[METADATA_V2]]\n');
+      obsText = metaParts[0];
+      try {
+        const metaObj = JSON.parse(metaParts[1]);
+        if (!injury.lugar_rehabilitacion) {
+          lugarRehab = metaObj.lugar_rehabilitacion || 'CLUB';
+        }
+        if (!injury.actualizaciones_medicas || injury.actualizaciones_medicas.length === 0) {
+          loadedUpdates = metaObj.medical_updates || [];
+        }
+        if (!injury.procedimientos || injury.procedimientos.length === 0) {
+          loadedProcedures = metaObj.procedures || [];
+        }
+      } catch (e) {
+        console.error("Error parsing METADATA_V2:", e);
+      }
+    }
+
     setExams(loadedExams);
+    setMedicalUpdates(loadedUpdates);
+    setProceduresList(loadedProcedures);
+    setProcType('EXAMEN');
+    setProcDate(new Date().toISOString().split('T')[0]);
+    setProcDescription('');
+    setUpdateDate(new Date().toISOString().split('T')[0]);
+    setUpdateText('');
 
     setInjuryForm({
       fecha_inicio: injury.fecha_inicio,
@@ -907,14 +1509,15 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       tipo_lesion: injury.tipo_lesion,
       mecanismo: injury.mecanismo,
       diagnostico_clinico: injury.diagnostico_clinico,
-      diagnostico_funcional: injury.diagnostico_funcional,
+      diagnostico_funcional: injury.diagnostico_funcional || '',
       estado: injury.estado,
       disponibilidad: injury.disponibilidad,
       restricciones: injury.restricciones || '',
       fecha_estimada_retorno: injury.fecha_estimada_retorno || '',
       fecha_alta: injury.fecha_alta || '',
       ultimo_control: injury.ultimo_control || '',
-      observaciones: obsText
+      observaciones: obsText,
+      lugar_rehabilitacion: lugarRehab
     });
     setView('report_injury');
   };
@@ -960,9 +1563,17 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
 
     setLoading(true);
     try {
-      const finalObs = injuryForm.observaciones + (exams.length > 0 ? '\n\n[[EXAMS_DATA]]\n' + JSON.stringify(exams) : '');
+      const metadata = {
+        lugar_rehabilitacion: injuryForm.lugar_rehabilitacion || 'CLUB',
+        medical_updates: medicalUpdates,
+        procedures: proceduresList
+      };
 
-      const payload = {
+      const finalObs = injuryForm.observaciones + 
+        '\n\n[[METADATA_V2]]\n' + JSON.stringify(metadata) + 
+        (exams.length > 0 ? '\n\n[[EXAMS_DATA]]\n' + JSON.stringify(exams) : '');
+
+      const payload: any = {
         player_id: reportingPlayer.player_id,
         fecha_inicio: injuryForm.fecha_inicio,
         momento_lesion: injuryForm.momento_lesion,
@@ -971,7 +1582,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
         tipo_lesion: injuryForm.tipo_lesion,
         mecanismo: injuryForm.mecanismo,
         diagnostico_clinico: injuryForm.diagnostico_clinico,
-        diagnostico_funcional: injuryForm.diagnostico_funcional,
+        diagnostico_funcional: injuryForm.diagnostico_funcional || '',
         estado: injuryForm.estado,
         disponibilidad: injuryForm.disponibilidad,
         restricciones: injuryForm.restricciones,
@@ -979,16 +1590,43 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
         fecha_alta: injuryForm.fecha_alta || null,
         ultimo_control: injuryForm.ultimo_control || null,
         observaciones: finalObs,
+        lugar_rehabilitacion: injuryForm.lugar_rehabilitacion || 'CLUB',
+        procedimientos: proceduresList,
+        actualizaciones_medicas: medicalUpdates,
         updated_at: new Date().toISOString()
       };
 
       if (editingInjuryId) {
         const { error } = await supabase.from('lesionados').update(payload).eq('id', editingInjuryId);
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('column') || error.message.includes('lugar_rehabilitacion') || error.message.includes('procedimientos') || error.message.includes('actualizaciones_medicas')) {
+            console.log("Columnas dedicadas no existen en Supabase. Reintentando en modo compatible...");
+            const fallbackPayload = { ...payload };
+            delete fallbackPayload.lugar_rehabilitacion;
+            delete fallbackPayload.procedimientos;
+            delete fallbackPayload.actualizaciones_medicas;
+            const { error: retryError } = await supabase.from('lesionados').update(fallbackPayload).eq('id', editingInjuryId);
+            if (retryError) throw retryError;
+          } else {
+            throw error;
+          }
+        }
         setSuccessMessage("FICHA CLÍNICA ACTUALIZADA CON ÉXITO.");
       } else {
         const { error } = await supabase.from('lesionados').insert([payload]);
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('column') || error.message.includes('lugar_rehabilitacion') || error.message.includes('procedimientos') || error.message.includes('actualizaciones_medicas')) {
+            console.log("Columnas dedicadas no existen en Supabase. Reintentando en modo compatible...");
+            const fallbackPayload = { ...payload };
+            delete fallbackPayload.lugar_rehabilitacion;
+            delete fallbackPayload.procedimientos;
+            delete fallbackPayload.actualizaciones_medicas;
+            const { error: retryError } = await supabase.from('lesionados').insert([fallbackPayload]);
+            if (retryError) throw retryError;
+          } else {
+            throw error;
+          }
+        }
         setSuccessMessage("FICHA MÉDICA GUARDADA Y SINCRONIZADA.");
       }
 
@@ -1031,8 +1669,42 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     setExams(exams.filter(e => e.id !== id));
   };
 
+  const handleAddProcedure = () => {
+    if (!procDescription.trim()) return;
+    const newItem = {
+      id: Date.now().toString(),
+      type: procType,
+      date: procDate,
+      description: procDescription.trim()
+    };
+    setProceduresList([...proceduresList, newItem]);
+    setProcDescription('');
+  };
+
+  const handleRemoveProcedure = (id: string) => {
+    setProceduresList(proceduresList.filter(item => item.id !== id));
+  };
+
+  const handleAddMedicalUpdate = () => {
+    if (!updateText.trim()) return;
+    const newItem = {
+      id: Date.now().toString(),
+      date: updateDate,
+      description: updateText.trim()
+    };
+    setMedicalUpdates([...medicalUpdates, newItem]);
+    setUpdateText('');
+  };
+
+  const handleRemoveMedicalUpdate = (id: string) => {
+    setMedicalUpdates(medicalUpdates.filter(u => u.id !== id));
+  };
+
   const getFaseColor = (fase: string) => {
-    const f = fase.toLowerCase();
+    const f = (fase || '').toLowerCase();
+    if (f.includes('kine')) return 'bg-red-100 text-red-600';
+    if (f.includes('inicial')) return 'bg-amber-100 text-amber-600';
+    if (f.includes('avanzado')) return 'bg-emerald-100 text-emerald-600';
     if (f.includes('activo') || f.includes('lesionado')) return 'bg-red-100 text-red-600';
     if (f.includes('retorno') || f.includes('parcial')) return 'bg-amber-100 text-amber-600';
     if (f.includes('alta')) return 'bg-emerald-100 text-emerald-600';
@@ -1153,13 +1825,23 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
           </section>
 
           <section className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
                 <span className="w-2 h-6 bg-amber-500 rounded-full"></span>
                 Atletas Lesionados (Sincronizado)
               </h3>
-              <div className="bg-amber-50 px-5 py-2 rounded-full text-[9px] font-black text-amber-600 uppercase italic">
-                {filteredInjuries.length} REGISTROS ACTIVOS
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={generateInjuredPlayersTablePDF}
+                  className="bg-[#0b1220] hover:bg-slate-800 text-white px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-md active:scale-95 group/btn border border-slate-700/30 hover:border-red-500/50"
+                  title="Exportar toda la tabla filtrada a un reporte PDF consolidado"
+                >
+                  <i className="fa-solid fa-file-pdf text-red-500 text-[11px] group-hover/btn:scale-110 transition-transform"></i>
+                  <span>Exportar Reporte PDF</span>
+                </button>
+                <div className="bg-amber-50 px-5 py-2 rounded-full text-[9px] font-black text-amber-600 uppercase italic">
+                  {filteredInjuries.length} REGISTROS ACTIVOS
+                </div>
               </div>
             </div>
             
@@ -1167,19 +1849,48 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
               <table className="w-full text-[9px] md:text-[10px] text-center border-collapse min-w-[800px] md:min-w-full">
                 <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest">
                   <tr>
-                    <th className="px-6 md:px-10 py-4 md:py-6 text-left">Atleta</th>
-                    <th className="px-2 md:px-4 py-4 md:py-6 text-left">Localización</th>
-                    <th className="px-2 md:px-4 py-4 md:py-6 text-left">Diagnóstico</th>
-                    <th className="px-2 md:px-4 py-4 md:py-6">Estado</th>
-                    <th className="px-2 md:px-4 py-4 md:py-6">Disponibilidad</th>
-                    <th className="px-2 md:px-4 py-4 md:py-6">Inicio</th>
+                    <th className="px-6 md:px-10 py-4 md:py-6 text-left cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('atleta')}>
+                      <div className="flex items-center">
+                        Atleta {renderSortIcon('atleta')}
+                      </div>
+                    </th>
+                    <th className="px-2 md:px-4 py-4 md:py-6 text-left cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('localizacion')}>
+                      <div className="flex items-center">
+                        Localización {renderSortIcon('localizacion')}
+                      </div>
+                    </th>
+                    <th className="px-2 md:px-4 py-4 md:py-6 text-left cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('diagnostico_clinico')}>
+                      <div className="flex items-center">
+                        Diagnóstico {renderSortIcon('diagnostico_clinico')}
+                      </div>
+                    </th>
+                    <th className="px-2 md:px-4 py-4 md:py-6 cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('estado')}>
+                      <div className="flex items-center justify-center">
+                        Estado {renderSortIcon('estado')}
+                      </div>
+                    </th>
+                    <th className="px-2 md:px-4 py-4 md:py-6 cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('disponibilidad')}>
+                      <div className="flex items-center justify-center">
+                        Disponibilidad {renderSortIcon('disponibilidad')}
+                      </div>
+                    </th>
+                    <th className="px-2 md:px-4 py-4 md:py-6 cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('fecha_estimada_retorno')}>
+                      <div className="flex items-center justify-center">
+                        Pronóstico Alta {renderSortIcon('fecha_estimada_retorno')}
+                      </div>
+                    </th>
+                    <th className="px-2 md:px-4 py-4 md:py-6 text-center cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('severidad')}>
+                      <div className="flex items-center justify-center">
+                        Severidad {renderSortIcon('severidad')}
+                      </div>
+                    </th>
                     <th className="px-6 md:px-10 py-4 md:py-6 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
                   {filteredInjuries.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-16 md:py-24 text-slate-300 font-black uppercase tracking-widest italic opacity-50 text-center">
+                      <td colSpan={8} className="py-16 md:py-24 text-slate-300 font-black uppercase tracking-widest italic opacity-50 text-center">
                         <i className="fa-solid fa-notes-medical text-3xl md:text-4xl mb-4 block"></i>
                         No hay reportes clínicos activos{selectedCategoryId ? ' para esta categoría' : ''}.
                       </td>
@@ -1216,14 +1927,45 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                           </td>
                           <td className="px-2 md:px-4 py-4 md:py-6">
                              <span className={`text-[7px] md:text-[8px] font-black uppercase px-2 md:px-3 py-1 rounded-lg ${injury.disponibilidad.toLowerCase().includes('no') ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
-                               {injury.disponibilidad}
+                                {injury.disponibilidad}
                              </span>
                           </td>
-                          <td className="px-2 md:px-4 py-4 md:py-6 text-slate-400 font-black">
-                             {new Date(injury.fecha_inicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                          <td className="px-2 md:px-4 py-4 md:py-6 text-slate-500 font-extrabold text-center">
+                             {injury.fecha_estimada_retorno ? (
+                               new Date(injury.fecha_estimada_retorno).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
+                             ) : (
+                               <span className="text-slate-300 italic">No definido</span>
+                             )}
+                          </td>
+                          <td className="px-2 md:px-4 py-4 md:py-6 text-center">
+                             {(() => {
+                               const start = new Date(injury.fecha_inicio);
+                               const today = new Date();
+                               start.setHours(0,0,0,0);
+                               today.setHours(0,0,0,0);
+                               const diff = today.getTime() - start.getTime();
+                               const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                               const daysVal = days >= 0 ? days : 0;
+                               return (
+                                 <span className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase ${
+                                   daysVal < 7 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                   daysVal < 21 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                   'bg-red-50 text-red-600 border border-red-100'
+                                 }`}>
+                                   {daysVal} {daysVal === 1 ? 'día' : 'días'}
+                                 </span>
+                               );
+                             })()}
                           </td>
                           <td className="px-6 md:px-10 py-4 md:py-6 text-right">
                              <div className="flex justify-end gap-1.5 md:gap-2">
+                                <button 
+                                  onClick={() => generateInjuryPDF(injury)}
+                                  className="w-8 h-8 md:w-10 md:h-10 bg-slate-100 text-emerald-600 rounded-lg md:rounded-xl flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all shadow-sm active:scale-90 animate-pulse hover:animate-none"
+                                  title="Generar Ficha PDF (Check-In & Check-Out)"
+                                >
+                                   <i className="fa-solid fa-file-pdf text-[10px] md:text-xs"></i>
+                                </button>
                                 <button 
                                   onClick={() => handleEditClick(injury)}
                                   className="w-8 h-8 md:w-10 md:h-10 bg-slate-100 text-slate-400 rounded-lg md:rounded-xl flex items-center justify-center hover:bg-[#0b1220] hover:text-white transition-all shadow-sm active:scale-90"
@@ -1277,6 +2019,20 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                 <div className="space-y-2">
                   <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha de Inicio</label>
                   <input required type="date" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.fecha_inicio} onChange={e => setInjuryForm({...injuryForm, fecha_inicio: e.target.value})} />
+                  {injuryForm.fecha_inicio && (() => {
+                    const start = new Date(injuryForm.fecha_inicio);
+                    const today = new Date();
+                    start.setHours(0,0,0,0);
+                    today.setHours(0,0,0,0);
+                    const diff = today.getTime() - start.getTime();
+                    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                    const daysVal = days >= 0 ? days : 0;
+                    return (
+                      <p className="text-[8px] font-black text-amber-600 uppercase tracking-widest ml-1 mt-1.5 flex items-center gap-1 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-100 w-fit">
+                        <i className="fa-solid fa-hourglass-half"></i> Severidad: {daysVal} {daysVal === 1 ? 'DÍA' : 'DÍAS'}
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Momento</label>
@@ -1305,49 +2061,159 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
 
             <div className="space-y-6">
               <h4 className="text-[9px] md:text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">2. Clasificación y Diagnóstico</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Tipo de Lesión</label>
-                    <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.tipo_lesion} onChange={e => setInjuryForm({...injuryForm, tipo_lesion: e.target.value})}>
-                      <option value="Muscular">Muscular</option>
-                      <option value="Ligamentaria">Ligamentaria</option>
-                      <option value="Tendinosa">Tendinosa</option>
-                      <option value="Contusión">Contusión</option>
-                      <option value="Fractura">Fractura</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Mecanismo</label>
-                    <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.mecanismo} onChange={e => setInjuryForm({...injuryForm, mecanismo: e.target.value})}>
-                      <option value="No Contacto">No Contacto</option>
-                      <option value="Contacto">Contacto</option>
-                      <option value="Sobrecarga">Sobrecarga</option>
-                      <option value="Desconocido">Desconocido</option>
-                    </select>
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+                <div className="space-y-2">
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Tipo de Lesión</label>
+                  <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.tipo_lesion} onChange={e => setInjuryForm({...injuryForm, tipo_lesion: e.target.value})}>
+                    <option value="Muscular">Muscular</option>
+                    <option value="Ligamentaria">Ligamentaria</option>
+                    <option value="Tendinosa">Tendinosa</option>
+                    <option value="Contusión">Contusión</option>
+                    <option value="Fractura">Fractura</option>
+                  </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Diagnóstico Clínico</label>
-                  <textarea rows={1} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl p-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner resize-none" value={injuryForm.diagnostico_clinico} onChange={e => setInjuryForm({...injuryForm, diagnostico_clinico: e.target.value})} />
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Mecanismo</label>
+                  <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.mecanismo} onChange={e => setInjuryForm({...injuryForm, mecanismo: e.target.value})}>
+                    <option value="No Contacto">No Contacto</option>
+                    <option value="Contacto">Contacto</option>
+                    <option value="Sobrecarga">Sobrecarga</option>
+                    <option value="Desconocido">Desconocido</option>
+                  </select>
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Diagnóstico Funcional</label>
-                <textarea rows={2} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl p-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner resize-none" value={injuryForm.diagnostico_funcional} onChange={e => setInjuryForm({...injuryForm, diagnostico_funcional: e.target.value})} />
+              <div className="space-y-2 mt-4">
+                <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Diagnóstico Clínico</label>
+                <textarea rows={4} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl p-4 md:p-6 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner resize-none" placeholder="Escriba el diagnóstico clínico detallado..." value={injuryForm.diagnostico_clinico} onChange={e => setInjuryForm({...injuryForm, diagnostico_clinico: e.target.value})} />
               </div>
             </div>
 
             <div className="space-y-6">
-              <h4 className="text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">3. Gestión de Disponibilidad y Seguimiento</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <h4 className="text-[9px] md:text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">2.1 EXÁMENES / PROCEDIMIENTOS / CIRUGÍAS</h4>
+              
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setProcType('EXAMEN')}
+                  className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all duration-200 border ${
+                    procType === 'EXAMEN'
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                      : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <i className="fa-solid fa-file-medical mr-1.5"></i> Exámenes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProcType('PROCEDIMIENTO')}
+                  className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all duration-200 border ${
+                    procType === 'PROCEDIMIENTO'
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                      : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <i className="fa-solid fa-stethoscope mr-1.5"></i> Procedimiento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProcType('CIRUGIA')}
+                  className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all duration-200 border ${
+                    procType === 'CIRUGIA'
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                      : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <i className="fa-solid fa-syringe mr-1.5"></i> Cirugías
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 pt-2">
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Estado</label>
-                  <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.estado} onChange={e => setInjuryForm({...injuryForm, estado: e.target.value})}>
-                    <option value="Activo">Lesionado</option>
-                    <option value="Retorno Parcial">Retorno Parcial</option>
-                    <option value="Alta Médica">Alta Médica</option>
-                    <option value="Cerrado">Cerrado</option>
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha</label>
+                  <input
+                    type="date"
+                    className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner"
+                    value={procDate}
+                    onChange={e => setProcDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Descripción</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder={`Escriba la descripción del ${procType.toLowerCase()}...`}
+                      className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner"
+                      value={procDescription}
+                      onChange={e => setProcDescription(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddProcedure}
+                      className="bg-[#0b1220] text-white rounded-xl md:rounded-2xl px-5 flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors"
+                      title="Agregar"
+                    >
+                      <i className="fa-solid fa-plus"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {proceduresList.length > 0 && (
+                <div className="bg-slate-50 rounded-[24px] md:rounded-[32px] p-4 md:p-6 overflow-x-auto border border-slate-100">
+                  <table className="w-full text-left text-[10px] md:text-xs min-w-[500px]">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-400 font-black uppercase tracking-widest text-[8px] md:text-[9px]">
+                        <th className="pb-3 pr-4">Tipo</th>
+                        <th className="pb-3 pr-4">Fecha</th>
+                        <th className="pb-3 pr-4">Descripción</th>
+                        <th className="pb-3 text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                      {proceduresList.map(item => (
+                        <tr key={item.id} className="hover:bg-slate-100/50 transition-colors">
+                          <td className="py-3 pr-4">
+                            <span className={`px-2.5 py-1 rounded-md text-[8px] font-black uppercase ${
+                              item.type === 'EXAMEN' ? 'bg-indigo-50 text-indigo-600' :
+                              item.type === 'PROCEDIMIENTO' ? 'bg-cyan-50 text-cyan-600' :
+                              'bg-rose-50 text-rose-600'
+                            }`}>
+                              {item.type}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-4 text-slate-500 font-mono">
+                            {new Date(item.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td className="py-3 pr-4 text-slate-900 font-medium">
+                            {item.description}
+                          </td>
+                          <td className="py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveProcedure(item.id)}
+                              className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-slate-300 hover:text-red-500 transition-all active:scale-95 mx-auto sm:mr-0"
+                            >
+                              <i className="fa-solid fa-trash-can text-[10px]"></i>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              <h4 className="text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">3. Gestión de Disponibilidad y Seguimiento</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+                <div className="space-y-2">
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Estado</label>
+                  <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.estado} onChange={e => setInjuryForm({...injuryForm, estado: e.target.value})}>
+                    <option value="Kinesiología">KINESIOLOGIA</option>
+                    <option value="Reintegro Inicial">REINTEGRO INICIAL</option>
+                    <option value="Reintegro Avanzado">REINTEGRO AVANZADO</option>
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -1356,6 +2222,15 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                     <option value="No Disponible">No Disponible</option>
                     <option value="Limitado">Limitado</option>
                     <option value="Disponible">Disponible</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Lugar de Rehabilitación</label>
+                  <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={injuryForm.lugar_rehabilitacion || 'CLUB'} onChange={e => setInjuryForm({...injuryForm, lugar_rehabilitacion: e.target.value})}>
+                    <option value="CLUB">CLUB</option>
+                    <option value="CLUB + SELECCION">CLUB + SELECCION</option>
+                    <option value="SELECCION">SELECCION</option>
+                    <option value="OTRA">OTRA</option>
                   </select>
                 </div>
               </div>
@@ -1376,51 +2251,72 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
             </div>
 
             <div className="space-y-6">
-              <h4 className="text-[9px] md:text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">4. Exámenes</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+              <h4 className="text-[9px] md:text-[10px] font-black text-red-600 uppercase tracking-widest border-b border-red-100 pb-2">4. ACTUALIZACIÓN MÉDICA</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                 <div className="space-y-2">
-                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha</label>
-                  <input type="date" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={newExam.date} onChange={e => setNewExam({...newExam, date: e.target.value})} />
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Fecha de Actualización</label>
+                  <input
+                    type="date"
+                    className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner"
+                    value={updateDate}
+                    onChange={e => setUpdateDate(e.target.value)}
+                  />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Tipo de Examen</label>
-                  <select className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={newExam.type} onChange={e => setNewExam({...newExam, type: e.target.value})}>
-                    <option value="Resonancia">Resonancia</option>
-                    <option value="Ecografía">Ecografía</option>
-                    <option value="Radiografía">Radiografía</option>
-                    <option value="TAC">TAC</option>
-                    <option value="Otro">Otro</option>
-                  </select>
-                </div>
-                <div className="space-y-2 sm:col-span-2 md:col-span-1">
-                   <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Descripción</label>
-                   <div className="flex gap-2">
-                     <input type="text" placeholder="Breve descripción..." className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl px-4 md:px-6 py-3 md:py-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner" value={newExam.description} onChange={e => setNewExam({...newExam, description: e.target.value})} />
-                     <button type="button" onClick={handleAddExam} className="bg-[#0b1220] text-white rounded-xl md:rounded-2xl px-4 flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors">
-                       <i className="fa-solid fa-plus"></i>
-                     </button>
-                   </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Actualidad de la Lesión</label>
+                  <div className="flex gap-2">
+                    <textarea
+                      rows={2}
+                      placeholder="Escriba el estado actual o evolución clínica de la lesión..."
+                      className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl p-4 text-[11px] md:text-xs font-bold text-slate-700 shadow-inner resize-none"
+                      value={updateText}
+                      onChange={e => setUpdateText(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddMedicalUpdate}
+                      className="bg-[#0b1220] text-white rounded-xl md:rounded-2xl px-5 flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors self-end h-[50px] md:h-[56px]"
+                      title="Guardar Actualización"
+                    >
+                      <i className="fa-solid fa-plus"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {exams.length > 0 && (
-                <div className="bg-slate-50 rounded-[24px] md:rounded-[32px] p-4 md:p-6 space-y-3">
-                  {exams.map((exam) => (
-                    <div key={exam.id} className="bg-white p-3 md:p-4 rounded-xl md:rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-                      <div className="flex items-center gap-3 md:gap-4">
-                        <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-50 text-blue-600 rounded-lg md:rounded-xl flex items-center justify-center">
-                          <i className="fa-solid fa-file-medical text-sm md:text-base"></i>
-                        </div>
-                        <div>
-                          <p className="text-[9px] md:text-[10px] font-black text-slate-900 uppercase tracking-wide">{exam.type} • {new Date(exam.date).toLocaleDateString()}</p>
-                          <p className="text-[8px] md:text-[9px] text-slate-500 font-medium">{exam.description}</p>
-                        </div>
-                      </div>
-                      <button type="button" onClick={() => handleRemoveExam(exam.id)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50 text-slate-300 hover:text-red-500 transition-colors">
-                        <i className="fa-solid fa-trash-can text-xs"></i>
-                      </button>
-                    </div>
-                  ))}
+              {medicalUpdates.length > 0 && (
+                <div className="bg-slate-50 rounded-[24px] md:rounded-[32px] p-4 md:p-6 overflow-x-auto border border-slate-100">
+                  <table className="w-full text-left text-[10px] md:text-xs min-w-[500px]">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-400 font-black uppercase tracking-widest text-[8px] md:text-[9px]">
+                        <th className="pb-3 pr-4 w-[120px]">Fecha</th>
+                        <th className="pb-3 pr-4">Evolución / Actualización Clínica</th>
+                        <th className="pb-3 text-right w-[60px]">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                      {medicalUpdates.map(update => (
+                        <tr key={update.id} className="hover:bg-slate-100/50 transition-colors">
+                          <td className="py-3 pr-4 text-slate-500 font-mono">
+                            {new Date(update.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td className="py-3 pr-4 text-slate-900 font-medium whitespace-pre-wrap">
+                            {update.description}
+                          </td>
+                          <td className="py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMedicalUpdate(update.id)}
+                              className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-slate-300 hover:text-red-500 transition-all active:scale-95 mx-auto sm:mr-0"
+                            >
+                              <i className="fa-solid fa-trash-can text-[10px]"></i>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

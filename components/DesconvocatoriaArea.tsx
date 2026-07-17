@@ -21,7 +21,10 @@ import {
   BarChart,
   Bar,
   ComposedChart,
-  LabelList
+  LabelList,
+  PieChart,
+  Pie,
+  Cell
 } from 'recharts'
 
 type ViewMode = 'grid' | 'details' | 'report' | 'club_list' | 'club_print'
@@ -44,6 +47,7 @@ interface HistoricalData {
   loads: any[]
   gps: any[]
   medical: any[]
+  isInInjuredBoard?: boolean
 }
 
 interface ClubGroup {
@@ -97,6 +101,38 @@ export default function DesconvocatoriaArea({
   const [clubContacts, setClubContacts] = useState<any[]>([]);
 
   const [isGeneratingZip, setIsGeneratingZip] = useState(false);
+
+  const [medicalTexts, setMedicalTexts] = useState<Record<number, string>>(() => {
+    try {
+      const stored = localStorage.getItem('local_medical_texts');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [doctorNames, setDoctorNames] = useState<Record<number, string>>(() => {
+    try {
+      const stored = localStorage.getItem('local_doctor_names');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [globalDoctorName, setGlobalDoctorName] = useState<string>(() => {
+    return localStorage.getItem('local_global_doctor_name') || '';
+  });
+
+  const handleGlobalDoctorNameChange = (name: string) => {
+    setGlobalDoctorName(name);
+    localStorage.setItem('local_global_doctor_name', name);
+  };
+
+  const [showMedicalTextModal, setShowMedicalTextModal] = useState(false);
+  const [medicalTextPlayer, setMedicalTextPlayer] = useState<User | null>(null);
+  const [tempMedicalText, setTempMedicalText] = useState('');
+  const [tempDoctorName, setTempDoctorName] = useState('');
 
   useEffect(() => {
     fetchMicrocycles()
@@ -343,20 +379,35 @@ export default function DesconvocatoriaArea({
         .lte('report_date', end)
         .order('report_date', { ascending: true });
 
+      const { data: activeInjuries } = await supabase
+        .from('lesionados')
+        .select('id, fecha_inicio, fecha_alta')
+        .eq('player_id', playerId);
+
+      const isInInjuredBoard = !!(activeInjuries && activeInjuries.some((injury: any) => {
+        const isCurrentlyActive = !injury.fecha_alta;
+        if (isCurrentlyActive) return true;
+        const injStart = injury.fecha_inicio;
+        const injEnd = injury.fecha_alta;
+        return (injStart <= end && (!injEnd || injEnd >= start));
+      }));
+
       const mappedWellness = (wellnessRaw || []).map(w => ({
         date: w.checkin_date,
         fatigue: w.fatigue,
         sleep: w.sleep_quality,
         stress: w.stress,
         soreness: w.soreness,
-        mood: w.mood
+        mood: w.mood,
+        molestias: w.molestias || ''
       }));
 
       const mappedLoads = (loadsRaw || []).map(l => ({
         date: l.session_date,
         rpe: l.rpe,
         duration: l.duration_min,
-        srpe: l.srpe || (l.rpe * l.duration_min)
+        srpe: l.srpe || (l.rpe * l.duration_min),
+        molestias: l.molestias || ''
       }));
 
       const mappedGps = (gpsRaw || []).map(g => ({
@@ -380,13 +431,14 @@ export default function DesconvocatoriaArea({
         date: m.report_date,
         observation: m.observation,
         diagnosis: m.diagnostico_medico,
-        severity: m.severity
+        severity: m.severity,
+        treatments_applied: m.treatments_applied || []
       }));
 
-      return { wellness: mappedWellness, loads: mappedLoads, gps: mappedGps, medical: mappedMedical };
+      return { wellness: mappedWellness, loads: mappedLoads, gps: mappedGps, medical: mappedMedical, isInInjuredBoard };
     } catch (err) {
       console.error("Error en historia:", err);
-      return { wellness: [], loads: [], gps: [], medical: [] };
+      return { wellness: [], loads: [], gps: [], medical: [], isInInjuredBoard: false };
     }
   };
 
@@ -446,6 +498,29 @@ export default function DesconvocatoriaArea({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOpenMedicalTextModal = (player: User) => {
+    setMedicalTextPlayer(player);
+    setTempMedicalText(medicalTexts[player.player_id!] || '');
+    setTempDoctorName(doctorNames[player.player_id!] || '');
+    setShowMedicalTextModal(true);
+  };
+
+  const handleSaveMedicalText = () => {
+    if (!medicalTextPlayer || !medicalTextPlayer.player_id) return;
+    const pId = medicalTextPlayer.player_id;
+    
+    const updatedTexts = { ...medicalTexts, [pId]: tempMedicalText };
+    const updatedDoctors = { ...doctorNames, [pId]: tempDoctorName };
+    
+    setMedicalTexts(updatedTexts);
+    setDoctorNames(updatedDoctors);
+    
+    localStorage.setItem('local_medical_texts', JSON.stringify(updatedTexts));
+    localStorage.setItem('local_doctor_names', JSON.stringify(updatedDoctors));
+    
+    setShowMedicalTextModal(false);
   };
 
   const confirmDesconvocatoria = async () => {
@@ -850,6 +925,28 @@ export default function DesconvocatoriaArea({
     return 'bg-red-500 text-white';
   };
 
+  const getRpeColor = (val: number | undefined | null) => {
+    if (val === undefined || val === null) return 'bg-slate-100 text-slate-400';
+    const num = Number(val);
+    if (isNaN(num)) return 'bg-slate-100 text-slate-400';
+    if (num <= 2) return 'bg-emerald-500 text-white';
+    if (num <= 4) return 'bg-emerald-400 text-slate-900';
+    if (num <= 6) return 'bg-amber-400 text-slate-900';
+    if (num <= 8) return 'bg-orange-500 text-white';
+    return 'bg-red-500 text-white';
+  };
+
+  const getCargaColor = (val: number | undefined | null) => {
+    if (val === undefined || val === null) return 'bg-slate-100 text-slate-400';
+    const num = Number(val);
+    if (isNaN(num)) return 'bg-slate-100 text-slate-400';
+    if (num <= 150) return 'bg-emerald-500 text-white';
+    if (num <= 400) return 'bg-emerald-400 text-slate-900';
+    if (num <= 600) return 'bg-amber-400 text-slate-900';
+    if (num <= 800) return 'bg-orange-500 text-white';
+    return 'bg-red-500 text-white';
+  };
+
   const clubGroups = useMemo(() => {
     const groups: Record<string, User[]> = {};
     citedPlayers.forEach(p => {
@@ -869,6 +966,9 @@ export default function DesconvocatoriaArea({
 
   // Componente Reutilizable para la Ficha del Jugador (Formato Oficial)
   const PlayerReportSheet: React.FC<{ player: User; history: HistoricalData }> = ({ player, history }) => {
+    const customMedicalText = medicalTexts[player.player_id!] || '';
+    const doctorName = doctorNames[player.player_id!] || '';
+
     const wellnessChartData = history.wellness.map(w => ({
       fecha: formatDateShort(w.date),
       fatiga: w.fatigue,
@@ -891,6 +991,32 @@ export default function DesconvocatoriaArea({
       dist_25: g.dist_sprint_m_25_kmh,
       sprints: g.sprints_n,
       acc_dec: g.acc_decc_ai_n
+    }));
+
+    const treatmentCounts: Record<string, number> = {};
+    let totalTreatments = 0;
+    (history.medical || []).forEach(m => {
+      const arr = Array.isArray(m.treatments_applied) 
+        ? m.treatments_applied 
+        : typeof m.treatments_applied === 'string'
+          ? [m.treatments_applied]
+          : [];
+      
+      arr.forEach((t: string) => {
+        if (!t) return;
+        const cleanT = t.trim().toUpperCase();
+        if (cleanT) {
+          treatmentCounts[cleanT] = (treatmentCounts[cleanT] || 0) + 1;
+          totalTreatments++;
+        }
+      });
+    });
+
+    const COLORS = ['#CF1B2B', '#0b1220', '#10b981', '#eab308', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6'];
+
+    const treatmentChartData = Object.entries(treatmentCounts).map(([name, value]) => ({
+      name,
+      value
     }));
 
     const formatNum = (val: any) => {
@@ -958,7 +1084,8 @@ export default function DesconvocatoriaArea({
                       <th className="px-2 py-4">SUEÑO</th>
                       <th className="px-2 py-4">DOLOR</th>
                       <th className="px-2 py-4">ESTRÉS</th>
-                      <th className="px-2 py-4 pr-8">ÁNIMO</th>
+                      <th className="px-2 py-4">ÁNIMO</th>
+                      <th className="px-4 py-4 text-left pr-8">ZONA DE MOLESTIA (EVA)</th>
                     </tr>
                   </thead>
                   <tbody className="font-black text-slate-700 uppercase italic">
@@ -969,7 +1096,17 @@ export default function DesconvocatoriaArea({
                         <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.sleep)}`}>{formatNum(w.sleep)}</span></td>
                         <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.soreness)}`}>{formatNum(w.soreness)}</span></td>
                         <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.stress)}`}>{formatNum(w.stress)}</span></td>
-                        <td className="px-2 py-3 pr-8"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.mood)}`}>{formatNum(w.mood)}</span></td>
+                        <td className="px-2 py-3"><span className={`inline-block w-12 py-1.5 rounded-lg ${getWellnessColor(w.mood)}`}>{formatNum(w.mood)}</span></td>
+                        <td className="px-4 py-3 text-left pr-8 max-w-[200px] break-words whitespace-normal text-[9px] font-bold text-red-600">
+                          {w.molestias ? (
+                            <span className="flex items-center gap-1.5">
+                              <i className="fa-solid fa-triangle-exclamation text-[9px] text-red-500"></i>
+                              {w.molestias}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-normal">S/D</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1042,16 +1179,27 @@ export default function DesconvocatoriaArea({
                       <th className="px-6 py-4 text-left pl-8">FECHA</th>
                       <th className="px-4 py-4">RPE (BORG)</th>
                       <th className="px-4 py-4">MINUTOS</th>
-                      <th className="px-6 py-4 text-right pr-8">CARGA (U.A)</th>
+                      <th className="px-4 py-4">CARGA (U.A)</th>
+                      <th className="px-6 py-4 text-right pr-8">ZONA DE MOLESTIA (EVA)</th>
                     </tr>
                   </thead>
                   <tbody className="font-black text-slate-700 uppercase italic">
                     {history.loads.map((l, idx) => (
                       <tr key={idx} className="border-b border-slate-50">
                         <td className="px-6 py-4 text-left pl-8 font-bold">{formatDateShort(l.date)}</td>
-                        <td className="px-4 py-4">{formatNum(l.rpe)}</td>
+                        <td className="px-4 py-4"><span className={`inline-block w-12 py-1.5 rounded-lg ${getRpeColor(l.rpe)}`}>{formatNum(l.rpe)}</span></td>
                         <td className="px-4 py-4">{formatNum(l.duration)}'</td>
-                        <td className="px-6 py-4 text-right pr-8 text-red-600 font-black">{formatNum(l.srpe)}</td>
+                        <td className="px-4 py-4"><span className={`inline-block w-16 py-1.5 rounded-lg ${getCargaColor(l.srpe)}`}>{formatNum(l.srpe)}</span></td>
+                        <td className="px-6 py-4 text-right pr-8 max-w-[200px] break-words whitespace-normal text-[9px] font-bold text-red-600">
+                          {l.molestias ? (
+                            <span className="inline-flex items-center gap-1.5 justify-end">
+                              <i className="fa-solid fa-triangle-exclamation text-[9px] text-red-500"></i>
+                              {l.molestias}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-normal">S/D</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1081,7 +1229,7 @@ export default function DesconvocatoriaArea({
         {/* PÁGINA 3: CARGA EXTERNA (GPS) */}
         <div 
           id={`player-report-page-3-${player.id}`}
-          className="bg-white p-12 min-h-[297mm] flex flex-col shadow-sm print:shadow-none player-report-page"
+          className="bg-white p-12 min-h-[297mm] flex flex-col break-after-page shadow-sm mb-8 print:shadow-none print:mb-0 player-report-page"
         >
           <Header />
           
@@ -1172,6 +1320,198 @@ export default function DesconvocatoriaArea({
               </div>
             </div>
           )}
+        </div>
+
+        {/* PÁGINA 4: ÁREA MÉDICA Y SEGUIMIENTO */}
+        <div 
+          id={`player-report-page-4-${player.id}`}
+          className="bg-white p-12 min-h-[297mm] flex flex-col shadow-sm print:shadow-none player-report-page"
+        >
+          <Header />
+          
+          <div className="mb-6">
+            <h3 className="text-[10px] font-black text-[#0b1220] uppercase tracking-[0.3em] flex items-center gap-2">
+              <i className="fa-solid fa-user-doctor text-[#CF1B2B]"></i> ÁREA MÉDICA DE SELECCIÓN
+            </h3>
+            <p className="text-slate-400 text-[9px] uppercase tracking-wider mt-1 font-bold">Registro de atenciones médicas y diagnóstico del microciclo</p>
+          </div>
+
+          {/* Atenciones Médicas */}
+          <div className="space-y-6 mb-6">
+            <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1">
+              1. Registro de Atenciones Clínicas en el Microciclo
+            </h4>
+            
+            {(!history.medical || history.medical.length === 0) ? (
+              <div className="border border-dashed border-slate-200 rounded-[24px] p-8 text-center text-slate-400">
+                <i className="fa-solid fa-notes-medical text-2xl mb-2 text-slate-300"></i>
+                <p className="text-[9px] font-black uppercase tracking-widest italic">Sin registros de atención médica en este período</p>
+              </div>
+            ) : (
+              <div className="rounded-[24px] overflow-hidden border border-slate-100 shadow-sm">
+                <table className="w-full text-left text-[10px] border-collapse">
+                  <thead className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
+                    <tr>
+                      <th className="px-6 py-4 pl-8">FECHA</th>
+                      <th className="px-4 py-4">DIAGNÓSTICO MÉDICO</th>
+                      <th className="px-6 py-4 text-right pr-8">OBSERVACIONES</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-black uppercase italic text-xs">
+                    {history.medical.map((m, idx) => {
+                      const sev = m.severity?.toLowerCase() || '';
+                      const isHigh = sev === 'grave' || sev === 'severo' || sev === 'alta' || sev === 'severe';
+                      const isMod = sev === 'moderado' || sev === 'media' || sev === 'moderate';
+                      
+                      const rowBgClass = isHigh 
+                        ? 'bg-rose-50/40 border-b border-rose-100/30 text-rose-950'
+                        : isMod 
+                          ? 'bg-amber-50/40 border-b border-amber-100/30 text-amber-950'
+                          : 'bg-emerald-50/40 border-b border-emerald-100/30 text-emerald-950';
+
+                      return (
+                        <tr key={idx} className={`${rowBgClass} transition-colors`}>
+                          <td className="px-6 py-4 pl-8 font-bold whitespace-nowrap">{formatDateShort(m.date)}</td>
+                          <td className="px-4 py-4 text-[#0b1220] font-black">{m.diagnosis || 'S/D'}</td>
+                          <td className="px-6 py-4 text-right pr-8 text-[10px] text-slate-700 font-medium leading-relaxed">
+                            {m.observation || 'SIN OBSERVACIONES'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Gráfico de Torta de Tratamientos */}
+          <div className="space-y-4 mb-8">
+            <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1">
+              1b. Distribución de Tratamientos Clínicos Aplicados
+            </h4>
+            {treatmentChartData.length === 0 ? (
+              <div className="border border-dashed border-slate-150 rounded-[24px] p-6 text-center text-slate-400">
+                <i className="fa-solid fa-pump-medical text-xl mb-1 text-slate-300"></i>
+                <p className="text-[8px] font-black uppercase tracking-widest italic">No se registran tratamientos específicos aplicados en el período</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-12 gap-4 items-center bg-slate-50/40 border border-slate-100/50 rounded-[32px] p-4">
+                {/* El Gráfico */}
+                <div className="col-span-4 h-[120px] flex items-center justify-center relative">
+                  <PieChart width={120} height={120}>
+                    <Pie
+                      isAnimationActive={false}
+                      data={treatmentChartData}
+                      cx={60}
+                      cy={60}
+                      innerRadius={25}
+                      outerRadius={45}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {treatmentChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </div>
+                {/* Leyenda Detallada */}
+                <div className="col-span-8 pr-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    {treatmentChartData.map((item, index) => {
+                      const pct = ((item.value / totalTreatments) * 100).toFixed(0);
+                      return (
+                        <div key={index} className="flex items-center gap-2 bg-white rounded-xl p-2 px-3 border border-slate-100/50 shadow-sm">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[8px] font-black text-slate-700 uppercase truncate leading-normal py-0.5 mb-0.5">{item.name}</p>
+                            <p className="text-[7px] font-bold text-slate-400 uppercase tracking-wider leading-normal py-0.5">
+                              {item.value} {item.value === 1 ? 'ATENCIÓN' : 'ATENCIONES'} ({pct}%)
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Dictamen Clínico / Short text box */}
+          <div className="space-y-6 mb-12">
+            <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1">
+              2. Dictamen Médico y Estado de Disponibilidad
+            </h4>
+            
+            {customMedicalText ? (
+              <div className="bg-rose-50/50 border-2 border-rose-500/20 rounded-[32px] p-8 flex gap-6 items-start">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center shrink-0">
+                  <i className="fa-solid fa-user-doctor text-xl text-rose-600"></i>
+                </div>
+                <div>
+                  <h5 className="text-[10px] font-black text-rose-700 uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                    ESTADO: DICTAMEN CLINICO INDIVIDUALIZADO
+                  </h5>
+                  <p className="text-[11px] font-bold text-slate-600 leading-relaxed uppercase italic">
+                    {customMedicalText}
+                  </p>
+                  {doctorName && (
+                    <p className="text-[9px] font-bold text-rose-600 mt-2 uppercase tracking-wider">
+                      REGISTRADO POR: DR. {doctorName}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : history.isInInjuredBoard ? (
+              <div className="bg-red-50/50 border-2 border-red-500/20 rounded-[32px] p-8 flex gap-6 items-start">
+                <div className="w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center shrink-0">
+                  <i className="fa-solid fa-triangle-exclamation text-xl text-red-600"></i>
+                </div>
+                <div>
+                  <h5 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                    ESTADO: ATLETA LESIONADO (BAJA CONFIRMADA)
+                  </h5>
+                  <p className="text-[11px] font-bold text-slate-600 leading-relaxed uppercase italic">
+                    El jugador presenta una lesión clínica diagnosticada en el microciclo, por lo que no se encuentra disponible para la competencia. Se adjunta ficha de control clínico.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-emerald-50/50 border-2 border-emerald-500/20 rounded-[32px] p-8 flex gap-6 items-start">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+                  <i className="fa-solid fa-circle-check text-xl text-emerald-600"></i>
+                </div>
+                <div>
+                  <h5 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                    ESTADO: REGISTRO COMPLETO (CONDICIÓN ÓPTIMA)
+                  </h5>
+                  <p className="text-[11px] font-bold text-slate-600 leading-relaxed uppercase italic">
+                    El atleta finalizó el microciclo en óptimas condiciones físicas y de salud, encontrándose apto para continuar con sus actividades habituales en su club de origen.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Firmas de Validación */}
+          <div className="mt-auto pt-12 border-t border-slate-100 grid grid-cols-2 gap-20">
+            <div className="text-center">
+              {globalDoctorName && (
+                <p className="text-[9px] font-black text-slate-800 uppercase mb-1">DR. {globalDoctorName}</p>
+              )}
+              <div className="w-48 h-[1px] bg-slate-300 mx-auto mb-3"></div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">DEPARTAMENTO MÉDICO FFCH</p>
+              <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest mt-1">RESPONSABLE CLÍNICO DE SELECCIÓN</p>
+            </div>
+            <div className="text-center">
+              <div className="w-48 h-[1px] bg-slate-300 mx-auto mb-3"></div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">ÁREA DE CIENCIAS DEL DEPORTE</p>
+              <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest mt-1">LA ROJA PERFORMANCE HUB</p>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1375,13 +1715,32 @@ export default function DesconvocatoriaArea({
               </h2>
             </div>
             
-            {/* Botón según referencia visual solicitada */}
-            <button 
-              onClick={() => setViewMode('club_list')}
-              className="bg-[#0b1220] text-white px-10 py-5 rounded-[32px] text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-red-600 transition-all flex items-center gap-3 active:scale-95"
-            >
-              <i className="fa-solid fa-users-slash text-xs"></i> DESCONVOCAR POR EQUIPO
-            </button>
+            <div className="flex items-center gap-6">
+              {/* GLOBAL DOCTOR SIGNATURE INPUT */}
+              <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-3xl p-3 px-5">
+                <div className="w-9 h-9 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center text-sm">
+                  <i className="fa-solid fa-file-signature"></i>
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-[8px] font-black uppercase tracking-widest text-slate-400">Médico Responsable (Firma)</label>
+                  <input 
+                    type="text" 
+                    placeholder="Nombre del Médico de Turno" 
+                    value={globalDoctorName}
+                    onChange={(e) => handleGlobalDoctorNameChange(e.target.value)}
+                    className="bg-transparent border-none p-0 text-[11px] font-black uppercase italic text-slate-800 outline-none placeholder:text-slate-300 w-48 mt-0.5"
+                  />
+                </div>
+              </div>
+
+              {/* Botón según referencia visual solicitada */}
+              <button 
+                onClick={() => setViewMode('club_list')}
+                className="bg-[#0b1220] text-white px-10 py-5 rounded-[32px] text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-red-600 transition-all flex items-center gap-3 active:scale-95"
+              >
+                <i className="fa-solid fa-users-slash text-xs"></i> DESCONVOCAR POR EQUIPO
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden min-h-[500px]">
@@ -1410,12 +1769,21 @@ export default function DesconvocatoriaArea({
                           </div>
                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{p.position} | {p.club}</p>
                         </div>
-                        <button 
-                          onClick={() => handleIndividualReportClick(p)} 
-                          className="px-5 py-2.5 bg-slate-200 text-slate-700 rounded-xl text-[9px] font-black uppercase shadow-sm hover:bg-slate-900 hover:text-white transition-all flex items-center gap-2 active:scale-95 transform"
-                        >
-                          <i className="fa-solid fa-file-contract"></i> VER REPORTE
-                        </button>
+                        <div className="flex gap-2 items-center min-w-[170px]">
+                          <button 
+                            onClick={() => handleIndividualReportClick(p)} 
+                            className="flex-1 px-4 py-2.5 bg-slate-200 text-slate-700 rounded-xl text-[9px] font-black uppercase shadow-sm hover:bg-slate-900 hover:text-white transition-all flex items-center justify-center gap-2 active:scale-95 transform"
+                          >
+                            <i className="fa-solid fa-file-contract"></i> VER REPORTE
+                          </button>
+                          <button 
+                            onClick={() => handleOpenMedicalTextModal(p)} 
+                            title="Texto Médico"
+                            className="w-9 h-9 shrink-0 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl flex items-center justify-center shadow-sm hover:bg-rose-600 hover:text-white transition-all active:scale-95 transform text-sm"
+                          >
+                            🏥
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -1652,6 +2020,72 @@ $$;`}
                 className="flex-1 py-4 bg-slate-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-red-600 transition-all active:scale-95 transform shadow-lg"
               >
                 ENTENDIDO, VOLVER AL SISTEMA
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Texto Médico del Doctor */}
+      {showMedicalTextModal && medicalTextPlayer && (
+        <div className="fixed inset-0 bg-[#0b1220]/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[40px] w-full max-w-xl p-10 shadow-2xl border border-slate-100">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center">
+                <i className="fa-solid fa-hospital text-xl"></i>
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">Dictamen / Texto Médico</h3>
+                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-1">{medicalTextPlayer.name}</p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                  Texto Médico Individual del Jugador
+                </label>
+                <textarea
+                  rows={4}
+                  value={tempMedicalText}
+                  onChange={(e) => setTempMedicalText(e.target.value)}
+                  placeholder="Ingrese el diagnóstico clínico individual, evolución médica o dictamen específico del jugador..."
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-2xl p-4 text-xs font-bold text-slate-700 outline-none resize-none"
+                />
+                <p className="text-[9px] text-slate-400 mt-1 italic">
+                  * Si deja esta caja vacía, el jugador se considerará óptimo y se mostrará el texto por defecto en el reporte médico.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                  Nombre del Médico (Para el texto escrito)
+                </label>
+                <input
+                  type="text"
+                  value={tempDoctorName}
+                  onChange={(e) => setTempDoctorName(e.target.value)}
+                  placeholder="Ej: Dr. Juan Pérez"
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-2xl px-4 py-3 text-xs font-bold text-slate-700 outline-none"
+                />
+                <p className="text-[9px] text-slate-400 mt-1 italic">
+                  * Este nombre solo aparecerá acompañando el dictamen médico individualizado.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-4 mt-8">
+              <button 
+                onClick={() => setShowMedicalTextModal(false)}
+                className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
+              >
+                CANCELAR
+              </button>
+              <button 
+                onClick={handleSaveMedicalText}
+                className="flex-1 py-4 bg-[#0b1220] hover:bg-[#CF1B2B] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 transform"
+              >
+                GUARDAR CAMBIOS
               </button>
             </div>
           </div>

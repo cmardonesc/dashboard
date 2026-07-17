@@ -1711,7 +1711,7 @@ export default function DataImportArea() {
           ...item,
           ...a,
           id,
-          name: '', // Will be set nicely
+          name: findVal(a, ['name', 'Name', 'SessionName', 'activity_name', 'tag']) || findVal(item, ['name', 'Name']) || '',
           modifiedDate: mDate,
           startTime,
           endTime,

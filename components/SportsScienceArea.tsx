@@ -2191,9 +2191,9 @@ const AthleteHuella = ({
     // Consumo de Oxígeno
     addStandardMetric('vo2_max', allVo2, false, 'Consumo de Oxígeno', 'ml/kg/min', 'Consumo de Oxígeno');
     addStandardMetric('vam', allVo2, false, 'VMA', 'km/h', 'Consumo de Oxígeno');
-    addStandardMetric('fc_max', allVo2, false, 'FC Máxima', 'bpm', 'Consumo de Oxígeno');
+    addStandardMetric('vt1_vel', allVo2, false, 'VT1 Vel', 'km/h', 'Consumo de Oxígeno');
     addStandardMetric('mts', allVo2, false, 'Distancia', 'm', 'Consumo de Oxígeno');
-    addStandardMetric('vt2_fc', allVo2, false, 'VT2 FC', 'bpm', 'Consumo de Oxígeno');
+    addStandardMetric('vt2_vel', allVo2, false, 'VT2 Vel', 'km/h', 'Consumo de Oxígeno');
 
     // Cambio de Dirección
     addStandardMetric('t_acel_2m', allTest505, true, '505 T. Acel 2m', 's', 'Cambio de Dirección');
@@ -2691,6 +2691,37 @@ const AthleteHuella = ({
           <TachometerGauge {...getGaugeData('imtp_force_50ms', allImtp, false, 'Fuerza Net a 50ms', 'N', 'stroke-amber-500', 'text-amber-500', 5000)} />
           <TachometerGauge {...getGaugeData('imtp_rfd_100ms', allImtp, false, 'RFD a 100ms', 'N/s', 'stroke-indigo-600', 'text-indigo-600', 20000)} />
         </div>
+
+        {(() => {
+          const imtpMax = getGaugeData('imtp_fuerza_n', allImtp, false, 'IMTP Fuerza Máxima', 'N', 'stroke-red-600', 'text-red-600', 5000);
+          const imtpRel = getGaugeData('imtp_f_relativa_n_kg', allImtp, false, 'IMTP F. Relativa', 'N/kg', 'stroke-orange-500', 'text-orange-500', 100);
+          const imtp50ms = getGaugeData('imtp_force_50ms', allImtp, false, 'Fuerza Net a 50ms', 'N', 'stroke-amber-500', 'text-amber-500', 5000);
+          const imtpRfd = getGaugeData('imtp_rfd_100ms', allImtp, false, 'RFD a 100ms', 'N/s', 'stroke-indigo-600', 'text-indigo-600', 20000);
+
+          if (imtpMax.value === 0 && imtpRel.value === 0) return null;
+
+          return (
+            <div className="bg-red-50 rounded-3xl p-6 border border-red-100 flex items-start gap-4 mt-6">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <i className="fa-solid fa-dumbbell text-sm"></i>
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Fuerza Isométrica & Tasa de Fuerza (IMTP)</h4>
+                <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                  {imtpRel.value < 30 && imtpRfd.value < 4000 ? (
+                    `Déficit crítico tanto de fuerza relativa (${imtpRel.value} N/kg) como de tasa de desarrollo de fuerza (RFD 100ms: ${imtpRfd.value} N/s). El atleta presenta una baja capacidad de reclutamiento y tensión muscular absoluta. Se prescribe un ciclo prioritario de fuerza estructural y adaptaciones neuronales con cargas pesadas, combinado de manera secundaria con aceleraciones balísticas ligeras para romper la inercia.`
+                  ) : imtpRel.value < 30 && imtpRfd.value >= 4000 ? (
+                    `Nivel de fuerza relativa bajo (${imtpRel.value} N/kg) pero con una tasa de desarrollo de fuerza (RFD) relativamente eficiente. Esto indica que aunque el deportista es rápido para aplicar fuerza, carece de la masa muscular o la fuerza máxima de base para sostener altas tensiones. Se prescribe entrenamiento de hipertrofia funcional y fuerza máxima dinámica (cargas > 80% 1RM) para elevar su potencial de fuerza absoluta.`
+                  ) : imtpRel.value >= 30 && imtpRfd.value < 4000 ? (
+                    `Excelente nivel de fuerza relativa (${imtpRel.value} N/kg) pero con deficiente velocidad de aplicación (RFD 100ms bajo: ${imtpRfd.value} N/s). El atleta es sumamente fuerte pero "lento" en la ventana de tiempo crucial de un gesto deportivo (primeros 100-150ms). Se aconseja priorizar de inmediato el entrenamiento de potencia de alta velocidad, ejercicios balísticos, derivados de levantamiento olímpico desde el colgajo y saltos cargados ligeros (<30% 1RM) orientados a maximizar el RFD.`
+                  ) : (
+                    `Perfil de fuerza isométrica sobresaliente (Fuerza Relativa: ${imtpRel.value} N/kg) y fantástica velocidad de transmisión neural (RFD: ${imtpRfd.value} N/s). Demuestra una óptima capacidad para generar altos niveles de tensión y transmitirlos con extrema rapidez. Se prescribe entrenamiento de mantenimiento, prevención de lesiones y transferencia dinámica multidireccional específica al fútbol.`
+                  )}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 2. POTENCIA Y SALTABILIDAD - CMJ */}
@@ -2715,6 +2746,37 @@ const AthleteHuella = ({
           <TachometerGauge {...getGaugeData('peak_power_bm_w_kg', allImtp, false, 'Pot. Pico Relativa', 'W/kg', 'stroke-sky-600', 'text-sky-600', 80)} />
           <TachometerGauge {...getGaugeData('peak_power_w', allImtp, false, 'Pot. Pico Absoluta', 'W', 'stroke-violet-600', 'text-violet-600', 6000)} />
         </div>
+
+        {(() => {
+          const cmjForce = getGaugeData('concentric_peak_force_n', allImtp, false, 'Fuerza Pico Conc.', 'N', 'stroke-emerald-600', 'text-emerald-600', 5000);
+          const cmjRsi = getGaugeData('rsi_modified_m_s', allImtp, false, 'CMJ RSI Modificado', 'm/s', 'stroke-teal-600', 'text-teal-600', 2.0);
+          const cmjHeight = getGaugeData('jump_height_impmom_cm', allImtp, false, 'Altura Salto (Imp-Mom)', 'cm', 'stroke-cyan-600', 'text-cyan-600', 60);
+          const cmjPowerRel = getGaugeData('peak_power_bm_w_kg', allImtp, false, 'Pot. Pico Relativa', 'W/kg', 'stroke-sky-600', 'text-sky-600', 80);
+
+          if (cmjHeight.value === 0 && cmjRsi.value === 0 && cmjForce.value === 0) return null;
+
+          return (
+            <div className="bg-emerald-50 rounded-3xl p-6 border border-emerald-100 flex items-start gap-4 mt-6">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+                <i className="fa-solid fa-compress text-sm"></i>
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Saltabilidad & Potencia (CMJ)</h4>
+                <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                  {cmjHeight.value < 35 && cmjRsi.value < 0.45 ? (
+                    `Déficit combinado de saltabilidad (${cmjHeight.value} cm) y reactividad neuromuscular (RSI Modificado: ${cmjRsi.value} m/s). El jugador produce fuerza con lentitud en la fase de amortiguación-despegue. Se prescribe entrenamiento de pliometría de estiramiento-acortamiento lento (SSC) y saltos balísticos descargados, enfocando el trabajo en acelerar la transición excéntrico-concéntrica.`
+                  ) : cmjHeight.value >= 35 && cmjRsi.value < 0.45 ? (
+                    `Nivel de saltabilidad aceptable (${cmjHeight.value} cm) pero con baja eficiencia reactiva (RSI Modificado bajo: ${cmjRsi.value} m/s). El atleta logra buena altura a costa de prolongar excesivamente la duración de las fases concéntrica y excéntrica del salto (patrón lento/pesado). Se recomienda priorizar el desarrollo de la tasa de desarrollo de fuerza (RFD) con contracciones rápidas, saltos con contramovimiento con acento concéntrico rápido y rebotes asistidos.`
+                  ) : cmjHeight.value < 35 && cmjRsi.value >= 0.45 ? (
+                    `Buena eficiencia de acoplamiento (RSI óptimo: ${cmjRsi.value} m/s), pero la altura final de salto (${cmjHeight.value} cm) está limitada por la fuerza concéntrica absoluta o potencia pico (${cmjPowerRel.value} W/kg). Se aconseja priorizar el incremento de la fuerza máxima dinámica en el gimnasio (Sentadillas, Cargadas de fuerza) para elevar el techo absoluto de fuerza concéntrica y transferir al salto vertical.`
+                  ) : (
+                    `Perfil de saltabilidad (${cmjHeight.value} cm) y potencia (${cmjPowerRel.value} W/kg) sobresaliente. Presenta una excelente transición excéntrico-concéntrica (RSI Modificado: ${cmjRsi.value} m/s) y altos niveles de potencia relativa por kilogramo de peso corporal. Continuar con el microciclo actual de mantenimiento, prevención y transferencia reactiva.`
+                  )}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 6. REACTIVIDAD Y REBOTE - CMJ REBOUND */}
@@ -2739,6 +2801,36 @@ const AthleteHuella = ({
           <TachometerGauge {...getGaugeData('take_off_momentum_kg_m_s', allCmjRebound, false, 'Momentum Despegue', 'kg·m/s', 'stroke-fuchsia-600', 'text-fuchsia-600', 400)} />
           <TachometerGauge {...getGaugeData('reps', allCmjRebound, false, 'Repeticiones', 'reps', 'stroke-pink-600', 'text-pink-600', 10)} />
         </div>
+
+        {(() => {
+          const rRsi = getGaugeData('rebound_rsi', allCmjRebound, false, 'Rebound RSI', '', 'stroke-violet-600', 'text-violet-600', 3.0);
+          const rContact = getGaugeData('rebound_contact_time_ms', allCmjRebound, true, 'Tiempo Contacto', 'ms', 'stroke-indigo-600', 'text-indigo-600', 400);
+          const rFlight = getGaugeData('rebound_flight_time_ms', allCmjRebound, false, 'Tiempo Vuelo', 'ms', 'stroke-purple-600', 'text-purple-600', 600);
+
+          if (rRsi.value === 0 && rContact.value === 0) return null;
+
+          return (
+            <div className="bg-violet-50 rounded-3xl p-6 border border-violet-100 flex items-start gap-4 mt-6">
+              <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
+                <i className="fa-solid fa-arrow-trend-up text-sm"></i>
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Reactividad & Rebote (CMJ Rebound)</h4>
+                <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                  {rContact.value > 250 && rRsi.value < 2.0 ? (
+                    `Déficit en la capacidad de reactividad rápida y falta de rigidez (stiffness) muscular (Tiempo de Contacto prolongado: ${rContact.value} ms, Rebound RSI: ${rRsi.value}). El deportista absorbe excesivamente la fuerza en lugar de devolverla elásticamente de forma veloz. Se prescribe entrenamiento de pliometría de contacto corto (tobillos rígidos, saltos repetidos sobre vallas bajas, skipping reactivo) y saltos continuos buscando minimizar el tiempo en el suelo.`
+                  ) : rContact.value <= 250 && rRsi.value < 2.0 ? (
+                    `Tiempo de contacto adecuado (${rContact.value} ms) pero con baja transferencia de energía vertical (Rebound RSI bajo: ${rRsi.value}). El atleta es rápido al despegar del suelo pero no logra generar suficiente altura en el rebote (Tiempo de Vuelo corto: ${rFlight.value} ms). Se recomienda enfatizar la aplicación de fuerza concéntrica explosiva reactiva y saltos continuos cargados con el objetivo de elevar el centro de masas en menor tiempo.`
+                  ) : rContact.value > 250 && rRsi.value >= 2.0 ? (
+                    `Buena potencia de salto y RSI aceptable (${rRsi.value}), pero con un tiempo de contacto lento (${rContact.value} ms). Esto refleja que el deportista depende de un acoplamiento más prolongado (tipo pliometría lenta) para generar su altura. Se recomienda orientar el entrenamiento hacia el desarrollo del ciclo de estiramiento-acortamiento rápido con multisaltos rápidos en cajón y saltos pliométricos asistidos.`
+                  ) : (
+                    `Excelente índice de fuerza reactiva en rebote (RSI: ${rRsi.value}) con un tiempo de contacto óptimo (${rContact.value} ms) y gran rigidez (stiffness) de tobillo. El atleta disipa un mínimo de energía elástica y demuestra una óptima transmisión de fuerzas reactivas en apoyos veloces. Mantener la carga actual y priorizar la especificidad multidireccional del fútbol.`
+                  )}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 3. SPRINT Y ACELERACIÓN - VELOCIDAD */}
@@ -2763,6 +2855,35 @@ const AthleteHuella = ({
           <TachometerGauge {...getGaugeData('tiempo_20_30m', allSpeed, true, 'Tiempo 20-30m', 's', 'stroke-fuchsia-600', 'text-fuchsia-600', 3.0)} />
           <TachometerGauge {...getGaugeData('tiempo_total', allSpeed, true, 'Tiempo Total', 's', 'stroke-pink-600', 'text-pink-600', 6.0)} />
         </div>
+
+        {(() => {
+          const s10 = getGaugeData('tiempo_10m', allSpeed, true, 'Tiempo 10m', 's', 'stroke-blue-600', 'text-blue-600', 3.0);
+          const sTotal = getGaugeData('tiempo_total', allSpeed, true, 'Tiempo Total', 's', 'stroke-pink-600', 'text-pink-600', 6.0);
+
+          if (s10.value === 0 && sTotal.value === 0) return null;
+
+          return (
+            <div className="bg-blue-50 rounded-3xl p-6 border border-blue-100 flex items-start gap-4 mt-6">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+                <i className="fa-solid fa-gauge-high text-sm"></i>
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Velocidad & Sprint Lineal</h4>
+                <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                  {s10.value > 1.80 && sTotal.value > 4.25 ? (
+                    `Déficit combinado en fase de aceleración inicial (${s10.value} s) y velocidad máxima (${sTotal.value} s). El jugador presenta debilidad en la aplicación de fuerza horizontal inicial y un perfil ineficiente de zancada. Se prescribe un bloque prioritario de fuerza máxima (empujes de trineo pesados) para mejorar la tracción de los primeros apoyos, junto con drills técnicos de sprint acelerado y arrastres resistidos ligeros.`
+                  ) : s10.value > 1.80 && sTotal.value <= 4.25 ? (
+                    `Déficit selectivo en aceleración inicial de 10m (${s10.value} s) pero con una óptima velocidad máxima de transición final (${sTotal.value} s). El atleta carece de la fuerza explosiva concéntrica o la proyección de ángulo bajo para la fase de aceleración de arranque. Se recomienda prescribir salidas de tres puntos, empujes/salidas resistidas pesadas (sled pushes a >50% peso corporal), y saltos horizontales de potencia para potenciar el impulso de los primeros 3 a 5 apoyos.`
+                  ) : s10.value <= 1.80 && sTotal.value > 4.25 ? (
+                    `Excelente aceleración inicial en 10m (${s10.value} s) pero con una pérdida notable de rendimiento en la velocidad máxima de transición final (${sTotal.value} s). El atleta tiene un potente arranque inicial pero decae rápidamente o muestra ineficiencia técnica en su postura erguida (zancada acortada o deficiente stiffness en apoyos). Se aconseja priorizar drills de velocidad máxima (flying sprints de 10-20m con entrada lanzada), sprints asistidos ligeros para sobrevelocidad, y pliometría de tobillo muy rápida.`
+                  ) : (
+                    `Perfil de sprint lineal excepcional. Posee una salida explosiva y reactiva en 10m (${s10.value} s) y una capacidad soberbia para mantener y desarrollar la velocidad máxima terminal (${sTotal.value} s). Se prescribe entrenamiento de mantenimiento con sprints específicos de fútbol con cambios de dirección o fatiga acumulada simulada, y fortalecimiento excéntrico del isquiotibial (ejercicio nórdico) para prevención de lesiones.`
+                  )}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 4. CAPACIDAD AERÓBICA - VO2 MÁX */}
@@ -2773,7 +2894,7 @@ const AthleteHuella = ({
           </div>
           <div>
             <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
-              Evaluación Aeróbica - VO2 Máx
+              Evaluación Aeróbica (UNCATEST) - VO2 Máx
             </h3>
             <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
               Consumo máximo de oxígeno, velocidad de umbral anaeróbico y potencia aeróbica
@@ -2783,10 +2904,41 @@ const AthleteHuella = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
           <TachometerGauge {...getGaugeData('vo2_max', allVo2, false, 'Consumo de Oxígeno', 'ml/kg/min', 'stroke-purple-600', 'text-purple-600', 80)} />
           <TachometerGauge {...getGaugeData('vam', allVo2, false, 'VMA', 'km/h', 'stroke-fuchsia-600', 'text-fuchsia-600', 25)} />
-          <TachometerGauge {...getGaugeData('fc_max', allVo2, false, 'FC Máxima', 'bpm', 'stroke-rose-600', 'text-rose-600', 220)} />
+          <TachometerGauge {...getGaugeData('vt1_vel', allVo2, false, 'VT1 Vel', 'km/h', 'stroke-rose-600', 'text-rose-600', 25)} />
           <TachometerGauge {...getGaugeData('mts', allVo2, false, 'Distancia', 'm', 'stroke-emerald-600', 'text-emerald-600', 3000)} />
-          <TachometerGauge {...getGaugeData('vt2_fc', allVo2, false, 'VT2 FC', 'bpm', 'stroke-amber-600', 'text-amber-600', 200)} />
+          <TachometerGauge {...getGaugeData('vt2_vel', allVo2, false, 'VT2 Vel', 'km/h', 'stroke-amber-600', 'text-amber-600', 25)} />
         </div>
+
+        {(() => {
+          const vMax = getGaugeData('vo2_max', allVo2, false, 'Consumo de Oxígeno', 'ml/kg/min', 'stroke-purple-600', 'text-purple-600', 80);
+          const vVam = getGaugeData('vam', allVo2, false, 'VMA', 'km/h', 'stroke-fuchsia-600', 'text-fuchsia-600', 25);
+          const vVt1 = getGaugeData('vt1_vel', allVo2, false, 'VT1 Vel', 'km/h', 'stroke-rose-600', 'text-rose-600', 25);
+          const vVt2 = getGaugeData('vt2_vel', allVo2, false, 'VT2 Vel', 'km/h', 'stroke-amber-600', 'text-amber-600', 25);
+
+          if (vMax.value === 0 && vVam.value === 0) return null;
+
+          return (
+            <div className="bg-purple-50 rounded-3xl p-6 border border-purple-100 flex items-start gap-4 mt-6">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 shrink-0">
+                <i className="fa-solid fa-heart-pulse text-sm"></i>
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Capacidad Aeróbica (UNCATEST)</h4>
+                <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                  {vMax.value < 58 && vVt2.value < 13.5 ? (
+                    `Déficit combinado de potencia aeróbica máxima (VO2 Máx: ${vMax.value} ml/kg/min) y capacidad de umbral (VT2: ${vVt2.value} km/h). El jugador presenta limitaciones tanto en su motor aeróbico absoluto como en su tolerancia al lactato. Se prescribe entrenamiento de intervalos de alta intensidad (HIIT largo/corto, e.g., 4x4 min al 90-95% FC Máx) para forzar adaptaciones centrales, alternando con carrera continua extensiva.`
+                  ) : vMax.value >= 58 && vVt2.value < 13.5 ? (
+                    `Techo aeróbico óptimo (VO2 Máx: ${vMax.value} ml/kg/min) pero con baja eficiencia metabólica de umbral anaeróbico (VT2 bajo: ${vVt2.value} km/h). El jugador tiene un excelente motor absoluto, pero acumula lactato prematuramente a velocidades moderadas. Se prescribe entrenamiento de fraccionados de umbral (Tempo runs, 3x10 min al VT2 o ligeramente superior) para desplazar la curva metabólica y mejorar el aclaramiento de lactato.`
+                  ) : vMax.value < 58 && vVt2.value >= 13.5 ? (
+                    `Excelente eficiencia de umbral (VT2 óptimo: ${vVt2.value} km/h) pero con un techo de potencia aeróbica limitado (VO2 Máx: ${vMax.value} ml/kg/min). El jugador está muy bien optimizado metabólicamente pero necesita empujar su límite superior absoluto. Se recomienda priorizar pasadas de corta duración a alta intensidad (intervalos VMA, e.g., 30s-30s a >100% VMA de ${vVam.value} km/h) y entrenamiento intermitente neuromuscular.`
+                  ) : (
+                    `Perfil aeróbico sobresaliente en el test UNCATEST. Presenta una elevada potencia aeróbica absoluta (VO2 Máx: ${vMax.value} ml/kg/min) y una alta velocidad de umbral anaeróbico (VT2: ${vVt2.value} km/h). Posee una excelente recuperación intermitente metabólica. Se prescribe mantener el volumen actual de acondicionamiento y priorizar la transferencia a situaciones reales de juego mediante juegos reducidos (Small Sided Games) de alta exigencia táctica.`
+                  )}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 5. AGILIDAD Y COD - TEST 505 */}
@@ -2811,6 +2963,35 @@ const AthleteHuella = ({
           <TachometerGauge {...getGaugeData('t_reacel_1_2m', allTest505, true, '505 T. Reacel 1 2m', 's', 'stroke-yellow-500', 'text-yellow-500', 5.0)} />
           <TachometerGauge {...getGaugeData('z_score_acel', allTest505, false, '505 Z-Score Acel', '', 'stroke-lime-600', 'text-lime-600', 5.0)} />
         </div>
+
+        {(() => {
+          const tDesacel = getGaugeData('t_desacel_2m', allTest505, true, '505 T. Desacel 2m', 's', 'stroke-amber-500', 'text-amber-500', 5.0);
+          const tCod = getGaugeData('t_cod_2m', allTest505, true, '505 T. COD 2m', 's', 'stroke-red-500', 'text-red-500', 5.0);
+
+          if (tDesacel.value === 0 && tCod.value === 0) return null;
+
+          return (
+            <div className="bg-orange-50 rounded-3xl p-6 border border-orange-100 flex items-start gap-4 mt-6">
+              <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600 shrink-0">
+                <i className="fa-solid fa-person-running text-sm"></i>
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Cambio de Dirección (Test 505)</h4>
+                <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+                  {tDesacel.value > 0.55 && tCod.value > 0.55 ? (
+                    `Déficit crítico tanto en la fase de desaceleración previa (${tDesacel.value} s) como en el tiempo neto de giro/cambio de dirección (${tCod.value} s). El atleta presenta dificultades para absorber la energía cinética en frenados excéntricos y reorientar el cuerpo eficientemente. Se prescribe un bloque priorizado de fuerza excéntrica (sentadillas excéntricas, caídas desde cajón bilaterales y unilaterales) y drills técnicos de frenado y desaceleración controlada a distancias progresivas.`
+                  ) : tDesacel.value > 0.55 && tCod.value <= 0.55 ? (
+                    `Déficit selectivo en la fase de desaceleración (${tDesacel.value} s) pero con un tiempo eficiente de giro/COD (${tCod.value} s). Esto indica que el deportista es capaz de girar rápido, pero carece de la fuerza excéntrica para frenar de manera segura y controlada con pocos apoyos. Se recomienda entrenar la fuerza de frenado mediante entrenamiento excéntrico acentuado y drills de desaceleración lineal y angular a intensidades crecientes.`
+                  ) : tDesacel.value <= 0.55 && tCod.value > 0.55 ? (
+                    `Excelente capacidad de desaceleración previa (${tDesacel.value} s) pero con lentitud en el tiempo neto de giro/COD (${tCod.value} s). El atleta frena de manera eficiente pero pierde fluidez y momentum al reorientar su cuerpo y centro de masa. Se aconseja priorizar drills técnicos de cambio de dirección cerrado, rotaciones de cadera, drills de agilidad de baja a alta velocidad, y pliometría multidireccional con énfasis en empuje lateral inmediato.`
+                  ) : (
+                    `Perfil de cambio de dirección excepcional en el test 505. Presenta una transición fluida y veloz en la desaceleración (${tDesacel.value} s) y un giro sumamente reactivo y eficiente (${tCod.value} s). Demuestra un óptimo equilibrio entre fuerza excéntrica de frenado y potencia concéntrica de salida lateral. Se prescribe mantener la carga actual de agilidad, incorporando toma de decisiones reactiva y estresores específicos de juego en fatiga.`
+                  )}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
 
@@ -3858,9 +4039,9 @@ const IndividualDashboard = ({
       const metricsList = [
         { key: 'vo2_max', label: 'VO2 Max', value: d.vo2_max, unit: 'ml/kg/min' },
         { key: 'vam', label: 'VMA', value: d.vam, unit: 'km/h' },
-        { key: 'fc_max', label: 'FC Máxima', value: d.fc_max, unit: 'bpm' },
+        { key: 'vt1_vel', label: 'VT1 Vel', value: d.vt1_vel, unit: 'km/h' },
         { key: 'mts', label: 'Distancia VO2', value: d.mts, unit: 'm' },
-        { key: 'vt2_fc', label: 'VT2 FC', value: d.vt2_fc, unit: 'bpm' }
+        { key: 'vt2_vel', label: 'VT2 Vel', value: d.vt2_vel, unit: 'km/h' }
       ].map(m => ({ ...m, value: m.value !== undefined ? Number(m.value) : NaN }))
        .filter(m => !isNaN(m.value) && m.value > 0);
 
@@ -5533,7 +5714,7 @@ const SquadAnalytics = ({
       {/* 5. EVALUACIÓN AERÓBICA - VO2 MÁX */}
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Evaluación Aeróbica - VO2 Máx</h3>
+          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Evaluación Aeróbica (UNCATEST) - VO2 Máx</h3>
           <div className="h-px flex-1 bg-slate-100"></div>
         </div>
         <div className="grid grid-cols-1 gap-8">

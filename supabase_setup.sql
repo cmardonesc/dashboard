@@ -832,5 +832,13 @@ alter table public.gps_planificaciones enable row level security;
 drop policy if exists "Enable all access for gps_planificaciones" on public.gps_planificaciones;
 create policy "Enable all access for gps_planificaciones" on public.gps_planificaciones for all using (true) with check (true);
 
+-- =========================================================================
+-- MIGRACIÓN CLÍNICA: Gestión Avanzada de Lesionados (Lugar Rehab, Procedimientos, Actualizaciones)
+-- =========================================================================
+ALTER TABLE public.lesionados ADD COLUMN IF NOT EXISTS lugar_rehabilitacion text DEFAULT 'CLUB';
+ALTER TABLE public.lesionados ADD COLUMN IF NOT EXISTS procedimientos jsonb DEFAULT '[]'::jsonb;
+ALTER TABLE public.lesionados ADD COLUMN IF NOT EXISTS actualizaciones_medicas jsonb DEFAULT '[]'::jsonb;
+
+
 
 
