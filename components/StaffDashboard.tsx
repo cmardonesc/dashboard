@@ -27,6 +27,7 @@ import PronosticoCargas from './PronosticoCargas'
 import ClubDashboard from './ClubDashboard'
 import PlayerProfileArea from './PlayerProfileArea'
 import DinamicasArea from './DinamicasArea'
+import FisicaGimnasioArea from './FisicaGimnasioArea'
 import { logActivity } from '../lib/activityLogger'
 import { getPerformanceInsights, getWeatherForecast, queryCoachAssistant, WeatherData } from '../services/geminiService'
 import { AreaChart, Area, XAxis, ResponsiveContainer, Tooltip, BarChart, Bar, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
@@ -404,7 +405,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   }, [pendingCheckins, selectedCategoryId]);
 
   const filteredSoreness = useMemo(() => {
-    const list = discomfortReports.filter(w => (w.soreness !== undefined && w.soreness < 5) || (w.soreness_areas && w.soreness_areas.length > 0));
+    const list = discomfortReports.filter(w => w.soreness_areas && w.soreness_areas.length > 0);
     return selectedCategoryId ? list.filter(w => w.players?.category_id === selectedCategoryId) : list;
   }, [discomfortReports, selectedCategoryId]);
 
@@ -838,7 +839,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
                       </p>
                       <div className="flex items-center gap-2">
                         <p className="text-[8px] font-bold text-red-600 uppercase tracking-widest">
-                          {`Estado: ${w.soreness}/5 • ${w.soreness_areas?.join(', ') || 'Sin áreas'}`}
+                          {`Estado: ${w.soreness_areas?.join(' • ')}`}
                         </p>
                         <ClubBadge clubName={w.players?.club} idClub={w.players?.id_club} clubs={clubs} logoSize="w-3 h-3" className="text-[8px] font-bold text-red-600 uppercase tracking-widest" />
                       </div>
@@ -1376,6 +1377,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         return <NutricionResumenGrupal performanceRecords={performanceRecords} userRole={userRole} userClub={userClub} clubs={clubs} />;
       case 'fisica_resumen_grupal':
         return <FisicaResumenGrupal userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
+      case 'fisica_gimnasio':
+        return <FisicaGimnasioArea clubs={clubs} userRole={userRole} userClub={userClub} userClubId={userClubId} />;
       case 'nutricion_comparativo':
       case 'nutricion_individual':
         return <NutricionArea performanceRecords={performanceRecords} players={players || performanceRecords.map(r => r.player)} initialTab="individual" userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;

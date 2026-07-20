@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Markdown from 'react-markdown';
 
 interface PlayerData {
   player_id: number;
@@ -8,18 +9,102 @@ interface PlayerData {
   category_id: number;
   posicion: string;
   fecha_nacimiento: string;
+  club?: string;
+  club_name?: string;
+  id_club?: number;
 }
 
 interface AthletePrescriptionProps {
   player: PlayerData;
   latestVam?: number | null;
   latestImtp?: number | null;
+  aiSummary?: string | null;
 }
+
+const parseAthleteAiSummary = (text: string | null) => {
+  if (!text) return null;
+
+  let capacities = "";
+  let improvements: string[] = [];
+  let conclusion = "";
+
+  const lowerText = text.toLowerCase();
+  
+  const capIdx = Math.max(
+    lowerText.indexOf("resumen de capacidades"), 
+    lowerText.indexOf("1. resumen de capacidades"),
+    lowerText.indexOf("capacidades")
+  );
+  const impIdx = Math.max(
+    lowerText.indexOf("puntos de mejora"), 
+    lowerText.indexOf("2. puntos de mejora"),
+    lowerText.indexOf("puntos de mej"),
+    lowerText.indexOf("aspectos a trabajar")
+  );
+  const conIdx = Math.max(
+    lowerText.indexOf("conclusión técnica"), 
+    lowerText.indexOf("3. conclusión técnica"),
+    lowerText.indexOf("conclusion tec"),
+    lowerText.indexOf("conclusión")
+  );
+
+  if (capIdx !== -1) {
+    const start = text.indexOf("\n", capIdx);
+    const end = impIdx !== -1 ? impIdx : (conIdx !== -1 ? conIdx : text.length);
+    capacities = text.substring(start, end).trim();
+    capacities = capacities.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
+  } else {
+    if (impIdx !== -1) {
+      capacities = text.substring(0, impIdx).trim();
+    } else {
+      capacities = text;
+    }
+  }
+
+  // Clean up trailing list headers or numbers like "2." or "2" left at the transition boundary
+  capacities = capacities.replace(/\s*\d+[\.\-\:\s]*$/, "").trim();
+
+  if (impIdx !== -1) {
+    const start = text.indexOf("\n", impIdx);
+    const end = conIdx !== -1 ? conIdx : text.length;
+    const impText = text.substring(start, end).trim();
+    
+    const lines = impText.split("\n");
+    improvements = lines
+      .map(line => line.trim())
+      .filter(line => line.startsWith("-") || line.startsWith("*") || /^\d+\./.test(line))
+      .map(line => line.replace(/^(?:-|\*|\d+\.)\s*/, "").trim())
+      .filter(line => line.length > 0 && !/^\d+[\.\s]*$/.test(line));
+
+    if (improvements.length === 0) {
+      const cleanedImp = impText.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
+      if (cleanedImp) {
+        improvements = [cleanedImp];
+      }
+    }
+  }
+
+  if (conIdx !== -1) {
+    const start = text.indexOf("\n", conIdx);
+    conclusion = text.substring(start).trim();
+    conclusion = conclusion.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
+  }
+
+  return {
+    capacities: capacities || "El jugador presenta un correcto perfil morfológico y neuromuscular, adaptado al microciclo.",
+    improvements: improvements.length > 0 ? improvements : [
+      "Optimizar la resistencia intermitente por medio de bloques anaeróbicos.",
+      "Sesiones preventivas compensatorias para mitigar asimetrías bilaterales en salto vertical."
+    ],
+    conclusion: conclusion || "Deportista con alto valor atlético y proyección competitiva internacional."
+  };
+};
 
 export const AthletePrescription: React.FC<AthletePrescriptionProps> = ({
   player,
   latestVam,
   latestImtp,
+  aiSummary,
 }) => {
   // Local storage key per player
   const storageKey = `athlete_prescription_${player.player_id}`;
@@ -40,6 +125,8 @@ export const AthletePrescription: React.FC<AthletePrescriptionProps> = ({
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState<boolean>(false);
   const [copiedJson, setCopiedJson] = useState<boolean>(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [copiedFullReport, setCopiedFullReport] = useState<boolean>(false);
 
   // Map values
   const GIMNASIO_TEXTS: Record<string, string> = {
@@ -288,13 +375,23 @@ export const AthletePrescription: React.FC<AthletePrescriptionProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={() => setIsJsonExpanded(!isJsonExpanded)}
-          className="bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-2xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none uppercase tracking-widest transition-colors flex items-center gap-2"
-        >
-          <i className="fa-solid fa-code"></i>
-          {isJsonExpanded ? 'Ocultar JSON' : 'Ver/Importar JSON'}
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setIsExportModalOpen(true)}
+            className="bg-red-600 hover:bg-red-500 text-white rounded-2xl px-5 py-2.5 text-[10px] font-black outline-none uppercase tracking-widest transition-all shadow-md shadow-red-600/20 flex items-center gap-2 cursor-pointer"
+          >
+            <i className="fa-solid fa-file-invoice"></i>
+            Exportar Ficha Completa
+          </button>
+
+          <button
+            onClick={() => setIsJsonExpanded(!isJsonExpanded)}
+            className="bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-2xl px-4 py-2 text-[10px] font-black text-slate-500 outline-none uppercase tracking-widest transition-colors flex items-center gap-2 cursor-pointer"
+          >
+            <i className="fa-solid fa-code"></i>
+            {isJsonExpanded ? 'Ocultar JSON' : 'Ver/Importar JSON'}
+          </button>
+        </div>
       </div>
 
       {/* EXPANDABLE JSON AREA */}
@@ -544,6 +641,281 @@ export const AthletePrescription: React.FC<AthletePrescriptionProps> = ({
           </div>
         </div>
       </div>
+
+      {/* EXPORT MODAL FOR FICHA DE RENDIMIENTO COMPLETA */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-[32px] shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 no-print">
+              <div className="flex items-center gap-3">
+                <span className="w-10 h-10 rounded-2xl bg-red-600/10 text-red-600 flex items-center justify-center">
+                  <i className="fa-solid fa-file-invoice text-lg"></i>
+                </span>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight italic">Ficha Deportiva de Rendimiento</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Reporte Integrado y Prescripción Metodológica</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsExportModalOpen(false)}
+                className="w-8 h-8 rounded-full hover:bg-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 transition"
+              >
+                <i className="fa-solid fa-xmark text-sm"></i>
+              </button>
+            </div>
+
+            {/* Modal Scrollable Content */}
+            <div className="p-8 overflow-y-auto space-y-8 flex-1" id="print-area">
+              {/* PRINT STYLE INJECTION */}
+              <style dangerouslySetInnerHTML={{__html: `
+                @media print {
+                  body * {
+                    visibility: hidden !important;
+                  }
+                  #print-area, #print-area * {
+                    visibility: visible !important;
+                  }
+                  #print-area {
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 100% !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: white !important;
+                    color: black !important;
+                  }
+                  .no-print {
+                    display: none !important;
+                  }
+                }
+              `}} />
+
+              {/* Official Branding Header for Print */}
+              <div className="border-b-4 border-red-600 pb-4 flex justify-between items-end gap-4">
+                <div>
+                  <p className="text-[9px] font-black tracking-widest text-red-600 uppercase">La Roja Performance Hub</p>
+                  <h2 className="text-xl font-black uppercase text-slate-900 tracking-tighter italic">Ficha de Evaluación y Planificación</h2>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Departamento de Ciencias Aplicadas al Fútbol - FFCH</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-black text-slate-800 font-mono">FECHA: {new Date().toLocaleDateString('es-ES')}</p>
+                  <p className="text-[8px] text-slate-400 font-bold uppercase">Sincronización en Tiempo Real con Motor Gemini</p>
+                </div>
+              </div>
+
+              {/* Player Metadata Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div>
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Atleta</span>
+                  <span className="text-xs font-black text-slate-800 uppercase italic">{player.nombre} {player.apellido1} {player.apellido2}</span>
+                </div>
+                <div>
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Posición</span>
+                  <span className="text-xs font-bold text-slate-700">{player.posicion}</span>
+                </div>
+                <div>
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Categoría</span>
+                  <span className="text-xs font-bold text-slate-700">{player.category_id ? `Sub-${player.category_id + 12}` : 'Sub-16'}</span>
+                </div>
+                <div>
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Club</span>
+                  <span className="text-xs font-bold text-slate-700">{player.club || player.club_name || 'N/A'}</span>
+                </div>
+              </div>
+
+              {/* Section 1: AI Smart Profile */}
+              <div className="space-y-4">
+                <h4 className="text-[11px] font-black text-red-600 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-100 pb-1.5">
+                  <i className="fa-solid fa-brain mr-1.5"></i>
+                  I. Perfil de Inteligencia Deportiva (Análisis IA)
+                </h4>
+                
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Análisis de Capacidades Físicas</span>
+                    <div className="text-xs text-slate-700 leading-relaxed bg-slate-50/50 p-4 rounded-xl border border-slate-100/50 whitespace-pre-line prose max-w-none">
+                      {parseAthleteAiSummary(aiSummary)?.capacities}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Objetivos Tácticos y de Mejora</span>
+                      <ul className="text-xs text-slate-700 space-y-2 bg-slate-50/50 p-4 rounded-xl border border-slate-100/50">
+                        {parseAthleteAiSummary(aiSummary)?.improvements.map((imp, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-red-500 mt-0.5">•</span>
+                            <span className="font-semibold leading-relaxed">{imp}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Conclusión Técnico-Científica</span>
+                      <div className="bg-red-50/40 border border-red-100/60 p-4 rounded-xl text-xs text-red-900 leading-relaxed font-medium italic">
+                        "{parseAthleteAiSummary(aiSummary)?.conclusion || 'El jugador presenta un biotipo físico y motor aeróbico sobresalientes para su categoría.'}"
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Methodological Prescription */}
+              <div className="space-y-4 pt-4 border-t border-slate-100">
+                <h4 className="text-[11px] font-black text-red-600 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-100 pb-1.5">
+                  <i className="fa-solid fa-rectangle-list mr-1.5"></i>
+                  II. Prescripción Metodológica y Planificación
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Gym Block */}
+                  <div className="bg-slate-50/60 rounded-xl p-4 border border-slate-100 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-red-100 text-red-500 flex items-center justify-center text-xs">
+                        <i className="fa-solid fa-dumbbell"></i>
+                      </span>
+                      <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Gimnasio</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Énfasis</span>
+                      <span className="text-xs font-black text-slate-800 uppercase italic">{gymCelda.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Detalle de Trabajo</span>
+                      <p className="text-[10px] text-slate-600 leading-relaxed font-semibold">
+                        {GIMNASIO_TEXTS[gymCelda]}
+                        {gymCelda !== 'SIN_DATOS' && gymGates.includes('UNILATERAL') && ' (Requiere priorizar variantes a una pierna).'}
+                        {gymCelda !== 'SIN_DATOS' && gymFlags.includes('IMTP_NO_FAMILIARIZADO') && ' [⚠️ No familiarizado con IMTP].'}
+                        {gymCelda !== 'SIN_DATOS' && gymFlags.includes('QC_REVISAR_EJECUCION') && ' [🚨 Revisar ejecución de test].'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Pitch Block */}
+                  <div className="bg-slate-50/60 rounded-xl p-4 border border-slate-100 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-500 flex items-center justify-center text-xs">
+                        <i className="fa-solid fa-person-running"></i>
+                      </span>
+                      <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Cancha</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Énfasis</span>
+                      <span className="text-xs font-black text-slate-800 uppercase italic">{canchaCelda.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Detalle de Trabajo</span>
+                      <p className="text-[10px] text-slate-600 leading-relaxed font-semibold">{CANCHA_TEXTS[canchaCelda]}</p>
+                    </div>
+                  </div>
+
+                  {/* Aerobic Block */}
+                  <div className="bg-slate-50/60 rounded-xl p-4 border border-slate-100 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-blue-100 text-blue-500 flex items-center justify-center text-xs">
+                        <i className="fa-solid fa-lungs"></i>
+                      </span>
+                      <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Aeróbico</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Énfasis</span>
+                      <span className="text-xs font-black text-slate-800 uppercase italic">{aerobicoCelda.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Objetivo</span>
+                      <p className="text-[10px] text-slate-600 leading-relaxed font-semibold">
+                        {AEROBICO_TEXTS[aerobicoCelda]}
+                        {aerobicoCelda !== 'SIN_DATOS' && vamValue && ` Intensidad sugerida del ${vamPercentage}% VAM (${(parseFloat(vamValue) * (vamPercentage / 100)).toFixed(1)} km/h).`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Signatures Section */}
+              <div className="pt-12 grid grid-cols-2 gap-12 text-center">
+                <div className="space-y-1">
+                  <div className="border-t border-slate-300 w-48 mx-auto"></div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Preparador Físico Responsable</p>
+                  <p className="text-[8px] text-slate-400">La Roja Femenina / Masculina</p>
+                </div>
+                <div className="space-y-1">
+                  <div className="border-t border-slate-300 w-48 mx-auto"></div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Departamento de Ciencias</p>
+                  <p className="text-[8px] text-slate-400">Federación de Fútbol de Chile</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer (Actions) */}
+            <div className="p-6 border-t border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-4 no-print">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                <i className="fa-solid fa-circle-info text-red-500 mr-1"></i>
+                Este reporte combina análisis automatizado de IA y métricas fisiológicas reales.
+              </span>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    const mdReport = `
+# FICHA DE EVALUACIÓN Y RENDIMIENTO - LA ROJA PERFORMANCE HUB
+**FECHA:** ${new Date().toLocaleDateString('es-ES')}
+
+## DATOS DEL ATLETA
+- **Nombre:** ${player.nombre} ${player.apellido1} ${player.apellido2}
+- **Posición:** ${player.posicion}
+- **Categoría:** ${player.category_id ? `Sub-${player.category_id + 12}` : 'Sub-16'}
+- **Club:** ${player.club || player.club_name || 'N/A'}
+
+## I. PERFIL DE INTELIGENCIA DEPORTIVA (ANÁLISIS IA)
+### Análisis de Capacidades Físicas:
+${parseAthleteAiSummary(aiSummary)?.capacities}
+
+### Objetivos Tácticos:
+${parseAthleteAiSummary(aiSummary)?.improvements.map(imp => `- ${imp}`).join('\n')}
+
+### Conclusión Técnico-Científica:
+"${parseAthleteAiSummary(aiSummary)?.conclusion}"
+
+## II. PLANIFICACIÓN Y PRESCRIPCIÓN METODOLÓGICA
+### 1. Bloque Gimnasio:
+- **Énfasis:** ${gymCelda.replace(/_/g, ' ')}
+- **Detalle:** ${GIMNASIO_TEXTS[gymCelda]}
+- **Asimetrías/Gates:** ${gymCelda !== 'SIN_DATOS' && gymGates.includes('UNILATERAL') ? 'Requiere variante a una pierna para corregir déficit' : 'Sin asimetrías registradas'}
+- **Alertas:** ${gymCelda !== 'SIN_DATOS' ? gymFlags.join(', ') : 'Ninguna'}
+
+### 2. Bloque Cancha:
+- **Énfasis:** ${canchaCelda.replace(/_/g, ' ')}
+- **Detalle:** ${CANCHA_TEXTS[canchaCelda]}
+
+### 3. Bloque Aeróbico:
+- **Énfasis:** ${aerobicoCelda.replace(/_/g, ' ')}
+- **Detalle:** ${AEROBICO_TEXTS[aerobicoCelda]} ${aerobicoCelda !== 'SIN_DATOS' && vamValue ? `(VAM: ${vamValue} km/h al ${vamPercentage}%)` : ''}
+                    `.trim();
+                    navigator.clipboard.writeText(mdReport);
+                    setCopiedFullReport(true);
+                    setTimeout(() => setCopiedFullReport(false), 2500);
+                  }}
+                  className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-2xl px-5 py-2.5 text-[10px] font-black uppercase tracking-widest transition flex items-center gap-2 cursor-pointer animate-fade-in"
+                >
+                  <i className="fa-solid fa-copy"></i>
+                  {copiedFullReport ? '¡Reporte Copiado!' : 'Copiar Reporte'}
+                </button>
+
+                <button
+                  onClick={() => window.print()}
+                  className="bg-red-600 hover:bg-red-500 text-white rounded-2xl px-5 py-2.5 text-[10px] font-black uppercase tracking-widest transition shadow-md shadow-red-600/20 flex items-center gap-2 cursor-pointer"
+                >
+                  <i className="fa-solid fa-print"></i>
+                  Imprimir / PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -854,7 +854,7 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
     );
   };
 
-  // Export PDF Report with exact matches
+  // Export PDF Report with exact matches - 1 page per evaluation category
   const downloadPdfReport = () => {
     if (sortedFilteredData.length === 0) return;
 
@@ -870,108 +870,392 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
       const margin = 15;
       const pageWidth = doc.internal.pageSize.getWidth();
 
-      // Top Header
-      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.setLineWidth(1.5);
-      doc.line(margin, 10, pageWidth - margin, 10);
-      
-      doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-      doc.setLineWidth(0.5);
-      doc.line(margin, 11.5, pageWidth - margin, 11.5);
-
-      // Logo
-      const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
-      try {
-        doc.addImage(logoUrl, 'PNG', margin, 15, 18, 18);
-      } catch (e) {
-        console.warn("Could not add federation logo", e);
-      }
-
-      // Title
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(14);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text("LA ROJA PERFORMANCE HUB", 38, 22);
-
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 116, 139);
-      doc.text("REPORTE DE EVALUACIONES FÍSICAS GRUPALES (DEPARTAMENTO DE PREPARACIÓN FÍSICA)", 38, 27);
-
-      // Cards Grid
-      const imtpConfig = ALL_METRIC_CONFIGS[imtpMetric];
-      const cmjConfig = ALL_METRIC_CONFIGS[cmjMetric];
-      const speedConfig = ALL_METRIC_CONFIGS[speedMetric];
-      const vo2Config = ALL_METRIC_CONFIGS[vo2Metric];
-      const test505Config = ALL_METRIC_CONFIGS[test505Metric];
-
-      const cardWidth = 39;
-      const cardHeight = 16;
-      const cardY = 38;
-      const spacing = 5;
-
-      const cardData = [
-        { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
-        { title: `PROM. ${imtpConfig.label.toUpperCase()}`, val: `${statsAverages.avgImtp} ${imtpConfig.unit}` },
-        { title: `PROM. ${cmjConfig.label.toUpperCase()}`, val: `${statsAverages.avgCmj} ${cmjConfig.unit}` },
-        { title: `PROM. ${speedConfig.label.toUpperCase()}`, val: `${statsAverages.avgSpeed} ${speedConfig.unit}` },
-        { title: `PROM. ${vo2Config.label.toUpperCase()}`, val: `${statsAverages.avgVo2} ${vo2Config.unit}` },
-        { title: `PROM. ${test505Config.label.toUpperCase()}`, val: `${statsAverages.avgTest505} ${test505Config.unit}` },
+      // Definitions of the different sheets (pages) for each physical evaluation
+      const evalPages = [
+        {
+          id: 'cmj',
+          title: 'SALTABILIDAD Y POTENCIA (CMJ)',
+          headers: ['Jugador', 'Club', 'Posición', 'Peso', 'Alt. Salto', 'RSI Mod', 'Peak Pot. Rel.', 'Fuerza CMJ', 'Peak Power', 'Profundidad', 'Con. Dur.', 'Prescripción'],
+          metricMap: {
+            4: 'cmj_altura_salto_im',
+            5: 'cmj_rsi_mod',
+            6: 'cmj_peak_pot_relativa',
+            7: 'fuerza_cmj'
+          } as Record<number, string>,
+          getCards: () => [
+            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+            { title: 'PROM. ALTURA SALTO', val: `${getAverageForMetric('cmj_altura_salto_im')} cm` },
+            { title: 'PROM. RSI MOD', val: getAverageForMetric('cmj_rsi_mod') },
+            { title: 'PROM. PEAK POT. REL.', val: `${getAverageForMetric('cmj_peak_pot_relativa')} W/kg` },
+            { title: 'PROM. FUERZA CMJ', val: `${getAverageForMetric('fuerza_cmj')} N` },
+          ],
+          getRows: (data: any[]) => data.map(row => [
+            row.player_name || '-',
+            row.club_name || '-',
+            row.posicion || '-',
+            row.latestCmj?.bw_kg ? `${row.latestCmj.bw_kg} kg` : '-',
+            row.latestCmj?.cmj_altura_salto_im || row.cmj_altura_salto_im ? `${(row.latestCmj?.cmj_altura_salto_im || row.cmj_altura_salto_im).toFixed(1)} cm` : '-',
+            row.latestCmj?.cmj_rsi_mod || row.cmj_rsi_mod ? (row.latestCmj?.cmj_rsi_mod || row.cmj_rsi_mod).toFixed(2) : '-',
+            row.latestCmj?.cmj_peak_pot_relativa || row.cmj_peak_pot_relativa ? `${(row.latestCmj?.cmj_peak_pot_relativa || row.cmj_peak_pot_relativa).toFixed(1)} W/kg` : '-',
+            row.latestCmj?.fuerza_cmj || row.fuerza_cmj ? `${row.latestCmj?.fuerza_cmj || row.fuerza_cmj} N` : '-',
+            row.latestCmj?.peak_power_w ? `${row.latestCmj.peak_power_w} W` : '-',
+            row.latestCmj?.countermovement_depth_cm ? `${row.latestCmj.countermovement_depth_cm} cm` : '-',
+            row.latestCmj?.concentric_duration_ms ? `${row.latestCmj.concentric_duration_ms} ms` : '-',
+            getPlayerPrescription(row, 'cmj')
+          ]),
+          colStyles: {
+            0: { fontStyle: 'bold' as const, cellWidth: 35 },
+            1: { cellWidth: 20 },
+            2: { cellWidth: 20 },
+            3: { cellWidth: 12 },
+            4: { cellWidth: 15 },
+            5: { cellWidth: 14 },
+            6: { cellWidth: 16 },
+            7: { cellWidth: 16 },
+            8: { cellWidth: 15 },
+            9: { cellWidth: 16 },
+            10: { cellWidth: 14 },
+            11: { fontStyle: 'italic' as const, cellWidth: 70 }, // Prescription
+          }
+        },
+        {
+          id: 'imtp',
+          title: 'FUERZA MÁXIMA E ISOMÉTRICA (IMTP)',
+          headers: ['Jugador', 'Club', 'Posición', 'Peso', 'Fuerza Máxima', 'F. Relativa', 'Asimetría', 'Lado Débil', 'Force 50ms', 'Force 100ms', 'RFD 150ms', 'Prescripción'],
+          metricMap: {
+            4: 'imtp_fuerza_n',
+            5: 'imtp_f_relativa_n_kg',
+            6: 'imtp_asimetria'
+          } as Record<number, string>,
+          getCards: () => [
+            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+            { title: 'PROM. FUERZA MÁXIMA', val: `${getAverageForMetric('imtp_fuerza_n')} N` },
+            { title: 'PROM. F. RELATIVA', val: `${getAverageForMetric('imtp_f_relativa_n_kg')} N/kg` },
+            { title: 'PROM. ASIMETRÍA', val: `${getAverageForMetric('imtp_asimetria')}%` },
+            { title: 'PROM. RFD 150ms', val: `${getAverageForMetric('latestImtp.RFD - 150ms [N/s]') || getAverageForMetric('imtp_rfd_150ms')} N/s` },
+          ],
+          getRows: (data: any[]) => data.map(row => [
+            row.player_name || '-',
+            row.club_name || '-',
+            row.posicion || '-',
+            row.latestImtp?.peso || row.latestImtp?.['PESO (kg)'] ? `${row.latestImtp.peso || row.latestImtp['PESO (kg)']} kg` : '-',
+            row.latestImtp?.imtp_fuerza_n ? `${row.latestImtp.imtp_fuerza_n} N` : '-',
+            row.latestImtp?.imtp_f_relativa_n_kg ? `${row.latestImtp.imtp_f_relativa_n_kg} N/kg` : '-',
+            row.latestImtp?.imtp_asimetria !== undefined ? `${row.latestImtp.imtp_asimetria.toFixed(1)}%` : '-',
+            row.latestImtp?.imtp_debil || '-',
+            row.latestImtp?.['Force (Net of BW) at 50ms [N]'] ? `${row.latestImtp['Force (Net of BW) at 50ms [N]']} N` : '-',
+            row.latestImtp?.['Force (Net of BW) at 100ms [N]'] ? `${row.latestImtp['Force (Net of BW) at 100ms [N]']} N` : '-',
+            row.latestImtp?.['RFD - 150ms [N/s]'] ? `${row.latestImtp['RFD - 150ms [N/s]']} N/s` : '-',
+            getPlayerPrescription(row, 'imtp')
+          ]),
+          colStyles: {
+            0: { fontStyle: 'bold' as const, cellWidth: 35 },
+            1: { cellWidth: 20 },
+            2: { cellWidth: 20 },
+            3: { cellWidth: 12 },
+            4: { cellWidth: 18 },
+            5: { cellWidth: 16 },
+            6: { cellWidth: 15 },
+            7: { cellWidth: 14 },
+            8: { cellWidth: 16 },
+            9: { cellWidth: 16 },
+            10: { cellWidth: 18 },
+            11: { fontStyle: 'italic' as const, cellWidth: 65 }, // Prescription
+          }
+        },
+        {
+          id: 'rebound',
+          title: 'FUERZA REACTIVA Y CONTACTO (REBOUND)',
+          headers: ['Jugador', 'Club', 'Posición', 'Peso', 'Rebound RSI', 'Contact Time', 'Flight Time', 'Repeticiones', 'Prescripción'],
+          metricMap: {
+            4: 'rebound_rsi',
+            5: 'rebound_contact_time_ms',
+            6: 'rebound_flight_time_ms'
+          } as Record<number, string>,
+          getCards: () => [
+            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+            { title: 'PROM. REBOUND RSI', val: getAverageForMetric('rebound_rsi') },
+            { title: 'PROM. CONTACT TIME', val: `${getAverageForMetric('rebound_contact_time_ms')} ms` },
+            { title: 'PROM. FLIGHT TIME', val: `${getAverageForMetric('rebound_flight_time_ms')} ms` },
+          ],
+          getRows: (data: any[]) => data.map(row => [
+            row.player_name || '-',
+            row.club_name || '-',
+            row.posicion || '-',
+            row.latestRebound?.bw_kg ? `${row.latestRebound.bw_kg} kg` : '-',
+            row.latestRebound?.rebound_rsi || row.rebound_rsi ? (row.latestRebound?.rebound_rsi || row.rebound_rsi).toFixed(2) : '-',
+            row.latestRebound?.rebound_contact_time_ms || row.rebound_contact_time_ms ? `${row.latestRebound?.rebound_contact_time_ms || row.rebound_contact_time_ms} ms` : '-',
+            row.latestRebound?.rebound_flight_time_ms || row.rebound_flight_time_ms ? `${row.latestRebound?.rebound_flight_time_ms || row.rebound_flight_time_ms} ms` : '-',
+            row.latestRebound?.reps || '-',
+            getPlayerPrescription(row, 'rebound')
+          ]),
+          colStyles: {
+            0: { fontStyle: 'bold' as const, cellWidth: 40 },
+            1: { cellWidth: 25 },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 15 },
+            4: { cellWidth: 20 },
+            5: { cellWidth: 20 },
+            6: { cellWidth: 20 },
+            7: { cellWidth: 20 },
+            8: { fontStyle: 'italic' as const, cellWidth: 80 }, // Prescription
+          }
+        },
+        {
+          id: 'speed',
+          title: 'VELOCIDAD Y SPRINT LINEAL',
+          headers: ['Jugador', 'Club', 'Posición', 'Tiempo 10m', 'Velocidad 10m', 'Tiempo 10-20m', 'Tiempo 20-30m', 'Tiempo Total 30m', 'Prescripción'],
+          metricMap: {
+            3: 'tiempo_10m',
+            4: 'vel_10m',
+            5: 'tiempo_10_20m',
+            6: 'tiempo_20_30m',
+            7: 'tiempo_total'
+          } as Record<number, string>,
+          getCards: () => [
+            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+            { title: 'PROM. TIEMPO 10M', val: `${getAverageForMetric('tiempo_10m')} s` },
+            { title: 'PROM. VELOCIDAD 10M', val: `${getAverageForMetric('vel_10m')} m/s` },
+            { title: 'PROM. TIEMPO TOTAL 30M', val: `${getAverageForMetric('tiempo_total')} s` },
+          ],
+          getRows: (data: any[]) => data.map(row => [
+            row.player_name || '-',
+            row.club_name || '-',
+            row.posicion || '-',
+            row.latestSpeed?.tiempo_10m || row.tiempo_10m ? `${(row.latestSpeed?.tiempo_10m || row.tiempo_10m).toFixed(2)} s` : '-',
+            row.latestSpeed?.vel_10m || row.vel_10m ? `${(row.latestSpeed?.vel_10m || row.vel_10m).toFixed(2)} m/s` : '-',
+            row.latestSpeed?.tiempo_10_20m ? `${row.latestSpeed.tiempo_10_20m.toFixed(2)} s` : '-',
+            row.latestSpeed?.tiempo_20_30m ? `${row.latestSpeed.tiempo_20_30m.toFixed(2)} s` : '-',
+            row.latestSpeed?.tiempo_total || row.tiempo_total ? `${(row.latestSpeed?.tiempo_total || row.tiempo_total).toFixed(2)} s` : '-',
+            getPlayerPrescription(row, 'speed')
+          ]),
+          colStyles: {
+            0: { fontStyle: 'bold' as const, cellWidth: 40 },
+            1: { cellWidth: 25 },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 20 },
+            4: { cellWidth: 20 },
+            5: { cellWidth: 22 },
+            6: { cellWidth: 22 },
+            7: { cellWidth: 25 },
+            8: { fontStyle: 'italic' as const, cellWidth: 80 }, // Prescription
+          }
+        },
+        {
+          id: 'vo2',
+          title: 'CAPACIDAD AERÓBICA (VO2 MAX)',
+          headers: ['Jugador', 'Club', 'Posición', 'VO2 Max', 'VMA', 'FC Máxima', 'VT1 Vel', 'VT2 Vel', 'VT2 FC', 'Prescripción'],
+          metricMap: {
+            3: 'vo2_max',
+            4: 'vam',
+            5: 'fc_max',
+            8: 'vt2_fc'
+          } as Record<number, string>,
+          getCards: () => [
+            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+            { title: 'PROM. VO2 MAX', val: `${getAverageForMetric('vo2_max')} ml/kg/min` },
+            { title: 'PROM. VMA', val: `${getAverageForMetric('vam')} km/h` },
+            { title: 'PROM. FC MÁXIMA', val: `${getAverageForMetric('fc_max')} bpm` },
+          ],
+          getRows: (data: any[]) => data.map(row => [
+            row.player_name || '-',
+            row.club_name || '-',
+            row.posicion || '-',
+            row.latestVo2?.vo2_max || row.vo2_max ? `${(row.latestVo2?.vo2_max || row.vo2_max).toFixed(1)} ml/kg/min` : '-',
+            row.latestVo2?.vam || row.vam ? `${(row.latestVo2?.vam || row.vam).toFixed(1)} km/h` : '-',
+            row.latestVo2?.fc_max || row.fc_max ? `${row.latestVo2?.fc_max || row.fc_max} bpm` : '-',
+            row.latestVo2?.vt1_vel ? `${row.latestVo2.vt1_vel} km/h` : '-',
+            row.latestVo2?.vt2_vel ? `${row.latestVo2.vt2_vel} km/h` : '-',
+            row.latestVo2?.vt2_fc ? `${row.latestVo2.vt2_fc} bpm` : '-',
+            getPlayerPrescription(row, 'vo2')
+          ]),
+          colStyles: {
+            0: { fontStyle: 'bold' as const, cellWidth: 40 },
+            1: { cellWidth: 25 },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 22 },
+            4: { cellWidth: 16 },
+            5: { cellWidth: 16 },
+            6: { cellWidth: 15 },
+            7: { cellWidth: 15 },
+            8: { cellWidth: 15 },
+            9: { fontStyle: 'italic' as const, cellWidth: 75 }, // Prescription
+          }
+        },
+        {
+          id: 'antropometria',
+          title: 'ANTROPOMETRÍA Y COMPOSICIÓN CORPORAL',
+          headers: ['Jugador', 'Club', 'Posición', 'Masa Corporal', 'Talla', 'Talla Sentado', 'Masa Muscular', 'Masa Adiposa', 'Masa Ósea', 'Prescripción'],
+          metricMap: {
+            3: 'masa_corporal_kg',
+            6: 'masa_muscular_pct',
+            7: 'masa_adiposa_pct'
+          } as Record<number, string>,
+          getCards: () => [
+            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+            { title: 'PROM. MASA CORPORAL', val: `${getAverageForMetric('masa_corporal_kg')} kg` },
+            { title: 'PROM. MASA MUSCULAR', val: `${getAverageForMetric('masa_muscular_pct')}%` },
+            { title: 'PROM. MASA ADIPOSA', val: `${getAverageForMetric('masa_adiposa_pct')}%` },
+          ],
+          getRows: (data: any[]) => data.map(row => [
+            row.player_name || '-',
+            row.club_name || '-',
+            row.posicion || '-',
+            row.latestAntro?.masa_corporal_kg || row.masa_corporal_kg ? `${(row.latestAntro?.masa_corporal_kg || row.masa_corporal_kg).toFixed(1)} kg` : '-',
+            row.latestAntro?.talla_cm || row.talla_cm ? `${row.latestAntro?.talla_cm || row.talla_cm} cm` : '-',
+            row.latestAntro?.talla_sentada_cm || row.talla_sentada_cm ? `${row.latestAntro?.talla_sentada_cm || row.talla_sentada_cm} cm` : '-',
+            row.latestAntro?.masa_muscular_pct || row.masa_muscular_pct ? `${(row.latestAntro?.masa_muscular_pct || row.masa_muscular_pct).toFixed(1)}%` : '-',
+            row.latestAntro?.masa_adiposa_pct || row.masa_adiposa_pct ? `${(row.latestAntro?.masa_adiposa_pct || row.masa_adiposa_pct).toFixed(1)}%` : '-',
+            row.latestAntro?.masa_osea_pct || row.masa_osea_pct ? `${(row.latestAntro?.masa_osea_pct || row.masa_osea_pct).toFixed(1)}%` : '-',
+            getPlayerPrescription(row, 'antropometria')
+          ]),
+          colStyles: {
+            0: { fontStyle: 'bold' as const, cellWidth: 40 },
+            1: { cellWidth: 25 },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 20 },
+            4: { cellWidth: 15 },
+            5: { cellWidth: 18 },
+            6: { cellWidth: 20 },
+            7: { cellWidth: 20 },
+            8: { cellWidth: 15 },
+            9: { fontStyle: 'italic' as const, cellWidth: 68 }, // Prescription
+          }
+        },
+        {
+          id: 'test505',
+          title: 'AGILIDAD Y CAMBIO DE DIRECCIÓN (TEST 505)',
+          headers: ['Jugador', 'Club', 'Posición', 'T. Acel 2m', 'T. Desacel 2m', 'T. COD 2m', 'T. Reacel 1.2m', 'Z-Score Acel', 'Prescripción'],
+          metricMap: {
+            3: 't_acel_2m',
+            4: 't_desacel_2m',
+            5: 't_cod_2m',
+            6: 't_reacel_1_2m',
+            7: 'z_score_acel'
+          } as Record<number, string>,
+          getCards: () => [
+            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+            { title: 'PROM. T. ACEL 2M', val: `${getAverageForMetric('t_acel_2m')} s` },
+            { title: 'PROM. T. DESACEL 2M', val: `${getAverageForMetric('t_desacel_2m')} s` },
+            { title: 'PROM. T. COD 2M', val: `${getAverageForMetric('t_cod_2m')} s` },
+          ],
+          getRows: (data: any[]) => data.map(row => [
+            row.player_name || '-',
+            row.club_name || '-',
+            row.posicion || '-',
+            row.latestTest505?.t_acel_2m || row.t_acel_2m ? `${(row.latestTest505?.t_acel_2m || row.t_acel_2m).toFixed(2)} s` : '-',
+            row.latestTest505?.t_desacel_2m || row.t_desacel_2m ? `${(row.latestTest505?.t_desacel_2m || row.t_desacel_2m).toFixed(2)} s` : '-',
+            row.latestTest505?.t_cod_2m || row.t_cod_2m ? `${(row.latestTest505?.t_cod_2m || row.t_cod_2m).toFixed(2)} s` : '-',
+            row.latestTest505?.t_reacel_1_2m ? `${row.latestTest505.t_reacel_1_2m.toFixed(2)} s` : '-',
+            row.latestTest505?.z_score_acel !== undefined ? row.latestTest505.z_score_acel.toFixed(2) : '-',
+            getPlayerPrescription(row, 'test505')
+          ]),
+          colStyles: {
+            0: { fontStyle: 'bold' as const, cellWidth: 40 },
+            1: { cellWidth: 25 },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 20 },
+            4: { cellWidth: 20 },
+            5: { cellWidth: 20 },
+            6: { cellWidth: 22 },
+            7: { cellWidth: 20 },
+            8: { fontStyle: 'italic' as const, cellWidth: 75 }, // Prescription
+          }
+        },
       ];
 
-      cardData.forEach((card, idx) => {
-        const xPos = margin + idx * (cardWidth + spacing);
-        doc.setFillColor(248, 250, 252);
-        doc.roundedRect(xPos, cardY, cardWidth, cardHeight, 1.5, 1.5, 'F');
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.5);
-        doc.setTextColor(100, 116, 139);
-        doc.text(card.title, xPos + 2.5, cardY + 5);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
-        doc.setTextColor(11, 18, 32);
-        doc.text(card.val, xPos + 2.5, cardY + 11);
-      });
-
-      // Data Table setup
-      const tableHeaders = [
-        'Jugador', 
-        'Club', 
-        'Posición', 
-        'Categoría', 
-        `${imtpConfig.label} (${imtpConfig.unit})`, 
-        `${cmjConfig.label} (${cmjConfig.unit})`, 
-        `${speedConfig.label} (${speedConfig.unit})`, 
-        `${vo2Config.label} (${vo2Config.unit})`, 
-        `${test505Config.label} (${test505Config.unit})`
-      ];
-
-      const tableRows = sortedFilteredData.map(row => [
-        row.player_name,
-        row.club_name,
-        row.posicion,
-        row.anio,
-        row[imtpMetric] > 0 ? `${row[imtpMetric]} ${imtpConfig.unit}` : '-',
-        row[cmjMetric] > 0 ? `${row[cmjMetric]} ${cmjConfig.unit}` : '-',
-        row[speedMetric] > 0 ? `${row[speedMetric]} ${speedConfig.unit}` : '-',
-        row[vo2Metric] > 0 ? `${row[vo2Metric]} ${vo2Config.unit}` : '-',
-        row[test505Metric] > 0 ? `${row[test505Metric]} ${test505Config.unit}` : '-'
-      ]);
-
-      autoTable(doc, {
-        head: [tableHeaders],
-        body: tableRows,
-        startY: 60,
-        theme: 'striped',
-        styles: { fontSize: 8, cellPadding: 2.5, halign: 'center' },
-        headStyles: { fillColor: [11, 18, 32], textColor: [255, 255, 255], fontStyle: 'bold' },
-        columnStyles: {
-          0: { halign: 'left', fontStyle: 'bold', cellWidth: 40 },
-          1: { halign: 'left', cellWidth: 30 },
+      evalPages.forEach((page, pageIdx) => {
+        // If not the first page, insert a new page
+        if (pageIdx > 0) {
+          doc.addPage();
         }
+
+        // Top Header
+        doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.setLineWidth(1.5);
+        doc.line(margin, 10, pageWidth - margin, 10);
+        
+        doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+        doc.setLineWidth(0.5);
+        doc.line(margin, 11.5, pageWidth - margin, 11.5);
+
+        // Logo
+        const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+        try {
+          doc.addImage(logoUrl, 'PNG', margin, 15, 18, 18);
+        } catch (e) {
+          console.warn("Could not add federation logo", e);
+        }
+
+        // Title
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text("LA ROJA PERFORMANCE HUB", 38, 22);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 116, 139);
+        doc.text(`REPORTE DE EVALUACIONES FÍSICAS GRUPALES - ${page.title}`, 38, 27);
+
+        // Cards Grid for this specific evaluation page
+        const cards = page.getCards();
+        const cardWidth = 45;
+        const cardHeight = 16;
+        const cardY = 38;
+        const spacing = 5;
+
+        cards.forEach((card, idx) => {
+          const xPos = margin + idx * (cardWidth + spacing);
+          doc.setFillColor(248, 250, 252);
+          doc.roundedRect(xPos, cardY, cardWidth, cardHeight, 1.5, 1.5, 'F');
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(6);
+          doc.setTextColor(100, 116, 139);
+          doc.text(card.title, xPos + 2.5, cardY + 5);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8.5);
+          doc.setTextColor(11, 18, 32);
+          doc.text(card.val, xPos + 2.5, cardY + 11);
+        });
+
+        // Render the autoTable with exact data rows and columns, including custom threshold styles
+        autoTable(doc, {
+          head: [page.headers],
+          body: page.getRows(sortedFilteredData),
+          startY: 60,
+          theme: 'striped',
+          styles: { fontSize: 7.5, cellPadding: 2, halign: 'center', overflow: 'linebreak' },
+          headStyles: { fillColor: [11, 18, 32], textColor: [255, 255, 255], fontStyle: 'bold' },
+          columnStyles: page.colStyles,
+          didParseCell: (data) => {
+            if (data.section === 'body') {
+              const colIndex = data.column.index;
+              const metricMap = (page as any).metricMap;
+              if (metricMap && metricMap[colIndex]) {
+                const metricKey = metricMap[colIndex];
+                const originalRow = sortedFilteredData[data.row.index];
+                if (originalRow) {
+                  const val = originalRow[metricKey];
+                  const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS[metricKey]);
+                  if (status.label === 'Excelente') {
+                    data.cell.styles.fillColor = [209, 250, 229]; // emerald-100
+                    data.cell.styles.textColor = [0, 0, 0];
+                  } else if (status.label === 'Normal') {
+                    data.cell.styles.fillColor = [254, 243, 199]; // amber-100
+                    data.cell.styles.textColor = [0, 0, 0];
+                  } else if (status.label === 'Bajo') {
+                    data.cell.styles.fillColor = [255, 228, 230]; // rose-100
+                    data.cell.styles.textColor = [0, 0, 0];
+                  }
+                }
+              }
+            }
+          }
+        });
       });
 
-      doc.save(`Resumen_Grupal_Evaluaciones_Fisicas_${new Date().toISOString().split('T')[0]}.pdf`);
+      doc.save(`Reporte_Completo_Evaluaciones_Fisicas_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (err) {
       console.error("Error creating physical evaluation PDF:", err);
     }
@@ -1078,6 +1362,126 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
     }
   };
 
+  const getPlayerPrescription = (profile: any, tab: string): string => {
+    switch (tab) {
+      case 'cmj': {
+        const altura = profile.cmj_altura_salto_im || 0;
+        const rsi = profile.cmj_rsi_mod || 0;
+        const peakPowerRel = profile.cmj_peak_pot_relativa || 0;
+        
+        if (altura === 0 && rsi === 0 && peakPowerRel === 0) {
+          return "Sin datos vigentes para evaluar saltabilidad.";
+        }
+        if (altura < 31 || peakPowerRel < 50) {
+          return "Priorizar potencia concéntrica con cargas ligeras/moderadas, pliometría SSC lento y derivados olímpicos dinámicos.";
+        }
+        if (rsi < 0.45) {
+          return "Enfocar en pliometría elástica, stiffness y fuerza reactiva para mejorar la eficiencia del salto.";
+        }
+        return "Nivel óptimo. Mantener potencia, optimizar primer paso explosivo y transferencias dinámicas.";
+      }
+
+      case 'imtp': {
+        const fRel = profile.imtp_f_relativa_n_kg || 0;
+        const rfd = profile.latestImtp?.['RFD - 100ms [N/s]'] || profile.latestImtp?.['RFD a 100ms'] || profile.imtp_rfd_100ms || 0;
+        const asim = profile.imtp_asimetria || 0;
+
+        if (fRel === 0 && rfd === 0) {
+          return "Sin datos de fuerza isométrica IMTP para prescribir.";
+        }
+        if (asim > 10) {
+          const debilStr = profile.imtp_debil ? ` (lado débil: ${profile.imtp_debil})` : "";
+          return `Asimetría marcada (${asim.toFixed(1)}%). Corregir con trabajo de fuerza unilateral${debilStr} y balance posterior.`;
+        }
+        if (fRel < 28) {
+          return "Priorizar desarrollo de fuerza base mediante sobrecarga progresiva multiarticular pesada (>80% 1RM).";
+        }
+        if (rfd < 4000) {
+          return "Excelente fuerza pero lento. Entrenar velocidad de aplicación de fuerza con lanzamientos y saltos balísticos.";
+        }
+        return "Fuerza y transmisión neuronal sobresalientes. Mantener estímulos preventivos y transferencia multidireccional.";
+      }
+
+      case 'rebound': {
+        const rsi = profile.rebound_rsi || 0;
+        const ct = profile.rebound_contact_time_ms || 0;
+
+        if (rsi === 0 && ct === 0) {
+          return "Sin registros de fuerza reactiva en esta fecha.";
+        }
+        if (ct > 220 || rsi < 1.4) {
+          return "Stiffness de tobillo deficiente. Prescribir pogo jumps, rebotes rápidos y pliometría elástica unipodal de SSC rápido.";
+        }
+        return "Excelente rigidez elástica. Sostener volumen reactivo y añadir drop jumps intensivos con caídas altas.";
+      }
+
+      case 'speed': {
+        const t10 = profile.tiempo_10m || 0;
+        const tTotal = profile.tiempo_total || 0;
+
+        if (t10 === 0 && tTotal === 0) {
+          return "Sin datos de velocidad / sprint para prescribir.";
+        }
+        if (t10 > 1.85) {
+          return "Deficiencia en fase de aceleración inicial. Entrenar fuerza horizontal, empujes de trineo pesado y primer paso explosivo.";
+        }
+        if (tTotal > 4.3) {
+          return "Deficiente velocidad máxima. Realizar pasadas de velocidad máxima absoluta con recuperación completa y técnica de carrera.";
+        }
+        return "Perfil de velocidad lineal óptimo. Mantener estímulos de aceleración, frenado y agilidad específica en cancha.";
+      }
+
+      case 'vo2': {
+        const vo2 = profile.vo2_max || 0;
+        const vam = profile.vam || 0;
+
+        if (vo2 === 0 && vam === 0) {
+          return "Sin datos aeróbicos UNCATEST registrados.";
+        }
+        if (vo2 < 52 || vam < 15.5) {
+          return `Baja capacidad aeróbica. Prescribir bloques de HIIT intermitentes al 100-105% de su VAM (${vam ? vam.toFixed(1) : "15.0"} km/h) en cancha.`;
+        }
+        return "Excelente base aeróbica. Sostener volumen y entrenar tolerancia al lactato mediante driles de espacio reducido de alta densidad.";
+      }
+
+      case 'antropometria': {
+        const adiposa = profile.masa_adiposa_pct || 0;
+        const muscular = profile.masa_muscular_pct || 0;
+
+        if (adiposa === 0 && muscular === 0) {
+          return "Sin mediciones antropométricas vigentes.";
+        }
+        if (adiposa > 11.5) {
+          return `Porcentaje adiposo elevado (${adiposa.toFixed(1)}%). Recomponer mediante entrenamiento de fuerza e intervención nutricional hipocalórica.`;
+        }
+        if (muscular < 46) {
+          return `Masa muscular mejorable (${muscular.toFixed(1)}%). Plan nutricional hipertrófico y sobrecarga mecánica estructural.`;
+        }
+        return "Composición corporal ideal para el rendimiento. Mantener balance calórico y periodización nutricional según cargas.";
+      }
+
+      case 'test505': {
+        const tCod = profile.t_cod_2m || 0;
+        const tDesacel = profile.t_desacel_2m || 0;
+        const tReacel = profile.t_reacel_1_2m || 0;
+
+        if (tCod === 0 && tDesacel === 0) {
+          return "Sin datos del Test 505 para prescribir.";
+        }
+        if (tDesacel > 2.25) {
+          return "Fase de frenado deficiente. Entrenar fuerza excéntrica en polea cónica y driles de desaceleración forzada en cancha.";
+        }
+        if (tReacel > 2.25) {
+          return "Fase de reaceleración lenta tras el giro. Driles de salida explosiva, uso de bandas elásticas y empuje horizontal.";
+        }
+        return "Óptimo control de cambio de dirección. Pulir ángulos de corte asimétricos y mantener técnica de centro de masas bajo.";
+      }
+
+      default:
+        return "-";
+    }
+  };
+
   const getTableColumns = (): TableColumn[] => {
     switch (evaluationTab) {
       case 'imtp':
@@ -1090,12 +1494,36 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
           {
             header: 'Fuerza Máxima',
             key: 'latestImtp.imtp_fuerza_n',
-            render: (p) => p.latestImtp?.imtp_fuerza_n ? `${p.latestImtp.imtp_fuerza_n} N` : '-'
+            render: (p) => {
+              const val = p.latestImtp?.imtp_fuerza_n || p.imtp_fuerza_n;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.imtp_fuerza_n);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val} N</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
           },
           {
             header: 'F. Relativa',
             key: 'latestImtp.imtp_f_relativa_n_kg',
-            render: (p) => p.latestImtp?.imtp_f_relativa_n_kg ? `${p.latestImtp.imtp_f_relativa_n_kg} N/kg` : '-'
+            render: (p) => {
+              const val = p.latestImtp?.imtp_f_relativa_n_kg || p.imtp_f_relativa_n_kg;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.imtp_f_relativa_n_kg);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} N/kg</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
           },
           {
             header: 'Asimetría',
@@ -1197,7 +1625,19 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
           {
             header: 'Fuerza CMJ (N)',
             key: 'latestCmj.fuerza_cmj',
-            render: (p) => p.latestCmj?.fuerza_cmj || p.fuerza_cmj || '-'
+            render: (p) => {
+              const val = p.latestCmj?.fuerza_cmj || p.fuerza_cmj;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.fuerza_cmj);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val} N</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
           },
           {
             header: 'Peak Power (W)',
@@ -1320,12 +1760,36 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
           {
             header: 'Tiempo 10-20m',
             key: 'latestSpeed.tiempo_10_20m',
-            render: (p) => p.latestSpeed?.tiempo_10_20m ? `${p.latestSpeed.tiempo_10_20m.toFixed(2)} s` : '-'
+            render: (p) => {
+              const val = p.latestSpeed?.tiempo_10_20m;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.tiempo_10_20m);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} s</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
           },
           {
             header: 'Tiempo 20-30m',
             key: 'latestSpeed.tiempo_20_30m',
-            render: (p) => p.latestSpeed?.tiempo_20_30m ? `${p.latestSpeed.tiempo_20_30m.toFixed(2)} s` : '-'
+            render: (p) => {
+              const val = p.latestSpeed?.tiempo_20_30m;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.tiempo_20_30m);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} s</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
           },
           {
             header: 'Tiempo Total 30m',
@@ -1412,7 +1876,19 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
           {
             header: 'VT2 FC',
             key: 'latestVo2.vt2_fc',
-            render: (p) => p.latestVo2?.vt2_fc ? `${p.latestVo2.vt2_fc} bpm` : '-'
+            render: (p) => {
+              const val = p.latestVo2?.vt2_fc;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.vt2_fc);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val} bpm</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
           }
         ];
 
@@ -1554,12 +2030,36 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
           {
             header: 'T. Reacel 1.2m',
             key: 'latestTest505.t_reacel_1_2m',
-            render: (p) => p.latestTest505?.t_reacel_1_2m ? `${p.latestTest505.t_reacel_1_2m.toFixed(2)} s` : '-'
+            render: (p) => {
+              const val = p.latestTest505?.t_reacel_1_2m;
+              if (!val) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.t_reacel_1_2m);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)} s</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
           },
           {
             header: 'Z-Score Acel',
             key: 'latestTest505.z_score_acel',
-            render: (p) => p.latestTest505?.z_score_acel !== undefined ? p.latestTest505.z_score_acel.toFixed(2) : '-'
+            render: (p) => {
+              const val = p.latestTest505?.z_score_acel;
+              if (val === undefined || val === null) return '-';
+              const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS.z_score_acel);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">{val.toFixed(2)}</span>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md border ${status.color}`}>
+                    {status.label}
+                  </span>
+                </div>
+              );
+            }
           }
         ];
 
@@ -2132,13 +2632,16 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                     </div>
                   </th>
                 ))}
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-wider select-none border-l border-slate-100 min-w-[280px]">
+                  Prescripción
+                </th>
               </tr>
             </thead>
             
             <tbody className="divide-y divide-slate-100 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-10">
+                  <td colSpan={15} className="text-center py-10">
                     <div className="flex items-center justify-center gap-2 text-slate-400">
                       <i className="fa-solid fa-spinner animate-spin text-lg text-red-500"></i>
                       <span>Cargando evaluaciones físicas...</span>
@@ -2147,7 +2650,7 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                 </tr>
               ) : sortedFilteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-12 text-slate-400 text-xs">
+                  <td colSpan={15} className="text-center py-12 text-slate-400 text-xs">
                     Ninguna evaluación física coincide con los filtros de búsqueda establecidos.
                   </td>
                 </tr>
@@ -2186,6 +2689,12 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                           {col.render(profile)}
                         </td>
                       ))}
+                      <td className="px-6 py-4 text-xs font-medium text-slate-600 border-l border-slate-100 max-w-[320px] whitespace-normal leading-normal">
+                        <div className="flex items-start gap-1.5">
+                          <i className="fa-solid fa-clipboard-check text-red-500 mt-0.5 shrink-0 text-xs"></i>
+                          <span>{getPlayerPrescription(profile, evaluationTab)}</span>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })

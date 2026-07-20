@@ -404,7 +404,7 @@ export default function PronosticoCargas({
 
   // Helper to retrieve recommended range for a specific day and metric
   const getRecommendation = (dayIdx: number, metricId: string) => {
-    const intensity = dayIntensities[dayIdx] || 'Media';
+    const intensity = dayIntensities[`${dayIdx}_${metricId}`] || dayIntensities[dayIdx] || 'Media';
 
     // If we have calculated references and confidence is NOT insufficient, use calculated
     if (
@@ -882,11 +882,25 @@ export default function PronosticoCargas({
     loadData();
   }, [selectedMicrocycle]);
 
-  // Handle individual day's intensity change
+  // Handle individual day's intensity change (updates overall day intensity and cascades to all metrics)
   const handleDayIntensityChange = (dayIdx: number, intensity: Intensity) => {
     if (!selectedMicrocycle) return;
     setDayIntensities(prev => {
       const updated = { ...prev, [dayIdx]: intensity };
+      METRICS.forEach(metric => {
+        updated[`${dayIdx}_${metric.id}`] = intensity;
+      });
+      const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
+      localStorage.setItem(intensitiesKey, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Handle individual metric intensity change
+  const handleMetricIntensityChange = (dayIdx: number, metricId: string, intensity: Intensity) => {
+    if (!selectedMicrocycle) return;
+    setDayIntensities(prev => {
+      const updated = { ...prev, [`${dayIdx}_${metricId}`]: intensity };
       const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
       localStorage.setItem(intensitiesKey, JSON.stringify(updated));
       return updated;
@@ -1339,6 +1353,34 @@ export default function PronosticoCargas({
                               <td className="px-8 py-5">
                                 <div className="font-black text-slate-900 text-sm uppercase tracking-tight">{metric.label}</div>
                                 <div className="text-slate-400 text-[9px] uppercase font-black tracking-widest mt-0.5">{metric.unit}</div>
+                                
+                                {/* Granular Target Intensity Filter */}
+                                <div className="mt-3 flex flex-col gap-1">
+                                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Intensidad Objetivo</span>
+                                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/50 gap-0.5 items-center w-fit">
+                                    {(['Baja', 'Media', 'Alta'] as const).map(tier => {
+                                      const isSelected = (dayIntensities[`${dIdx}_${metric.id}`] || dayIntensities[dIdx] || 'Media') === tier;
+                                      return (
+                                        <button
+                                          key={tier}
+                                          type="button"
+                                          onClick={() => handleMetricIntensityChange(dIdx, metric.id, tier)}
+                                          className={`px-2.5 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-all duration-150 ${
+                                            isSelected
+                                              ? tier === 'Baja'
+                                                ? 'bg-amber-500 text-white shadow-sm'
+                                                : tier === 'Media'
+                                                ? 'bg-emerald-600 text-white shadow-sm'
+                                                : 'bg-red-600 text-white shadow-sm'
+                                              : 'text-slate-500 hover:bg-slate-200 hover:text-slate-800'
+                                          }`}
+                                        >
+                                          {tier}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               </td>
 
                               {/* Recommended Range + Slider */}

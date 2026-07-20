@@ -1440,6 +1440,9 @@ const parseAthleteAiSummary = (text: string | null) => {
     }
   }
 
+  // Clean up trailing list headers or numbers like "2." or "2" left at the transition boundary
+  capacities = capacities.replace(/\s*\d+[\.\-\:\s]*$/, "").trim();
+
   // Parse Improvements
   if (impIdx !== -1) {
     const start = text.indexOf("\n", impIdx);
@@ -1450,7 +1453,8 @@ const parseAthleteAiSummary = (text: string | null) => {
     improvements = lines
       .map(line => line.trim())
       .filter(line => line.startsWith("-") || line.startsWith("*") || /^\d+\./.test(line))
-      .map(line => line.replace(/^(?:-|\*|\d+\.)\s*/, "").trim());
+      .map(line => line.replace(/^(?:-|\*|\d+\.)\s*/, "").trim())
+      .filter(line => line.length > 0 && !/^\d+[\.\s]*$/.test(line));
 
     if (improvements.length === 0) {
       const cleanedImp = impText.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
@@ -1552,9 +1556,6 @@ const AthleteHuella = ({
   const [generalProfileFilter, setGeneralProfileFilter] = useState<string>('all');
   const [generalProfileSearch, setGeneralProfileSearch] = useState<string>('');
   const [generalProfileSort, setGeneralProfileSort] = useState<'percentile-desc' | 'percentile-asc' | 'area'>('percentile-desc');
-
-  const generateAiSummary = async () => {};
-  const handleConsultAssistant = async (customQuery?: string) => {};
 
   // Pre-process antropometria and allAntro arrays to calculate IMO dynamically if empty or 0
   const processedAntro = useMemo(() => {
@@ -2037,6 +2038,180 @@ const AthleteHuella = ({
     ? Math.max(...processedAntro.map(d => Number(d.indice_imo)).filter(v => !isNaN(v) && v > 0))
     : 0;
   const bestAntroIndiceImo = bestAntroIndiceImoVal !== -Infinity && bestAntroIndiceImoVal > 0 ? bestAntroIndiceImoVal : 0;
+
+  const getPercentileLevel = (pct: number) => {
+    if (pct >= 90) return 'Elite';
+    if (pct >= 75) return 'Sobresaliente';
+    if (pct >= 45) return 'Promedio';
+    if (pct >= 20) return 'Bajo Promedio';
+    return 'Por Mejorar';
+  };
+
+  const getAiPayload = () => {
+    if (!player) return null;
+    const metricsPayload: Record<string, any> = {};
+
+    const addMetricToPayload = (metricKey: string, dataList: any[], lowerIsBetter: boolean, label: string, area: string) => {
+      const playerRows = (dataList || [])
+        .filter(d => Number(d.player_id) === Number(player?.player_id) && d[metricKey] != null && d[metricKey] !== '' && !isNaN(Number(d[metricKey])));
+      
+      if (playerRows.length === 0) {
+        metricsPayload[metricKey] = {
+          nombre_metrica: label,
+          estado_dato: "AUSENTE",
+          valor: null,
+          percentil: null,
+          v_benchmark_percentil: null,
+          nivel: null,
+          area: area
+        };
+        return;
+      }
+
+      const sortedPlayerRows = [...playerRows].sort((a, b) => {
+        const dateA = a.fecha_test ? new Date(a.fecha_test).getTime() : (a.fecha ? new Date(a.fecha).getTime() : 0);
+        const dateB = b.fecha_test ? new Date(b.fecha_test).getTime() : (b.fecha ? new Date(b.fecha).getTime() : 0);
+        return dateB - dateA;
+      });
+
+      const latestValue = Number(sortedPlayerRows[0][metricKey]);
+      if (latestValue <= 0 || isNaN(latestValue)) {
+        metricsPayload[metricKey] = {
+          nombre_metrica: label,
+          estado_dato: "AUSENTE",
+          valor: null,
+          percentil: null,
+          v_benchmark_percentil: null,
+          nivel: null,
+          area: area
+        };
+        return;
+      }
+
+      const percentile = calculatePercentile(latestValue, dataList, metricKey, lowerIsBetter);
+      const level = getPercentileLevel(percentile);
+
+      metricsPayload[metricKey] = {
+        nombre_metrica: label,
+        estado_dato: "MEDIDO",
+        valor: latestValue,
+        percentil: percentile,
+        v_benchmark_percentil: percentile,
+        nivel: level,
+        area: area
+      };
+    };
+
+    // Add all core physical metrics
+    addMetricToPayload('imtp_fuerza_n', allImtp, false, 'IMTP Fuerza Máxima', 'Fuerza Máxima');
+    addMetricToPayload('imtp_f_relativa_n_kg', allImtp, false, 'IMTP F. Relativa', 'Fuerza Máxima');
+    addMetricToPayload('imtp_force_50ms', allImtp, false, 'Fuerza Net a 50ms', 'Fuerza Máxima');
+    addMetricToPayload('imtp_rfd_100ms', allImtp, false, 'RFD a 100ms', 'Fuerza Máxima');
+
+    addMetricToPayload('concentric_peak_force_n', allImtp, false, 'Fuerza Pico Conc. CMJ', 'Potencia y Saltabilidad');
+    addMetricToPayload('rsi_modified_m_s', allImtp, false, 'CMJ RSI Modificado', 'Potencia y Saltabilidad');
+    addMetricToPayload('jump_height_impmom_cm', allImtp, false, 'Altura Salto (Imp-Mom)', 'Potencia y Saltabilidad');
+    addMetricToPayload('peak_power_bm_w_kg', allImtp, false, 'Pot. Pico Relativa CMJ', 'Potencia y Saltabilidad');
+    addMetricToPayload('peak_power_w', allImtp, false, 'Pot. Pico Absoluta CMJ', 'Potencia y Saltabilidad');
+
+    addMetricToPayload('rebound_rsi', allCmjRebound, false, 'Rebound RSI', 'Reactividad y Rebote');
+    addMetricToPayload('rebound_contact_time_ms', allCmjRebound, true, 'Tiempo Contacto Rebound', 'Reactividad y Rebote');
+    addMetricToPayload('rebound_flight_time_ms', allCmjRebound, false, 'Tiempo Vuelo Rebound', 'Reactividad y Rebote');
+    addMetricToPayload('take_off_momentum_kg_m_s', allCmjRebound, false, 'Momentum Despegue Rebound', 'Reactividad y Rebote');
+
+    addMetricToPayload('tiempo_10m', allSpeed, true, 'Tiempo Sprints 10m', 'Sprint y Aceleración');
+    addMetricToPayload('vel_10m', allSpeed, false, 'Velocidad Sprints 10m', 'Sprint y Aceleración');
+    addMetricToPayload('tiempo_10_20m', allSpeed, true, 'Tiempo Sprints 10-20m', 'Sprint y Aceleración');
+    addMetricToPayload('tiempo_20_30m', allSpeed, true, 'Tiempo Sprints 20-30m', 'Sprint y Aceleración');
+    addMetricToPayload('tiempo_total', allSpeed, true, 'Tiempo Sprints Total 30m', 'Sprint y Aceleración');
+
+    addMetricToPayload('vo2_max', allVo2, false, 'Consumo de Oxígeno VO2Max', 'Consumo de Oxígeno');
+    addMetricToPayload('vam', allVo2, false, 'Velocidad Aeróbica Máxima (VAM)', 'Consumo de Oxígeno');
+    addMetricToPayload('vt1_vel', allVo2, false, 'VT1 Velocidad', 'Consumo de Oxígeno');
+    addMetricToPayload('vt2_vel', allVo2, false, 'VT2 Velocidad', 'Consumo de Oxígeno');
+
+    addMetricToPayload('t_acel_2m', allTest505, true, '505 T. Acel 2m', 'Cambio de Dirección');
+    addMetricToPayload('t_desacel_2m', allTest505, true, '505 T. Desacel 2m', 'Cambio de Dirección');
+    addMetricToPayload('t_cod_2m', allTest505, true, '505 T. COD 2m', 'Cambio de Dirección');
+    addMetricToPayload('t_reacel_1_2m', allTest505, true, '505 T. Reacel 1 2m', 'Cambio de Dirección');
+
+    // Anthropometric metrics
+    const addAntroMetricToPayload = (val: number, pct: number, label: string) => {
+      if (val <= 0 || isNaN(val)) {
+        metricsPayload[label] = {
+          nombre_metrica: label,
+          estado_dato: "AUSENTE",
+          valor: null,
+          percentil: null,
+          v_benchmark_percentil: null,
+          nivel: null,
+          area: 'Antropometría'
+        };
+      } else {
+        metricsPayload[label] = {
+          nombre_metrica: label,
+          estado_dato: "MEDIDO",
+          valor: val,
+          percentil: pct,
+          v_benchmark_percentil: pct,
+          nivel: getPercentileLevel(pct),
+          area: 'Antropometría'
+        };
+      }
+    };
+
+    addAntroMetricToPayload(valMasaMuscularPct, pctMasaMuscularPct, '% Masa Muscular');
+    addAntroMetricToPayload(valMasaMuscularKg, pctMasaMuscularKg, 'Kg Masa Muscular');
+    addAntroMetricToPayload(valMasaAdiposaPct, pctMasaAdiposaPct, '% Masa Grasa');
+    addAntroMetricToPayload(valMasaAdiposaKg, pctMasaAdiposaKg, 'Kg Masa Grasa');
+    addAntroMetricToPayload(valSumPliegues6, pctSumPliegues6, '6 Pliegues');
+    addAntroMetricToPayload(valIndiceImo, pctIndiceImo, 'Índice IMO');
+
+    return metricsPayload;
+  };
+
+  const generateAiSummary = async () => {
+    if (!player) return;
+    setLoadingAi(true);
+    try {
+      const payload = getAiPayload();
+      const summary = await getAthleteFootprintSummary(player, payload);
+      setAiSummary(summary);
+    } catch (error) {
+      console.error("Error generating AI footprint summary:", error);
+    } finally {
+      setLoadingAi(false);
+    }
+  };
+
+  const handleConsultAssistant = async (customQuery?: string) => {
+    const query = customQuery || chatQuery;
+    if (!query.trim() || !player) return;
+
+    setChatSending(true);
+    const newHistory = [...chatHistory, { role: 'user' as const, text: query }];
+    setChatHistory(newHistory);
+    setChatQuery('');
+
+    try {
+      const payload = getAiPayload();
+      const response = await askAthleteAiAssistant(player, payload, query, chatHistory);
+      setChatHistory([...newHistory, { role: 'model' as const, text: response }]);
+    } catch (error) {
+      console.error("Error in AI assistant chat:", error);
+      setChatHistory([...newHistory, { role: 'model' as const, text: "Lo siento, ocurrió un error al consultar al asistente en vivo." }]);
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  useEffect(() => {
+    setAiSummary(null);
+    setChatHistory([]);
+    if (player) {
+      generateAiSummary();
+    }
+  }, [player]);
 
   const calculateCohortSD = (list: any[], key: string): number => {
     if (!list || list.length === 0) return 0;
@@ -3386,8 +3561,8 @@ const AthleteHuella = ({
         </div>
       </div>
 
-      {/* AI INSIGHTS BENTO - REMOVED */}
-      <div className="hidden">
+      {/* AI INSIGHTS BENTO - LIVE */}
+      <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="bg-[#0b1220] rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col min-h-[480px]">
           {/* Top Glowing Header bar */}
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-red-600 via-amber-500 to-red-600"></div>
@@ -3749,6 +3924,7 @@ const AthleteHuella = ({
             const sorted = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime());
             return sorted[0]?.imtp_fuerza_n || null;
           })()}
+          aiSummary={aiSummary}
         />
       )}
     </div>

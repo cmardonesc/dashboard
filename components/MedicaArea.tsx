@@ -20,7 +20,7 @@ interface MedicaAreaProps {
   clubs?: any[];
 }
 
-type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar' | 'medical_attention';
+type MedicaView = 'dashboard' | 'report_injury' | 'reintegro_gps' | 'calendar' | 'medical_attention' | 'microcycle_check';
 
 interface DailyReport {
   id: string;
@@ -157,6 +157,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   const [medicalUpdates, setMedicalUpdates] = useState<{ id: string; date: string; description: string }[]>([]);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [showDischargedHistory, setShowDischargedHistory] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState<{ id: string, name: string } | null>(null);
   const [showConfirmDeleteReport, setShowConfirmDeleteReport] = useState<{ id: string, name: string } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -180,6 +181,16 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [isPositionDropdownOpen, setIsPositionDropdownOpen] = useState(false);
   const [isClubDropdownOpen, setIsClubDropdownOpen] = useState(false);
+
+  // States for Microcycle Check
+  const [microcycles, setMicrocycles] = useState<any[]>([]);
+  const [selectedMicroId, setSelectedMicroId] = useState<string>('');
+  const [microPlayers, setMicroPlayers] = useState<any[]>([]);
+  const [playerChecks, setPlayerChecks] = useState<Record<number, { status: 'OK' | 'NO'; molestias: string }>>({});
+  const [loadingMicros, setLoadingMicros] = useState(false);
+  const [loadingMicroPlayers, setLoadingMicroPlayers] = useState(false);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('TODOS');
+  const [savingCheckin, setSavingCheckin] = useState(false);
 
   const formatStaffEmail = (email: string): string => {
     if (!email) return 'Staff';
@@ -215,6 +226,11 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
 
   const filteredInjuries = useMemo(() => {
     let result = [...dbInjuries];
+    if (showDischargedHistory) {
+      result = result.filter(i => !!i.fecha_alta);
+    } else {
+      result = result.filter(i => !i.fecha_alta);
+    }
     if (selectedCategoryId) {
       result = result.filter(i => i.category_id === selectedCategoryId);
     }
@@ -262,7 +278,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [dbInjuries, selectedCategoryId, sortField, sortDirection]);
+  }, [dbInjuries, selectedCategoryId, sortField, sortDirection, showDischargedHistory]);
 
   const handleToggleDate = (date: string) => {
     setSelectedDates(prev =>
@@ -507,12 +523,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     
     // Highlight disponibilidad
     doc.setFont("helvetica", "bold");
-    if (injury.disponibilidad.toLowerCase().includes('no')) {
+    const disponibilidadText = injury.disponibilidad || 'SÍ';
+    if (disponibilidadText.toLowerCase().includes('no')) {
       doc.setTextColor(220, 38, 38); // red
     } else {
       doc.setTextColor(5, 150, 105); // green
     }
-    doc.text(injury.disponibilidad.toUpperCase(), 62, sec3Y + 18);
+    doc.text(disponibilidadText.toUpperCase(), 62, sec3Y + 18);
     
     doc.setTextColor(26, 35, 51);
     doc.setFont("helvetica", "bold");
@@ -833,6 +850,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
   useEffect(() => {
     fetchInjuredPlayers();
     fetchDailyReports();
+    fetchMicrocycles();
 
     const fetchSessionUser = async () => {
       try {
@@ -952,6 +970,326 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       setHasSearched(false);
     }
   }, [searchTerm, performanceRecords, players, userRole, userClub, userClubId]);
+
+  useEffect(() => {
+    if (selectedMicroId) {
+      fetchPlayersForMicrocycle(selectedMicroId);
+    } else {
+      setMicroPlayers([]);
+    }
+  }, [selectedMicroId]);
+
+  const filteredMicrocyclesList = useMemo(() => {
+    if (selectedCategoryFilter === 'TODOS') return microcycles;
+    const catId = CATEGORY_ID_MAP[selectedCategoryFilter as Category];
+    return microcycles.filter(m => Number(m.category_id) === Number(catId));
+  }, [microcycles, selectedCategoryFilter]);
+
+  const fetchMicrocycles = async () => {
+    setLoadingMicros(true);
+    let dbFormatted: any[] = [];
+    try {
+      const { data, error } = await supabase
+        .from('microcycles')
+        .select('*')
+        .order('start_date', { ascending: false });
+      
+      if (!error && data) {
+        dbFormatted = data.map(m => ({
+          ...m,
+          nombre_display: `Microciclo #${m.micro_number || ''} - ${REVERSE_CATEGORY_ID_MAP[m.category_id] || `Sub-${m.category_id}`}`
+        }));
+      } else if (error) {
+        console.warn("Error fetching microcycles:", error);
+      }
+    } catch (err) {
+      console.error("Error loading microcycles:", err);
+    }
+
+    let localMicros: any[] = [];
+    try {
+      const storedLocal = localStorage.getItem('lr-performance-local-microcycles');
+      if (storedLocal) {
+        localMicros = JSON.parse(storedLocal).map((lm: any) => ({
+          ...lm,
+          nombre_display: `Microciclo #${lm.micro_number || ''} - ${REVERSE_CATEGORY_ID_MAP[lm.category_id] || `Sub-${lm.category_id}`} (Local)`
+        }));
+      }
+    } catch (e) {}
+
+    setMicrocycles([...localMicros, ...dbFormatted]);
+    setLoadingMicros(false);
+  };
+
+  const fetchPlayersForMicrocycle = async (microId: string) => {
+    setLoadingMicroPlayers(true);
+    try {
+      let playerIds: number[] = [];
+      const isLocal = String(microId).startsWith('-') || isNaN(Number(microId)) && !microId.match(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/);
+
+      if (isLocal) {
+        try {
+          const storedCit = localStorage.getItem(`lr-performance-local-citations-${microId}`);
+          if (storedCit) {
+            playerIds = JSON.parse(storedCit);
+          }
+        } catch (e) {
+          console.error("Error loading local microcycle citations:", e);
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('citaciones')
+          .select('player_id')
+          .eq('microcycle_id', microId);
+        
+        if (!error && data) {
+          playerIds = data.map(d => d.player_id);
+        } else if (error) {
+          console.warn("Error loading database citations for microcycle:", error);
+        }
+      }
+
+      await resolvePlayersDetails(playerIds, microId);
+    } catch (err) {
+      console.error("Error fetching players for microcycle:", err);
+    } finally {
+      setLoadingMicroPlayers(false);
+    }
+  };
+
+  const resolvePlayersDetails = async (playerIds: number[], microId: string) => {
+    if (playerIds.length === 0) {
+      setMicroPlayers([]);
+      setPlayerChecks({});
+      return;
+    }
+
+    const sourceList = (players && players.length > 0)
+      ? players
+      : performanceRecords.map(r => r.player).filter(Boolean);
+
+    const foundList: any[] = [];
+    const missingIds: number[] = [];
+
+    playerIds.forEach(id => {
+      const match = sourceList.find(p => p && p.player_id === id);
+      if (match) {
+        foundList.push({
+          player_id: match.player_id,
+          nombre: match.nombre || match.name?.split(' ')[0] || 'Jugador',
+          apellido1: match.apellido1 || match.name?.split(' ')[1] || '',
+          apellido2: match.apellido2 || '',
+          posicion: match.posicion || match.position || 'N/A',
+          club: match.club || match.club_name || '',
+          id_club: match.id_club,
+          anio: match.anio || match.year_of_birth || 0
+        });
+      } else {
+        missingIds.push(id);
+      }
+    });
+
+    if (missingIds.length > 0) {
+      try {
+        const { data, error } = await supabase
+          .from('players')
+          .select('player_id, nombre, apellido1, apellido2, posicion, anio, id_club')
+          .in('player_id', missingIds);
+
+        if (!error && data) {
+          data.forEach((p: any) => {
+            foundList.push({
+              player_id: p.player_id,
+              nombre: p.nombre,
+              apellido1: p.apellido1,
+              apellido2: p.apellido2 || '',
+              posicion: p.posicion || 'N/A',
+              club: p.club || p.club_name || '',
+              id_club: p.id_club,
+              anio: p.anio || 0
+            });
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching missing players details:", err);
+      }
+    }
+
+    const resolvedList = foundList.map(p => {
+      const dbClub = clubs?.find(c => Number(c.id_club) === Number(p.id_club) || Number(c.id) === Number(p.id_club));
+      return {
+        ...p,
+        club: dbClub?.nombre || p.club || (p.id_club ? `Club #${p.id_club}` : 'SIN CLUB')
+      };
+    });
+
+    setMicroPlayers(resolvedList);
+
+    const storedChecks = localStorage.getItem(`lr-medical-mc-check-${microId}`);
+    if (storedChecks) {
+      try {
+        setPlayerChecks(JSON.parse(storedChecks));
+      } catch (e) {
+        console.error("Error parsing stored checks:", e);
+        const initialChecks: Record<number, { status: 'OK' | 'NO'; molestias: string }> = {};
+        resolvedList.forEach(pl => {
+          initialChecks[pl.player_id] = { status: 'OK', molestias: '' };
+        });
+        setPlayerChecks(initialChecks);
+      }
+    } else {
+      const initialChecks: Record<number, { status: 'OK' | 'NO'; molestias: string }> = {};
+      resolvedList.forEach(pl => {
+        initialChecks[pl.player_id] = { status: 'OK', molestias: '' };
+      });
+      setPlayerChecks(initialChecks);
+    }
+  };
+
+  const handleCheckChange = (playerId: number, field: 'status' | 'molestias', value: any) => {
+    setPlayerChecks(prev => ({
+      ...prev,
+      [playerId]: {
+        ...prev[playerId],
+        [field]: value
+      }
+    }));
+  };
+
+  const saveMicrocycleCheck = async () => {
+    if (!selectedMicroId) return;
+    setSavingCheckin(true);
+    try {
+      localStorage.setItem(`lr-medical-mc-check-${selectedMicroId}`, JSON.stringify(playerChecks));
+
+      const selectedMicro = microcycles.find(m => String(m.id) === String(selectedMicroId));
+      const microName = selectedMicro ? selectedMicro.nombre_display : selectedMicroId;
+
+      logActivity('MICROCYCLE_CHECKIN', {
+        microcycle_id: selectedMicroId,
+        microcycle_name: microName,
+        checked_count: microPlayers.length,
+        timestamp: new Date().toISOString()
+      });
+
+      const noPlayers = microPlayers.filter(p => playerChecks[p.player_id]?.status === 'NO');
+      if (noPlayers.length > 0) {
+        const isLocalMicro = String(selectedMicroId).startsWith('-') || isNaN(Number(selectedMicroId)) && !selectedMicroId.match(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/);
+        
+        for (const player of noPlayers) {
+          const molestiasText = playerChecks[player.player_id]?.molestias || 'Molestia de ingreso';
+          const reportPayload = {
+            player_id: player.player_id,
+            microcycle_id: isLocalMicro ? null : selectedMicroId,
+            report_date: new Date().toISOString().split('T')[0],
+            observation: `Llegada a microciclo: ${molestiasText}`,
+            severity: 'low',
+            diagnostico_medico: 'Molestias de ingreso',
+            treatments_applied: [],
+            anio: player.anio || new Date().getFullYear()
+          };
+
+          try {
+            await supabase.from('medical_daily_reports').insert([reportPayload]);
+          } catch (err) {
+            console.warn("Failed to auto-create medical report on Supabase (non-blocking):", err);
+          }
+        }
+        
+        fetchDailyReports();
+      }
+
+      setSuccessMessage(`Check de microciclo guardado exitosamente. Se registraron ${noPlayers.length} reportes de molestias.`);
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      console.error("Error saving microcycle check:", err);
+      setErrorMessage("Error al guardar el check de microciclo: " + err.message);
+      setTimeout(() => setErrorMessage(null), 4000);
+    } finally {
+      setSavingCheckin(false);
+    }
+  };
+
+  const exportCheckinPDF = () => {
+    if (!selectedMicroId) return;
+    const selectedMicro = microcycles.find(m => String(m.id) === String(selectedMicroId));
+    const microName = selectedMicro ? selectedMicro.nombre_display : selectedMicroId;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    // Header Background
+    doc.setFillColor(11, 18, 32); // #0b1220
+    doc.rect(0, 0, 210, 40, 'F');
+
+    // Title
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('CHECK DE MICROCICLO - DEPARTAMENTO MÉDICO', 15, 18);
+    
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(`MICRO: ${String(microName).toUpperCase()}`, 15, 25);
+    doc.text(`FECHA REPORTE: ${new Date().toLocaleDateString('es-CL')}`, 15, 30);
+
+    const columns = [
+      { header: 'Jugador', dataKey: 'player' },
+      { header: 'Club', dataKey: 'club' },
+      { header: 'Posición', dataKey: 'pos' },
+      { header: 'Año', dataKey: 'year' },
+      { header: 'Estado', dataKey: 'status' },
+      { header: 'Molestias / Observaciones', dataKey: 'notes' }
+    ];
+
+    const rows = microPlayers.map(p => {
+      const check = playerChecks[p.player_id] || { status: 'OK', molestias: '' };
+      return {
+        player: `${p.nombre} ${p.apellido1} ${p.apellido2 || ''}`.trim().toUpperCase(),
+        club: String(p.club).toUpperCase(),
+        pos: String(p.posicion).toUpperCase(),
+        year: String(p.anio || '-'),
+        status: check.status === 'OK' ? 'SANO (OK)' : 'MOLESTIA (NO)',
+        notes: check.status === 'OK' ? (check.molestias || 'SIN NOVEDADES') : (check.molestias || 'REPORTA MOLESTIAS')
+      };
+    });
+
+    autoTable(doc, {
+      columns: columns,
+      body: rows,
+      startY: 48,
+      theme: 'grid',
+      styles: {
+        fontSize: 8,
+        font: 'Helvetica',
+        cellPadding: 3
+      },
+      headStyles: {
+        fillColor: [11, 18, 32],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      columnStyles: {
+        player: { fontStyle: 'bold', cellWidth: 45 },
+        club: { cellWidth: 30 },
+        pos: { cellWidth: 25 },
+        year: { halign: 'center', cellWidth: 12 },
+        status: { halign: 'center', fontStyle: 'bold', cellWidth: 23 },
+        notes: { cellWidth: 55 }
+      },
+      didDrawCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const text = data.cell.text && data.cell.text[0];
+          if (text && text.includes('MOLESTIA')) {
+            doc.setTextColor(207, 27, 43); // RED #CF1B2B
+          } else {
+            doc.setTextColor(16, 185, 129); // GREEN
+          }
+        }
+      }
+    });
+
+    doc.save(`check_microciclo_${String(selectedMicroId)}.pdf`);
+  };
 
   const fetchInjuredPlayers = async () => {
     const possibleSchemas = [
@@ -1741,6 +2079,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
             Calendario Lesiones
           </button>
           <button 
+            onClick={() => setView('microcycle_check')}
+            className={`flex-1 md:flex-none px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'microcycle_check' ? 'bg-[#0b1220] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
+          >
+            Check de Microciclo
+          </button>
+          <button 
             onClick={() => setView('reintegro_gps')}
             className={`w-full md:w-auto px-4 md:px-6 py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${view === 'reintegro_gps' ? 'bg-[#CF1B2B] text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-200'}`}
           >
@@ -1825,12 +2169,33 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
           </section>
 
           <section className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
-                <span className="w-2 h-6 bg-amber-500 rounded-full"></span>
-                Atletas Lesionados (Sincronizado)
-              </h3>
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3 italic">
+                  <span className={`w-2 h-6 ${showDischargedHistory ? 'bg-emerald-500' : 'bg-amber-500'} rounded-full transition-colors`}></span>
+                  {showDischargedHistory ? 'Historial de Altas' : 'Atletas Lesionados'}
+                </h3>
+                
+                {/* Visual tabs to toggle history vs active */}
+                <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setShowDischargedHistory(false)}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${!showDischargedHistory ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Lesionados Activos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDischargedHistory(true)}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${showDischargedHistory ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Historial de Altas
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 self-end xl:self-auto">
                 <button
                   onClick={generateInjuredPlayersTablePDF}
                   className="bg-[#0b1220] hover:bg-slate-800 text-white px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-md active:scale-95 group/btn border border-slate-700/30 hover:border-red-500/50"
@@ -1839,8 +2204,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                   <i className="fa-solid fa-file-pdf text-red-500 text-[11px] group-hover/btn:scale-110 transition-transform"></i>
                   <span>Exportar Reporte PDF</span>
                 </button>
-                <div className="bg-amber-50 px-5 py-2 rounded-full text-[9px] font-black text-amber-600 uppercase italic">
-                  {filteredInjuries.length} REGISTROS ACTIVOS
+                <div className={`px-5 py-2 rounded-full text-[9px] font-black uppercase italic ${showDischargedHistory ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                  {filteredInjuries.length} {showDischargedHistory ? 'REGISTROS HISTÓRICOS' : 'REGISTROS ACTIVOS'}
                 </div>
               </div>
             </div>
@@ -1926,8 +2291,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                             </span>
                           </td>
                           <td className="px-2 md:px-4 py-4 md:py-6">
-                             <span className={`text-[7px] md:text-[8px] font-black uppercase px-2 md:px-3 py-1 rounded-lg ${injury.disponibilidad.toLowerCase().includes('no') ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
-                                {injury.disponibilidad}
+                             <span className={`text-[7px] md:text-[8px] font-black uppercase px-2 md:px-3 py-1 rounded-lg ${(injury.disponibilidad || 'SÍ').toLowerCase().includes('no') ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
+                                {injury.disponibilidad || 'SÍ'}
                              </span>
                           </td>
                           <td className="px-2 md:px-4 py-4 md:py-6 text-slate-500 font-extrabold text-center">
@@ -1996,9 +2361,38 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       {view === 'report_injury' && reportingPlayer && (
         <div className="max-w-5xl mx-auto bg-white rounded-[32px] md:rounded-[48px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 pb-8 md:pb-12">
           <div className={`${editingInjuryId ? 'bg-[#0b1220]' : 'bg-[#CF1B2B]'} p-8 md:p-12 text-white relative text-center transition-colors duration-500`}>
-            <button onClick={() => setView('dashboard')} className="absolute top-6 md:top-10 left-6 md:left-10 text-white/50 hover:text-white transition-colors">
+            <button type="button" onClick={() => setView('dashboard')} className="absolute top-6 md:top-10 left-6 md:left-10 text-white/50 hover:text-white transition-colors">
                <i className="fa-solid fa-arrow-left"></i>
             </button>
+            
+            {/* Alta Checkbox in top right */}
+            <div className="absolute top-5 md:top-9 right-6 md:right-10 flex items-center gap-2.5 bg-white/10 hover:bg-white/15 px-3.5 py-2 rounded-2xl border border-white/10 transition-all select-none">
+              <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-white leading-none">
+                {injuryForm.fecha_alta ? 'DADO DE ALTA' : 'ALTA MÉDICA'}
+              </span>
+              <input
+                id="alta_check"
+                type="checkbox"
+                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 focus:ring-offset-[#0b1220] border-white/30 bg-white/10 cursor-pointer accent-emerald-500"
+                checked={!!injuryForm.fecha_alta}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setInjuryForm({
+                      ...injuryForm,
+                      fecha_alta: new Date().toISOString().split('T')[0],
+                      disponibilidad: 'Disponible'
+                    });
+                  } else {
+                    setInjuryForm({
+                      ...injuryForm,
+                      fecha_alta: '',
+                      disponibilidad: 'No Disponible'
+                    });
+                  }
+                }}
+              />
+            </div>
+
             <div className="w-16 h-16 md:w-20 md:h-20 bg-white/20 rounded-2xl md:rounded-[32px] flex items-center justify-center text-white font-black text-2xl md:text-3xl mb-4 mx-auto border border-white/20 shadow-xl">
               {reportingPlayer.name?.charAt(0)}
             </div>
@@ -2423,13 +2817,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
               <div className="lg:col-span-1 space-y-6 bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
                 <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest border-b border-slate-100 pb-2">Jugadores en Fase de Reintegro</h4>
                 <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                  {dbInjuries.filter(i => i.estado === 'Reintegro' || i.estado === 'Readaptación').length === 0 ? (
+                  {dbInjuries.filter(i => !i.fecha_alta && (i.estado === 'Reintegro' || i.estado === 'Readaptación')).length === 0 ? (
                     <div className="py-20 text-center">
                       <i className="fa-solid fa-user-clock text-4xl text-slate-100 mb-4"></i>
                       <p className="text-slate-400 text-[10px] font-black uppercase italic">Sin jugadores en esta fase</p>
                     </div>
                   ) : (
-                    dbInjuries.filter(i => i.estado === 'Reintegro' || i.estado === 'Readaptación').map(injury => (
+                    dbInjuries.filter(i => !i.fecha_alta && (i.estado === 'Reintegro' || i.estado === 'Readaptación')).map(injury => (
                       <div 
                         key={injury.id} 
                         onClick={() => setSelectedGpsPlayer(injury)}
@@ -3173,6 +3567,221 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
               </table>
             </div>
           </section>
+        </div>
+      )}
+
+      {view === 'microcycle_check' && (
+        <div className="space-y-8 animate-in fade-in duration-300">
+          {/* Header of View */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white rounded-[32px] md:rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-xl">
+            <div>
+              <div className="flex items-center gap-3.5 mb-1.5">
+                <div className="w-11 h-11 bg-[#0b1220] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-900/15">
+                  <i className="fa-solid fa-clipboard-check text-base"></i>
+                </div>
+                <div>
+                  <h2 className="text-xl md:text-2xl font-black text-slate-900 uppercase italic tracking-tight">Check de Microciclo</h2>
+                  <p className="text-slate-400 text-[9px] font-bold uppercase tracking-wider">Control médico y evaluación de molestias al ingresar</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Microcycle Filter Selectors */}
+            <div className="flex flex-col sm:flex-row gap-3.5">
+              {/* Category selector */}
+              <div className="flex flex-col min-w-[160px]">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Categoría</label>
+                <select
+                  value={selectedCategoryFilter}
+                  onChange={(e) => {
+                    setSelectedCategoryFilter(e.target.value);
+                    setSelectedMicroId('');
+                  }}
+                  className="bg-white border border-slate-200 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase text-slate-700 tracking-wider shadow-sm focus:outline-none cursor-pointer hover:bg-slate-50 transition-colors"
+                >
+                  <option value="TODOS">TODAS LAS CATEGORÍAS</option>
+                  {Object.keys(CATEGORY_ID_MAP).map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Microcycle Selector */}
+              <div className="flex flex-col min-w-[280px]">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Seleccionar Microciclo</label>
+                <select
+                  value={selectedMicroId}
+                  onChange={(e) => setSelectedMicroId(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase text-slate-700 tracking-wider shadow-sm focus:outline-none cursor-pointer hover:bg-slate-50 transition-colors"
+                >
+                  <option value="">Seleccione un Microciclo...</option>
+                  {filteredMicrocyclesList.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.nombre_display} ({m.start_date ? formatDate(m.start_date) : '-'} / {m.end_date ? formatDate(m.end_date) : '-'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Microcycle Checked List Area */}
+          {!selectedMicroId ? (
+            <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl p-14 text-center">
+              <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 mx-auto mb-5 border border-slate-100">
+                <i className="fa-solid fa-list-check text-2xl"></i>
+              </div>
+              <h3 className="text-sm font-black text-slate-700 uppercase tracking-widest mb-1.5">Seleccione un Microciclo</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">Elija un microciclo de los filtros superiores para cargar el listado de jugadores convocados y registrar el control médico de ingreso.</p>
+            </div>
+          ) : loadingMicroPlayers ? (
+            <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl p-24 text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-4 border-[#0b1220] border-t-transparent mx-auto mb-5"></div>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cargando nómina de jugadores...</p>
+            </div>
+          ) : microPlayers.length === 0 ? (
+            <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl p-14 text-center">
+              <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500 mx-auto mb-5 border border-amber-100">
+                <i className="fa-solid fa-user-slash text-2xl"></i>
+              </div>
+              <h3 className="text-sm font-black text-slate-700 uppercase tracking-widest mb-1.5">Sin jugadores citados</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">Este microciclo aún no tiene una nómina de jugadores convocados. Por favor, agregue jugadores en el área de Citaciones.</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Table / List card */}
+              <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-xl overflow-hidden">
+                <div className="p-6 md:p-8 border-b border-slate-50 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/40">
+                  <div>
+                    <h3 className="text-xs md:text-sm font-black text-slate-900 uppercase tracking-wider italic">Control de Ingreso</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{microPlayers.length} Deportistas Convocados</p>
+                  </div>
+
+                  <div className="flex gap-2.5 w-full sm:w-auto">
+                    <button
+                      onClick={exportCheckinPDF}
+                      className="flex-1 sm:flex-none px-4.5 py-3 rounded-xl border border-slate-200 hover:bg-white text-[9px] font-black uppercase tracking-widest text-slate-600 flex items-center justify-center gap-2 transition-all shadow-sm"
+                    >
+                      <i className="fa-solid fa-file-pdf text-red-500"></i>
+                      Exportar PDF
+                    </button>
+                    
+                    <button
+                      onClick={saveMicrocycleCheck}
+                      disabled={savingCheckin}
+                      className="flex-1 sm:flex-none px-5.5 py-3 rounded-xl bg-[#0b1220] hover:bg-emerald-600 disabled:bg-slate-400 text-white text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-md"
+                    >
+                      {savingCheckin ? (
+                        <>
+                          <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent"></div>
+                          Guardando...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fa-solid fa-cloud-arrow-up"></i>
+                          Guardar Check-In
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[10px] text-center border-collapse min-w-[700px]">
+                    <thead className="bg-[#0b1220] text-white font-black uppercase tracking-widest">
+                      <tr>
+                        <th className="px-6 py-4.5 text-left w-[35%]">Atleta</th>
+                        <th className="px-4 py-4.5 w-[30%]">Estado de Ingreso</th>
+                        <th className="px-6 py-4.5 text-left w-[35%]">Molestias al Llegar / Observaciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                      {microPlayers.map((player) => {
+                        const check = playerChecks[player.player_id] || { status: 'OK', molestias: '' };
+                        return (
+                          <tr key={player.player_id} className="hover:bg-slate-50/50 transition-colors">
+                            {/* Athlete Info */}
+                            <td className="px-6 py-4.5 text-left">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center font-black italic text-[10px] text-slate-900 border border-slate-200">
+                                  {player.nombre?.charAt(0)}
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-black text-slate-900 uppercase italic leading-none">
+                                    {player.nombre} {player.apellido1} {player.apellido2 || ''}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-[8px] font-black uppercase text-slate-400">{player.posicion}</span>
+                                    <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                                    <span className="text-[8px] font-black uppercase text-slate-400">{player.club}</span>
+                                    <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                                    <span className="text-[8px] font-black text-slate-400">AÑO {player.anio || '-'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* OK / NO Buttons */}
+                            <td className="px-4 py-4.5">
+                              <div className="flex justify-center gap-2.5">
+                                {/* OK Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleCheckChange(player.player_id, 'status', 'OK');
+                                    handleCheckChange(player.player_id, 'molestias', '');
+                                  }}
+                                  className={`px-4.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm border ${
+                                    check.status === 'OK'
+                                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200 ring-2 ring-emerald-500/10'
+                                      : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <i className="fa-solid fa-circle-check text-[10px]"></i>
+                                  Sano (OK)
+                                </button>
+
+                                {/* NO Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleCheckChange(player.player_id, 'status', 'NO')}
+                                  className={`px-4.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm border ${
+                                    check.status === 'NO'
+                                      ? 'bg-red-50 text-red-600 border-red-200 ring-2 ring-red-500/10'
+                                      : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <i className="fa-solid fa-circle-xmark text-[10px]"></i>
+                                  Molestia (NO)
+                                </button>
+                              </div>
+                            </td>
+
+                            {/* Discomfort Notes */}
+                            <td className="px-6 py-4.5 text-left">
+                              {check.status === 'OK' ? (
+                                <div className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3.5 font-bold text-slate-400 text-[10px] uppercase select-none">
+                                  Sin molestias
+                                </div>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={check.molestias || ''}
+                                  onChange={(e) => handleCheckChange(player.player_id, 'molestias', e.target.value)}
+                                  placeholder="Describa dolor o molestias con las que llega..."
+                                  className="w-full bg-red-50/10 border border-red-200 focus:border-red-500 focus:ring-4 focus:ring-red-500/5 rounded-xl px-4 py-3 font-bold text-slate-700 text-[10px] uppercase outline-none transition-all"
+                                />
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

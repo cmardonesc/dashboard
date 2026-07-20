@@ -3691,7 +3691,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               ].map(item => {
                 const percentage = (nextDayIdx !== -1 && plannedValues) ? (plannedValues[`${nextDayIdx}_${item.id}`] || 0) : 0;
                 const factor = 1 + (percentage / 100);
-                const baseRange = METRIC_FALLBACKS[item.id]?.[nextIntensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
+                const itemIntensity = (nextDayIdx !== -1 && dayIntensities) ? (dayIntensities[`${nextDayIdx}_${item.id}`] || dayIntensities[nextDayIdx] || 'Media') : 'Media';
+                const baseRange = METRIC_FALLBACKS[item.id]?.[itemIntensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
                 const adjustedRange = [
                   Math.round(baseRange[0] * factor),
                   Math.round(baseRange[1] * factor),
@@ -4633,7 +4634,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 let statusBadge = null;
 
                                 if (mapping) {
-                                  baseRange = METRIC_FALLBACKS[mapping.metricId]?.[intensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
+                                  const itemIntensity = (dayIdx !== -1 && dayIntensities) ? (dayIntensities[`${dayIdx}_${mapping.metricId}`] || dayIntensities[dayIdx] || 'Media') : 'Media';
+                                  baseRange = METRIC_FALLBACKS[mapping.metricId]?.[itemIntensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
                                   adjustedRange = [
                                     Math.round(baseRange[0] * factor),
                                     Math.round(baseRange[1] * factor),

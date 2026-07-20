@@ -37,7 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const [diarioOpen, setDiarioOpen] = useState(isDiarioActive);
 
   // Estado para Área Física y sus submenús
-  const FISICA_IDS = ['fisica_reporte', 'fisica_pronostico'];
+  const FISICA_IDS = ['fisica_reporte', 'fisica_pronostico', 'fisica_gimnasio', 'fisica_resumen_grupal'];
   const isFisicaActive = FISICA_IDS.includes(activeMenu);
   const [fisicaOpen, setFisicaOpen] = useState(isFisicaActive);
 
@@ -349,31 +349,37 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                     {/* REPORTE DE SESIÓN */}
                     <button
                       onClick={() => onMenuChange('fisica_reporte')}
-                      className={`w-full flex items-center justify-between gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
-                        activeMenu === 'fisica_reporte' 
-                          ? 'bg-red-950/40 text-red-400 border border-red-900/50 shadow-lg' 
-                          : 'text-red-500/80 hover:text-red-400'
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${
+                        activeMenu === 'fisica_reporte' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
                       }`}
                     >
-                      <div className="flex items-center gap-4">
-                        <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_reporte' ? 'bg-red-400' : 'bg-red-500/80'}`}></div>
-                        <span className="text-xs font-bold tracking-tight">Reporte Sesión</span>
-                      </div>
-                      <span className="text-[8px] bg-red-950/60 text-red-400 px-1 py-0.5 rounded-md font-bold border border-red-500/30">En Desarrollo</span>
+                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_reporte' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                      <span className="text-[10px] font-bold">Reporte Sesión</span>
                     </button>
 
                     {/* PRONÓSTICO DE CARGAS */}
                     <button
                       onClick={() => onMenuChange('fisica_pronostico')}
-                      className={`w-full flex items-center justify-between gap-4 px-4 py-3 mt-2 rounded-xl transition-all ${
-                        activeMenu === 'fisica_pronostico' 
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${
+                        activeMenu === 'fisica_pronostico' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_pronostico' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                      <span className="text-[10px] font-bold">Pronóstico de Cargas</span>
+                    </button>
+
+                    {/* GIMNASIO */}
+                    <button
+                      onClick={() => onMenuChange('fisica_gimnasio')}
+                      className={`w-full flex items-center justify-between gap-4 px-4 py-3 mt-1 rounded-xl transition-all ${
+                        activeMenu === 'fisica_gimnasio' 
                           ? 'bg-red-950/40 text-red-400 border border-red-900/50 shadow-lg' 
                           : 'text-red-500/80 hover:text-red-400'
                       }`}
                     >
                       <div className="flex items-center gap-4">
-                        <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_pronostico' ? 'bg-red-400' : 'bg-red-500/80'}`}></div>
-                        <span className="text-xs font-bold tracking-tight">Pronóstico de Cargas</span>
+                        <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_gimnasio' ? 'bg-red-400' : 'bg-red-500/80'}`}></div>
+                        <span className="text-xs font-bold tracking-tight">Gimnasio</span>
                       </div>
                       <span className="text-[8px] bg-red-950/60 text-red-400 px-1 py-0.5 rounded-md font-bold border border-red-500/30">En Desarrollo</span>
                     </button>

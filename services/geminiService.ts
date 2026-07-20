@@ -411,31 +411,43 @@ export const getChartSummary = async (chartTitle: string, data: any) => {
 
 export const getAthleteFootprintSummary = async (player: any, metrics: any) => {
   try {
-    const prompt = `
-      Actúa como un Director de Ciencias del Deporte de una Selección Nacional de Fútbol.
-      Analiza el perfil completo de "Huella del Atleta" para el siguiente jugador:
-      
-      Jugador: ${player.nombre} ${player.apellido1}
-      Posición: ${player.posicion}
-      Categoría: ${player.category || 'N/A'}
-      
-      Métricas Recientes:
-      ${JSON.stringify(metrics)}
+    const systemInstruction = `Actúas como un Director de Ciencias del Deporte de una Selección Nacional de Fútbol de alto rendimiento (fútbol formativo).
+Tu tarea es analizar el perfil de "Huella del Atleta" y proporcionar una "Ficha de Orientación" (resumen y prescripción) basada estrictamente en los siguientes lineamientos:
 
-      Por favor proporciona un "Perfil Ejecutivo del Jugador" que incluya:
-      1. **Resumen de Capacidades**: Breve descripción de su perfil físico (ej: "Jugador explosivo con alta capacidad de aceleración pero resistencia aeróbica moderada").
-      2. **Puntos de Mejora**: 1-2 aspectos específicos a trabajar en el próximo microciclo (ej: Fuerza máxima, velocidad, dosificación neuromuscular).
-      3. **Conclusión Técnica**: Una frase final sobre su proyección o estado actual para la competición.
+1. Jerarquía de Datos: Usa SIEMPRE los percentiles (percentil, v_benchmark_percentil) como referencia primaria para evaluar y prescribir, nunca el "% vs promedio" ni diferencias porcentuales vagas.
+2. Manejo de Faltantes: Si una métrica tiene estado_dato como "AUSENTE" (valor: null), no debes bajo ninguna circunstancia mencionarla, citar su valor, ni realizar diagnósticos o prescripciones basadas en ella. Ignórala por completo.
+3. Tono y Contexto: Mantén un tono sumamente profesional, científico, analítico, directo y adaptado al fútbol formativo de alto rendimiento.
+4. Formato de Salida: Escribe exactamente un "Perfil Ejecutivo del Jugador" con el siguiente formato de secciones bien diferenciadas para que la app pueda parsearlo correctamente:
 
-      IMPORTANTE: NO incluyas ninguna sección o comentario sobre Historial Médico, Lesiones, Salud o Disponibilidad de juego, ya que dichos datos han sido omitidos de esta pestaña por confidencialidad.
+1. Resumen de Capacidades
+[Escribe aquí el análisis de sus capacidades basado exclusivamente en las métricas con estado_dato MEDIDO utilizando percentiles como referencia. No menciones métricas AUSENTES. Máximo 2-3 oraciones.]
 
-      Formatea la respuesta en Markdown elegante. Sé muy profesional, directo y utiliza terminología de alto rendimiento. RESPONDE SIEMPRE EN ESPAÑOL.
-    `;
+2. Puntos de Mejora
+- [Escribe aquí 1 o 2 objetivos/tareas concretas de entrenamiento basadas en sus áreas de mejora medidas. No menciones métricas AUSENTES.]
+
+3. Conclusión Técnica
+[Escribe aquí una conclusión concisa de 1 oración sobre su estado/proyección actual.]
+
+IMPORTANTE: Toda la respuesta debe estar en español y respetar estrictamente esta estructura de tres secciones con los encabezados exactos "1. Resumen de Capacidades", "2. Puntos de Mejora" y "3. Conclusión Técnica" para permitir el parsing automatizado. No uses negritas adicionales ni markdown decorativo complejo.`;
+
+    const prompt = `Analiza el perfil de Huella del Atleta para el siguiente jugador con las métricas proporcionadas en el payload.
+
+Jugador: ${player.nombre} ${player.apellido1}
+Posición: ${player.posicion}
+
+Métricas Recientes (Payload estructurado con estado_dato):
+${JSON.stringify(metrics, null, 2)}`;
 
     const response = await fetch("/api/gemini/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({
+        prompt,
+        config: {
+          systemInstruction,
+          temperature: 0.2,
+        }
+      })
     });
 
     if (!response.ok) {
@@ -450,16 +462,14 @@ export const getAthleteFootprintSummary = async (player: any, metrics: any) => {
     const cat = player.category || "General";
     const pos = player.posicion || "Atleta";
     
-    return `### 👣 Huella del Atleta - Perfil Ejecutivo
+    return `1. Resumen de Capacidades
+El jugador presenta un biotipo físico y motor aeróbico sobresalientes para su categoría. Exhibe un excelente rendimiento neuromuscular reactivo, reflejado en elevados ratios de aceleración y desaceleración controlada.
 
-#### 1. Resumen de Capacidades
-El jugador **${player.nombre} ${player.apellido1}** presenta un perfil físico e histológico óptimo para las demandas de la posición **${pos}** en la categoría **${cat}**. Exhibe un excelente rendimiento neuromuscular reactivo, reflejado en elevados ratios de aceleración y desaceleración controlada.
+2. Puntos de Mejora
+- Estimular el umbral anaeróbico láctico mediante bloques intermitentes específicos de carrera.
+- Fomentar sesiones preventivas complementarias y desarrollo coordinado de perfiles de velocidad.
 
-#### 2. Puntos de Mejora
-- **Factor de Resistencia**: Estimular el umbral anaeróbico láctico mediante bloques intermitentes específicos de carrera.
-- **Optimización Física**: Fomentar sesiones preventivas complementarias y desarrollo coordinado de perfiles de velocidad.
-
-#### 3. Conclusión Técnica
+3. Conclusión Técnica
 Futbolista de alto valor antropométrico y neuromuscular, proyectando un nivel óptimo para competir con el máximo rigor e intensidad táctica internacional.`;
   }
 };

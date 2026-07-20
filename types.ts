@@ -99,6 +99,7 @@ export type MenuId =
   | 'fisica_reporte'
   | 'fisica_pronostico'
   | 'fisica_resumen_grupal'
+  | 'fisica_gimnasio'
   | 'medica'
   | 'nutricion_resumen_grupal'
   | 'nutricion_comparativo'
