@@ -87,6 +87,31 @@ const CATEGORY_LABELS: Record<Category, string> = {
 
 type Intensity = 'Baja' | 'Media' | 'Alta';
 
+export const getRangeForMetric = (metricId: string, baseP50: number, factor: number = 1) => {
+  const mid = baseP50 * factor;
+  let D = 2000;
+  
+  const normId = metricId.toLowerCase().trim();
+  
+  if (normId.includes('dist_total') || normId === 'dist_total_m' || normId === 'distancia total' || normId.includes('distancia total')) {
+    D = 2000;
+  } else if (normId.includes('dist_ai_m_15_kmh') || normId === 'dist_ai_m_15_kmh' || normId.includes('15 km/h') || normId.includes('15km/h') || normId.includes('mai >15')) {
+    D = 300;
+  } else if (normId.includes('dist_mai_m_20_kmh') || normId === 'dist_mai_m_20_kmh' || normId.includes('20 km/h') || normId.includes('20km/h') || normId.includes('hsr >20')) {
+    D = 300;
+  } else if (normId.includes('dist_sprint_m_25_kmh') || normId === 'dist_sprint_m_25_kmh' || normId.includes('25 km/h') || normId.includes('25km/h') || normId.includes('sprint >25')) {
+    D = 150;
+  } else if (normId.includes('acc_decc_ai_n') || normId === 'acc_decc_ai_n' || normId.includes('acc/dec') || normId.includes('acc / dec') || normId.includes('acc') || normId.includes('dec')) {
+    D = 50;
+  }
+
+  const min = Math.max(0, Math.round((mid - D / 2) / 50) * 50);
+  const max = min + D;
+  const p50 = Math.round(mid / 50) * 50;
+
+  return { min, max, p50 };
+};
+
 export default function PronosticoCargas({ 
   clubs,
   selectedCategoryId,
@@ -449,12 +474,10 @@ export default function PronosticoCargas({
         const rec = getRecommendation(dIdx, metric.id);
         const percentage = plannedValues[`${dIdx}_${metric.id}`] || 0;
         const factor = 1 + (percentage / 100);
-        const adjP50 = Math.round(rec.p50 * factor);
-        const adjP25 = Math.round(rec.p25 * factor);
-        const adjP75 = Math.round(rec.p75 * factor);
-        row[metric.id] = adjP50;
-        row[`${metric.id}_min`] = adjP25;
-        row[`${metric.id}_max`] = adjP75;
+        const range = getRangeForMetric(metric.id, rec.p50, factor);
+        row[metric.id] = range.p50;
+        row[`${metric.id}_min`] = range.min;
+        row[`${metric.id}_max`] = range.max;
         row[`${metric.id}_pct`] = percentage;
         row[`${metric.id}_rel`] = Math.round(factor * 100);
         row[`${metric.id}_rec`] = rec.p50;
@@ -1341,11 +1364,12 @@ export default function PronosticoCargas({
                           const rec = getRecommendation(dIdx, metric.id);
                           const percentage = plannedValues[`${dIdx}_${metric.id}`] || 0;
                           
-                          // Calculate adjusted values based on the slider percentage
+                          // Calculate adjusted values based on the slider percentage and multiple of 50 differences
                           const factor = 1 + (percentage / 100);
-                          const adjP25 = Math.round(rec.p25 * factor);
-                          const adjP50 = Math.round(rec.p50 * factor);
-                          const adjP75 = Math.round(rec.p75 * factor);
+                          const range = getRangeForMetric(metric.id, rec.p50, factor);
+                          const adjP25 = range.min;
+                          const adjP50 = range.p50;
+                          const adjP75 = range.max;
 
                           return (
                             <tr key={metric.id} className="hover:bg-slate-50/50 transition-colors">
@@ -1421,13 +1445,18 @@ export default function PronosticoCargas({
                                   </div>
 
                                   {/* Additional helper metadata */}
-                                  <div className="flex items-center gap-3 text-[9px] font-black text-slate-400 uppercase tracking-widest pt-1 border-t border-slate-50">
-                                    <span>Base original: <strong className="text-slate-500 font-black">{rec.p25.toLocaleString()} - {rec.p75.toLocaleString()} {metric.unit}</strong></span>
-                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                                    <span>Mediana Base (P50): <strong className="text-slate-500 font-black">{rec.p50.toLocaleString()} {metric.unit}</strong></span>
-                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                                    <span>Origen: <strong className="text-red-600 font-black">{rec.source.toUpperCase()}</strong></span>
-                                  </div>
+                                  {(() => {
+                                    const baseRange = getRangeForMetric(metric.id, rec.p50, 1);
+                                    return (
+                                      <div className="flex items-center gap-3 text-[9px] font-black text-slate-400 uppercase tracking-widest pt-1 border-t border-slate-50">
+                                        <span>Base original: <strong className="text-slate-500 font-black">{baseRange.min.toLocaleString()} - {baseRange.max.toLocaleString()} {metric.unit}</strong></span>
+                                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                        <span>Mediana Base (P50): <strong className="text-slate-500 font-black">{baseRange.p50.toLocaleString()} {metric.unit}</strong></span>
+                                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                        <span>Origen: <strong className="text-red-600 font-black">{rec.source.toUpperCase()}</strong></span>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </td>
 

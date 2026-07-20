@@ -9,6 +9,31 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
+const getRangeForMetric = (metricId: string, baseP50: number, factor: number = 1) => {
+  const mid = baseP50 * factor;
+  let D = 2000;
+  
+  const normId = metricId.toLowerCase().trim();
+  
+  if (normId.includes('dist_total') || normId === 'dist_total_m' || normId === 'distancia total' || normId.includes('distancia total')) {
+    D = 2000;
+  } else if (normId.includes('dist_ai_m_15_kmh') || normId === 'dist_ai_m_15_kmh' || normId.includes('15 km/h') || normId.includes('15km/h') || normId.includes('mai >15')) {
+    D = 300;
+  } else if (normId.includes('dist_mai_m_20_kmh') || normId === 'dist_mai_m_20_kmh' || normId.includes('20 km/h') || normId.includes('20km/h') || normId.includes('hsr >20')) {
+    D = 300;
+  } else if (normId.includes('dist_sprint_m_25_kmh') || normId === 'dist_sprint_m_25_kmh' || normId.includes('25 km/h') || normId.includes('25km/h') || normId.includes('sprint >25')) {
+    D = 150;
+  } else if (normId.includes('acc_decc_ai_n') || normId === 'acc_decc_ai_n' || normId.includes('acc/dec') || normId.includes('acc / dec') || normId.includes('acc') || normId.includes('dec')) {
+    D = 50;
+  }
+
+  const min = Math.max(0, Math.round((mid - D / 2) / 50) * 50);
+  const max = min + D;
+  const p50 = Math.round(mid / 50) * 50;
+
+  return { min, max, p50 };
+};
+
 const DEFAULT_GPS_REFS = [
   { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'DELANTERO', dist_total_m: 3800, m_por_min: 60, dist_ai_m_15_kmh: 350, dist_mai_m_20_kmh: 60, dist_sprint_m_25_kmh: 5, acc_decc_ai_n: 70 },
   { Tipo: 'PROMEDIO', Categoria: 'SUB_13', Posicion: 'MEDIO', dist_total_m: 4200, m_por_min: 65, dist_ai_m_15_kmh: 400, dist_mai_m_20_kmh: 70, dist_sprint_m_25_kmh: 3, acc_decc_ai_n: 85 },
@@ -138,6 +163,141 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // NUEVO: Estados para Planificación y Pronóstico de Cargas
   const [plannedValues, setPlannedValues] = useState<any>({});
   const [dayIntensities, setDayIntensities] = useState<any>({});
+
+  // NUEVO: Estados para calcular referencias históricas y alinear con el Pronóstico de Cargas
+  const [historicalGpsImport, setHistoricalGpsImport] = useState<any[]>([]);
+  const [historicalMicrocycles, setHistoricalMicrocycles] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchHistoricalData = async () => {
+      try {
+        const { data: gpsData } = await supabase.from('gps_import').select('*');
+        const { data: mcData } = await supabase.from('microcycles').select('*');
+        if (gpsData) setHistoricalGpsImport(gpsData);
+        if (mcData) setHistoricalMicrocycles(mcData);
+      } catch (err) {
+        console.error("Error loading historical data for forecast alignment:", err);
+      }
+    };
+    fetchHistoricalData();
+  }, [activeMicrocycle?.id]);
+
+  const { referencesByIntensity, confidenceState } = useMemo(() => {
+    if (historicalGpsImport.length === 0 || !activeMicrocycle) {
+      return { referencesByIntensity: null, confidenceState: 'insuficiente' };
+    }
+
+    const catId = activeMicrocycle.category_id;
+    if (!catId) return { referencesByIntensity: null, confidenceState: 'insuficiente' };
+
+    const getPercentileLocal = (sorted: number[], percentile: number): number => {
+      if (sorted.length === 0) return 0;
+      const index = (sorted.length - 1) * percentile;
+      const lower = Math.floor(index);
+      const upper = Math.ceil(index);
+      if (lower === upper) return sorted[lower];
+      return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+    };
+
+    // A. Group by date to find daily squad averages
+    const uniqueDates = Array.from(new Set(
+      historicalGpsImport
+        .filter(r => {
+          const matchingMicro = historicalMicrocycles.find(m => r.fecha >= m.start_date && r.fecha <= m.end_date);
+          return matchingMicro && matchingMicro.category_id === catId;
+        })
+        .map(r => r.fecha)
+    ));
+
+    const dailyAverages: any[] = [];
+    const uniqueMicrocycleIdsWithGps = new Set<string>();
+
+    uniqueDates.forEach(fecha => {
+      const recordsForDate = historicalGpsImport.filter(r => r.fecha === fecha);
+      if (recordsForDate.length === 0) return;
+
+      const matchingMicro = historicalMicrocycles.find(m => fecha >= m.start_date && fecha <= m.end_date);
+      if (matchingMicro && matchingMicro.category_id === catId) {
+        uniqueMicrocycleIdsWithGps.add(matchingMicro.id);
+      }
+
+      const count = recordsForDate.length;
+      dailyAverages.push({
+        fecha,
+        dist_total_m: recordsForDate.reduce((sum, r) => sum + (Number(r.dist_total_m) || 0), 0) / count,
+        dist_ai_m_15_kmh: recordsForDate.reduce((sum, r) => sum + (Number(r.dist_ai_m_15_kmh) || 0), 0) / count,
+        dist_mai_m_20_kmh: recordsForDate.reduce((sum, r) => sum + (Number(r.dist_mai_m_20_kmh) || 0), 0) / count,
+        dist_sprint_m_25_kmh: recordsForDate.reduce((sum, r) => sum + (Number(r.dist_sprint_m_25_kmh) || 0), 0) / count,
+        acc_decc_ai_n: recordsForDate.reduce((sum, r) => sum + (Number(r.acc_decc_ai_n) || 0), 0) / count,
+      });
+    });
+
+    const calculatedNMicros = uniqueMicrocycleIdsWithGps.size;
+
+    // B. Classify days by overall volume (intensity tier) using terciles of dist_total_m
+    const sortedDailyAverages = [...dailyAverages].sort((a, b) => a.dist_total_m - b.dist_total_m);
+    const L = sortedDailyAverages.length;
+
+    const bajaLimit = Math.floor(L / 3);
+    const mediaLimit = Math.floor((2 * L) / 3);
+
+    const classifiedAverages = dailyAverages.map(avg => {
+      const sortedIndex = sortedDailyAverages.findIndex(s => s.fecha === avg.fecha);
+      let intensity: 'Baja' | 'Media' | 'Alta' = 'Media';
+      if (sortedIndex < bajaLimit) {
+        intensity = 'Baja';
+      } else if (sortedIndex >= mediaLimit) {
+        intensity = 'Alta';
+      }
+      return { ...avg, intensity };
+    });
+
+    // C. Group metrics for EACH intensity level and calculate P25, Mediana (P50), P75
+    const computedRefs: any = {
+      Baja: {},
+      Media: {},
+      Alta: {}
+    };
+
+    const localMetrics = [
+      { id: 'dist_total_m' },
+      { id: 'dist_ai_m_15_kmh' },
+      { id: 'dist_mai_m_20_kmh' },
+      { id: 'dist_sprint_m_25_kmh' },
+      { id: 'acc_decc_ai_n' }
+    ];
+
+    (['Baja', 'Media', 'Alta'] as const).forEach(intensity => {
+      const filteredDays = classifiedAverages.filter(d => d.intensity === intensity);
+      
+      localMetrics.forEach(metric => {
+        const values = filteredDays
+          .map(d => d[metric.id as keyof typeof d] as number)
+          .filter(v => v !== undefined && !isNaN(v));
+
+        if (values.length > 0) {
+          const sorted = [...values].sort((a, b) => a - b);
+          computedRefs[intensity][metric.id] = {
+            p25: Math.round(getPercentileLocal(sorted, 0.25)),
+            p50: Math.round(getPercentileLocal(sorted, 0.50)),
+            p75: Math.round(getPercentileLocal(sorted, 0.75)),
+          };
+        }
+      });
+    });
+
+    let conf: 'robust' | 'aviso' | 'insuficiente' = 'robust';
+    if (calculatedNMicros < 3) {
+      conf = 'insuficiente';
+    } else if (calculatedNMicros >= 3 && calculatedNMicros <= 7) {
+      conf = 'aviso';
+    }
+
+    return {
+      referencesByIntensity: computedRefs,
+      confidenceState: conf
+    };
+  }, [historicalGpsImport, historicalMicrocycles, activeMicrocycle]);
 
   const METRIC_FALLBACKS: Record<string, Record<'Baja' | 'Media' | 'Alta', [number, number, number]>> = {
     dist_total_m: {
@@ -3692,12 +3852,20 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 const percentage = (nextDayIdx !== -1 && plannedValues) ? (plannedValues[`${nextDayIdx}_${item.id}`] || 0) : 0;
                 const factor = 1 + (percentage / 100);
                 const itemIntensity = (nextDayIdx !== -1 && dayIntensities) ? (dayIntensities[`${nextDayIdx}_${item.id}`] || dayIntensities[nextDayIdx] || 'Media') : 'Media';
-                const baseRange = METRIC_FALLBACKS[item.id]?.[itemIntensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
-                const adjustedRange = [
-                  Math.round(baseRange[0] * factor),
-                  Math.round(baseRange[1] * factor),
-                  Math.round(baseRange[2] * factor)
-                ];
+                
+                let baseRange = METRIC_FALLBACKS[item.id]?.[itemIntensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
+                if (
+                  referencesByIntensity &&
+                  referencesByIntensity[itemIntensity] &&
+                  referencesByIntensity[itemIntensity][item.id] &&
+                  confidenceState !== 'insuficiente'
+                ) {
+                  const calculated = referencesByIntensity[itemIntensity][item.id];
+                  baseRange = [calculated.p25, calculated.p50, calculated.p75];
+                }
+
+                const range = getRangeForMetric(item.id, baseRange[1], factor);
+                const adjustedRange = [range.min, range.p50, range.max];
                 const unit = item.id.includes('dist_') ? ' m' : '';
                 return {
                   name: item.name,
@@ -4635,12 +4803,20 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
                                 if (mapping) {
                                   const itemIntensity = (dayIdx !== -1 && dayIntensities) ? (dayIntensities[`${dayIdx}_${mapping.metricId}`] || dayIntensities[dayIdx] || 'Media') : 'Media';
-                                  baseRange = METRIC_FALLBACKS[mapping.metricId]?.[itemIntensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
-                                  adjustedRange = [
-                                    Math.round(baseRange[0] * factor),
-                                    Math.round(baseRange[1] * factor),
-                                    Math.round(baseRange[2] * factor)
-                                  ];
+                                  const rawBase = METRIC_FALLBACKS[mapping.metricId]?.[itemIntensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
+                                  if (
+                                    referencesByIntensity &&
+                                    referencesByIntensity[itemIntensity] &&
+                                    referencesByIntensity[itemIntensity][mapping.metricId] &&
+                                    confidenceState !== 'insuficiente'
+                                  ) {
+                                    const calculated = referencesByIntensity[itemIntensity][mapping.metricId];
+                                    baseRange = [calculated.p25, calculated.p50, calculated.p75];
+                                  } else {
+                                    baseRange = rawBase;
+                                  }
+                                  const range = getRangeForMetric(mapping.metricId, baseRange[1], factor);
+                                  adjustedRange = [range.min, range.p50, range.max];
                                   
                                   const [adjP25, adjP50, adjP75] = adjustedRange;
                                   const realVal = mapping.realValue;
