@@ -550,7 +550,10 @@ export default function DataImportArea() {
 
           const rawHeaders = rawRows[headerIndex];
           const dataRows = rawRows.slice(headerIndex + 1).filter(row => 
-            row && row[0] && row[0].trim() !== '' && row[1] && row[1].trim() !== ''
+            row && row[0] && row[0].trim() !== '' && 
+            normalizeString(row[0]) !== 'kg' && 
+            normalizeString(row[0]) !== 'paciente' &&
+            row[1] && row[1].trim() !== ''
           );
 
           // Create unique header names to prevent duplication issues
@@ -867,21 +870,99 @@ export default function DataImportArea() {
             item.masa_corporal_kg = parseCsvFloat(rawRow[3]);
             item.talla_cm = parseCsvFloat(rawRow[4]);
             item.talla_sentada_cm = parseCsvFloat(rawRow[5]);
+
+            // Diametros
+            item.diametro_biacromial_cm = parseCsvFloat(rawRow[6]);
+            item.diametro_transverso_torax_cm = parseCsvFloat(rawRow[7]);
+            item.diametro_anteroposterior_torax_cm = parseCsvFloat(rawRow[8]);
+            item.diametro_biiliocristal_cm = parseCsvFloat(rawRow[9]);
+            item.diametro_humero_cm = parseCsvFloat(rawRow[10]);
+            item.diametro_femur_cm = parseCsvFloat(rawRow[11]);
+
+            // Perimetros
+            item.perimetro_cabeza_cm = parseCsvFloat(rawRow[12]);
+            item.perimetro_brazo_relajado_cm = parseCsvFloat(rawRow[13]);
+            item.perimetro_brazo_flexionado_cm = parseCsvFloat(rawRow[14]);
+            item.perimetro_antebrazo_cm = parseCsvFloat(rawRow[15]);
+            item.perimetro_torax_cm = parseCsvFloat(rawRow[16]);
+            item.perimetro_cintura_cm = parseCsvFloat(rawRow[17]);
+            item.perimetro_caderas_cm = parseCsvFloat(rawRow[18]);
+            item.perimetro_muslos_gluteo_cm = parseCsvFloat(rawRow[19]);
+            item.perimetro_muslo_medio_cm = parseCsvFloat(rawRow[20]);
+            item.perimetro_pantorrilla_cm = parseCsvFloat(rawRow[21]);
+
+            // Pliegues
+            item.pliegue_biceps_mm = parseCsvFloat(rawRow[22]);
+            item.pliegue_triceps_mm = parseCsvFloat(rawRow[23]);
+            item.pliegue_subescapular_mm = parseCsvFloat(rawRow[24]);
+            item.pliegue_cresta_iliaca_mm = parseCsvFloat(rawRow[25]);
+            item.pliegue_supraespinal_mm = parseCsvFloat(rawRow[26]);
+            item.pliegue_abdominal_mm = parseCsvFloat(rawRow[27]);
+            item.pliegue_muslo_medio_mm = parseCsvFloat(rawRow[28]);
+            item.pliegue_pantorrilla_mm = parseCsvFloat(rawRow[29]);
+
+            // Masa Muscular & Adiposa
             item.masa_muscular_kg = parseCsvFloat(rawRow[30]);
             item.masa_muscular_pct = parseCsvFloat(rawRow[31]);
             item.masa_adiposa_kg = parseCsvFloat(rawRow[33]);
             item.masa_adiposa_pct = parseCsvFloat(rawRow[34]);
+
+            // Masa adicional
+            item.masa_grasa_kg = parseCsvFloat(rawRow[36]);
+            item.masa_grasa_pct = parseCsvFloat(rawRow[37]);
+            item.masa_residual_kg = parseCsvFloat(rawRow[39]);
+            item.masa_residual_pct = parseCsvFloat(rawRow[40]);
+            item.masa_piel_kg = parseCsvFloat(rawRow[41]);
+            item.masa_piel_pct = parseCsvFloat(rawRow[42]);
             item.masa_osea_kg = parseCsvFloat(rawRow[43]);
             item.masa_osea_pct = parseCsvFloat(rawRow[44]);
+
+            // Somatotipo
             item.somatotipo_endo = parseCsvFloat(rawRow[45]);
             item.somatotipo_meso = parseCsvFloat(rawRow[46]);
             item.somatotipo_ecto = parseCsvFloat(rawRow[47]);
             item.somatotipo_eje_x = parseCsvFloat(rawRow[48]);
             item.somatotipo_eje_y = parseCsvFloat(rawRow[49]);
+
+            // Muscular Zona
+            item.muscular_zona_sup_kg = parseCsvFloat(rawRow[50]);
+            item.mm_zona_kg_superior = parseCsvFloat(rawRow[50]);
+            item.muscular_zona_med_kg = parseCsvFloat(rawRow[51]);
+            item.mm_zona_kg_media = parseCsvFloat(rawRow[51]);
+            item.muscular_zona_inf_kg = parseCsvFloat(rawRow[52]);
+            item.mm_zona_kg_inferior = parseCsvFloat(rawRow[52]);
+            item.muscular_zona_sup_pct = parseCsvFloat(rawRow[53]);
+            item.mm_zona_pct_superior = parseCsvFloat(rawRow[53]);
+            item.muscular_zona_med_pct = parseCsvFloat(rawRow[54]);
+            item.mm_zona_pct_media = parseCsvFloat(rawRow[54]);
+            item.muscular_zona_inf_pct = parseCsvFloat(rawRow[55]);
+            item.mm_zona_pct_inferior = parseCsvFloat(rawRow[55]);
+
+            // Adiposa Zona
+            item.adiposa_zona_sup_kg = parseCsvFloat(rawRow[56]);
+            item.ma_zona_kg_superior = parseCsvFloat(rawRow[56]);
+            item.adiposa_zona_med_kg = parseCsvFloat(rawRow[57]);
+            item.ma_zona_kg_media = parseCsvFloat(rawRow[57]);
+            item.adiposa_zona_inf_kg = parseCsvFloat(rawRow[58]);
+            item.ma_zona_kg_inferior = parseCsvFloat(rawRow[58]);
+            item.adiposa_zona_sup_pct = parseCsvFloat(rawRow[59]);
+            item.ma_zona_pct_superior = parseCsvFloat(rawRow[59]);
+            item.adiposa_zona_med_pct = parseCsvFloat(rawRow[60]);
+            item.ma_zona_pct_media = parseCsvFloat(rawRow[60]);
+            item.adiposa_zona_inf_pct = parseCsvFloat(rawRow[61]);
+            item.ma_zona_pct_inferior = parseCsvFloat(rawRow[61]);
+
+            // Indices
             item.indice_imo = parseCsvFloat(rawRow[62]);
             item.indice_imc = parseCsvFloat(rawRow[63]);
+            item.indice_icc = parseCsvFloat(rawRow[64]);
+            item.indice_ica = parseCsvFloat(rawRow[65]);
+
+            // Pliegues sumatoria
             item.sum_pliegues_6_mm = parseCsvFloat(rawRow[66]);
             item.sum_pliegues_8_mm = parseCsvFloat(rawRow[67]);
+
+            // Maduracion
             item.maduracion_mirwald = parseCsvFloat(rawRow[68]);
             item.maduracion_moore = parseCsvFloat(rawRow[69]);
             item.maduracion_media = parseCsvFloat(rawRow[70]);
@@ -2823,47 +2904,72 @@ WITH CHECK (true);`;
                 <div className="space-y-6">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-1.5 h-6 bg-red-600 rounded-full"></div>
-                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Mapeo de Columnas</h4>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
+                      {selectedType === 'antropometria' ? 'Procesamiento Automatizado' : 'Mapeo de Columnas'}
+                    </h4>
                   </div>
-                  {IMPORT_CONFIGS[selectedType].fields.some(f => f.type === 'date') && (
-                    <div className="p-4 bg-red-50/30 rounded-2xl border border-red-100/50 flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <i className="fa-solid fa-calendar-day text-red-600 text-sm"></i>
+                  {selectedType === 'antropometria' ? (
+                    <div className="p-6 rounded-[32px] border border-emerald-100 bg-emerald-50/20 space-y-4">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+                          <i className="fa-solid fa-wand-magic-sparkles text-xl"></i>
+                        </div>
                         <div>
-                          <p className="text-[10px] font-black text-slate-900 uppercase tracking-tight">Fecha de Registro / Test (Fallback)</p>
-                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Se usará si el CSV no tiene o no se mapea una columna de fecha</p>
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1">Mapeo Inteligente Activado</h4>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">El archivo de Antropometría se procesa de forma directa.</p>
                         </div>
                       </div>
-                      <input
-                        type="date"
-                        value={manualDate}
-                        onChange={(e) => setManualDate(e.target.value)}
-                        className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-bold text-slate-900 outline-none focus:border-red-600 transition-all min-w-[200px]"
-                      />
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        Este formato contiene 80 columnas de datos posicionales y composición corporal compleja. El sistema procesará cada columna de forma totalmente automática por su posición original sin que tengas que mapear manualmente ningún campo.
+                      </p>
+                      <div className="p-4 bg-white rounded-2xl border border-emerald-50/80 flex items-center gap-3">
+                        <i className="fa-solid fa-circle-check text-emerald-500 text-sm"></i>
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-tight">Listo para importar: {csvData.length} registros cargados.</span>
+                      </div>
                     </div>
-                  )}
-                  <div className="grid grid-cols-1 gap-4">
-                    {IMPORT_CONFIGS[selectedType].fields.map((field) => (
-                      <div key={field.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-slate-900 uppercase tracking-tight">
-                            {field.label} {field.required && <span className="text-red-500">*</span>}
-                          </span>
-                          <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{field.type}</span>
+                  ) : (
+                    <>
+                      {IMPORT_CONFIGS[selectedType].fields.some(f => f.type === 'date') && (
+                        <div className="p-4 bg-red-50/30 rounded-2xl border border-red-100/50 flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <i className="fa-solid fa-calendar-day text-red-600 text-sm"></i>
+                            <div>
+                              <p className="text-[10px] font-black text-slate-900 uppercase tracking-tight">Fecha de Registro / Test (Fallback)</p>
+                              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Se usará si el CSV no tiene o no se mapea una columna de fecha</p>
+                            </div>
+                          </div>
+                          <input
+                            type="date"
+                            value={manualDate}
+                            onChange={(e) => setManualDate(e.target.value)}
+                            className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-bold text-slate-900 outline-none focus:border-red-600 transition-all min-w-[200px]"
+                          />
                         </div>
-                        <select
-                          value={mapping[field.key] || ''}
-                          onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}
-                          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-bold text-slate-900 outline-none focus:border-red-600 transition-all min-w-[200px]"
-                        >
-                          <option value="">Seleccionar columna...</option>
-                          {headers.map(h => (
-                            <option key={h} value={h}>{h}</option>
-                          ))}
-                        </select>
+                      )}
+                      <div className="grid grid-cols-1 gap-4">
+                        {IMPORT_CONFIGS[selectedType].fields.map((field) => (
+                          <div key={field.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] font-black text-slate-900 uppercase tracking-tight">
+                                {field.label} {field.required && <span className="text-red-500">*</span>}
+                              </span>
+                              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{field.type}</span>
+                            </div>
+                            <select
+                              value={mapping[field.key] || ''}
+                              onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}
+                              className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-bold text-slate-900 outline-none focus:border-red-600 transition-all min-w-[200px]"
+                            >
+                              <option value="">Seleccionar columna...</option>
+                              {headers.map(h => (
+                                <option key={h} value={h}>{h}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-6">

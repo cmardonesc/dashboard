@@ -1282,16 +1282,11 @@ const TachometerGauge = ({
         </div>
       </div>
 
-      <div className="w-full flex justify-between items-center bg-white px-3 py-1.5 rounded-xl border border-slate-100 z-10 mt-1">
-        <div className="text-left">
-          <p className="text-[7px] font-black uppercase text-slate-400 tracking-wider">vs Promedio</p>
-          <p className={`text-[9px] font-black italic ${isBetter && safeVal > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-            {safeVal > 0 && safeAvg > 0 ? `${isBetter ? '+' : ''}${pctDiff.toFixed(1)}%` : '—'}
-          </p>
-        </div>
-        <div className={`px-2 py-0.5 rounded-full text-[7px] font-black uppercase ${safeVal > 0 && safeAvg > 0 ? (isBetter ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500') : 'bg-slate-50 text-slate-400'}`}>
-          {safeVal > 0 && safeAvg > 0 ? (isBetter ? 'Sobresaliente' : 'Bajo Promedio') : 'Sin Marcas'}
-        </div>
+      <div className="w-full flex flex-col items-center justify-center bg-white py-1.5 rounded-xl border border-slate-100 z-10 mt-1">
+        <p className="text-[7px] font-black uppercase text-slate-400 tracking-wider">vs Promedio</p>
+        <p className={`text-[9px] font-black italic ${isBetter && safeVal > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+          {safeVal > 0 && safeAvg > 0 ? `${isBetter ? '+' : ''}${pctDiff.toFixed(1)}%` : '—'}
+        </p>
       </div>
 
       {percentile !== undefined && safeVal > 0 && (
@@ -3910,23 +3905,6 @@ const AthleteHuella = ({
           </div>
         </div>
       </div>
-
-      {player && (
-        <AthletePrescription
-          player={player as any}
-          latestVam={(() => {
-            if (!vo2max || vo2max.length === 0) return null;
-            const sorted = [...vo2max].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-            return sorted[0]?.vam || null;
-          })()}
-          latestImtp={(() => {
-            if (!imtp || imtp.length === 0) return null;
-            const sorted = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime());
-            return sorted[0]?.imtp_fuerza_n || null;
-          })()}
-          aiSummary={aiSummary}
-        />
-      )}
     </div>
   );
 };

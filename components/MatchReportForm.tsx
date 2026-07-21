@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Category } from '../types';
 import { BODY_PARTS } from '../constants';
+import { InteractiveBodyMap } from './InteractiveBodyMap';
 
 interface MatchReportFormProps {
   onSubmit: (data: any) => void;
@@ -314,8 +315,6 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, onClose, de
   );
 
   const renderSorenessStep = () => {
-    const currentAreas = BODY_PARTS[view];
-
     const toggleArea = (area: string) => {
       setFormData(prev => ({
         ...prev,
@@ -331,7 +330,7 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, onClose, de
           ¿MOLESTIAS FÍSICAS? 🩹
         </h2>
 
-        <div className="flex bg-slate-100 p-1 rounded-2xl mb-6">
+        <div className="flex bg-slate-100 p-1 rounded-2xl mb-4">
           <button 
             type="button"
             onClick={() => setView('ANTERIOR')}
@@ -348,38 +347,17 @@ const MatchReportForm: React.FC<MatchReportFormProps> = ({ onSubmit, onClose, de
           </button>
         </div>
 
-        <div className="max-h-[380px] overflow-y-auto pr-2 custom-scrollbar space-y-6 mb-10">
-          {['SUPERIOR', 'TRONCO', 'INFERIOR'].map(cat => {
-            const catAreas = currentAreas.filter(a => a.category === cat);
-            if (catAreas.length === 0) return null;
-            
-            return (
-              <div key={cat} className="space-y-3">
-                <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">{cat}</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {catAreas.map((area) => (
-                    <button
-                      key={area.id}
-                      type="button"
-                      onClick={() => toggleArea(area.label)}
-                      className={`py-4 px-3 rounded-[16px] border text-[9px] font-black uppercase tracking-tight transition-all text-center leading-none ${
-                        formData.sorenessAreas.includes(area.label)
-                        ? 'bg-[#0b1220] text-white border-[#0b1220] shadow-lg'
-                        : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'
-                      }`}
-                    >
-                      {area.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        <div className="mb-6">
+          <InteractiveBodyMap
+            selectedAreas={formData.sorenessAreas}
+            onToggleArea={toggleArea}
+            view={view}
+          />
         </div>
 
         <div className="flex gap-4">
-          <button type="button" onClick={handleBack} className="flex-1 py-6 bg-slate-50 text-slate-400 rounded-3xl text-xs font-black uppercase tracking-widest">ATRÁS</button>
-          <button type="button" onClick={handleNext} className="flex-[2] py-6 bg-[#0b1220] text-white rounded-3xl text-xs font-black uppercase tracking-widest shadow-xl">CONTINUAR ➡️</button>
+          <button type="button" onClick={handleBack} className="flex-1 py-5 bg-slate-50 text-slate-400 rounded-3xl text-xs font-black uppercase tracking-widest">ATRÁS</button>
+          <button type="button" onClick={handleNext} className="flex-[2] py-5 bg-[#0b1220] text-white rounded-3xl text-xs font-black uppercase tracking-widest shadow-xl">CONTINUAR ➡️</button>
         </div>
       </div>
     );
