@@ -9,29 +9,48 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
-const getRangeForMetric = (metricId: string, baseP50: number, factor: number = 1) => {
+const getRangeForMetric = (metricId: string, baseP50: number, factor: number = 1, intensity: 'Baja' | 'Media' | 'Alta' = 'Media') => {
   const mid = baseP50 * factor;
   let D = 2000;
   
   const normId = metricId.toLowerCase().trim();
-  
-  if (normId.includes('dist_total') || normId === 'dist_total_m' || normId === 'distancia total' || normId.includes('distancia total')) {
-    D = 2000;
-  } else if (normId.includes('dist_ai_m_15_kmh') || normId === 'dist_ai_m_15_kmh' || normId.includes('15 km/h') || normId.includes('15km/h') || normId.includes('mai >15')) {
-    D = 300;
-  } else if (normId.includes('dist_mai_m_20_kmh') || normId === 'dist_mai_m_20_kmh' || normId.includes('20 km/h') || normId.includes('20km/h') || normId.includes('hsr >20')) {
-    D = 300;
-  } else if (normId.includes('dist_sprint_m_25_kmh') || normId === 'dist_sprint_m_25_kmh' || normId.includes('25 km/h') || normId.includes('25km/h') || normId.includes('sprint >25')) {
-    D = 150;
-  } else if (normId.includes('acc_decc_ai_n') || normId === 'acc_decc_ai_n' || normId.includes('acc/dec') || normId.includes('acc / dec') || normId.includes('acc') || normId.includes('dec')) {
-    D = 50;
+  const isTotal = normId.includes('dist_total') || normId === 'dist_total_m' || normId === 'distancia total' || normId.includes('distancia total');
+  const isAi15 = normId.includes('dist_ai_m_15_kmh') || normId === 'dist_ai_m_15_kmh' || normId.includes('15 km/h') || normId.includes('15km/h') || normId.includes('mai >15');
+  const isMai20 = normId.includes('dist_mai_m_20_kmh') || normId === 'dist_mai_m_20_kmh' || normId.includes('20 km/h') || normId.includes('20km/h') || normId.includes('hsr >20');
+  const isSprint25 = normId.includes('dist_sprint_m_25_kmh') || normId === 'dist_sprint_m_25_kmh' || normId.includes('25 km/h') || normId.includes('25km/h') || normId.includes('sprint >25');
+  const isAccDec = normId.includes('acc_decc_ai_n') || normId === 'acc_decc_ai_n' || normId.includes('acc/dec') || normId.includes('acc / dec') || normId.includes('acc') || normId.includes('dec');
+
+  if (intensity === 'Baja') {
+    if (isTotal) D = 1500;
+    else if (isAi15) D = 100;
+    else if (isMai20) D = 50;
+    else if (isSprint25) D = 30;
+    else if (isAccDec) D = 30;
+  } else if (intensity === 'Alta') {
+    if (isTotal) D = 3000;
+    else if (isAi15) D = 500;
+    else if (isMai20) D = 300;
+    else if (isSprint25) D = 150;
+    else if (isAccDec) D = 50;
+  } else { // Media (or default)
+    if (isTotal) D = 2000;
+    else if (isAi15) D = 200;
+    else if (isMai20) D = 150;
+    else if (isSprint25) D = 50;
+    else if (isAccDec) D = 40;
   }
 
-  const min = Math.max(0, Math.round((mid - D / 2) / 50) * 50);
-  const max = min + D;
-  const p50 = Math.round(mid / 50) * 50;
-
-  return { min, max, p50 };
+  if (D % 50 === 0) {
+    const min = Math.max(0, Math.round((mid - D / 2) / 50) * 50);
+    const max = min + D;
+    const p50 = Math.round(mid / 50) * 50;
+    return { min, max, p50 };
+  } else {
+    const min = Math.max(0, Math.round(mid - D / 2));
+    const max = min + D;
+    const p50 = Math.round(mid);
+    return { min, max, p50 };
+  }
 };
 
 const DEFAULT_GPS_REFS = [
@@ -3793,6 +3812,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               const gpsParameters = [
                 { name: 'Distancia Total Promedio (m)', value: reportData.gpsAvg?.dist ? `${reportData.gpsAvg.dist.toFixed(0)} m` : '—' },
                 { name: 'Distancia HSR Promedio (m)', value: reportData.gpsAvg?.hsr ? `${reportData.gpsAvg.hsr.toFixed(0)} m` : '—' },
+                { name: 'Distancia MAI Promedio (m)', value: reportData.gpsAvg?.ai ? `${reportData.gpsAvg.ai.toFixed(0)} m` : '—' },
                 { name: 'Distancia Sprint Promedio (m)', value: reportData.gpsAvg?.sprint ? `${reportData.gpsAvg.sprint.toFixed(0)} m` : '—' },
                 { name: 'Acc/Decc AI Promedio', value: reportData.gpsAvg?.acc ? `${reportData.gpsAvg.acc.toFixed(1)}` : '—' },
               ];
@@ -3845,12 +3865,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
               const nextDayGpsParams = [
                 { id: 'dist_total_m', name: 'DISTANCIA TOTAL PROMEDIO OBJETIVO' },
-                { id: 'dist_ai_m_15_kmh', name: 'DISTANCIA HSR PROMEDIO OBJETIVO (>15 KM/H)' },
+                { id: 'dist_ai_m_15_kmh', name: 'DISTANCIA MAI PROMEDIO OBJETIVO (>15 KM/H)' },
+                { id: 'dist_mai_m_20_kmh', name: 'DISTANCIA HSR PROMEDIO OBJETIVO (>20 KM/H)' },
                 { id: 'dist_sprint_m_25_kmh', name: 'DISTANCIA SPRINT PROMEDIO OBJETIVO (>25 KM/H)' },
                 { id: 'acc_decc_ai_n', name: 'ACC/DECC AI PROMEDIO OBJETIVO' },
               ].map(item => {
-                const percentage = (nextDayIdx !== -1 && plannedValues) ? (plannedValues[`${nextDayIdx}_${item.id}`] || 0) : 0;
-                const factor = 1 + (percentage / 100);
                 const itemIntensity = (nextDayIdx !== -1 && dayIntensities) ? (dayIntensities[`${nextDayIdx}_${item.id}`] || dayIntensities[nextDayIdx] || 'Media') : 'Media';
                 
                 let baseRange = METRIC_FALLBACKS[item.id]?.[itemIntensity as 'Baja' | 'Media' | 'Alta'] || [0, 0, 0];
@@ -3864,7 +3883,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   baseRange = [calculated.p25, calculated.p50, calculated.p75];
                 }
 
-                const range = getRangeForMetric(item.id, baseRange[1], factor);
+                const hasPlannedVal = (plannedValues && nextDayIdx !== -1 && plannedValues[`${nextDayIdx}_${item.id}`] !== undefined);
+                const plannedVal = hasPlannedVal ? plannedValues[`${nextDayIdx}_${item.id}`] : baseRange[1];
+                const percentage = (hasPlannedVal && baseRange[1] > 0) ? Math.round(((plannedVal - baseRange[1]) / baseRange[1]) * 100) : 0;
+
+                const range = getRangeForMetric(item.id, plannedVal, 1, itemIntensity as 'Baja' | 'Media' | 'Alta');
                 const adjustedRange = [range.min, range.p50, range.max];
                 const unit = item.id.includes('dist_') ? ' m' : '';
                 return {
@@ -4771,8 +4794,15 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                   }
                                   if (paramName.includes('Distancia HSR')) {
                                     return {
-                                      metricId: 'dist_ai_m_15_kmh',
+                                      metricId: 'dist_mai_m_20_kmh',
                                       realValue: reportData.gpsAvg?.hsr || 0,
+                                      unit: 'm'
+                                    };
+                                  }
+                                  if (paramName.includes('Distancia MAI')) {
+                                    return {
+                                      metricId: 'dist_ai_m_15_kmh',
+                                      realValue: reportData.gpsAvg?.ai || 0,
                                       unit: 'm'
                                     };
                                   }
@@ -4794,12 +4824,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 };
 
                                 const mapping = getParamMapping(param.name);
-                                const percentage = (mapping && dayIdx !== -1 && plannedValues) ? (plannedValues[`${dayIdx}_${mapping.metricId}`] || 0) : 0;
-                                const factor = 1 + (percentage / 100);
                                 
                                 let baseRange = null;
                                 let adjustedRange = null;
                                 let statusBadge = null;
+                                let percentage = 0;
 
                                 if (mapping) {
                                   const itemIntensity = (dayIdx !== -1 && dayIntensities) ? (dayIntensities[`${dayIdx}_${mapping.metricId}`] || dayIntensities[dayIdx] || 'Media') : 'Media';
@@ -4815,7 +4844,12 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                   } else {
                                     baseRange = rawBase;
                                   }
-                                  const range = getRangeForMetric(mapping.metricId, baseRange[1], factor);
+
+                                  const hasPlannedVal = (plannedValues && dayIdx !== -1 && plannedValues[`${dayIdx}_${mapping.metricId}`] !== undefined);
+                                  const plannedVal = hasPlannedVal ? plannedValues[`${dayIdx}_${mapping.metricId}`] : baseRange[1];
+                                  percentage = (hasPlannedVal && baseRange[1] > 0) ? Math.round(((plannedVal - baseRange[1]) / baseRange[1]) * 100) : 0;
+
+                                  const range = getRangeForMetric(mapping.metricId, plannedVal, 1, itemIntensity as 'Baja' | 'Media' | 'Alta');
                                   adjustedRange = [range.min, range.p50, range.max];
                                   
                                   const [adjP25, adjP50, adjP75] = adjustedRange;
@@ -4915,10 +4949,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           * PLANIFICACIÓN FÍSICA PREDICTIVA Y OBJETIVOS DE CARGA EXTERNA SELECCIONADOS PARA LA PRÓXIMA JORNADA DE ENTRENAMIENTO.
                         </p>
 
-                        <div className="grid grid-cols-4 gap-3 mt-6 mb-6">
+                        <div className="grid grid-cols-5 gap-2 mt-6 mb-6">
                           {nextDayGpsParams.map((param: any, idx: number) => {
                             return (
-                              <div key={`next-param-${idx}`} className="p-4 rounded-xl border border-slate-100 bg-slate-50/30 flex flex-col justify-between">
+                              <div key={`next-param-${idx}`} className="p-3 rounded-xl border border-slate-100 bg-slate-50/30 flex flex-col justify-between">
                                 <div className="text-[8px] font-black text-slate-500 uppercase tracking-wider mb-2 leading-snug">
                                   {param.name}
                                 </div>

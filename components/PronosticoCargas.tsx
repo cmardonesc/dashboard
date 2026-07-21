@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Category, CATEGORY_ID_MAP } from '../types';
 import jsPDF from 'jspdf';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
-import { FEDERATION_LOGO } from '../constants';
+import { FEDERATION_LOGO, BANDAS_GPS, clasificarGPS } from '../constants';
 import { getDriveDirectLink } from '../lib/utils';
 
 // Defined metrics for the table
@@ -85,31 +85,74 @@ const CATEGORY_LABELS: Record<Category, string> = {
   [Category.ADULTA]: 'Adulta / Absoluta',
 };
 
+const METRIC_MAX_VALUES: Record<string, number> = {
+  dist_total_m: 13301.0,
+  dist_ai_m_15_kmh: 3049.4,
+  dist_mai_m_20_kmh: 1490.8,
+  dist_sprint_m_25_kmh: 499.8,
+  acc_decc_ai_n: 294
+};
+
+const METRIC_STEPS: Record<string, number> = {
+  dist_total_m: 50,
+  dist_ai_m_15_kmh: 10,
+  dist_mai_m_20_kmh: 5,
+  dist_sprint_m_25_kmh: 1,
+  acc_decc_ai_n: 1
+};
+
+const METRIC_THREE_VALS: Record<string, number[]> = {
+  dist_total_m: [1500, 2000, 3000],
+  dist_ai_m_15_kmh: [100, 200, 500],
+  dist_mai_m_20_kmh: [50, 150, 300],
+  dist_sprint_m_25_kmh: [30, 50, 150],
+  acc_decc_ai_n: [30, 40, 50]
+};
+
 type Intensity = 'Baja' | 'Media' | 'Alta';
 
-export const getRangeForMetric = (metricId: string, baseP50: number, factor: number = 1) => {
+export const getRangeForMetric = (metricId: string, baseP50: number, factor: number = 1, intensity: 'Baja' | 'Media' | 'Alta' = 'Media') => {
   const mid = baseP50 * factor;
   let D = 2000;
   
   const normId = metricId.toLowerCase().trim();
-  
-  if (normId.includes('dist_total') || normId === 'dist_total_m' || normId === 'distancia total' || normId.includes('distancia total')) {
-    D = 2000;
-  } else if (normId.includes('dist_ai_m_15_kmh') || normId === 'dist_ai_m_15_kmh' || normId.includes('15 km/h') || normId.includes('15km/h') || normId.includes('mai >15')) {
-    D = 300;
-  } else if (normId.includes('dist_mai_m_20_kmh') || normId === 'dist_mai_m_20_kmh' || normId.includes('20 km/h') || normId.includes('20km/h') || normId.includes('hsr >20')) {
-    D = 300;
-  } else if (normId.includes('dist_sprint_m_25_kmh') || normId === 'dist_sprint_m_25_kmh' || normId.includes('25 km/h') || normId.includes('25km/h') || normId.includes('sprint >25')) {
-    D = 150;
-  } else if (normId.includes('acc_decc_ai_n') || normId === 'acc_decc_ai_n' || normId.includes('acc/dec') || normId.includes('acc / dec') || normId.includes('acc') || normId.includes('dec')) {
-    D = 50;
+  const isTotal = normId.includes('dist_total') || normId === 'dist_total_m' || normId === 'distancia total' || normId.includes('distancia total');
+  const isAi15 = normId.includes('dist_ai_m_15_kmh') || normId === 'dist_ai_m_15_kmh' || normId.includes('15 km/h') || normId.includes('15km/h') || normId.includes('mai >15');
+  const isMai20 = normId.includes('dist_mai_m_20_kmh') || normId === 'dist_mai_m_20_kmh' || normId.includes('20 km/h') || normId.includes('20km/h') || normId.includes('hsr >20');
+  const isSprint25 = normId.includes('dist_sprint_m_25_kmh') || normId === 'dist_sprint_m_25_kmh' || normId.includes('25 km/h') || normId.includes('25km/h') || normId.includes('sprint >25');
+  const isAccDec = normId.includes('acc_decc_ai_n') || normId === 'acc_decc_ai_n' || normId.includes('acc/dec') || normId.includes('acc / dec') || normId.includes('acc') || normId.includes('dec');
+
+  if (intensity === 'Baja') {
+    if (isTotal) D = 1500;
+    else if (isAi15) D = 100;
+    else if (isMai20) D = 50;
+    else if (isSprint25) D = 30;
+    else if (isAccDec) D = 30;
+  } else if (intensity === 'Alta') {
+    if (isTotal) D = 3000;
+    else if (isAi15) D = 500;
+    else if (isMai20) D = 300;
+    else if (isSprint25) D = 150;
+    else if (isAccDec) D = 50;
+  } else { // Media (or default)
+    if (isTotal) D = 2000;
+    else if (isAi15) D = 200;
+    else if (isMai20) D = 150;
+    else if (isSprint25) D = 50;
+    else if (isAccDec) D = 40;
   }
 
-  const min = Math.max(0, Math.round((mid - D / 2) / 50) * 50);
-  const max = min + D;
-  const p50 = Math.round(mid / 50) * 50;
-
-  return { min, max, p50 };
+  if (D % 50 === 0) {
+    const min = Math.max(0, Math.round((mid - D / 2) / 50) * 50);
+    const max = min + D;
+    const p50 = Math.round(mid / 50) * 50;
+    return { min, max, p50 };
+  } else {
+    const min = Math.max(0, Math.round(mid - D / 2));
+    const max = min + D;
+    const p50 = Math.round(mid);
+    return { min, max, p50 };
+  }
 };
 
 export default function PronosticoCargas({ 
@@ -472,20 +515,29 @@ export default function PronosticoCargas({
       
       METRICS.forEach(metric => {
         const rec = getRecommendation(dIdx, metric.id);
-        const percentage = plannedValues[`${dIdx}_${metric.id}`] || 0;
-        const factor = 1 + (percentage / 100);
-        const range = getRangeForMetric(metric.id, rec.p50, factor);
-        row[metric.id] = range.p50;
+        const currentVal = plannedValues[`${dIdx}_${metric.id}`] !== undefined 
+          ? plannedValues[`${dIdx}_${metric.id}`] 
+          : rec.p50;
+        
+        const classified = clasificarGPS(metric.id, currentVal, selectedCategory);
+        let currentIntensity: Intensity = 'Media';
+        if (classified === 'BAJO') currentIntensity = 'Baja';
+        else if (classified === 'ALTO') currentIntensity = 'Alta';
+
+        const range = getRangeForMetric(metric.id, currentVal, 1, currentIntensity);
+        const pct = rec.p50 > 0 ? Math.round(((currentVal - rec.p50) / rec.p50) * 100) : 0;
+
+        row[metric.id] = currentVal;
         row[`${metric.id}_min`] = range.min;
         row[`${metric.id}_max`] = range.max;
-        row[`${metric.id}_pct`] = percentage;
-        row[`${metric.id}_rel`] = Math.round(factor * 100);
+        row[`${metric.id}_pct`] = pct;
+        row[`${metric.id}_rel`] = rec.p50 > 0 ? Math.round((currentVal / rec.p50) * 100) : 100;
         row[`${metric.id}_rec`] = rec.p50;
       });
       
       return row;
     });
-  }, [daysCount, selectedMicrocycle, plannedValues, dayIntensities, referencesByIntensity, confidenceState]);
+  }, [daysCount, selectedMicrocycle, plannedValues, dayIntensities, referencesByIntensity, confidenceState, selectedCategory]);
 
   // Función para descargar PDF de Planificación y Pronóstico
   const handleDownloadPDF = () => {
@@ -541,7 +593,7 @@ export default function PronosticoCargas({
 
     // --- METADATA BOXES ---
     const boxY = 28;
-    const boxW = (width - (margin * 2) - 8) / 3;
+    const boxW = (width - (margin * 2) - 4) / 2;
     const boxH = 10;
 
     // Box 1: Proceso / Microciclo
@@ -562,23 +614,11 @@ export default function PronosticoCargas({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(5.5);
     doc.setTextColor(140, 140, 140);
-    doc.text('PERIODO DE TRABAJO', margin + boxW + 8, boxY + 3.5);
+    doc.text('PERIODO DE TRABAJO', margin + boxW + 4, boxY + 3.5);
     doc.setFontSize(7);
     doc.setTextColor(40, 40, 40);
     const rangeText = `DEL ${new Date(selectedMicrocycle.start_date + 'T12:00:00').toLocaleDateString('es-ES')} AL ${new Date(selectedMicrocycle.end_date + 'T12:00:00').toLocaleDateString('es-ES')}`;
-    doc.text(rangeText.toUpperCase(), margin + boxW + 8, boxY + 7.5);
-
-    // Box 3: Referencia
-    doc.setFillColor(245, 247, 250);
-    doc.roundedRect(margin + (boxW * 2) + 8, boxY, boxW, boxH, 1.5, 1.5, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(5.5);
-    doc.setTextColor(140, 140, 140);
-    doc.text('HISTORIAL DE SOPORTE', margin + (boxW * 2) + 12, boxY + 3.5);
-    doc.setFontSize(7);
-    doc.setTextColor(40, 40, 40);
-    const refText = `${nMicros} MICROCICLOS DE REFERENCIA`;
-    doc.text(refText.toUpperCase(), margin + (boxW * 2) + 12, boxY + 7.5);
+    doc.text(rangeText.toUpperCase(), margin + boxW + 4, boxY + 7.5);
 
     // --- TABLE ---
     const tableYStart = 44;
@@ -588,7 +628,7 @@ export default function PronosticoCargas({
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
-    doc.text("DÍA", margin + 3, tableYStart + 5.5);
+    doc.text("FECHA", margin + 3, tableYStart + 5.5);
     doc.text("INTENSIDAD", margin + 30, tableYStart + 5.5);
     doc.text("DISTANCIA (M)", margin + 75, tableYStart + 5.5, { align: 'right' });
     doc.text("HSR (M)", margin + 105, tableYStart + 5.5, { align: 'right' });
@@ -610,7 +650,16 @@ export default function PronosticoCargas({
       doc.setTextColor(15, 23, 42);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
-      doc.text(`Día ${idx + 1}`, margin + 3, currentY + 5);
+      const dayInfo = getDayDetails(idx);
+      const compactLabel = dayInfo.label
+        .replace('Domingo', 'Dom')
+        .replace('Lunes', 'Lun')
+        .replace('Martes', 'Mar')
+        .replace('Miércoles', 'Mié')
+        .replace('Jueves', 'Jue')
+        .replace('Viernes', 'Vie')
+        .replace('Sábado', 'Sáb');
+      doc.text(compactLabel, margin + 3, currentY + 5);
       
       const intensity = dayIntensities[idx] || 'Media';
       doc.setFont("helvetica", "normal");
@@ -628,17 +677,28 @@ export default function PronosticoCargas({
       doc.setTextColor(15, 23, 42);
       doc.setFont("helvetica", "normal");
       
-      const distVal = row['dist_total_m'] || 0;
-      const maiVal = row['dist_ai_m_15_kmh'] || 0;
-      const hsrVal = row['dist_mai_m_20_kmh'] || 0;
-      const sprintVal = row['dist_sprint_m_25_kmh'] || 0;
-      const accVal = row['acc_decc_ai_n'] || 0;
+      const distMin = row['dist_total_m_min'] || 0;
+      const distMax = row['dist_total_m_max'] || 0;
+      const maiMin = row['dist_ai_m_15_kmh_min'] || 0;
+      const maiMax = row['dist_ai_m_15_kmh_max'] || 0;
+      const hsrMin = row['dist_mai_m_20_kmh_min'] || 0;
+      const hsrMax = row['dist_mai_m_20_kmh_max'] || 0;
+      const sprintMin = row['dist_sprint_m_25_kmh_min'] || 0;
+      const sprintMax = row['dist_sprint_m_25_kmh_max'] || 0;
+      const accMin = row['acc_decc_ai_n_min'] || 0;
+      const accMax = row['acc_decc_ai_n_max'] || 0;
       
-      doc.text(distVal.toLocaleString(), margin + 75, currentY + 5, { align: 'right' });
-      doc.text(hsrVal.toLocaleString(), margin + 105, currentY + 5, { align: 'right' });
-      doc.text(maiVal.toLocaleString(), margin + 130, currentY + 5, { align: 'right' });
-      doc.text(sprintVal.toLocaleString(), margin + 155, currentY + 5, { align: 'right' });
-      doc.text(accVal.toLocaleString(), margin + 180, currentY + 5, { align: 'right' });
+      const distText = `${distMin.toLocaleString()} - ${distMax.toLocaleString()}`;
+      const hsrText = `${hsrMin.toLocaleString()} - ${hsrMax.toLocaleString()}`;
+      const maiText = `${maiMin.toLocaleString()} - ${maiMax.toLocaleString()}`;
+      const sprintText = `${sprintMin.toLocaleString()} - ${sprintMax.toLocaleString()}`;
+      const accText = `${accMin.toLocaleString()} - ${accMax.toLocaleString()}`;
+      
+      doc.text(distText, margin + 75, currentY + 5, { align: 'right' });
+      doc.text(hsrText, margin + 105, currentY + 5, { align: 'right' });
+      doc.text(maiText, margin + 130, currentY + 5, { align: 'right' });
+      doc.text(sprintText, margin + 155, currentY + 5, { align: 'right' });
+      doc.text(accText, margin + 180, currentY + 5, { align: 'right' });
       
       currentY += 7.5;
     });
@@ -649,9 +709,9 @@ export default function PronosticoCargas({
     // Modern brand color variants map for [Min, Max]
     const metricColorsMap: Record<string, { min: [number, number, number], max: [number, number, number] }> = {
       "dist_total_m": { min: [112, 163, 227], max: [2, 66, 140] },       // Dist Total (Blue)
-      "dist_ai_m_15_kmh": { min: [252, 211, 77], max: [245, 158, 11] },  // MAI (Amber)
-      "dist_mai_m_20_kmh": { min: [255, 143, 138], max: [226, 35, 26] },   // HSR (Red)
-      "dist_sprint_m_25_kmh": { min: [110, 231, 183], max: [16, 185, 129] },// Sprint (Emerald)
+      "dist_ai_m_15_kmh": { min: [110, 231, 183], max: [16, 185, 129] },  // MAI >15 (Green/Verde)
+      "dist_mai_m_20_kmh": { min: [254, 215, 170], max: [245, 158, 11] }, // HSR >20 (Orange/Naranjo)
+      "dist_sprint_m_25_kmh": { min: [255, 143, 138], max: [226, 35, 26] },// Sprint >25 (Red/Rojo)
       "acc_decc_ai_n": { min: [192, 132, 252], max: [139, 92, 246] }     // Acc/Dec (Purple)
     };
 
@@ -721,7 +781,11 @@ export default function PronosticoCargas({
         doc.setTextColor(148, 163, 184);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(4.8);
-        doc.text(`${tickVal.toLocaleString()}${unit ? ' ' + unit : ''}`, cX - 2.5, gridY + 0.8, { align: 'right' });
+        let displayVal = tickVal.toLocaleString();
+        if (metricId === 'dist_total_m') {
+          displayVal = (tickVal / 1000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+        }
+        doc.text(`${displayVal}${unit ? ' ' + unit : ''}`, cX - 2.5, gridY + 0.8, { align: 'right' });
       }
 
       // Draw dual bars and top labels for each day
@@ -756,19 +820,30 @@ export default function PronosticoCargas({
         doc.setTextColor(100, 116, 139);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(4.5);
-        doc.text(valMin.toLocaleString(), barXMin + (barW / 2), barYMin - 0.8, { align: 'center' });
+        let displayMin = valMin.toLocaleString();
+        if (metricId === 'dist_total_m') {
+          displayMin = (valMin / 1000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+        }
+        doc.text(displayMin, barXMin + (barW / 2), barYMin - 0.8, { align: 'center' });
 
         // Draw Value Label on top of Max Bar (bold, high-contrast)
         doc.setTextColor(15, 23, 42);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(4.8);
-        doc.text(valMax.toLocaleString(), barXMax + (barW / 2), barYMax - 0.8, { align: 'center' });
+        let displayMax = valMax.toLocaleString();
+        if (metricId === 'dist_total_m') {
+          displayMax = (valMax / 1000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+        }
+        doc.text(displayMax, barXMax + (barW / 2), barYMax - 0.8, { align: 'center' });
 
         // Draw Day Indicator (centered below the group)
         doc.setTextColor(148, 163, 184);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(5.5);
-        doc.text(`D${idx + 1}`, dayCenter, cY + cH + 4.2, { align: 'center' });
+        const dayInfo = getDayDetails(idx);
+        const parts = dayInfo.label.split(' ');
+        const compactLabel = parts[1] && parts[2] ? `${parts[1]} ${parts[2]}` : `D${idx + 1}`; // e.g. "20 Jul"
+        doc.text(compactLabel, dayCenter, cY + cH + 4.2, { align: 'center' });
       });
     };
 
@@ -812,7 +887,7 @@ export default function PronosticoCargas({
     const col2X = margin + chartW + 8; // 15 + 86 + 8 = 109
 
     // Row 1
-    drawSmallChart(margin, chartYStart, chartW, chartH, "Distancia Total", "dist_total_m", "m");
+    drawSmallChart(margin, chartYStart, chartW, chartH, "Distancia Total", "dist_total_m", "km");
     drawSmallChart(col2X, chartYStart, chartW, chartH, "MAI >15 km/h", "dist_ai_m_15_kmh", "m");
 
     // Row 2
@@ -905,41 +980,54 @@ export default function PronosticoCargas({
     loadData();
   }, [selectedMicrocycle]);
 
-  // Handle individual day's intensity change (updates overall day intensity and cascades to all metrics)
+  // Handle individual day's intensity change (bypassed since intensity is auto-calculated now)
   const handleDayIntensityChange = (dayIdx: number, intensity: Intensity) => {
-    if (!selectedMicrocycle) return;
-    setDayIntensities(prev => {
-      const updated = { ...prev, [dayIdx]: intensity };
-      METRICS.forEach(metric => {
-        updated[`${dayIdx}_${metric.id}`] = intensity;
-      });
-      const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
-      localStorage.setItem(intensitiesKey, JSON.stringify(updated));
-      return updated;
-    });
+    // Left empty or bypassed intentionally as day intensity is now auto-determined based on dist_total_m
   };
 
-  // Handle individual metric intensity change
+  // Handle individual metric intensity change (bypassed since intensity is auto-calculated now)
   const handleMetricIntensityChange = (dayIdx: number, metricId: string, intensity: Intensity) => {
-    if (!selectedMicrocycle) return;
-    setDayIntensities(prev => {
-      const updated = { ...prev, [`${dayIdx}_${metricId}`]: intensity };
-      const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
-      localStorage.setItem(intensitiesKey, JSON.stringify(updated));
-      return updated;
-    });
+    // Left empty or bypassed intentionally as metric intensity is now auto-determined based on the slider value
   };
 
-  // Handle plan inputs safely (now slider values -50% to +50%)
+  // Handle plan inputs safely (now slider values represent direct absolute values)
   const handlePlanChange = (dayIndex: number, metricId: string, value: string) => {
     if (!selectedMicrocycle) return;
     const num = parseFloat(value) || 0;
     const key = `${dayIndex}_${metricId}`;
+    
     setPlannedValues(prev => {
-      const updated = { ...prev, [key]: num };
+      const updatedValues = { ...prev, [key]: num };
       const valuesKey = `gps_planning_mc_values_${selectedMicrocycle.id}`;
-      localStorage.setItem(valuesKey, JSON.stringify(updated));
-      return updated;
+      localStorage.setItem(valuesKey, JSON.stringify(updatedValues));
+      
+      // Update intensities dynamically
+      setDayIntensities(prevInts => {
+        const updatedInts = { ...prevInts };
+        
+        // Calculate intensity for this specific metric
+        const classified = clasificarGPS(metricId, num, selectedCategory);
+        let metricInt: Intensity = 'Media';
+        if (classified === 'BAJO') metricInt = 'Baja';
+        else if (classified === 'ALTO') metricInt = 'Alta';
+        updatedInts[`${dayIndex}_${metricId}`] = metricInt;
+        
+        // Calculate overall day intensity based on dist_total_m
+        const dayDistVal = updatedValues[`${dayIndex}_dist_total_m`] !== undefined 
+          ? updatedValues[`${dayIndex}_dist_total_m`] 
+          : getRecommendation(dayIndex, 'dist_total_m').p50;
+        const dayClassified = clasificarGPS('dist_total_m', dayDistVal, selectedCategory);
+        let dayInt: Intensity = 'Media';
+        if (dayClassified === 'BAJO') dayInt = 'Baja';
+        else if (dayClassified === 'ALTO') dayInt = 'Alta';
+        updatedInts[dayIndex] = dayInt;
+
+        const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
+        localStorage.setItem(intensitiesKey, JSON.stringify(updatedInts));
+        return updatedInts;
+      });
+
+      return updatedValues;
     });
   };
 
@@ -1168,18 +1256,18 @@ export default function PronosticoCargas({
                   Ondulación de la Carga Semanal
                 </h3>
                 <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">
-                  Gráfico del pronóstico de cargas del microciclo seleccionado
+                  Gráfico del pronóstico de cargas del microciclo seleccionado en valores absolutos de todas las métricas
                 </p>
               </div>
 
-              {/* Controles del gráfico y botón PDF */}
+              {/* Botón PDF */}
               <div className="flex flex-wrap items-center gap-4">
                 {/* Botón de Descarga de Reporte PDF */}
                 <button
                   onClick={handleDownloadPDF}
-                  className="bg-[#0b1220] hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md shadow-slate-900/10 hover:shadow-lg border border-slate-800 h-[40px]"
+                  className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md shadow-red-900/10 hover:shadow-lg border border-red-500/10 h-[40px]"
                 >
-                  <i className="fa-solid fa-file-pdf text-red-500 text-sm"></i>
+                  <i className="fa-solid fa-file-pdf text-white text-sm"></i>
                   <span>Descargar PDF</span>
                 </button>
               </div>
@@ -1200,7 +1288,7 @@ export default function PronosticoCargas({
                     axisLine={{ stroke: '#cbd5e1' }}
                   />
                   <YAxis 
-                    tickFormatter={(val) => `${val}%`}
+                    tickFormatter={(val) => val.toLocaleString()}
                     tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
                     axisLine={{ stroke: '#cbd5e1' }}
                     domain={[0, 'auto']}
@@ -1239,11 +1327,11 @@ export default function PronosticoCargas({
                       return null;
                     }}
                   />
-                  <Bar dataKey="dist_total_m_rel" name="Distancia Total" fill="#02428C" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="dist_ai_m_15_kmh_rel" name="MAI >15 km/h" fill="#F59E0B" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="dist_mai_m_20_kmh_rel" name="HSR >20 km/h" fill="#E2231A" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="dist_sprint_m_25_kmh_rel" name="Sprint >25 km/h" fill="#10B981" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="acc_decc_ai_n_rel" name="Acc / Dec" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dist_total_m" name="Distancia Total" fill="#02428C" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dist_ai_m_15_kmh" name="MAI >15 km/h" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dist_mai_m_20_kmh" name="HSR >20 km/h" fill="#E2231A" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dist_sprint_m_25_kmh" name="Sprint >25 km/h" fill="#10B981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="acc_decc_ai_n" name="Acc / Dec" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -1253,27 +1341,27 @@ export default function PronosticoCargas({
               <div className="flex flex-wrap items-center gap-5">
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded bg-[#02428C] inline-block"></span>
-                  <span className="text-slate-600">Distancia Total</span>
+                  <span className="text-slate-900 font-black">Distancia Total</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded bg-[#F59E0B] inline-block"></span>
-                  <span className="text-slate-600">{"MAI >15 km/h"}</span>
+                  <span className="text-slate-900 font-black">{"MAI >15 km/h"}</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded bg-[#E2231A] inline-block"></span>
-                  <span className="text-slate-600">{"HSR >20 km/h"}</span>
+                  <span className="text-slate-900 font-black">{"HSR >20 km/h"}</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded bg-[#10B981] inline-block"></span>
-                  <span className="text-slate-600">{"Sprint >25 km/h"}</span>
+                  <span className="text-slate-900 font-black">{"Sprint >25 km/h"}</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded bg-[#8B5CF6] inline-block"></span>
-                  <span className="text-slate-600">Acc / Dec</span>
+                  <span className="text-slate-900 font-black">Acc / Dec</span>
                 </span>
               </div>
               <div className="text-slate-500">
-                * Las barras representan el <span className="text-[#0b1220] font-black">% de Carga Programada</span> respecto al valor basal de referencia (100%).
+                * Las barras representan los <span className="text-[#0b1220] font-black">valores absolutos programados</span> de todas las métricas de rendimiento.
               </div>
             </div>
           </div>
@@ -1283,10 +1371,16 @@ export default function PronosticoCargas({
             {Array.from({ length: daysCount }).map((_, dIdx) => {
               const dayNum = dIdx + 1;
               const dayInfo = getDayDetails(dIdx);
-              const dayIntensity = dayIntensities[dIdx] || 'Media';
               
-              // Calculate Day total range adjustment (using dist_total_m adjustment as a proxy summary)
-              const distAdj = plannedValues[`${dIdx}_dist_total_m`] || 0;
+              // Calculate Day load classification automatically based on programmed dist_total_m
+              const dayDistVal = plannedValues[`${dIdx}_dist_total_m`] !== undefined 
+                ? plannedValues[`${dIdx}_dist_total_m`] 
+                : getRecommendation(dIdx, 'dist_total_m').p50;
+              const dayClassified = clasificarGPS('dist_total_m', dayDistVal, selectedCategory);
+              
+              // Calculate Day total range adjustment (using dist_total_m percentage difference from P50 as a proxy)
+              const distRec = getRecommendation(dIdx, 'dist_total_m');
+              const distAdj = distRec.p50 > 0 ? Math.round(((dayDistVal - distRec.p50) / distRec.p50) * 100) : 0;
 
               return (
                 <div
@@ -1306,31 +1400,22 @@ export default function PronosticoCargas({
                       </div>
                     </div>
 
-                    {/* Granular day configuration (Day intensity selector & total planned distance) */}
+                    {/* Granular day configuration (Day intensity indicator & total planned distance percentage) */}
                     <div className="flex flex-wrap items-center gap-6">
-                      {/* Day intensity selector */}
+                      {/* Day intensity indicator (non-clickable badge) */}
                       <div className="flex flex-col gap-1">
                         <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Intensidad Objetivo</label>
-                        <div className="flex bg-slate-950/60 p-1 rounded-xl border border-white/5 gap-1 h-[40px] items-center">
-                          {(['Baja', 'Media', 'Alta'] as const).map(tier => (
-                            <button
-                              key={tier}
-                              type="button"
-                              onClick={() => handleDayIntensityChange(dIdx, tier)}
-                              className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-200 ${
-                                dayIntensity === tier
-                                  ? tier === 'Baja'
-                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                    : tier === 'Media'
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-red-600 text-white shadow-md shadow-red-950/30'
-                                  : 'text-slate-400 hover:bg-[#0b1220]/50 hover:text-white'
-                              }`}
-                            >
-                              {tier}
-                            </button>
-                          ))}
-                        </div>
+                        <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border text-center min-w-[90px] h-[38px] flex items-center justify-center ${
+                          dayClassified === 'BAJO'
+                            ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                            : dayClassified === 'MEDIO'
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                            : dayClassified === 'ALTO'
+                            ? 'bg-red-600 text-white shadow-md shadow-red-950/30 border-red-600 font-black'
+                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}>
+                          {dayClassified === 'SIN_DATO' ? 'SIN DATO' : dayClassified}
+                        </span>
                       </div>
 
                       <div className="flex items-center gap-4">
@@ -1355,21 +1440,50 @@ export default function PronosticoCargas({
                       <thead>
                         <tr className="border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50">
                           <th className="px-8 py-4 w-1/4">Métrica de Rendimiento</th>
-                          <th className="px-8 py-4 w-[60%]">Rango Recomendado y Ajuste (P25 - P75)</th>
+                          <th className="px-8 py-4 w-[66%]">Rango Recomendado y Ajuste (P25 - P75)</th>
                           <th className="px-8 py-4 text-center w-24">Soporte</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {METRICS.map(metric => {
                           const rec = getRecommendation(dIdx, metric.id);
-                          const percentage = plannedValues[`${dIdx}_${metric.id}`] || 0;
+                          const currentVal = plannedValues[`${dIdx}_${metric.id}`] !== undefined 
+                            ? plannedValues[`${dIdx}_${metric.id}`] 
+                            : rec.p50;
                           
-                          // Calculate adjusted values based on the slider percentage and multiple of 50 differences
-                          const factor = 1 + (percentage / 100);
-                          const range = getRangeForMetric(metric.id, rec.p50, factor);
+                          // Determine dynamic intensity classification based on the selected value
+                          const classified = clasificarGPS(metric.id, currentVal, selectedCategory);
+                          let currentIntensity: Intensity = 'Media';
+                          if (classified === 'BAJO') currentIntensity = 'Baja';
+                          else if (classified === 'ALTO') currentIntensity = 'Alta';
+
+                          // Range widths for the dynamic view
+                          const range = getRangeForMetric(metric.id, currentVal, 1, currentIntensity);
                           const adjP25 = range.min;
-                          const adjP50 = range.p50;
                           const adjP75 = range.max;
+
+                          // Percentage adjustment compared to base recommendation P50
+                          const pct = rec.p50 > 0 ? Math.round(((currentVal - rec.p50) / rec.p50) * 100) : 0;
+
+                          // Retrieve category thresholds for showing in helper text
+                          let catKey = 'GENERAL';
+                          if (selectedCategory) {
+                            const normCat = selectedCategory.toLowerCase().replace(/[\s-_]/g, '');
+                            if (normCat.includes('15') || normCat.includes('u15') || normCat.includes('sub15')) {
+                              catKey = 'sub_15';
+                            } else if (normCat.includes('16') || normCat.includes('u16') || normCat.includes('sub16')) {
+                              catKey = 'sub_16';
+                            } else if (normCat.includes('17') || normCat.includes('u17') || normCat.includes('sub17')) {
+                              catKey = 'sub_17';
+                            } else if (normCat.includes('20') || normCat.includes('u20') || normCat.includes('sub20')) {
+                              catKey = 'sub_20';
+                            }
+                          }
+                          const currentBounds = BANDAS_GPS[catKey]?.[metric.id] || BANDAS_GPS['GENERAL'][metric.id];
+
+                          const maxVal = METRIC_MAX_VALUES[metric.id] || 1000;
+                          const stepVal = METRIC_STEPS[metric.id] || 1;
+                          const threeVals = METRIC_THREE_VALS[metric.id] || [0, 0, 0];
 
                           return (
                             <tr key={metric.id} className="hover:bg-slate-50/50 transition-colors">
@@ -1378,32 +1492,20 @@ export default function PronosticoCargas({
                                 <div className="font-black text-slate-900 text-sm uppercase tracking-tight">{metric.label}</div>
                                 <div className="text-slate-400 text-[9px] uppercase font-black tracking-widest mt-0.5">{metric.unit}</div>
                                 
-                                {/* Granular Target Intensity Filter */}
-                                <div className="mt-3 flex flex-col gap-1">
-                                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Intensidad Objetivo</span>
-                                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/50 gap-0.5 items-center w-fit">
-                                    {(['Baja', 'Media', 'Alta'] as const).map(tier => {
-                                      const isSelected = (dayIntensities[`${dIdx}_${metric.id}`] || dayIntensities[dIdx] || 'Media') === tier;
-                                      return (
-                                        <button
-                                          key={tier}
-                                          type="button"
-                                          onClick={() => handleMetricIntensityChange(dIdx, metric.id, tier)}
-                                          className={`px-2.5 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-all duration-150 ${
-                                            isSelected
-                                              ? tier === 'Baja'
-                                                ? 'bg-amber-500 text-white shadow-sm'
-                                                : tier === 'Media'
-                                                ? 'bg-emerald-600 text-white shadow-sm'
-                                                : 'bg-red-600 text-white shadow-sm'
-                                              : 'text-slate-500 hover:bg-slate-200 hover:text-slate-800'
-                                          }`}
-                                        >
-                                          {tier}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
+                                {/* Granular Target Intensity Auto-Indicator */}
+                                <div className="mt-3 flex flex-col gap-1 w-[120px]">
+                                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Carga Calculada</span>
+                                  <span className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border text-center ${
+                                    classified === 'BAJO'
+                                      ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                      : classified === 'MEDIO'
+                                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                      : classified === 'ALTO'
+                                      ? 'bg-red-500/10 text-red-500 border-red-500/20 font-black'
+                                      : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+                                  }`}>
+                                    {classified}
+                                  </span>
                                 </div>
                               </td>
 
@@ -1412,46 +1514,59 @@ export default function PronosticoCargas({
                                 <div className="space-y-3">
                                   {/* Range Numbers */}
                                   <div className="flex items-center justify-between">
-                                    <div className="flex items-baseline gap-1.5">
-                                      <span className="text-lg font-black text-slate-800">{adjP25.toLocaleString()}</span>
-                                      <span className="text-xs text-slate-400 font-bold">a</span>
-                                      <span className="text-lg font-black text-slate-800">{adjP75.toLocaleString()}</span>
-                                      <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider ml-1">{metric.unit}</span>
+                                    <div className="flex flex-col">
+                                      <div className="flex items-baseline gap-1.5">
+                                        <span className="text-xs text-slate-400 font-black uppercase tracking-wider">Rango sugerido:</span>
+                                        <span className="text-xl font-black text-[#0b1220]">{adjP25.toLocaleString()} a {adjP75.toLocaleString()}</span>
+                                        <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider ml-1">{metric.unit}</span>
+                                      </div>
+                                      
+                                      {/* Ventanas (B/M/A) compact underneath */}
+                                      <div className="flex items-center gap-4 mt-1.5 text-[10px] font-bold text-slate-400">
+                                        <span className="uppercase text-[9px] font-black tracking-wider">Ventanas de Referencia:</span>
+                                        <div className="flex items-center gap-3">
+                                          <span className="text-amber-600 font-black">Bajo: <strong className="font-mono text-xs">{threeVals[0].toLocaleString()} {metric.unit}</strong></span>
+                                          <span className="text-emerald-600 font-black">Medio: <strong className="font-mono text-xs">{threeVals[1].toLocaleString()} {metric.unit}</strong></span>
+                                          <span className="text-red-600 font-black">Alto: <strong className="font-mono text-xs">{threeVals[2].toLocaleString()} {metric.unit}</strong></span>
+                                        </div>
+                                      </div>
                                     </div>
                                     <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider ${
-                                      percentage > 0 
+                                      pct > 0 
                                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                                        : percentage < 0 
+                                        : pct < 0 
                                         ? 'bg-amber-50 text-amber-700 border border-amber-100' 
                                         : 'bg-slate-50 text-slate-600 border border-slate-100'
                                     }`}>
-                                      {percentage === 0 ? 'Sin Ajustar' : `${percentage > 0 ? '+' : ''}${percentage}%`}
+                                      {pct === 0 ? 'Sin Ajustar' : `${pct > 0 ? '+' : ''}${pct}%`}
                                     </span>
                                   </div>
 
                                   {/* Slider Component */}
                                   <div className="flex items-center gap-4">
-                                    <span className="text-[10px] font-bold text-slate-400 w-10">-50%</span>
+                                    <span className="text-[10px] font-bold text-slate-400 w-12">0 {metric.unit}</span>
                                     <input
                                       type="range"
-                                      min="-50"
-                                      max="50"
-                                      step="5"
-                                      value={percentage}
+                                      min="0"
+                                      max={maxVal}
+                                      step={stepVal}
+                                      value={currentVal}
                                       onChange={(e) => handlePlanChange(dIdx, metric.id, e.target.value)}
                                       className="flex-1 accent-red-600 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer"
                                     />
-                                    <span className="text-[10px] font-bold text-slate-400 w-10 text-right">+50%</span>
+                                    <span className="text-[10px] font-bold text-slate-400 w-20 text-right">{maxVal.toLocaleString()} {metric.unit}</span>
                                   </div>
 
                                   {/* Additional helper metadata */}
                                   {(() => {
-                                    const baseRange = getRangeForMetric(metric.id, rec.p50, 1);
+                                    const baseRange = getRangeForMetric(metric.id, rec.p50, 1, currentIntensity);
                                     return (
-                                      <div className="flex items-center gap-3 text-[9px] font-black text-slate-400 uppercase tracking-widest pt-1 border-t border-slate-50">
+                                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest pt-1 border-t border-slate-50">
                                         <span>Base original: <strong className="text-slate-500 font-black">{baseRange.min.toLocaleString()} - {baseRange.max.toLocaleString()} {metric.unit}</strong></span>
                                         <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                                         <span>Mediana Base (P50): <strong className="text-slate-500 font-black">{baseRange.p50.toLocaleString()} {metric.unit}</strong></span>
+                                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                        <span>Umbrales ({catKey}): <strong className="text-slate-500 font-black">Bajo &lt;= {currentBounds.p25.toLocaleString()} | Medio &lt;= {currentBounds.p75.toLocaleString()} | Alto &gt; {currentBounds.p75.toLocaleString()}</strong></span>
                                         <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                                         <span>Origen: <strong className="text-red-600 font-black">{rec.source.toUpperCase()}</strong></span>
                                       </div>

@@ -250,3 +250,140 @@ export const FALLBACK_CLUB_NAMES: Record<number, string> = {
   110: 'General Velásquez',
   111: 'Lota Schwager'
 };
+
+/**
+ * Nota: Los siguientes cortes de bandas de clasificación de carga GPS (BAJO / MEDIO / ALTO)
+ * están calculados utilizando percentiles internos (p25 y p75) sobre las sesiones históricas
+ * de gps_import de la muestra histórica de la FFCh, no normas externas.
+ * Deben recalcularse periódicamente.
+ */
+export const BANDAS_GPS: Record<string, Record<string, { p25: number; p75: number }>> = {
+  GENERAL: { // n=3639
+    minutos:              { p25: 50,    p75: 85 },
+    dist_total_m:         { p25: 3857,  p75: 6577 },
+    m_por_min:            { p25: 65.8,  p75: 90.0 },
+    dist_ai_m_15_kmh:     { p25: 431,   p75: 1027 },
+    dist_mai_m_20_kmh:    { p25: 91.1,  p75: 352.0 },
+    dist_sprint_m_25_kmh: { p25: 1.2,   p75: 71.3 },
+    sprints_n:            { p25: 0,     p75: 4 },
+    vel_max_kmh:          { p25: 24.9,  p75: 29.0 },
+    acc_decc_ai_n:        { p25: 44,    p75: 108 },
+  },
+  sub_15: { // n=902
+    minutos:              { p25: 61,    p75: 92 },
+    dist_total_m:         { p25: 4417,  p75: 8033 },
+    m_por_min:            { p25: 63.5,  p75: 87.5 },
+    dist_ai_m_15_kmh:     { p25: 461,   p75: 985 },
+    dist_mai_m_20_kmh:    { p25: 105.2, p75: 310.3 },
+    dist_sprint_m_25_kmh: { p25: 3.0,   p75: 64.5 },
+    sprints_n:            { p25: 0,     p75: 3 },
+    vel_max_kmh:          { p25: 25.1,  p75: 28.4 },
+    acc_decc_ai_n:        { p25: 51,    p75: 111 },
+  },
+  sub_16: { // n=385
+    minutos:              { p25: 64,    p75: 83 },
+    dist_total_m:         { p25: 4776,  p75: 6168 },
+    m_por_min:            { p25: 68.2,  p75: 81.8 },
+    dist_ai_m_15_kmh:     { p25: 610,   p75: 1069 },
+    dist_mai_m_20_kmh:    { p25: 166.5, p75: 464.8 },
+    dist_sprint_m_25_kmh: { p25: 9.6,   p75: 97.2 },
+    sprints_n:            { p25: 0,     p75: 5 },
+    vel_max_kmh:          { p25: 25.8,  p75: 28.8 },
+    acc_decc_ai_n:        { p25: 85,    p75: 136 },
+  },
+  sub_17: { // n=1334
+    minutos:              { p25: 39,    p75: 76 },
+    dist_total_m:         { p25: 3061,  p75: 6103 },
+    m_por_min:            { p25: 68.0,  p75: 93.4 },
+    dist_ai_m_15_kmh:     { p25: 346,   p75: 1048 },
+    dist_mai_m_20_kmh:    { p25: 70.0,  p75: 356.4 },
+    dist_sprint_m_25_kmh: { p25: 0,     p75: 73.1 },
+    sprints_n:            { p25: 0,     p75: 4 },
+    vel_max_kmh:          { p25: 24.6,  p75: 29.5 },
+    acc_decc_ai_n:        { p25: 37,    p75: 93 },
+  },
+  sub_20: { // n=1018
+    minutos:              { p25: 49,    p75: 86 },
+    dist_total_m:         { p25: 3859,  p75: 6446 },
+    m_por_min:            { p25: 63.4,  p75: 91.3 },
+    dist_ai_m_15_kmh:     { p25: 426,   p75: 1004 },
+    dist_mai_m_20_kmh:    { p25: 76.7,  p75: 338.5 },
+    dist_sprint_m_25_kmh: { p25: 0,     p75: 70.4 },
+    sprints_n:            { p25: 0,     p75: 4 },
+    vel_max_kmh:          { p25: 24.7,  p75: 29.3 },
+    acc_decc_ai_n:        { p25: 43,    p75: 107 },
+  },
+};
+
+export function clasificarGPS(
+  parametro: string, 
+  valor: number | null | undefined, 
+  categoria: string
+): 'BAJO' | 'MEDIO' | 'ALTO' | 'SIN_DATO' {
+  if (valor === null || valor === undefined) {
+    return 'SIN_DATO';
+  }
+
+  // Normalizar categoría
+  let catKey = 'GENERAL';
+  if (categoria) {
+    const normCat = categoria.toLowerCase().replace(/[\s-_]/g, '');
+    if (normCat.includes('15') || normCat.includes('u15') || normCat.includes('sub15')) {
+      catKey = 'sub_15';
+    } else if (normCat.includes('16') || normCat.includes('u16') || normCat.includes('sub16')) {
+      catKey = 'sub_16';
+    } else if (normCat.includes('17') || normCat.includes('u17') || normCat.includes('sub17')) {
+      catKey = 'sub_17';
+    } else if (normCat.includes('20') || normCat.includes('u20') || normCat.includes('sub20')) {
+      catKey = 'sub_20';
+    }
+  }
+
+  const bounds = BANDAS_GPS[catKey];
+  if (!bounds) {
+    return 'SIN_DATO';
+  }
+
+  // Normalizar parámetro
+  let paramKey = parametro;
+  if (parametro === 'distancia_total' || parametro === 'distancia' || parametro === 'dist_total_m') {
+    paramKey = 'dist_total_m';
+  } else if (parametro === 'm_por_min' || parametro === 'm/min') {
+    paramKey = 'm_por_min';
+  } else if (parametro === 'dist_ai_m_15_kmh' || parametro === 'mai_15' || parametro === 'mai') {
+    paramKey = 'dist_ai_m_15_kmh';
+  } else if (parametro === 'dist_mai_m_20_kmh' || parametro === 'hsr_20' || parametro === 'hsr') {
+    paramKey = 'dist_mai_m_20_kmh';
+  } else if (parametro === 'dist_sprint_m_25_kmh' || parametro === 'sprint_25' || parametro === 'sprint') {
+    paramKey = 'dist_sprint_m_25_kmh';
+  } else if (parametro === 'sprints_n' || parametro === 'sprints') {
+    paramKey = 'sprints_n';
+  } else if (parametro === 'vel_max_kmh' || parametro === 'vel_max' || parametro === 'velocidad_maxima') {
+    paramKey = 'vel_max_kmh';
+  } else if (parametro === 'acc_decc_ai_n' || parametro === 'acc_dec' || parametro === 'acc/dec') {
+    paramKey = 'acc_decc_ai_n';
+  }
+
+  const metricBounds = bounds[paramKey];
+  if (!metricBounds) {
+    // Si no coincide exactamente, buscamos una coincidencia parcial en las llaves del bounds
+    const foundKey = Object.keys(bounds).find(k => 
+      k.includes(paramKey) || paramKey.includes(k)
+    );
+    if (foundKey) {
+      const mb = bounds[foundKey];
+      if (valor <= mb.p25) return 'BAJO';
+      if (valor <= mb.p75) return 'MEDIO';
+      return 'ALTO';
+    }
+    return 'SIN_DATO';
+  }
+
+  if (valor <= metricBounds.p25) {
+    return 'BAJO';
+  } else if (valor <= metricBounds.p75) {
+    return 'MEDIO';
+  } else {
+    return 'ALTO';
+  }
+}
