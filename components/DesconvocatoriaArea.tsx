@@ -427,13 +427,24 @@ export default function DesconvocatoriaArea({
         max_decel: g.max_decel || 0
       }));
 
-      const mappedMedical = (medicalRaw || []).map(m => ({
-        date: m.report_date,
-        observation: m.observation,
-        diagnosis: m.diagnostico_medico,
-        severity: m.severity,
-        treatments_applied: m.treatments_applied || []
-      }));
+      const mappedMedical = (medicalRaw || []).map(m => {
+        let obs = m.observation || '';
+        let sev = m.severity;
+        if (obs.includes('[[SICK_CASE]]')) {
+          sev = 'sick';
+          obs = obs.replace('[[SICK_CASE]]', '').trim();
+        }
+        if (obs.includes('\n\n[[ADDED_BY]]: ')) {
+          obs = obs.split('\n\n[[ADDED_BY]]: ')[0];
+        }
+        return {
+          date: m.report_date,
+          observation: obs,
+          diagnosis: m.diagnostico_medico,
+          severity: sev,
+          treatments_applied: m.treatments_applied || []
+        };
+      });
 
       return { wellness: mappedWellness, loads: mappedLoads, gps: mappedGps, medical: mappedMedical, isInInjuredBoard };
     } catch (err) {

@@ -315,8 +315,25 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
           supabase.from('lesionados').select('*').eq('player_id', playerId).order('fecha_inicio', { ascending: false })
         ]);
 
+        const mappedReports = (repRes.data || []).map((r: any) => {
+          let obs = r.observation || '';
+          let sev = r.severity;
+          if (obs.includes('[[SICK_CASE]]')) {
+            sev = 'sick';
+            obs = obs.replace('[[SICK_CASE]]', '').trim();
+          }
+          if (obs.includes('\n\n[[ADDED_BY]]: ')) {
+            obs = obs.split('\n\n[[ADDED_BY]]: ')[0];
+          }
+          return {
+            ...r,
+            observation: obs,
+            severity: sev
+          };
+        });
+
         setMedicalHistory({
-          reports: repRes.data || [],
+          reports: mappedReports,
           treatments: treatRes.data || [],
           injuries: injRes.data || []
         });
@@ -1244,8 +1261,8 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                         typeColor = evt.status === 'Activo' ? 'bg-red-50 text-red-500 border border-red-100' : 'bg-slate-50 text-slate-400 border border-slate-100';
                         icon = 'fa-user-injured';
                       } else if (evt.type === 'report') {
-                        typeLabel = evt.severity === 'high' ? 'P. CRÍTICO' : evt.severity === 'medium' ? 'P. MEDIO' : 'P. DIARIO';
-                        typeColor = evt.severity === 'high' ? 'bg-rose-50 text-rose-500 border border-rose-100' : 'bg-amber-50 text-amber-500 border border-amber-100';
+                        typeLabel = evt.severity === 'sick' ? 'ENFERMO' : evt.severity === 'high' ? 'P. CRÍTICO' : evt.severity === 'medium' ? 'P. MEDIO' : 'P. DIARIO';
+                        typeColor = evt.severity === 'sick' ? 'bg-purple-50 text-purple-500 border border-purple-100' : evt.severity === 'high' ? 'bg-rose-50 text-rose-500 border border-rose-100' : evt.severity === 'medium' ? 'bg-amber-50 text-amber-500 border border-amber-100' : 'bg-emerald-50 text-emerald-500 border border-emerald-100';
                         icon = 'fa-file-medical';
                       } else {
                         typeLabel = 'KINESIO';

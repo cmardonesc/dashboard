@@ -1547,6 +1547,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
         // Parse staff name from observation if present
         let parsedObs = report.observation || '';
         let staffName = 'Staff';
+        let mappedSeverity = report.severity;
+
+        if (parsedObs.includes('[[SICK_CASE]]')) {
+          mappedSeverity = 'sick';
+          parsedObs = parsedObs.replace('[[SICK_CASE]]', '').trim();
+        }
+
         if (parsedObs.includes('\n\n[[ADDED_BY]]: ')) {
           const parts = parsedObs.split('\n\n[[ADDED_BY]]: ');
           parsedObs = parts[0];
@@ -1556,6 +1563,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
         return {
           ...report,
           observation: parsedObs,
+          severity: mappedSeverity,
           staffName: staffName,
           displayCategory: categoryStr
         };
@@ -1613,6 +1621,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       if (finalObservation.includes('\n\n[[ADDED_BY]]: ')) {
         finalObservation = finalObservation.split('\n\n[[ADDED_BY]]: ')[0];
       }
+
+      let finalSeverity = dailyReportForm.severity;
+      if (finalSeverity === 'sick') {
+        finalSeverity = 'high';
+        finalObservation = `${finalObservation}\n[[SICK_CASE]]`;
+      }
+
       finalObservation = `${finalObservation}\n\n[[ADDED_BY]]: ${staffNameToUse}`;
 
       const payload = {
@@ -1620,7 +1635,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
         anio: playerYear,
         observation: finalObservation,
         diagnostico_medico: dailyReportForm.diagnostico_medico,
-        severity: dailyReportForm.severity,
+        severity: finalSeverity,
         treatments_applied: selectedTreatments
       };
 

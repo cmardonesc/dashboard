@@ -319,10 +319,23 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
       .eq('treatment_date', todayStr);
 
     if (medData) {
-      const enriched = medData.map(m => ({
-        ...m,
-        players: performanceRecords.find(r => r.player.player_id === m.player_id)?.player
-      }));
+      const enriched = medData.map(m => {
+        let obs = m.observation || '';
+        let sev = m.severity;
+        if (obs.includes('[[SICK_CASE]]')) {
+          sev = 'sick';
+          obs = obs.replace('[[SICK_CASE]]', '').trim();
+        }
+        if (obs.includes('\n\n[[ADDED_BY]]: ')) {
+          obs = obs.split('\n\n[[ADDED_BY]]: ')[0];
+        }
+        return {
+          ...m,
+          observation: obs,
+          severity: sev,
+          players: performanceRecords.find(r => r.player.player_id === m.player_id)?.player
+        };
+      });
       setMedicalReportsToday(enriched);
     }
     
@@ -1025,8 +1038,13 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
                       <p className="text-[10px] font-black uppercase text-slate-900 italic tracking-tight">
                         {renderPlayerName(report.players, report.player_id)}
                       </p>
-                      <span className={`text-[7px] font-black px-1.5 py-0.5 rounded uppercase ${report.severity === 'high' ? 'bg-red-100 text-red-600' : report.severity === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                        {report.severity}
+                      <span className={`text-[7px] font-black px-1.5 py-0.5 rounded uppercase ${
+                        report.severity === 'sick' ? 'bg-purple-100 text-purple-600' :
+                        report.severity === 'high' ? 'bg-red-100 text-red-600' : 
+                        report.severity === 'medium' ? 'bg-amber-100 text-amber-600' : 
+                        'bg-emerald-100 text-emerald-600'
+                      }`}>
+                        {report.severity === 'sick' ? 'enfermo' : report.severity}
                       </span>
                     </div>
                   </div>

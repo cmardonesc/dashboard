@@ -380,7 +380,25 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
       if (aData) setAntropometria(aData);
       if (vData) setVo2maxData(vData);
       if (injData) setInjuries(injData);
-      if (mData) setMedicalReports(mData);
+      if (mData) {
+        const mappedMData = mData.map((m: any) => {
+          let obs = m.observation || '';
+          let sev = m.severity;
+          if (obs.includes('[[SICK_CASE]]')) {
+            sev = 'sick';
+            obs = obs.replace('[[SICK_CASE]]', '').trim();
+          }
+          if (obs.includes('\n\n[[ADDED_BY]]: ')) {
+            obs = obs.split('\n\n[[ADDED_BY]]: ')[0];
+          }
+          return {
+            ...m,
+            observation: obs,
+            severity: sev
+          };
+        });
+        setMedicalReports(mappedMData);
+      }
       if (lData) setInternalLoads(lData);
       if (t505Res) setTest505Data(t505Res);
       if (reboundRes) setCmjReboundData(reboundRes);
