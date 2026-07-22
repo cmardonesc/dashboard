@@ -597,7 +597,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           {!isCollapsed && <span className="font-bold text-sm tracking-tight">Sports Science</span>}
         </button>
 
-        {userRole === 'admin' && (
+        {(userRole === 'admin' || userRole === 'staff') && (
           <button
             onClick={() => handleMenuClick('importar_datos')}
             title={isCollapsed ? 'Importar Datos' : ''}
@@ -610,7 +610,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           </button>
         )}
 
-        {(userRole === 'admin' || userRole === 'staff') && (
+        {userRole === 'admin' && (
           <button
             onClick={() => handleMenuClick('telegram_notifications')}
             title={isCollapsed ? 'Notificaciones Telegram' : ''}

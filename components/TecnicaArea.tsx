@@ -1698,26 +1698,6 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
           doc.addPage();
         }
 
-        // Decorative Lines - Top
-        doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.setLineWidth(1.5);
-        doc.line(margin, 10, pageWidth - margin, 10);
-        
-        doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-        doc.setLineWidth(0.5);
-        doc.line(margin, 11.5, pageWidth - margin, 11.5);
-
-        // Logo (Upper Left)
-        try {
-          doc.addImage(logoUrl, 'PNG', margin, 15, 25, 25);
-        } catch (e) {
-          console.warn("Could not add logo to PDF", e);
-        }
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(28);
-        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        
         const chunkStart = chunk[0];
         const chunkEnd = chunk[chunk.length - 1];
         const weekNum = selectedMicro.micro_number || selectedMicro.id || '';
@@ -1734,20 +1714,125 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         const dateRange = m1 === m2
           ? `${d1} AL ${d2} DE ${m1}`
           : `${d1} DE ${m1} AL ${d2} DE ${m2}`;
-        
-        // Simulating the condensed font with horizontalScale if supported, otherwise generic bold
-        const textOptions = { align: 'center' } as any;
+
+        // --- NEW PREMIUM FIFA-STYLE HEADER (Matches Check-in & Check-out) ---
+        // 1. Draw Red Trapezoid Segment (background)
+        doc.setFillColor(226, 35, 26); // Red
+        doc.triangle(120, 10, 130, 10, 130, 26, 'F');
+        doc.rect(130, 10, 5, 16, 'F');
+        doc.triangle(135, 10, 145, 26, 135, 26, 'F');
+
+        // 2. Draw Blue Trapezoid Segment (foreground)
+        doc.setFillColor(2, 66, 140); // Blue
+        doc.rect(15, 10, 107, 16, 'F');
+        doc.triangle(122, 10, 122, 26, 132, 26, 'F');
+
+        // 3. Title inside Blue Segment
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.setTextColor(255, 255, 255);
+        const whiteTextOptions = {} as any;
         try {
-          textOptions.horizontalScale = 0.75;
+          whiteTextOptions.horizontalScale = 0.85;
         } catch(e) {}
+        doc.text(title.toUpperCase(), 22, 20.5, whiteTextOptions);
 
-        doc.text(title, pageWidth / 2, 25, textOptions);
-        doc.setFontSize(20);
-        doc.text(dateRange, pageWidth / 2, 34, textOptions);
+        // 4. Logo inside white circle container
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(152, 10.5, 15, 15, 7.5, 7.5, 'F');
+        
+        doc.setDrawColor(240, 241, 243);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(152, 10.5, 15, 15, 7.5, 7.5, 'S');
 
-        doc.setFontSize(22);
-        doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-        doc.text(formatCategoryLabel(selectedMicro.category_id).replace(' ', '.'), pageWidth / 2, 45, textOptions);
+        try {
+          doc.addImage(logoUrl, 'PNG', 153.5, 11.5, 12, 12);
+        } catch (e) {
+          console.warn("Could not add logo to PDF", e);
+        }
+
+        // 5. Vertical Divider
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.4);
+        doc.line(173, 12, 173, 24);
+
+        // 6. Right Title Texts
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(2, 66, 140);
+        doc.text("SELECCIÓN NACIONAL", 178, 16);
+        
+        doc.setFontSize(11);
+        doc.setTextColor(226, 35, 26);
+        doc.text(formatCategoryLabel(selectedMicro.category_id).toUpperCase().replace(' ', '.'), 178, 22);
+
+        // --- METADATA SECTION (Matches Check-in & Check-out) ---
+        doc.setDrawColor(2, 66, 140);
+        doc.setLineWidth(0.5);
+        doc.line(15, 38, pageWidth - 15, 38);
+
+        // Metadata 1: MICROCICLO
+        doc.setFillColor(2, 66, 140);
+        doc.circle(20, 33.5, 1, 'F');
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42); // slate-900
+        doc.text("MICROCICLO", 23, 34.5);
+        
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.3);
+        doc.line(47, 32, 47, 36);
+        
+        doc.setTextColor(226, 35, 26); // Red
+        doc.text(`#${weekNum}`, 50, 34.5);
+
+        // Metadata 2: TIPO DOCUMENTO
+        doc.setFillColor(2, 66, 140);
+        doc.circle(85, 33.5, 1, 'F');
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42);
+        doc.text("DOCUMENTO", 88, 34.5);
+        
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.3);
+        doc.line(113, 32, 113, 36);
+        
+        doc.setTextColor(226, 35, 26);
+        doc.text("CRONOGRAMA SEMANAL", 116, 34.5);
+
+        // Metadata 3: FECHAS
+        doc.setFillColor(2, 66, 140);
+        doc.circle(170, 33.5, 1, 'F');
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42);
+        doc.text("FECHAS", 173, 34.5);
+        
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.3);
+        doc.line(190, 32, 190, 36);
+        
+        doc.setTextColor(226, 35, 26);
+        doc.text(dateRange.toUpperCase(), 193, 34.5);
+
+        // Metadata 4: HOJA / PAGINA
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184); // slate-400
+        doc.text(`HOJA ${chunkIndex + 1} / ${chunks.length}`, pageWidth - 15, 34.5, { align: 'right' });
+
+        // --- SECTION SUBTITLE (Matches Check-in & Check-out) ---
+        doc.setFillColor(2, 66, 140);
+        doc.rect(15, 41, 1.5, 5, 'F');
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`1._ ITINERARIO Y PLANIFICACIÓN DE ACTIVIDADES DE LA SEMANA`, 19, 45);
 
         const dayNames = ['DOMINGO', 'LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'];
         const headers = chunk.map((date) => {
@@ -1778,15 +1863,66 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
             body.push(row);
         }
 
-        // Calculate centering for the table
+        // Calculate centering and dimensions dynamically for the table based on the number of days/columns
         const numCols = headers.length;
-        const totalUsableWidth = pageWidth - 2 * margin;
-        const colWidth = totalUsableWidth / 7; // Fixed colWidth based on 7 columns so spacing is consistent
+        const totalUsableWidth = pageWidth - 2 * margin; // 297 - 30 = 267mm
+
+        let colWidth = totalUsableWidth / 7; // default 38.14mm
+        let baseFontSize = 6.5;
+        let specialFontSize = 7;
+        let headFontSize = 8;
+        let cellPadding = 1;
+        let minCellHeight = 6;
+        let cellRadius = 1.5;
+
+        if (numCols <= 3) {
+            colWidth = 65; // Much wider columns! 65mm * 3 = 195mm (very elegant and spacious)
+            baseFontSize = 8.5;
+            specialFontSize = 9;
+            headFontSize = 10.5;
+            cellPadding = 2.5;
+            minCellHeight = 9.5;
+            cellRadius = 2.5;
+        } else if (numCols === 4) {
+            colWidth = 55; // 220mm
+            baseFontSize = 8;
+            specialFontSize = 8.5;
+            headFontSize = 10;
+            cellPadding = 2;
+            minCellHeight = 8.5;
+            cellRadius = 2.2;
+        } else if (numCols === 5) {
+            colWidth = 48; // 240mm
+            baseFontSize = 7.5;
+            specialFontSize = 8;
+            headFontSize = 9.5;
+            cellPadding = 1.5;
+            minCellHeight = 7.5;
+            cellRadius = 1.8;
+        } else if (numCols === 6) {
+            colWidth = 42; // 252mm
+            baseFontSize = 7;
+            specialFontSize = 7.5;
+            headFontSize = 9;
+            cellPadding = 1.2;
+            minCellHeight = 7;
+            cellRadius = 1.6;
+        } else {
+            // 7 columns
+            colWidth = totalUsableWidth / 7; // 38.14mm -> 267mm
+            baseFontSize = 6.5;
+            specialFontSize = 7;
+            headFontSize = 8;
+            cellPadding = 1;
+            minCellHeight = 6;
+            cellRadius = 1.5;
+        }
+
         const tableWidth = numCols * colWidth;
         const tableLeftMargin = (pageWidth - tableWidth) / 2;
 
         autoTable(doc, {
-          startY: 55,
+          startY: 49,
           head: [headers],
           body: body,
           theme: 'plain',
@@ -1795,17 +1931,17 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
           headStyles: {
             fillColor: [2, 66, 140],
             textColor: [255, 255, 255],
-            fontSize: 8,
+            fontSize: headFontSize,
             fontStyle: 'bold',
             halign: 'center',
-            cellPadding: 2,
+            cellPadding: cellPadding + 1,
           },
           bodyStyles: {
-            fontSize: 6.5,
+            fontSize: baseFontSize,
             fontStyle: 'bold',
             textColor: [0, 0, 0],
-            cellPadding: 1,
-            minCellHeight: 6,
+            cellPadding: cellPadding,
+            minCellHeight: minCellHeight,
             valign: 'middle',
             halign: 'center'
           },
@@ -1819,7 +1955,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
             if (data.section === 'head') {
               doc.saveGraphicsState();
               doc.setFillColor(2, 66, 140);
-              doc.roundedRect(data.cell.x + 0.5, data.cell.y + 0.5, data.cell.width - 1, data.cell.height - 1, 2, 2, 'F');
+              doc.roundedRect(data.cell.x + 0.5, data.cell.y + 0.5, data.cell.width - 1, data.cell.height - 1, cellRadius, cellRadius, 'F');
               doc.restoreGraphicsState();
             }
           },
@@ -1847,6 +1983,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                   hasSpecialColor = true;
               } else if (text.includes('PSICOLÓGICA') || text.includes('CHARLA')) {
                   fillColor = [163, 217, 119];
+                  textColor = [11, 18, 32]; // Dark slate text for legibility on light green
                   hasSpecialColor = true;
               } else if (grupo === 'Concentrados') {
                   fillColor = [215, 215, 215]; // Gray for Concentrados
@@ -1858,46 +1995,54 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
 
               doc.saveGraphicsState();
               doc.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
-              doc.roundedRect(data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, data.cell.height - 2, 1.5, 1.5, 'F');
+              doc.roundedRect(data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, data.cell.height - 2, cellRadius, cellRadius, 'F');
               
-              doc.setFontSize(hasSpecialColor ? 7 : 6.5);
+              const fontSize = hasSpecialColor ? specialFontSize : baseFontSize;
+              doc.setFontSize(fontSize);
               doc.setTextColor(textColor[0], textColor[1], textColor[2]);
               doc.setFont('helvetica', 'bold');
               
               const lines = doc.splitTextToSize(text, data.cell.width - 4);
-              doc.text(lines, data.cell.x + data.cell.width / 2, data.cell.y + data.cell.height / 2 + (lines.length > 1 ? -1 : 1), { align: 'center' });
+              const yOffset = lines.length > 1 ? -(fontSize / 6.5) : (fontSize / 6.5);
+              doc.text(lines, data.cell.x + data.cell.width / 2, data.cell.y + data.cell.height / 2 + yOffset, { align: 'center' });
               
               doc.restoreGraphicsState();
             }
           }
         });
 
-        // Watermark CMSPORTECH - Small bottom right
-        doc.saveGraphicsState();
-        doc.setTextColor(240, 240, 240);
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'bold');
-        doc.text("CMSPORTECH", pageWidth - margin, pageHeight - 5, { align: 'right' });
-        doc.restoreGraphicsState();
-
-        // Footer Note - Lowered
-        doc.setFontSize(7);
-        doc.setTextColor(150, 150, 150);
+        // --- FOOTER NOTE & DECORATIVE BOTTOM LINES ---
+        // Footer Note
         doc.setFont('helvetica', 'italic');
-        doc.text("* LAS ACTIVIDADES RESALTADAS EN GRIS CORRESPONDEN A BLOQUES PARA JUGADORES EN RÉGIMEN DE CONCENTRACIÓN.", margin, pageHeight - 15);
+        doc.setFontSize(6.5);
+        doc.setTextColor(100, 116, 139); // slate-500
+        doc.text("* LAS ACTIVIDADES RESALTADAS EN GRIS CORRESPONDEN A BLOQUES PARA JUGADORES EN RÉGIMEN DE CONCENTRACIÓN.", 15, pageHeight - 14);
 
-        // Decorative Lines - Bottom
-        doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.setLineWidth(1.5);
-        doc.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
-        
-        doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-        doc.setLineWidth(0.5);
-        doc.line(margin, pageHeight - 8.5, pageWidth - margin, pageHeight - 8.5);
+        // Thin divider above bottom footer
+        doc.setDrawColor(241, 245, 249); // slate-100
+        doc.setLineWidth(0.3);
+        doc.line(15, pageHeight - 11.5, pageWidth - 15, pageHeight - 11.5);
 
-        doc.setFont('helvetica', 'normal');
+        // Bottom colored stripes
+        doc.setFillColor(2, 66, 140); // Blue
+        doc.rect(15, pageHeight - 11, pageWidth - 30, 1.2, 'F');
+        doc.setFillColor(226, 35, 26); // Red
+        doc.rect(15, pageHeight - 9.8, pageWidth - 30, 0.4, 'F');
+
+        // Confidential Note & Watermark
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6);
+        doc.setTextColor(148, 163, 184); // slate-400
+        doc.text("DOCUMENTO CONFIDENCIAL • ÁREA TÉCNICA SELECCIÓN NACIONAL • © 2026", 15, pageHeight - 6);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(2, 66, 140);
+        doc.text("FFCH - DEPARTAMENTO DE SELECCIONES NACIONALES", pageWidth / 2, pageHeight - 6, { align: 'center' });
+
+        doc.setFont('helvetica', 'italic');
         doc.setFontSize(7);
-        doc.text("FFCH - DEPARTAMENTO DE SELECCIONES NACIONALES", pageWidth / 2, pageHeight - 5, { align: 'center' });
+        doc.text("CMSPORTECH.COM", pageWidth - 15, pageHeight - 6, { align: 'right' });
       });
 
       const fileName = `Cronograma_Semanal_${formatCategoryLabel(selectedMicro.category_id)}_${selectedMicro.start_date}.pdf`;
