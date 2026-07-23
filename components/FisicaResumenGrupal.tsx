@@ -6,6 +6,7 @@ import ClubBadge from './ClubBadge';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { FEDERATION_LOGO } from '../constants';
+import { REVERSE_CATEGORY_ID_MAP } from '../types';
 
 interface FisicaResumenGrupalProps {
   userRole?: string;
@@ -118,6 +119,13 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const [isPlayerDropdownOpen, setIsPlayerDropdownOpen] = useState(false);
   const [playerQuery, setPlayerQuery] = useState('');
 
+  // Microcycle Filter States
+  const [microcycles, setMicrocycles] = useState<any[]>([]);
+  const [citaciones, setCitaciones] = useState<any[]>([]);
+  const [selectedMicrocycleId, setSelectedMicrocycleId] = useState<number | null>(null);
+  const [isMicrocycleDropdownOpen, setIsMicrocycleDropdownOpen] = useState(false);
+  const [microcycleQuery, setMicrocycleQuery] = useState('');
+
   // Data States
   const [players, setPlayers] = useState<any[]>([]);
   const [imtpData, setImtpData] = useState<any[]>([]);
@@ -140,6 +148,7 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const positionDropdownRef = useRef<HTMLDivElement>(null);
   const playerDropdownRef = useRef<HTMLDivElement>(null);
+  const microcycleDropdownRef = useRef<HTMLDivElement>(null);
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{
@@ -156,12 +165,12 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
     const { excellent, normal } = config.thresholds;
     if (config.lowerIsBetter) {
       if (value <= excellent) return { label: 'Excelente', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', hex: '#10b981' };
-      if (value <= normal) return { label: 'Normal', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
-      return { label: 'Bajo', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
+      if (value <= normal) return { label: 'Por Mejorar', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
+      return { label: 'Alerta', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
     } else {
       if (value >= excellent) return { label: 'Excelente', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', hex: '#10b981' };
-      if (value >= normal) return { label: 'Normal', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
-      return { label: 'Bajo', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
+      if (value >= normal) return { label: 'Por Mejorar', color: 'bg-amber-100 text-amber-700 border-amber-200', hex: '#f59e0b' };
+      return { label: 'Alerta', color: 'bg-rose-100 text-rose-700 border-rose-200', hex: '#ef4444' };
     }
   };
 
@@ -241,7 +250,7 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pData, imtpRes, cmjRes, reboundRes, sData, vData, t505Res, antroRes] = await Promise.all([
+      const [pData, imtpRes, cmjRes, reboundRes, sData, vData, t505Res, antroRes, mcRes, citRes] = await Promise.all([
         fetchFullTable('players', 'player_id, nombre, apellido1, apellido2, anio, id_club, posicion'),
         fetchFullTable('evaluaciones_imtp'),
         fetchFullTable('evaluaciones_cmj'),
@@ -250,6 +259,8 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         fetchFullTable('vo2max_tests'),
         fetchFullTable('test_505'),
         fetchFullTable('antropometria'),
+        fetchFullTable('microcycles'),
+        fetchFullTable('citaciones'),
       ]);
 
       setPlayers(pData || []);
@@ -260,6 +271,8 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
       setVo2maxData(vData || []);
       setTest505Data(t505Res || []);
       setAntropometriaData(antroRes || []);
+      setMicrocycles(mcRes || []);
+      setCitaciones(citRes || []);
     } catch (e) {
       console.error("Error loading physical evaluations data:", e);
     } finally {
@@ -286,6 +299,9 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
       }
       if (playerDropdownRef.current && !playerDropdownRef.current.contains(target)) {
         setIsPlayerDropdownOpen(false);
+      }
+      if (microcycleDropdownRef.current && !microcycleDropdownRef.current.contains(target)) {
+        setIsMicrocycleDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -398,6 +414,33 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
     if (!positionQuery) return positions;
     return positions.filter(p => p.toLowerCase().includes(positionQuery.toLowerCase()));
   }, [positions, positionQuery]);
+
+  // Microcycle specific memos
+  const citedPlayerIdsForSelectedMicrocycle = useMemo(() => {
+    if (selectedMicrocycleId === null) return null;
+    const set = new Set<number>();
+    citaciones.forEach(c => {
+      if (c.microcycle_id === selectedMicrocycleId && c.player_id) {
+        set.add(Number(c.player_id));
+      }
+    });
+    return set;
+  }, [citaciones, selectedMicrocycleId]);
+
+  const sortedMicrocycles = useMemo(() => {
+    return [...microcycles].sort((a, b) => b.id - a.id);
+  }, [microcycles]);
+
+  const filteredMicrocyclesBySearch = useMemo(() => {
+    if (!microcycleQuery) return sortedMicrocycles;
+    return sortedMicrocycles.filter(mc => {
+      const catLabel = REVERSE_CATEGORY_ID_MAP[mc.category_id] || `Sub-${mc.category_id}`;
+      const label = `Microciclo #${mc.micro_number} - ${catLabel}`;
+      return label.toLowerCase().includes(microcycleQuery.toLowerCase()) ||
+             (mc.start_date && mc.start_date.includes(microcycleQuery)) ||
+             (mc.type && mc.type.toLowerCase().includes(microcycleQuery.toLowerCase()));
+    });
+  }, [sortedMicrocycles, microcycleQuery]);
 
   // Unified athletes physical profiles list
   const unifiedAthletesProfiles = useMemo(() => {
@@ -556,6 +599,10 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
       const displayName = isMyClub ? profile.player_name : `Jugador [${profile.player_id}]`;
       const matchesPlayer = selectedPlayers.length === 0 || selectedPlayers.includes(displayName);
 
+      // Microcycle filter
+      const matchesMicrocycle = citedPlayerIdsForSelectedMicrocycle === null || 
+        citedPlayerIdsForSelectedMicrocycle.has(profile.player_id);
+
       // Check if athlete has at least one test recorded in selected range
       const hasEvaluations = 
         profile.imtp_fuerza_n > 0 || profile.imtp_f_relativa_n_kg > 0 || profile.imtp_asimetria > 0 || profile.fuerza_cmj > 0 ||
@@ -564,9 +611,9 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         profile.vo2_max > 0 || profile.vam > 0 || profile.fc_max > 0 || profile.mts > 0 || profile.vt2_fc > 0 ||
         profile.t_cod_2m > 0 || profile.t_acel_2m > 0 || profile.t_desacel_2m > 0 || profile.t_reacel_1_2m > 0 || profile.z_score_acel > 0;
 
-      return matchesClub && matchesCategory && matchesPosition && matchesPlayer && hasEvaluations;
+      return matchesClub && matchesCategory && matchesPosition && matchesPlayer && matchesMicrocycle && hasEvaluations;
     });
-  }, [unifiedAthletesProfiles, selectedClubs, selectedCategories, selectedPositions, selectedPlayers, userRole, userClub]);
+  }, [unifiedAthletesProfiles, selectedClubs, selectedCategories, selectedPositions, selectedPlayers, citedPlayerIdsForSelectedMicrocycle, userRole, userClub]);
 
   // Populate players multi-select list dynamically
   const availablePlayers = useMemo(() => {
@@ -581,20 +628,22 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         const matchesPosition = selectedPositions.length === 0 || selectedPositions.some(sp =>
           profile.posicion?.toString() === sp
         );
+        const matchesMicrocycle = citedPlayerIdsForSelectedMicrocycle === null || 
+          citedPlayerIdsForSelectedMicrocycle.has(profile.player_id);
         const hasEvaluations = 
           profile.imtp_fuerza_n > 0 || profile.imtp_f_relativa_n_kg > 0 || profile.imtp_asimetria > 0 || profile.fuerza_cmj > 0 ||
           profile.cmj_rsi_mod > 0 || profile.cmj_altura_salto_im > 0 || profile.cmj_peak_pot_relativa > 0 ||
           profile.tiempo_total > 0 || profile.tiempo_10m > 0 || profile.vel_10m > 0 || profile.tiempo_10_20m > 0 || profile.tiempo_20_30m > 0 ||
           profile.vo2_max > 0 || profile.vam > 0 || profile.fc_max > 0 || profile.mts > 0 || profile.vt2_fc > 0 ||
           profile.t_cod_2m > 0 || profile.t_acel_2m > 0 || profile.t_desacel_2m > 0 || profile.t_reacel_1_2m > 0 || profile.z_score_acel > 0;
-        return matchesClub && matchesCategory && matchesPosition && hasEvaluations;
+        return matchesClub && matchesCategory && matchesPosition && matchesMicrocycle && hasEvaluations;
       })
       .map(p => {
         const isMyClub = userRole !== 'club' || (userClub && normalizeClub(p.club_name) === normalizeClub(userClub));
         return isMyClub ? p.player_name : `Jugador [${p.player_id}]`;
       });
     return Array.from(new Set(list)).sort();
-  }, [unifiedAthletesProfiles, selectedClubs, selectedCategories, selectedPositions, userRole, userClub]);
+  }, [unifiedAthletesProfiles, selectedClubs, selectedCategories, selectedPositions, citedPlayerIdsForSelectedMicrocycle, userRole, userClub]);
 
   const filteredPlayersBySearch = useMemo(() => {
     if (!playerQuery) return availablePlayers;
@@ -744,9 +793,9 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const chartData = useMemo(() => {
     if (filteredProfiles.length === 0) return null;
 
-    const imtpDist = { Excelente: 0, Normal: 0, Bajo: 0 };
-    const cmjDist = { Excelente: 0, Normal: 0, Bajo: 0 };
-    const speedDist = { Excelente: 0, Normal: 0, Bajo: 0 };
+    const imtpDist = { Excelente: 0, 'Por Mejorar': 0, Alerta: 0 };
+    const cmjDist = { Excelente: 0, 'Por Mejorar': 0, Alerta: 0 };
+    const speedDist = { Excelente: 0, 'Por Mejorar': 0, Alerta: 0 };
 
     filteredProfiles.forEach(p => {
       const imtpStatus = getPhysicalStatusDynamic(p[imtpMetric], ALL_METRIC_CONFIGS[imtpMetric]);
@@ -766,9 +815,9 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
 
     const formatForPie = (counts: any) => {
       return [
-        { name: 'Excelente', value: counts.Excelente, color: '#10b981' },
-        { name: 'Normal', value: counts.Normal, color: '#f59e0b' },
-        { name: 'Bajo', value: counts.Bajo, color: '#ef4444' }
+        { name: 'Excelente', value: counts.Excelente || 0, color: '#10b981' },
+        { name: 'Por Mejorar', value: counts['Por Mejorar'] || 0, color: '#f59e0b' },
+        { name: 'Alerta', value: counts.Alerta || 0, color: '#ef4444' }
       ].filter(item => item.value > 0);
     };
 
@@ -1241,12 +1290,33 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                   if (status.label === 'Excelente') {
                     data.cell.styles.fillColor = [209, 250, 229]; // emerald-100
                     data.cell.styles.textColor = [0, 0, 0];
-                  } else if (status.label === 'Normal') {
+                  } else if (status.label === 'Por Mejorar') {
                     data.cell.styles.fillColor = [254, 243, 199]; // amber-100
                     data.cell.styles.textColor = [0, 0, 0];
-                  } else if (status.label === 'Bajo') {
+                  } else if (status.label === 'Alerta') {
                     data.cell.styles.fillColor = [255, 228, 230]; // rose-100
                     data.cell.styles.textColor = [0, 0, 0];
+                  }
+                }
+              }
+
+              // Color the prescription column
+              if (colIndex === page.headers.length - 1) {
+                const originalRow = sortedFilteredData[data.row.index];
+                if (originalRow) {
+                  const colorInfo = getPrescriptionColorInfo(originalRow, page.id);
+                  if (colorInfo.label === 'Óptimo') {
+                    data.cell.styles.fillColor = [209, 250, 229]; // emerald-100
+                    data.cell.styles.textColor = [4, 120, 87]; // emerald-700
+                  } else if (colorInfo.label === 'Por Mejorar') {
+                    data.cell.styles.fillColor = [254, 243, 199]; // amber-100
+                    data.cell.styles.textColor = [180, 83, 9]; // amber-700
+                  } else if (colorInfo.label === 'Alerta') {
+                    data.cell.styles.fillColor = [255, 228, 230]; // rose-100
+                    data.cell.styles.textColor = [190, 24, 74]; // rose-700
+                  } else {
+                    data.cell.styles.fillColor = [248, 250, 252]; // slate-50
+                    data.cell.styles.textColor = [100, 116, 139]; // slate-500
                   }
                 }
               }
@@ -1315,7 +1385,7 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
   };
 
   const dynamicChartDataForMetric = (metricKey: string) => {
-    const dist = { Excelente: 0, Normal: 0, Bajo: 0 };
+    const dist = { Excelente: 0, 'Por Mejorar': 0, Alerta: 0 };
     filteredProfiles.forEach(p => {
       const val = p[metricKey];
       const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS[metricKey]);
@@ -1324,9 +1394,9 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
       }
     });
     return [
-      { name: 'Excelente', value: dist.Excelente, color: '#10b981' },
-      { name: 'Normal', value: dist.Normal, color: '#f59e0b' },
-      { name: 'Bajo', value: dist.Bajo, color: '#ef4444' }
+      { name: 'Excelente', value: dist.Excelente || 0, color: '#10b981' },
+      { name: 'Por Mejorar', value: dist['Por Mejorar'] || 0, color: '#f59e0b' },
+      { name: 'Alerta', value: dist.Alerta || 0, color: '#ef4444' }
     ].filter(item => item.value > 0);
   };
 
@@ -1362,6 +1432,116 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
     }
   };
 
+  const getPrescriptionColorInfo = (profile: any, tab: string) => {
+    let metrics: string[] = [];
+    switch (tab) {
+      case 'imtp':
+        metrics = ['imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'imtp_asimetria'];
+        break;
+      case 'cmj':
+        metrics = ['cmj_rsi_mod', 'cmj_altura_salto_im', 'cmj_peak_pot_relativa'];
+        break;
+      case 'rebound':
+        metrics = ['rebound_rsi', 'rebound_contact_time_ms', 'rebound_flight_time_ms'];
+        break;
+      case 'speed':
+        metrics = ['tiempo_10m', 'vel_10m', 'tiempo_total'];
+        break;
+      case 'vo2':
+        metrics = ['vo2_max', 'vam', 'fc_max'];
+        break;
+      case 'antropometria':
+        metrics = ['masa_corporal_kg', 'masa_muscular_pct', 'masa_adiposa_pct'];
+        break;
+      case 'test505':
+        metrics = ['t_acel_2m', 't_desacel_2m', 't_cod_2m'];
+        break;
+      default:
+        metrics = [];
+    }
+
+    let excelenteCount = 0;
+    let porMejorarCount = 0;
+    let alertaCount = 0;
+    let validCount = 0;
+
+    metrics.forEach((metricKey) => {
+      let val = profile[metricKey];
+      
+      if (val === undefined || val === null || val === 0) {
+        if (tab === 'imtp' && profile.latestImtp) {
+          val = profile.latestImtp[metricKey] !== undefined ? profile.latestImtp[metricKey] : profile.latestImtp[metricKey.replace('imtp_', '')];
+        } else if (tab === 'cmj' && profile.latestCmj) {
+          val = profile.latestCmj[metricKey] !== undefined ? profile.latestCmj[metricKey] : profile.latestCmj[metricKey.replace('cmj_', '')];
+        } else if (tab === 'rebound' && profile.latestRebound) {
+          val = profile.latestRebound[metricKey] !== undefined ? profile.latestRebound[metricKey] : profile.latestRebound[metricKey.replace('rebound_', '')];
+        } else if (tab === 'speed' && profile.latestSpeed) {
+          val = profile.latestSpeed[metricKey];
+        } else if (tab === 'vo2' && profile.latestVo2) {
+          val = profile.latestVo2[metricKey];
+        } else if (tab === 'antropometria' && profile.latestAntro) {
+          val = profile.latestAntro[metricKey] !== undefined ? profile.latestAntro[metricKey] : profile.latestAntro[metricKey.replace('masa_', '')];
+        } else if (tab === 'test505' && profile.latestTest505) {
+          val = profile.latestTest505[metricKey];
+        }
+      }
+
+      if (val !== undefined && val !== null && val !== 0 && val !== "") {
+        const config = ALL_METRIC_CONFIGS[metricKey];
+        if (config) {
+          const status = getPhysicalStatusDynamic(val, config);
+          if (status.label === 'Excelente') {
+            excelenteCount++;
+            validCount++;
+          } else if (status.label === 'Por Mejorar') {
+            porMejorarCount++;
+            validCount++;
+          } else if (status.label === 'Alerta') {
+            alertaCount++;
+            validCount++;
+          }
+        }
+      }
+    });
+
+    if (validCount === 0) {
+      return {
+        bg: 'bg-slate-50 border-slate-100',
+        text: 'text-slate-500',
+        iconColor: 'text-slate-400',
+        badgeBg: 'bg-slate-100 border-slate-200 text-slate-700',
+        label: 'Sin Datos'
+      };
+    }
+
+    // Green (Óptimo) if at least 50% of the active/valid parameters are Excelente
+    if (excelenteCount >= (validCount / 2)) {
+      return {
+        bg: 'bg-emerald-50/40 border-emerald-100/50',
+        text: 'text-emerald-700',
+        iconColor: 'text-emerald-500',
+        badgeBg: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        label: 'Óptimo'
+      };
+    } else if (alertaCount > 0) {
+      return {
+        bg: 'bg-rose-50/40 border-rose-100/50',
+        text: 'text-rose-700',
+        iconColor: 'text-rose-500',
+        badgeBg: 'bg-rose-100 text-rose-800 border-rose-200',
+        label: 'Alerta'
+      };
+    } else {
+      return {
+        bg: 'bg-amber-50/40 border-amber-100/50',
+        text: 'text-amber-700',
+        iconColor: 'text-amber-500',
+        badgeBg: 'bg-amber-100 text-amber-800 border-amber-200',
+        label: 'Por Mejorar'
+      };
+    }
+  };
+
   const getPlayerPrescription = (profile: any, tab: string): string => {
     switch (tab) {
       case 'cmj': {
@@ -1382,20 +1562,41 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
       }
 
       case 'imtp': {
-        const fRel = profile.imtp_f_relativa_n_kg || 0;
-        const rfd = profile.latestImtp?.['RFD - 100ms [N/s]'] || profile.latestImtp?.['RFD a 100ms'] || profile.imtp_rfd_100ms || 0;
-        const asim = profile.imtp_asimetria || 0;
+        const fMax = profile.latestImtp?.imtp_fuerza_n || profile.imtp_fuerza_n || 0;
+        const fRel = profile.latestImtp?.imtp_f_relativa_n_kg || profile.imtp_f_relativa_n_kg || 0;
+        const rfd = profile.latestImtp?.['RFD - 100ms [N/s]'] || profile.latestImtp?.['RFD a 100ms'] || profile.latestImtp?.imtp_rfd_100ms || profile.imtp_rfd_100ms || 0;
+        const asim = profile.latestImtp?.imtp_asimetria !== undefined ? profile.latestImtp.imtp_asimetria : (profile.imtp_asimetria || 0);
 
-        if (fRel === 0 && rfd === 0) {
+        if (fRel === 0 && fMax === 0 && rfd === 0) {
           return "Sin datos de fuerza isométrica IMTP para prescribir.";
         }
+        
+        // Prioridad 1: Fuerza Relativa deficiente (Alerta)
+        if (fRel > 0 && fRel < 35) {
+          return `Fuerza Relativa deficiente (${fRel.toFixed(1)} N/kg). Priorizar desarrollo de fuerza máxima base mediante sobrecarga progresiva pesada (>80% 1RM).`;
+        }
+        
+        // Prioridad 2: Fuerza Máxima deficiente (Alerta)
+        if (fMax > 0 && fMax < 2800) {
+          return `Fuerza Máxima deficiente (${fMax} N). Enfatizar desarrollo de fuerza estructural y sobrecarga mecánica pesada.`;
+        }
+
+        // Prioridad 3: Fuerza Relativa por mejorar
+        if (fRel > 0 && fRel < 45) {
+          return `Fuerza Relativa por mejorar (${fRel.toFixed(1)} N/kg). Incrementar niveles de fuerza máxima relativa con énfasis en la relación fuerza/peso corporal.`;
+        }
+
+        // Prioridad 4: Fuerza Máxima por mejorar
+        if (fMax > 0 && fMax < 3500) {
+          return `Fuerza Máxima por mejorar (${fMax} N). Continuar con progresión de cargas máximas para consolidar base de fuerza.`;
+        }
+
+        // Prioridad 5: Asimetría (se evalúa si la fuerza base está consolidada)
         if (asim > 10) {
           const debilStr = profile.imtp_debil ? ` (lado débil: ${profile.imtp_debil})` : "";
           return `Asimetría marcada (${asim.toFixed(1)}%). Corregir con trabajo de fuerza unilateral${debilStr} y balance posterior.`;
         }
-        if (fRel < 28) {
-          return "Priorizar desarrollo de fuerza base mediante sobrecarga progresiva multiarticular pesada (>80% 1RM).";
-        }
+
         if (rfd < 4000) {
           return "Excelente fuerza pero lento. Entrenar velocidad de aplicación de fuerza con lanzamientos y saltos balísticos.";
         }
@@ -2099,7 +2300,7 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
       </div>
 
       {/* Control Filter Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         
         {/* Date From */}
         <div className="flex flex-col gap-1.5">
@@ -2279,6 +2480,110 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                       }`}
                     >
                       <span>{cat}</span>
+                      {isSelected ? (
+                        <i className="fa-solid fa-circle-check text-red-600 text-xs"></i>
+                      ) : (
+                        <div className="w-3 h-3 rounded-full border border-slate-300"></div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Microcycles Dropdown */}
+        <div ref={microcycleDropdownRef} className="flex flex-col gap-1.5 relative">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Microciclo</label>
+          <button
+            onClick={() => setIsMicrocycleDropdownOpen(!isMicrocycleDropdownOpen)}
+            className="w-full flex items-center justify-between bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-3 py-2.5 hover:bg-slate-100/50 transition-all text-left min-h-[38px]"
+          >
+            <span className="truncate">
+              {selectedMicrocycleId === null ? (
+                'Todos los Microciclos'
+              ) : (
+                (() => {
+                  const mc = microcycles.find(m => m.id === selectedMicrocycleId);
+                  if (!mc) return 'Microciclo Seleccionado';
+                  const catLabel = REVERSE_CATEGORY_ID_MAP[mc.category_id] || `Sub-${mc.category_id}`;
+                  return `MC #${mc.micro_number} - ${catLabel}`;
+                })()
+              )}
+            </span>
+            <i className="fa-solid fa-chevron-down text-[10px] opacity-70"></i>
+          </button>
+          
+          {isMicrocycleDropdownOpen && (
+            <div className="absolute top-[105%] left-0 w-[240px] bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-3 animate-in fade-in slide-in-from-top-1 duration-150">
+              <div className="relative mb-2">
+                <i className="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400"></i>
+                <input
+                  type="text"
+                  placeholder="Buscar microciclo..."
+                  value={microcycleQuery}
+                  onChange={(e) => setMicrocycleQuery(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-xs pl-7 pr-2.5 py-1.5 rounded-lg focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Opciones</span>
+                <button
+                  onClick={() => {
+                    setSelectedMicrocycleId(null);
+                    setIsMicrocycleDropdownOpen(false);
+                  }}
+                  type="button"
+                  className="text-[9px] font-black text-red-600 hover:text-red-700 transition-colors uppercase tracking-wider"
+                >
+                  Limpiar
+                </button>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                <button
+                  onClick={() => {
+                    setSelectedMicrocycleId(null);
+                    setIsMicrocycleDropdownOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    selectedMicrocycleId === null
+                      ? 'bg-red-50 text-red-700 border-l-2 border-red-600'
+                      : 'hover:bg-slate-50 text-slate-700 border-l-2 border-transparent'
+                  }`}
+                >
+                  <span>Todos los Microciclos</span>
+                  {selectedMicrocycleId === null ? (
+                    <i className="fa-solid fa-circle-check text-red-600 text-xs"></i>
+                  ) : (
+                    <div className="w-3 h-3 rounded-full border border-slate-300"></div>
+                  )}
+                </button>
+                {filteredMicrocyclesBySearch.map(mc => {
+                  const isSelected = selectedMicrocycleId === mc.id;
+                  const catLabel = REVERSE_CATEGORY_ID_MAP[mc.category_id] || `Sub-${mc.category_id}`;
+                  const label = `MC #${mc.micro_number} - ${catLabel}`;
+                  return (
+                    <button
+                      key={mc.id}
+                      onClick={() => {
+                        setSelectedMicrocycleId(mc.id);
+                        setIsMicrocycleDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        isSelected
+                          ? 'bg-red-50 text-red-700 border-l-2 border-red-600'
+                          : 'hover:bg-slate-50 text-slate-700 border-l-2 border-transparent'
+                      }`}
+                    >
+                      <div className="flex flex-col text-left leading-tight">
+                        <span>{label}</span>
+                        <span className="text-[9px] text-slate-400 font-normal">
+                          {mc.start_date} al {mc.end_date}
+                        </span>
+                      </div>
                       {isSelected ? (
                         <i className="fa-solid fa-circle-check text-red-600 text-xs"></i>
                       ) : (
@@ -2659,6 +2964,7 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                   const isMyClub = userRole !== 'club' || (userClub && normalizeClub(profile.club_name) === normalizeClub(userClub));
                   const nameToDisplay = isMyClub ? profile.player_name : `Jugador [${profile.player_id}]`;
                   const testDate = getActiveTabDateString(profile) || '-';
+                  const colorInfo = getPrescriptionColorInfo(profile, evaluationTab);
 
                   return (
                     <tr key={profile.player_id} className="hover:bg-slate-50/50 transition-all">
@@ -2689,10 +2995,19 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                           {col.render(profile)}
                         </td>
                       ))}
-                      <td className="px-6 py-4 text-xs font-medium text-slate-600 border-l border-slate-100 max-w-[320px] whitespace-normal leading-normal">
-                        <div className="flex items-start gap-1.5">
-                          <i className="fa-solid fa-clipboard-check text-red-500 mt-0.5 shrink-0 text-xs"></i>
-                          <span>{getPlayerPrescription(profile, evaluationTab)}</span>
+                      <td className={`px-6 py-4 text-xs font-medium border-l border-slate-100 max-w-[320px] whitespace-normal leading-normal transition-colors duration-200 ${colorInfo.bg}`}>
+                        <div className="flex items-start gap-2.5">
+                          <i className={`fa-solid fa-clipboard-check mt-0.5 shrink-0 text-xs ${colorInfo.iconColor}`}></i>
+                          <div className="flex flex-col gap-1 w-full">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md border ${colorInfo.badgeBg}`}>
+                                {colorInfo.label}
+                              </span>
+                            </div>
+                            <span className="text-slate-700 text-[11px] leading-relaxed">
+                              {getPlayerPrescription(profile, evaluationTab)}
+                            </span>
+                          </div>
                         </div>
                       </td>
                     </tr>

@@ -2,10 +2,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeClub, sortClubsByChileFirst } from '../lib/utils';
-import { getChartSummary, getAthleteFootprintSummary, askAthleteAiAssistant } from '../services/geminiService';
+import { getChartSummary } from '../services/geminiService';
 import { motion, AnimatePresence } from 'motion/react';
 import ClubBadge from './ClubBadge';
-import Markdown from 'react-markdown';
 import { ALL_METRIC_CONFIGS } from './FisicaResumenGrupal';
 import { FichaOrientacionAtleta, FichaOrientacionGrupal } from './FichasOrientacion';
 import { AthletePrescription } from './AthletePrescription';
@@ -220,6 +219,15 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   const [cmjReboundData, setCmjReboundData] = useState<CMJReboundData[]>([]);
   const [loading, setLoading] = useState(false);
   const [clubFilterMode, setClubFilterMode] = useState<'all' | 'club'>('all');
+
+  const getPercentileLevelShared = (pct: number | undefined) => {
+    if (pct === undefined || isNaN(pct)) return 'Sin Datos';
+    if (pct >= 90) return 'Élite';
+    if (pct >= 75) return 'Sobresaliente';
+    if (pct >= 45) return 'Promedio';
+    if (pct >= 20) return 'Por Mejorar';
+    return 'Alerta';
+  };
 
   useEffect(() => {
     fetchAllData();
@@ -1209,11 +1217,11 @@ const TachometerGauge = ({
   }
 
   const getPercentileLevel = (pct: number) => {
-    if (pct >= 90) return 'Elite';
+    if (pct >= 90) return 'Élite';
     if (pct >= 75) return 'Sobresaliente';
     if (pct >= 45) return 'Promedio';
-    if (pct >= 20) return 'Bajo Promedio';
-    return 'Por Mejorar';
+    if (pct >= 20) return 'Por Mejorar';
+    return 'Alerta';
   };
 
   const getPercentileColorClass = (pct: number) => {
@@ -1411,88 +1419,6 @@ const TachometerGauge = ({
   );
 };
 
-const parseAthleteAiSummary = (text: string | null) => {
-  if (!text) return null;
-
-  let capacities = "";
-  let improvements: string[] = [];
-  let conclusion = "";
-
-  const lowerText = text.toLowerCase();
-  
-  // Find indicators of various possible sections
-  const capIdx = Math.max(
-    lowerText.indexOf("resumen de capacidades"), 
-    lowerText.indexOf("1. resumen de capacidades"),
-    lowerText.indexOf("capacidades")
-  );
-  const impIdx = Math.max(
-    lowerText.indexOf("puntos de mejora"), 
-    lowerText.indexOf("2. puntos de mejora"),
-    lowerText.indexOf("puntos de mej"),
-    lowerText.indexOf("aspectos a trabajar")
-  );
-  const conIdx = Math.max(
-    lowerText.indexOf("conclusión técnica"), 
-    lowerText.indexOf("3. conclusión técnica"),
-    lowerText.indexOf("conclusion tec"),
-    lowerText.indexOf("conclusión")
-  );
-
-  // Parse Capacities
-  if (capIdx !== -1) {
-    const start = text.indexOf("\n", capIdx);
-    const end = impIdx !== -1 ? impIdx : (conIdx !== -1 ? conIdx : text.length);
-    capacities = text.substring(start, end).trim();
-    capacities = capacities.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
-  } else {
-    if (impIdx !== -1) {
-      capacities = text.substring(0, impIdx).trim();
-    } else {
-      capacities = text;
-    }
-  }
-
-  // Clean up trailing list headers or numbers like "2." or "2" left at the transition boundary
-  capacities = capacities.replace(/\s*\d+[\.\-\:\s]*$/, "").trim();
-
-  // Parse Improvements
-  if (impIdx !== -1) {
-    const start = text.indexOf("\n", impIdx);
-    const end = conIdx !== -1 ? conIdx : text.length;
-    const impText = text.substring(start, end).trim();
-    
-    const lines = impText.split("\n");
-    improvements = lines
-      .map(line => line.trim())
-      .filter(line => line.startsWith("-") || line.startsWith("*") || /^\d+\./.test(line))
-      .map(line => line.replace(/^(?:-|\*|\d+\.)\s*/, "").trim())
-      .filter(line => line.length > 0 && !/^\d+[\.\s]*$/.test(line));
-
-    if (improvements.length === 0) {
-      const cleanedImp = impText.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
-      if (cleanedImp) {
-        improvements = [cleanedImp];
-      }
-    }
-  }
-
-  // Parse Conclusion
-  if (conIdx !== -1) {
-    const start = text.indexOf("\n", conIdx);
-    conclusion = text.substring(start).trim();
-    conclusion = conclusion.replace(/^(?:###|####|##|\*\*|:|-|\s)+/, "").trim();
-  }
-
-  return {
-    capacities: capacities || "El jugador presenta un correcto perfil morfológico y neuromuscular, adaptado al microciclo.",
-    improvements: improvements.length > 0 ? improvements : [
-      "Optimizar la resistencia intermitente por medio de bloques anaeróbicos.",
-      "Sesiones preventivas compensatorias para mitigar asimetrías bilaterales en salto vertical."
-    ],
-    conclusion: conclusion || "Deportista con alto valor atlético y proyección competitiva internacional."
-  };
-};
 
 const getLatestCompositeAntro = (records: any[], playerId: number): any => {
   const sorted = records
@@ -1557,14 +1483,14 @@ const AthleteHuella = ({
   const [comparisonTarget, setComparisonTarget] = useState<'category' | '2010plus'>('category');
   const [excludeOutliers, setExcludeOutliers] = useState(false);
 
-  // Dummy state & functions for the hidden AI block
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
-  const [loadingAi, setLoadingAi] = useState(false);
-  const [aiTab, setAiTab] = useState<'perfil' | 'mejoras' | 'chat'>('perfil');
-  const [goalStatuses, setGoalStatuses] = useState<Record<string, 'todo' | 'progress' | 'done'>>({});
-  const [chatQuery, setChatQuery] = useState('');
-  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
-  const [chatSending, setChatSending] = useState(false);
+  const getPercentileLevelShared = (pct: number | undefined) => {
+    if (pct === undefined || isNaN(pct)) return 'Sin Datos';
+    if (pct >= 90) return 'Élite';
+    if (pct >= 75) return 'Sobresaliente';
+    if (pct >= 45) return 'Promedio';
+    if (pct >= 20) return 'Por Mejorar';
+    return 'Alerta';
+  };
 
   const [generalProfileFilter, setGeneralProfileFilter] = useState<string>('all');
   const [generalProfileSearch, setGeneralProfileSearch] = useState<string>('');
@@ -2052,180 +1978,6 @@ const AthleteHuella = ({
     : 0;
   const bestAntroIndiceImo = bestAntroIndiceImoVal !== -Infinity && bestAntroIndiceImoVal > 0 ? bestAntroIndiceImoVal : 0;
 
-  const getPercentileLevel = (pct: number) => {
-    if (pct >= 90) return 'Elite';
-    if (pct >= 75) return 'Sobresaliente';
-    if (pct >= 45) return 'Promedio';
-    if (pct >= 20) return 'Bajo Promedio';
-    return 'Por Mejorar';
-  };
-
-  const getAiPayload = () => {
-    if (!player) return null;
-    const metricsPayload: Record<string, any> = {};
-
-    const addMetricToPayload = (metricKey: string, dataList: any[], lowerIsBetter: boolean, label: string, area: string) => {
-      const playerRows = (dataList || [])
-        .filter(d => Number(d.player_id) === Number(player?.player_id) && d[metricKey] != null && d[metricKey] !== '' && !isNaN(Number(d[metricKey])));
-      
-      if (playerRows.length === 0) {
-        metricsPayload[metricKey] = {
-          nombre_metrica: label,
-          estado_dato: "AUSENTE",
-          valor: null,
-          percentil: null,
-          v_benchmark_percentil: null,
-          nivel: null,
-          area: area
-        };
-        return;
-      }
-
-      const sortedPlayerRows = [...playerRows].sort((a, b) => {
-        const dateA = a.fecha_test ? new Date(a.fecha_test).getTime() : (a.fecha ? new Date(a.fecha).getTime() : 0);
-        const dateB = b.fecha_test ? new Date(b.fecha_test).getTime() : (b.fecha ? new Date(b.fecha).getTime() : 0);
-        return dateB - dateA;
-      });
-
-      const latestValue = Number(sortedPlayerRows[0][metricKey]);
-      if (latestValue <= 0 || isNaN(latestValue)) {
-        metricsPayload[metricKey] = {
-          nombre_metrica: label,
-          estado_dato: "AUSENTE",
-          valor: null,
-          percentil: null,
-          v_benchmark_percentil: null,
-          nivel: null,
-          area: area
-        };
-        return;
-      }
-
-      const percentile = calculatePercentile(latestValue, dataList, metricKey, lowerIsBetter);
-      const level = getPercentileLevel(percentile);
-
-      metricsPayload[metricKey] = {
-        nombre_metrica: label,
-        estado_dato: "MEDIDO",
-        valor: latestValue,
-        percentil: percentile,
-        v_benchmark_percentil: percentile,
-        nivel: level,
-        area: area
-      };
-    };
-
-    // Add all core physical metrics
-    addMetricToPayload('imtp_fuerza_n', allImtp, false, 'IMTP Fuerza Máxima', 'Fuerza Máxima');
-    addMetricToPayload('imtp_f_relativa_n_kg', allImtp, false, 'IMTP F. Relativa', 'Fuerza Máxima');
-    addMetricToPayload('imtp_force_50ms', allImtp, false, 'Fuerza Net a 50ms', 'Fuerza Máxima');
-    addMetricToPayload('imtp_rfd_100ms', allImtp, false, 'RFD a 100ms', 'Fuerza Máxima');
-
-    addMetricToPayload('concentric_peak_force_n', allImtp, false, 'Fuerza Pico Conc. CMJ', 'Potencia y Saltabilidad');
-    addMetricToPayload('rsi_modified_m_s', allImtp, false, 'CMJ RSI Modificado', 'Potencia y Saltabilidad');
-    addMetricToPayload('jump_height_impmom_cm', allImtp, false, 'Altura Salto (Imp-Mom)', 'Potencia y Saltabilidad');
-    addMetricToPayload('peak_power_bm_w_kg', allImtp, false, 'Pot. Pico Relativa CMJ', 'Potencia y Saltabilidad');
-    addMetricToPayload('peak_power_w', allImtp, false, 'Pot. Pico Absoluta CMJ', 'Potencia y Saltabilidad');
-
-    addMetricToPayload('rebound_rsi', allCmjRebound, false, 'Rebound RSI', 'Reactividad y Rebote');
-    addMetricToPayload('rebound_contact_time_ms', allCmjRebound, true, 'Tiempo Contacto Rebound', 'Reactividad y Rebote');
-    addMetricToPayload('rebound_flight_time_ms', allCmjRebound, false, 'Tiempo Vuelo Rebound', 'Reactividad y Rebote');
-    addMetricToPayload('take_off_momentum_kg_m_s', allCmjRebound, false, 'Momentum Despegue Rebound', 'Reactividad y Rebote');
-
-    addMetricToPayload('tiempo_10m', allSpeed, true, 'Tiempo Sprints 10m', 'Sprint y Aceleración');
-    addMetricToPayload('vel_10m', allSpeed, false, 'Velocidad Sprints 10m', 'Sprint y Aceleración');
-    addMetricToPayload('tiempo_10_20m', allSpeed, true, 'Tiempo Sprints 10-20m', 'Sprint y Aceleración');
-    addMetricToPayload('tiempo_20_30m', allSpeed, true, 'Tiempo Sprints 20-30m', 'Sprint y Aceleración');
-    addMetricToPayload('tiempo_total', allSpeed, true, 'Tiempo Sprints Total 30m', 'Sprint y Aceleración');
-
-    addMetricToPayload('vo2_max', allVo2, false, 'Consumo de Oxígeno VO2Max', 'Consumo de Oxígeno');
-    addMetricToPayload('vam', allVo2, false, 'Velocidad Aeróbica Máxima (VAM)', 'Consumo de Oxígeno');
-    addMetricToPayload('vt1_vel', allVo2, false, 'VT1 Velocidad', 'Consumo de Oxígeno');
-    addMetricToPayload('vt2_vel', allVo2, false, 'VT2 Velocidad', 'Consumo de Oxígeno');
-
-    addMetricToPayload('t_acel_2m', allTest505, true, '505 T. Acel 2m', 'Cambio de Dirección');
-    addMetricToPayload('t_desacel_2m', allTest505, true, '505 T. Desacel 2m', 'Cambio de Dirección');
-    addMetricToPayload('t_cod_2m', allTest505, true, '505 T. COD 2m', 'Cambio de Dirección');
-    addMetricToPayload('t_reacel_1_2m', allTest505, true, '505 T. Reacel 1 2m', 'Cambio de Dirección');
-
-    // Anthropometric metrics
-    const addAntroMetricToPayload = (val: number, pct: number, label: string) => {
-      if (val <= 0 || isNaN(val)) {
-        metricsPayload[label] = {
-          nombre_metrica: label,
-          estado_dato: "AUSENTE",
-          valor: null,
-          percentil: null,
-          v_benchmark_percentil: null,
-          nivel: null,
-          area: 'Antropometría'
-        };
-      } else {
-        metricsPayload[label] = {
-          nombre_metrica: label,
-          estado_dato: "MEDIDO",
-          valor: val,
-          percentil: pct,
-          v_benchmark_percentil: pct,
-          nivel: getPercentileLevel(pct),
-          area: 'Antropometría'
-        };
-      }
-    };
-
-    addAntroMetricToPayload(valMasaMuscularPct, pctMasaMuscularPct, '% Masa Muscular');
-    addAntroMetricToPayload(valMasaMuscularKg, pctMasaMuscularKg, 'Kg Masa Muscular');
-    addAntroMetricToPayload(valMasaAdiposaPct, pctMasaAdiposaPct, '% Masa Grasa');
-    addAntroMetricToPayload(valMasaAdiposaKg, pctMasaAdiposaKg, 'Kg Masa Grasa');
-    addAntroMetricToPayload(valSumPliegues6, pctSumPliegues6, '6 Pliegues');
-    addAntroMetricToPayload(valIndiceImo, pctIndiceImo, 'Índice IMO');
-
-    return metricsPayload;
-  };
-
-  const generateAiSummary = async () => {
-    if (!player) return;
-    setLoadingAi(true);
-    try {
-      const payload = getAiPayload();
-      const summary = await getAthleteFootprintSummary(player, payload);
-      setAiSummary(summary);
-    } catch (error) {
-      console.error("Error generating AI footprint summary:", error);
-    } finally {
-      setLoadingAi(false);
-    }
-  };
-
-  const handleConsultAssistant = async (customQuery?: string) => {
-    const query = customQuery || chatQuery;
-    if (!query.trim() || !player) return;
-
-    setChatSending(true);
-    const newHistory = [...chatHistory, { role: 'user' as const, text: query }];
-    setChatHistory(newHistory);
-    setChatQuery('');
-
-    try {
-      const payload = getAiPayload();
-      const response = await askAthleteAiAssistant(player, payload, query, chatHistory);
-      setChatHistory([...newHistory, { role: 'model' as const, text: response }]);
-    } catch (error) {
-      console.error("Error in AI assistant chat:", error);
-      setChatHistory([...newHistory, { role: 'model' as const, text: "Lo siento, ocurrió un error al consultar al asistente en vivo." }]);
-    } finally {
-      setChatSending(false);
-    }
-  };
-
-  useEffect(() => {
-    setAiSummary(null);
-    setChatHistory([]);
-    if (player) {
-      generateAiSummary();
-    }
-  }, [player]);
-
   const calculateCohortSD = (list: any[], key: string): number => {
     if (!list || list.length === 0) return 0;
     const values = list
@@ -2309,16 +2061,16 @@ const AthleteHuella = ({
       value: number;
       unit: string;
       percentile: number;
-      level: 'Elite' | 'Sobresaliente' | 'Promedio' | 'Bajo Promedio' | 'Por Mejorar';
+      level: 'Élite' | 'Sobresaliente' | 'Promedio' | 'Por Mejorar' | 'Alerta';
       area: string;
     }[] = [];
 
     const getPercentileLevel = (pct: number) => {
-      if (pct >= 90) return 'Elite';
+      if (pct >= 90) return 'Élite';
       if (pct >= 75) return 'Sobresaliente';
       if (pct >= 45) return 'Promedio';
-      if (pct >= 20) return 'Bajo Promedio';
-      return 'Por Mejorar';
+      if (pct >= 20) return 'Por Mejorar';
+      return 'Alerta';
     };
 
     const addStandardMetric = (metricKey: string, dataList: any[], lowerIsBetter: boolean, title: string, unit: string, area: string) => {
@@ -2428,11 +2180,11 @@ const AthleteHuella = ({
 
   const levelSummary = useMemo(() => {
     const counts = {
-      Elite: 0,
-      Sobresaliente: 0,
-      Promedio: 0,
-      'Bajo Promedio': 0,
+      'Élite': 0,
+      'Sobresaliente': 0,
+      'Promedio': 0,
       'Por Mejorar': 0,
+      'Alerta': 0,
     };
     evaluatedMetrics.forEach(m => {
       if (counts[m.level] !== undefined) {
@@ -2457,11 +2209,11 @@ const AthleteHuella = ({
     // Filter by Level
     if (generalProfileFilter !== 'all') {
       if (generalProfileFilter === 'top') {
-        result = result.filter(m => m.level === 'Elite' || m.level === 'Sobresaliente');
+        result = result.filter(m => m.level === 'Élite' || m.level === 'Sobresaliente');
       } else if (generalProfileFilter === 'mid') {
         result = result.filter(m => m.level === 'Promedio');
       } else if (generalProfileFilter === 'low') {
-        result = result.filter(m => m.level === 'Bajo Promedio' || m.level === 'Por Mejorar');
+        result = result.filter(m => m.level === 'Por Mejorar' || m.level === 'Alerta');
       } else {
         result = result.filter(m => m.level === generalProfileFilter);
       }
@@ -2654,12 +2406,12 @@ const AthleteHuella = ({
             {/* ELITE */}
             <div 
               onClick={() => {
-                setGeneralProfileFilter(generalProfileFilter === 'Elite' ? 'all' : 'Elite');
+                setGeneralProfileFilter(generalProfileFilter === 'Élite' ? 'all' : 'Élite');
                 const el = document.getElementById('perfil-multidimensional-card');
                 if (el) el.scrollIntoView({ behavior: 'smooth' });
               }}
               className={`px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer ${
-                generalProfileFilter === 'Elite' 
+                generalProfileFilter === 'Élite' 
                   ? 'bg-purple-100 border-purple-300 shadow-sm' 
                   : 'bg-purple-50/40 hover:bg-purple-50/80 border-purple-100/60'
               }`}
@@ -2667,14 +2419,14 @@ const AthleteHuella = ({
               <div className="flex items-center justify-between text-[10px]">
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
-                  <span className="font-black uppercase text-purple-900 tracking-wider">Elite (≥90%)</span>
+                  <span className="font-black uppercase text-purple-900 tracking-wider">Élite (≥90%)</span>
                 </div>
-                <span className="font-black text-purple-900 italic">{levelSummary.Elite}</span>
+                <span className="font-black text-purple-900 italic">{levelSummary['Élite']}</span>
               </div>
               <div className="w-full bg-purple-100/50 h-1 rounded-full mt-1 overflow-hidden">
                 <div 
                   className="bg-purple-600 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary.Elite / evaluatedMetrics.length) * 100 : 0}%` }}
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary['Élite'] / evaluatedMetrics.length) * 100 : 0}%` }}
                 ></div>
               </div>
             </div>
@@ -2697,12 +2449,12 @@ const AthleteHuella = ({
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
                   <span className="font-black uppercase text-emerald-900 tracking-wider">Sobresaliente (75-89%)</span>
                 </div>
-                <span className="font-black text-emerald-900 italic">{levelSummary.Sobresaliente}</span>
+                <span className="font-black text-emerald-900 italic">{levelSummary['Sobresaliente']}</span>
               </div>
               <div className="w-full bg-emerald-100/50 h-1 rounded-full mt-1 overflow-hidden">
                 <div 
                   className="bg-emerald-600 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary.Sobresaliente / evaluatedMetrics.length) * 100 : 0}%` }}
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary['Sobresaliente'] / evaluatedMetrics.length) * 100 : 0}%` }}
                 ></div>
               </div>
             </div>
@@ -2725,40 +2477,12 @@ const AthleteHuella = ({
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
                   <span className="font-black uppercase text-blue-900 tracking-wider">Promedio (45-74%)</span>
                 </div>
-                <span className="font-black text-blue-900 italic">{levelSummary.Promedio}</span>
+                <span className="font-black text-blue-900 italic">{levelSummary['Promedio']}</span>
               </div>
               <div className="w-full bg-blue-100/50 h-1 rounded-full mt-1 overflow-hidden">
                 <div 
                   className="bg-blue-600 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary.Promedio / evaluatedMetrics.length) * 100 : 0}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* BAJO PROMEDIO */}
-            <div 
-              onClick={() => {
-                setGeneralProfileFilter(generalProfileFilter === 'Bajo Promedio' ? 'all' : 'Bajo Promedio');
-                const el = document.getElementById('perfil-multidimensional-card');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-              className={`px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer ${
-                generalProfileFilter === 'Bajo Promedio' 
-                  ? 'bg-orange-100 border-orange-300 shadow-sm' 
-                  : 'bg-orange-50/40 hover:bg-orange-50/80 border-orange-100/60'
-              }`}
-            >
-              <div className="flex items-center justify-between text-[10px]">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-orange-600"></span>
-                  <span className="font-black uppercase text-orange-900 tracking-wider">Bajo Prom. (20-44%)</span>
-                </div>
-                <span className="font-black text-orange-900 italic">{levelSummary['Bajo Promedio']}</span>
-              </div>
-              <div className="w-full bg-orange-100/50 h-1 rounded-full mt-1 overflow-hidden">
-                <div 
-                  className="bg-orange-500 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary['Bajo Promedio'] / evaluatedMetrics.length) * 100 : 0}%` }}
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary['Promedio'] / evaluatedMetrics.length) * 100 : 0}%` }}
                 ></div>
               </div>
             </div>
@@ -2772,6 +2496,34 @@ const AthleteHuella = ({
               }}
               className={`px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer ${
                 generalProfileFilter === 'Por Mejorar' 
+                  ? 'bg-orange-100 border-orange-300 shadow-sm' 
+                  : 'bg-orange-50/40 hover:bg-orange-50/80 border-orange-100/60'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-600"></span>
+                  <span className="font-black uppercase text-orange-900 tracking-wider">Por Mejorar (20-44%)</span>
+                </div>
+                <span className="font-black text-orange-900 italic">{levelSummary['Por Mejorar']}</span>
+              </div>
+              <div className="w-full bg-orange-100/50 h-1 rounded-full mt-1 overflow-hidden">
+                <div 
+                  className="bg-orange-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary['Por Mejorar'] / evaluatedMetrics.length) * 100 : 0}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* ALERTA */}
+            <div 
+              onClick={() => {
+                setGeneralProfileFilter(generalProfileFilter === 'Alerta' ? 'all' : 'Alerta');
+                const el = document.getElementById('perfil-multidimensional-card');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                generalProfileFilter === 'Alerta' 
                   ? 'bg-red-100 border-red-300 shadow-sm' 
                   : 'bg-red-50/40 hover:bg-red-50/80 border-red-100/60'
               }`}
@@ -2779,14 +2531,14 @@ const AthleteHuella = ({
               <div className="flex items-center justify-between text-[10px]">
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                  <span className="font-black uppercase text-red-900 tracking-wider">Por Mejorar (&lt;20%)</span>
+                  <span className="font-black uppercase text-red-900 tracking-wider">Alerta (&lt;20%)</span>
                 </div>
-                <span className="font-black text-red-900 italic">{levelSummary['Por Mejorar']}</span>
+                <span className="font-black text-red-900 italic">{levelSummary['Alerta']}</span>
               </div>
               <div className="w-full bg-red-100/50 h-1 rounded-full mt-1 overflow-hidden">
                 <div 
                   className="bg-red-500 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary['Por Mejorar'] / evaluatedMetrics.length) * 100 : 0}%` }}
+                  style={{ width: `${evaluatedMetrics.length > 0 ? (levelSummary['Alerta'] / evaluatedMetrics.length) * 100 : 0}%` }}
                 ></div>
               </div>
             </div>
@@ -2873,10 +2625,9 @@ const AthleteHuella = ({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <TachometerGauge {...getGaugeData('imtp_fuerza_n', allImtp, false, 'IMTP Fuerza Máxima', 'N', 'stroke-red-600', 'text-red-600', 5000)} />
           <TachometerGauge {...getGaugeData('imtp_f_relativa_n_kg', allImtp, false, 'IMTP F. Relativa', 'N/kg', 'stroke-orange-500', 'text-orange-500', 100)} />
-          <TachometerGauge {...getGaugeData('imtp_force_50ms', allImtp, false, 'Fuerza Net a 50ms', 'N', 'stroke-amber-500', 'text-amber-500', 5000)} />
           <TachometerGauge {...getGaugeData('imtp_rfd_100ms', allImtp, false, 'RFD a 100ms', 'N/s', 'stroke-indigo-600', 'text-indigo-600', 20000)} />
         </div>
 
@@ -2888,6 +2639,14 @@ const AthleteHuella = ({
 
           if (imtpMax.value === 0 && imtpRel.value === 0) return null;
 
+          const relPct = imtpRel.percentile || 0;
+          const rfdPct = imtpRfd.percentile || 0;
+          const relLevel = getPercentileLevelShared(relPct);
+          const rfdLevel = getPercentileLevelShared(rfdPct);
+
+          const isRelLow = relPct < 45;
+          const isRfdLow = rfdPct < 45;
+
           return (
             <div className="bg-red-50 rounded-3xl p-6 border border-red-100 flex items-start gap-4 mt-6">
               <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600 shrink-0">
@@ -2896,14 +2655,14 @@ const AthleteHuella = ({
               <div className="space-y-1">
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Fuerza Isométrica & Tasa de Fuerza (IMTP)</h4>
                 <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                  {imtpRel.value < 30 && imtpRfd.value < 4000 ? (
-                    `Déficit crítico tanto de fuerza relativa (${imtpRel.value} N/kg) como de tasa de desarrollo de fuerza (RFD 100ms: ${imtpRfd.value} N/s). El atleta presenta una baja capacidad de reclutamiento y tensión muscular absoluta. Se prescribe un ciclo prioritario de fuerza estructural y adaptaciones neuronales con cargas pesadas, combinado de manera secundaria con aceleraciones balísticas ligeras para romper la inercia.`
-                  ) : imtpRel.value < 30 && imtpRfd.value >= 4000 ? (
-                    `Nivel de fuerza relativa bajo (${imtpRel.value} N/kg) pero con una tasa de desarrollo de fuerza (RFD) relativamente eficiente. Esto indica que aunque el deportista es rápido para aplicar fuerza, carece de la masa muscular o la fuerza máxima de base para sostener altas tensiones. Se prescribe entrenamiento de hipertrofia funcional y fuerza máxima dinámica (cargas > 80% 1RM) para elevar su potencial de fuerza absoluta.`
-                  ) : imtpRel.value >= 30 && imtpRfd.value < 4000 ? (
-                    `Excelente nivel de fuerza relativa (${imtpRel.value} N/kg) pero con deficiente velocidad de aplicación (RFD 100ms bajo: ${imtpRfd.value} N/s). El atleta es sumamente fuerte pero "lento" en la ventana de tiempo crucial de un gesto deportivo (primeros 100-150ms). Se aconseja priorizar de inmediato el entrenamiento de potencia de alta velocidad, ejercicios balísticos, derivados de levantamiento olímpico desde el colgajo y saltos cargados ligeros (<30% 1RM) orientados a maximizar el RFD.`
+                  {isRelLow && isRfdLow ? (
+                    `Déficit crítico tanto de fuerza relativa (Nivel: ${relLevel}, ${imtpRel.value} N/kg, Percentil: ${Math.round(relPct)}%) como de tasa de desarrollo de fuerza (RFD 100ms Nivel: ${rfdLevel}, ${imtpRfd.value} N/s, Percentil: ${Math.round(rfdPct)}%). El atleta presenta una baja capacidad de reclutamiento y tensión muscular absoluta. Se prescribe un ciclo prioritario de fuerza estructural y adaptaciones neuronales con cargas pesadas, combinado de manera secundaria con aceleraciones balísticas ligeras para romper la inercia.`
+                  ) : isRelLow && !isRfdLow ? (
+                    `Nivel de fuerza relativa bajo (Nivel: ${relLevel}, ${imtpRel.value} N/kg, Percentil: ${Math.round(relPct)}%) pero con una tasa de desarrollo de fuerza (RFD Nivel: ${rfdLevel}, ${imtpRfd.value} N/s, Percentil: ${Math.round(rfdPct)}%) relativamente eficiente. Esto indica que aunque el deportista es rápido para aplicar fuerza, carece de la masa muscular o la fuerza máxima de base para sostener altas tensiones. Se prescribe entrenamiento de hipertrofia funcional y fuerza máxima dinámica (cargas > 80% 1RM) para elevar su potencial de fuerza absoluta.`
+                  ) : !isRelLow && isRfdLow ? (
+                    `Adecuado nivel de fuerza relativa (Nivel: ${relLevel}, ${imtpRel.value} N/kg, Percentil: ${Math.round(relPct)}%) pero con deficiente velocidad de aplicación (RFD 100ms bajo, Nivel: ${rfdLevel}, ${imtpRfd.value} N/s, Percentil: ${Math.round(rfdPct)}%). El atleta es sumamente fuerte pero "lento" en la ventana de tiempo crucial de un gesto deportivo (primeros 100-150ms). Se aconseja priorizar de inmediato el entrenamiento de potencia de alta velocidad, ejercicios balísticos, derivados de levantamiento olímpico desde el colgajo y saltos cargados ligeros (<30% 1RM) orientados a maximizar el RFD.`
                   ) : (
-                    `Perfil de fuerza isométrica sobresaliente (Fuerza Relativa: ${imtpRel.value} N/kg) y fantástica velocidad de transmisión neural (RFD: ${imtpRfd.value} N/s). Demuestra una óptima capacidad para generar altos niveles de tensión y transmitirlos con extrema rapidez. Se prescribe entrenamiento de mantenimiento, prevención de lesiones y transferencia dinámica multidireccional específica al fútbol.`
+                    `Perfil de fuerza isométrica sobresaliente (Nivel: ${relLevel}, Fuerza Relativa: ${imtpRel.value} N/kg, Percentil: ${Math.round(relPct)}%) y fantástica velocidad de transmisión neural (RFD Nivel: ${rfdLevel}, ${imtpRfd.value} N/s, Percentil: ${Math.round(rfdPct)}%). Demuestra una óptima capacidad para generar altos niveles de tensión y transmitirlos con extrema rapidez. Se prescribe entrenamiento de mantenimiento, prevención de lesiones y transferencia dinámica multidireccional específica al fútbol.`
                   )}
                 </p>
               </div>
@@ -2932,7 +2691,7 @@ const AthleteHuella = ({
           <TachometerGauge {...getGaugeData('rsi_modified_m_s', allImtp, false, 'CMJ RSI Modificado', 'm/s', 'stroke-teal-600', 'text-teal-600', 2.0)} />
           <TachometerGauge {...getGaugeData('jump_height_impmom_cm', allImtp, false, 'Altura Salto (Imp-Mom)', 'cm', 'stroke-cyan-600', 'text-cyan-600', 60)} />
           <TachometerGauge {...getGaugeData('peak_power_bm_w_kg', allImtp, false, 'Pot. Pico Relativa', 'W/kg', 'stroke-sky-600', 'text-sky-600', 80)} />
-          <TachometerGauge {...getGaugeData('peak_power_w', allImtp, false, 'Pot. Pico Absoluta', 'W', 'stroke-violet-600', 'text-violet-600', 6000)} />
+          <TachometerGauge {...getGaugeData('concentric_impulse_ns', allImtp, false, 'Impulso Concéntrico', 'N·s', 'stroke-violet-600', 'text-violet-600', 400)} />
         </div>
 
         {(() => {
@@ -2943,6 +2702,14 @@ const AthleteHuella = ({
 
           if (cmjHeight.value === 0 && cmjRsi.value === 0 && cmjForce.value === 0) return null;
 
+          const heightPct = cmjHeight.percentile || 0;
+          const rsiPct = cmjRsi.percentile || 0;
+          const heightLevel = getPercentileLevelShared(heightPct);
+          const rsiLevel = getPercentileLevelShared(rsiPct);
+
+          const isHeightLow = heightPct < 45;
+          const isRsiLow = rsiPct < 45;
+
           return (
             <div className="bg-emerald-50 rounded-3xl p-6 border border-emerald-100 flex items-start gap-4 mt-6">
               <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
@@ -2951,14 +2718,14 @@ const AthleteHuella = ({
               <div className="space-y-1">
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Saltabilidad & Potencia (CMJ)</h4>
                 <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                  {cmjHeight.value < 35 && cmjRsi.value < 0.45 ? (
-                    `Déficit combinado de saltabilidad (${cmjHeight.value} cm) y reactividad neuromuscular (RSI Modificado: ${cmjRsi.value} m/s). El jugador produce fuerza con lentitud en la fase de amortiguación-despegue. Se prescribe entrenamiento de pliometría de estiramiento-acortamiento lento (SSC) y saltos balísticos descargados, enfocando el trabajo en acelerar la transición excéntrico-concéntrica.`
-                  ) : cmjHeight.value >= 35 && cmjRsi.value < 0.45 ? (
-                    `Nivel de saltabilidad aceptable (${cmjHeight.value} cm) pero con baja eficiencia reactiva (RSI Modificado bajo: ${cmjRsi.value} m/s). El atleta logra buena altura a costa de prolongar excesivamente la duración de las fases concéntrica y excéntrica del salto (patrón lento/pesado). Se recomienda priorizar el desarrollo de la tasa de desarrollo de fuerza (RFD) con contracciones rápidas, saltos con contramovimiento con acento concéntrico rápido y rebotes asistidos.`
-                  ) : cmjHeight.value < 35 && cmjRsi.value >= 0.45 ? (
-                    `Buena eficiencia de acoplamiento (RSI óptimo: ${cmjRsi.value} m/s), pero la altura final de salto (${cmjHeight.value} cm) está limitada por la fuerza concéntrica absoluta o potencia pico (${cmjPowerRel.value} W/kg). Se aconseja priorizar el incremento de la fuerza máxima dinámica en el gimnasio (Sentadillas, Cargadas de fuerza) para elevar el techo absoluto de fuerza concéntrica y transferir al salto vertical.`
+                  {isHeightLow && isRsiLow ? (
+                    `Déficit combinado de saltabilidad (Nivel: ${heightLevel}, ${cmjHeight.value} cm, Percentil: ${Math.round(heightPct)}%) y reactividad neuromuscular (RSI Modificado Nivel: ${rsiLevel}, ${cmjRsi.value} m/s, Percentil: ${Math.round(rsiPct)}%). El jugador produce fuerza con lentitud en la fase de amortiguación-despegue. Se prescribe entrenamiento de pliometría de estiramiento-acortamiento lento (SSC) y saltos balísticos descargados, enfocando el trabajo en acelerar la transición excéntrico-concéntrica.`
+                  ) : !isHeightLow && isRsiLow ? (
+                    `Nivel de saltabilidad adecuado (Nivel: ${heightLevel}, ${cmjHeight.value} cm, Percentil: ${Math.round(heightPct)}%) pero con baja eficiencia reactiva (RSI Modificado Nivel: ${rsiLevel}, ${cmjRsi.value} m/s, Percentil: ${Math.round(rsiPct)}%). El atleta logra buena altura a costa de prolongar excesivamente la duración de las fases concéntrica y excéntrica del salto (patrón lento/pesado). Se recomienda priorizar el desarrollo de la tasa de desarrollo de fuerza (RFD) con contracciones rápidas, saltos con contramovimiento con acento concéntrico rápido y rebotes asistidos.`
+                  ) : isHeightLow && !isRsiLow ? (
+                    `Buena eficiencia de acoplamiento (RSI Nivel: ${rsiLevel}, ${cmjRsi.value} m/s, Percentil: ${Math.round(rsiPct)}%), pero la altura final de salto (Nivel: ${heightLevel}, ${cmjHeight.value} cm, Percentil: ${Math.round(heightPct)}%) está limitada por la fuerza concéntrica absoluta o potencia pico (${cmjPowerRel.value} W/kg). Se aconseja priorizar el incremento de la fuerza máxima dinámica en el gimnasio (Sentadillas, Cargadas de fuerza) para elevar el techo absoluto de fuerza concéntrica y transferir al salto vertical.`
                   ) : (
-                    `Perfil de saltabilidad (${cmjHeight.value} cm) y potencia (${cmjPowerRel.value} W/kg) sobresaliente. Presenta una excelente transición excéntrico-concéntrica (RSI Modificado: ${cmjRsi.value} m/s) y altos niveles de potencia relativa por kilogramo de peso corporal. Continuar con el microciclo actual de mantenimiento, prevención y transferencia reactiva.`
+                    `Perfil de saltabilidad (Nivel: ${heightLevel}, ${cmjHeight.value} cm, Percentil: ${Math.round(heightPct)}%) y potencia (Nivel: ${getPercentileLevelShared(cmjPowerRel.percentile)}, ${cmjPowerRel.value} W/kg, Percentil: ${Math.round(cmjPowerRel.percentile || 0)}%) sobresaliente. Presenta una excelente transición excéntrico-concéntrica (RSI Modificado Nivel: ${rsiLevel}, ${cmjRsi.value} m/s, Percentil: ${Math.round(rsiPct)}%) y altos niveles de potencia relativa por kilogramo de peso corporal. Continuar con el microciclo actual de mantenimiento, prevención y transferencia reactiva.`
                   )}
                 </p>
               </div>
@@ -2982,12 +2749,11 @@ const AthleteHuella = ({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <TachometerGauge {...getGaugeData('rebound_rsi', allCmjRebound, false, 'Rebound RSI', '', 'stroke-violet-600', 'text-violet-600', 3.0)} />
           <TachometerGauge {...getGaugeData('rebound_contact_time_ms', allCmjRebound, true, 'Tiempo Contacto', 'ms', 'stroke-indigo-600', 'text-indigo-600', 400)} />
           <TachometerGauge {...getGaugeData('rebound_flight_time_ms', allCmjRebound, false, 'Tiempo Vuelo', 'ms', 'stroke-purple-600', 'text-purple-600', 600)} />
           <TachometerGauge {...getGaugeData('take_off_momentum_kg_m_s', allCmjRebound, false, 'Momentum Despegue', 'kg·m/s', 'stroke-fuchsia-600', 'text-fuchsia-600', 400)} />
-          <TachometerGauge {...getGaugeData('reps', allCmjRebound, false, 'Repeticiones', 'reps', 'stroke-pink-600', 'text-pink-600', 10)} />
         </div>
 
         {(() => {
@@ -2997,6 +2763,14 @@ const AthleteHuella = ({
 
           if (rRsi.value === 0 && rContact.value === 0) return null;
 
+          const contactPct = rContact.percentile || 0;
+          const rRsiPct = rRsi.percentile || 0;
+          const contactLevel = getPercentileLevelShared(contactPct);
+          const rRsiLevel = getPercentileLevelShared(rRsiPct);
+
+          const isContactLow = contactPct < 45;
+          const isRsiLow = rRsiPct < 45;
+
           return (
             <div className="bg-violet-50 rounded-3xl p-6 border border-violet-100 flex items-start gap-4 mt-6">
               <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
@@ -3005,14 +2779,14 @@ const AthleteHuella = ({
               <div className="space-y-1">
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Reactividad & Rebote (CMJ Rebound)</h4>
                 <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                  {rContact.value > 250 && rRsi.value < 2.0 ? (
-                    `Déficit en la capacidad de reactividad rápida y falta de rigidez (stiffness) muscular (Tiempo de Contacto prolongado: ${rContact.value} ms, Rebound RSI: ${rRsi.value}). El deportista absorbe excesivamente la fuerza en lugar de devolverla elásticamente de forma veloz. Se prescribe entrenamiento de pliometría de contacto corto (tobillos rígidos, saltos repetidos sobre vallas bajas, skipping reactivo) y saltos continuos buscando minimizar el tiempo en el suelo.`
-                  ) : rContact.value <= 250 && rRsi.value < 2.0 ? (
-                    `Tiempo de contacto adecuado (${rContact.value} ms) pero con baja transferencia de energía vertical (Rebound RSI bajo: ${rRsi.value}). El atleta es rápido al despegar del suelo pero no logra generar suficiente altura en el rebote (Tiempo de Vuelo corto: ${rFlight.value} ms). Se recomienda enfatizar la aplicación de fuerza concéntrica explosiva reactiva y saltos continuos cargados con el objetivo de elevar el centro de masas en menor tiempo.`
-                  ) : rContact.value > 250 && rRsi.value >= 2.0 ? (
-                    `Buena potencia de salto y RSI aceptable (${rRsi.value}), pero con un tiempo de contacto lento (${rContact.value} ms). Esto refleja que el deportista depende de un acoplamiento más prolongado (tipo pliometría lenta) para generar su altura. Se recomienda orientar el entrenamiento hacia el desarrollo del ciclo de estiramiento-acortamiento rápido con multisaltos rápidos en cajón y saltos pliométricos asistidos.`
+                  {isContactLow && isRsiLow ? (
+                    `Déficit en la capacidad de reactividad rápida y falta de rigidez (stiffness) muscular (Tiempo de Contacto Nivel: ${contactLevel}, ${rContact.value} ms, Percentil: ${Math.round(contactPct)}%, Rebound RSI Nivel: ${rRsiLevel}, ${rRsi.value}, Percentil: ${Math.round(rRsiPct)}%). El deportista absorbe excesivamente la fuerza en lugar de devolverla elásticamente de forma veloz. Se prescribe entrenamiento de pliometría de contacto corto (tobillos rígidos, saltos repetidos sobre vallas bajas, skipping reactivo) y saltos continuos buscando minimizar el tiempo en el suelo.`
+                  ) : !isContactLow && isRsiLow ? (
+                    `Tiempo de contacto adecuado o rápido (Nivel: ${contactLevel}, ${rContact.value} ms, Percentil: ${Math.round(contactPct)}%) pero con baja transferencia de energía vertical (Rebound RSI Nivel: ${rRsiLevel}, ${rRsi.value}, Percentil: ${Math.round(rRsiPct)}%). El atleta es rápido al despegar del suelo pero no logra generar suficiente altura en el rebote (Tiempo de Vuelo: ${rFlight.value} ms). Se recomienda enfatizar la aplicación de fuerza concéntrica explosiva reactiva y saltos continuos cargados con el objetivo de elevar el centro de masas en menor tiempo.`
+                  ) : isContactLow && !isRsiLow ? (
+                    `Buena potencia de salto y RSI adecuado (Nivel: ${rRsiLevel}, ${rRsi.value}, Percentil: ${Math.round(rRsiPct)}%), pero con un tiempo de contacto lento (Nivel: ${contactLevel}, ${rContact.value} ms, Percentil: ${Math.round(contactPct)}%). Esto refleja que el deportista depende de un acoplamiento más prolongado (tipo pliometría lenta) para generar su altura. Se recomienda orientar el entrenamiento hacia el desarrollo del ciclo de estiramiento-acortamiento rápido con multisaltos rápidos en cajón y saltos pliométricos asistidos.`
                   ) : (
-                    `Excelente índice de fuerza reactiva en rebote (RSI: ${rRsi.value}) con un tiempo de contacto óptimo (${rContact.value} ms) y gran rigidez (stiffness) de tobillo. El atleta disipa un mínimo de energía elástica y demuestra una óptima transmisión de fuerzas reactivas en apoyos veloces. Mantener la carga actual y priorizar la especificidad multidireccional del fútbol.`
+                    `Excelente índice de fuerza reactiva en rebote (Nivel: ${rRsiLevel}, RSI: ${rRsi.value}, Percentil: ${Math.round(rRsiPct)}%) con un tiempo de contacto óptimo (Nivel: ${contactLevel}, ${rContact.value} ms, Percentil: ${Math.round(contactPct)}%) y gran rigidez (stiffness) de tobillo. El atleta disipa un mínimo de energía elástica y demuestra una óptima transmisión de fuerzas reactivas en apoyos veloces. Mantener la carga actual y priorizar la especificidad multidireccional del fútbol.`
                   )}
                 </p>
               </div>
@@ -3050,6 +2824,14 @@ const AthleteHuella = ({
 
           if (s10.value === 0 && sTotal.value === 0) return null;
 
+          const s10Pct = s10.percentile || 0;
+          const sTotalPct = sTotal.percentile || 0;
+          const s10Level = getPercentileLevelShared(s10Pct);
+          const sTotalLevel = getPercentileLevelShared(sTotalPct);
+
+          const isS10Low = s10Pct < 45;
+          const isSTotalLow = sTotalPct < 45;
+
           return (
             <div className="bg-blue-50 rounded-3xl p-6 border border-blue-100 flex items-start gap-4 mt-6">
               <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
@@ -3058,14 +2840,14 @@ const AthleteHuella = ({
               <div className="space-y-1">
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Velocidad & Sprint Lineal</h4>
                 <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                  {s10.value > 1.80 && sTotal.value > 4.25 ? (
-                    `Déficit combinado en fase de aceleración inicial (${s10.value} s) y velocidad máxima (${sTotal.value} s). El jugador presenta debilidad en la aplicación de fuerza horizontal inicial y un perfil ineficiente de zancada. Se prescribe un bloque prioritario de fuerza máxima (empujes de trineo pesados) para mejorar la tracción de los primeros apoyos, junto con drills técnicos de sprint acelerado y arrastres resistidos ligeros.`
-                  ) : s10.value > 1.80 && sTotal.value <= 4.25 ? (
-                    `Déficit selectivo en aceleración inicial de 10m (${s10.value} s) pero con una óptima velocidad máxima de transición final (${sTotal.value} s). El atleta carece de la fuerza explosiva concéntrica o la proyección de ángulo bajo para la fase de aceleración de arranque. Se recomienda prescribir salidas de tres puntos, empujes/salidas resistidas pesadas (sled pushes a >50% peso corporal), y saltos horizontales de potencia para potenciar el impulso de los primeros 3 a 5 apoyos.`
-                  ) : s10.value <= 1.80 && sTotal.value > 4.25 ? (
-                    `Excelente aceleración inicial en 10m (${s10.value} s) pero con una pérdida notable de rendimiento en la velocidad máxima de transición final (${sTotal.value} s). El atleta tiene un potente arranque inicial pero decae rápidamente o muestra ineficiencia técnica en su postura erguida (zancada acortada o deficiente stiffness en apoyos). Se aconseja priorizar drills de velocidad máxima (flying sprints de 10-20m con entrada lanzada), sprints asistidos ligeros para sobrevelocidad, y pliometría de tobillo muy rápida.`
+                  {isS10Low && isSTotalLow ? (
+                    `Déficit combinado en fase de aceleración inicial (Nivel: ${s10Level}, ${s10.value} s, Percentil: ${Math.round(s10Pct)}%) y velocidad máxima (Nivel: ${sTotalLevel}, ${sTotal.value} s, Percentil: ${Math.round(sTotalPct)}%). El jugador presenta debilidad en la aplicación de fuerza horizontal inicial y un perfil ineficiente de zancada. Se prescribe un bloque prioritario de fuerza máxima (empujes de trineo pesados) para mejorar la tracción de los primeros apoyos, junto con drills técnicos de sprint acelerado y arrastres resistidos ligeros.`
+                  ) : isS10Low && !isSTotalLow ? (
+                    `Déficit selectivo en aceleración inicial de 10m (Nivel: ${s10Level}, ${s10.value} s, Percentil: ${Math.round(s10Pct)}%) pero con una óptima velocidad máxima de transición final (Nivel: ${sTotalLevel}, ${sTotal.value} s, Percentil: ${Math.round(sTotalPct)}%). El atleta carece de la fuerza explosiva concéntrica o la proyección de ángulo bajo para la fase de aceleración de arranque. Se recomienda prescribir salidas de tres puntos, empujes/salidas resistidas pesadas (sled pushes a >50% peso corporal), y saltos horizontales de potencia para potenciar el impulso de los primeros 3 a 5 apoyos.`
+                  ) : !isS10Low && isSTotalLow ? (
+                    `Excelente aceleración inicial en 10m (Nivel: ${s10Level}, ${s10.value} s, Percentil: ${Math.round(s10Pct)}%) pero con una pérdida notable de rendimiento en la velocidad máxima de transición final (Nivel: ${sTotalLevel}, ${sTotal.value} s, Percentil: ${Math.round(sTotalPct)}%). El atleta tiene un potente arranque inicial pero decae rápidamente o muestra ineficiencia técnica en su postura erguida (zancada acortada o deficiente stiffness en apoyos). Se aconseja priorizar drills de velocidad máxima (flying sprints de 10-20m con entrada lanzada), sprints asistidos ligeros para sobrevelocidad, y pliometría de tobillo muy rápida.`
                   ) : (
-                    `Perfil de sprint lineal excepcional. Posee una salida explosiva y reactiva en 10m (${s10.value} s) y una capacidad soberbia para mantener y desarrollar la velocidad máxima terminal (${sTotal.value} s). Se prescribe entrenamiento de mantenimiento con sprints específicos de fútbol con cambios de dirección o fatiga acumulada simulada, y fortalecimiento excéntrico del isquiotibial (ejercicio nórdico) para prevención de lesiones.`
+                    `Perfil de sprint lineal excepcional. Posee una salida explosiva y reactiva en 10m (Nivel: ${s10Level}, ${s10.value} s, Percentil: ${Math.round(s10Pct)}%) y una capacidad soberbia para mantener y desarrollar la velocidad máxima terminal (Nivel: ${sTotalLevel}, ${sTotal.value} s, Percentil: ${Math.round(sTotalPct)}%). Se prescribe entrenamiento de mantenimiento con sprints específicos de fútbol con cambios de dirección o fatiga acumulada simulada, y fortalecimiento excéntrico del isquiotibial (ejercicio nórdico) para prevención de lesiones.`
                   )}
                 </p>
               </div>
@@ -3105,6 +2887,14 @@ const AthleteHuella = ({
 
           if (vMax.value === 0 && vVam.value === 0) return null;
 
+          const vMaxPct = vMax.percentile || 0;
+          const vt2Pct = vVt2.percentile || 0;
+          const vMaxLevel = getPercentileLevelShared(vMaxPct);
+          const vt2Level = getPercentileLevelShared(vt2Pct);
+
+          const isVMaxLow = vMaxPct < 45;
+          const isVt2Low = vt2Pct < 45;
+
           return (
             <div className="bg-purple-50 rounded-3xl p-6 border border-purple-100 flex items-start gap-4 mt-6">
               <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 shrink-0">
@@ -3113,14 +2903,14 @@ const AthleteHuella = ({
               <div className="space-y-1">
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Capacidad Aeróbica (UNCATEST)</h4>
                 <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                  {vMax.value < 58 && vVt2.value < 13.5 ? (
-                    `Déficit combinado de potencia aeróbica máxima (VO2 Máx: ${vMax.value} ml/kg/min) y capacidad de umbral (VT2: ${vVt2.value} km/h). El jugador presenta limitaciones tanto en su motor aeróbico absoluto como en su tolerancia al lactato. Se prescribe entrenamiento de intervalos de alta intensidad (HIIT largo/corto, e.g., 4x4 min al 90-95% FC Máx) para forzar adaptaciones centrales, alternando con carrera continua extensiva.`
-                  ) : vMax.value >= 58 && vVt2.value < 13.5 ? (
-                    `Techo aeróbico óptimo (VO2 Máx: ${vMax.value} ml/kg/min) pero con baja eficiencia metabólica de umbral anaeróbico (VT2 bajo: ${vVt2.value} km/h). El jugador tiene un excelente motor absoluto, pero acumula lactato prematuramente a velocidades moderadas. Se prescribe entrenamiento de fraccionados de umbral (Tempo runs, 3x10 min al VT2 o ligeramente superior) para desplazar la curva metabólica y mejorar el aclaramiento de lactato.`
-                  ) : vMax.value < 58 && vVt2.value >= 13.5 ? (
-                    `Excelente eficiencia de umbral (VT2 óptimo: ${vVt2.value} km/h) pero con un techo de potencia aeróbica limitado (VO2 Máx: ${vMax.value} ml/kg/min). El jugador está muy bien optimizado metabólicamente pero necesita empujar su límite superior absoluto. Se recomienda priorizar pasadas de corta duración a alta intensidad (intervalos VMA, e.g., 30s-30s a >100% VMA de ${vVam.value} km/h) y entrenamiento intermitente neuromuscular.`
+                  {isVMaxLow && isVt2Low ? (
+                    `Déficit combinado de potencia aeróbica máxima (VO2 Máx Nivel: ${vMaxLevel}, ${vMax.value} ml/kg/min, Percentil: ${Math.round(vMaxPct)}%) y capacidad de umbral (VT2 Nivel: ${vt2Level}, ${vVt2.value} km/h, Percentil: ${Math.round(vt2Pct)}%). El jugador presenta limitaciones tanto en su motor aeróbico absoluto como en su tolerancia al lactato. Se prescribe entrenamiento de intervalos de alta intensidad (HIIT largo/corto, e.g., 4x4 min al 90-95% FC Máx) para forzar adaptaciones centrales, alternando con carrera continua extensiva.`
+                  ) : !isVMaxLow && isVt2Low ? (
+                    `Techo aeróbico óptimo (VO2 Máx Nivel: ${vMaxLevel}, ${vMax.value} ml/kg/min, Percentil: ${Math.round(vMaxPct)}%) pero con baja eficiencia metabólica de umbral anaeróbico (VT2 bajo Nivel: ${vt2Level}, ${vVt2.value} km/h, Percentil: ${Math.round(vt2Pct)}%). El jugador tiene un excelente motor absoluto, pero acumula lactato prematuramente a velocidades moderadas. Se prescribe entrenamiento de fraccionados de umbral (Tempo runs, 3x10 min al VT2 o ligeramente superior) para desplazar la curva metabólica y mejorar el aclaramiento de lactato.`
+                  ) : isVMaxLow && !isVt2Low ? (
+                    `Excelente eficiencia de umbral (VT2 Nivel: ${vt2Level}, ${vVt2.value} km/h, Percentil: ${Math.round(vt2Pct)}%) pero con un techo de potencia aeróbica limitado (VO2 Máx Nivel: ${vMaxLevel}, ${vMax.value} ml/kg/min, Percentil: ${Math.round(vMaxPct)}%). El jugador está muy bien optimizado metabólicamente pero necesita empujar su límite superior absoluto. Se recomienda priorizar pasadas de corta duración a alta intensidad (intervalos VMA, e.g., 30s-30s a >100% VMA de ${vVam.value} km/h) y entrenamiento intermitente neuromuscular.`
                   ) : (
-                    `Perfil aeróbico sobresaliente en el test UNCATEST. Presenta una elevada potencia aeróbica absoluta (VO2 Máx: ${vMax.value} ml/kg/min) y una alta velocidad de umbral anaeróbico (VT2: ${vVt2.value} km/h). Posee una excelente recuperación intermitente metabólica. Se prescribe mantener el volumen actual de acondicionamiento y priorizar la transferencia a situaciones reales de juego mediante juegos reducidos (Small Sided Games) de alta exigencia táctica.`
+                    `Perfil aeróbico sobresaliente en el test UNCATEST. Presenta una elevada potencia aeróbica absoluta (VO2 Máx Nivel: ${vMaxLevel}, ${vMax.value} ml/kg/min, Percentil: ${Math.round(vMaxPct)}%) y una alta velocidad de umbral anaeróbico (VT2 Nivel: ${vt2Level}, ${vVt2.value} km/h, Percentil: ${Math.round(vt2Pct)}%). Posee una excelente recuperación intermitente metabólica. Se prescribe mantener el volumen actual de acondicionamiento y priorizar la transferencia a situaciones reales de juego mediante juegos reducidos (Small Sided Games) de alta exigencia táctica.`
                   )}
                 </p>
               </div>
@@ -3158,6 +2948,14 @@ const AthleteHuella = ({
 
           if (tDesacel.value === 0 && tCod.value === 0) return null;
 
+          const desacelPct = tDesacel.percentile || 0;
+          const codPct = tCod.percentile || 0;
+          const desacelLevel = getPercentileLevelShared(desacelPct);
+          const codLevel = getPercentileLevelShared(codPct);
+
+          const isDesacelLow = desacelPct < 45;
+          const isCodLow = codPct < 45;
+
           return (
             <div className="bg-orange-50 rounded-3xl p-6 border border-orange-100 flex items-start gap-4 mt-6">
               <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600 shrink-0">
@@ -3166,14 +2964,14 @@ const AthleteHuella = ({
               <div className="space-y-1">
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Cambio de Dirección (Test 505)</h4>
                 <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                  {tDesacel.value > 0.55 && tCod.value > 0.55 ? (
-                    `Déficit crítico tanto en la fase de desaceleración previa (${tDesacel.value} s) como en el tiempo neto de giro/cambio de dirección (${tCod.value} s). El atleta presenta dificultades para absorber la energía cinética en frenados excéntricos y reorientar el cuerpo eficientemente. Se prescribe un bloque priorizado de fuerza excéntrica (sentadillas excéntricas, caídas desde cajón bilaterales y unilaterales) y drills técnicos de frenado y desaceleración controlada a distancias progresivas.`
-                  ) : tDesacel.value > 0.55 && tCod.value <= 0.55 ? (
-                    `Déficit selectivo en la fase de desaceleración (${tDesacel.value} s) pero con un tiempo eficiente de giro/COD (${tCod.value} s). Esto indica que el deportista es capaz de girar rápido, pero carece de la fuerza excéntrica para frenar de manera segura y controlada con pocos apoyos. Se recomienda entrenar la fuerza de frenado mediante entrenamiento excéntrico acentuado y drills de desaceleración lineal y angular a intensidades crecientes.`
-                  ) : tDesacel.value <= 0.55 && tCod.value > 0.55 ? (
-                    `Excelente capacidad de desaceleración previa (${tDesacel.value} s) pero con lentitud en el tiempo neto de giro/COD (${tCod.value} s). El atleta frena de manera eficiente pero pierde fluidez y momentum al reorientar su cuerpo y centro de masa. Se aconseja priorizar drills técnicos de cambio de dirección cerrado, rotaciones de cadera, drills de agilidad de baja a alta velocidad, y pliometría multidireccional con énfasis en empuje lateral inmediato.`
+                  {isDesacelLow && isCodLow ? (
+                    `Déficit crítico tanto en la fase de desaceleración previa (Nivel: ${desacelLevel}, ${tDesacel.value} s, Percentil: ${Math.round(desacelPct)}%) como en el tiempo neto de giro/cambio de dirección (Nivel: ${codLevel}, ${tCod.value} s, Percentil: ${Math.round(codPct)}%). El atleta presenta dificultades para absorber la energía cinética en frenados excéntricos y reorientar el cuerpo eficientemente. Se prescribe un bloque priorizado de fuerza excéntrica (sentadillas excéntricas, caídas desde cajón bilaterales y unilaterales) y drills técnicos de frenado y desaceleración controlada a distancias progresivas.`
+                  ) : isDesacelLow && !isCodLow ? (
+                    `Déficit selectivo en la fase de desaceleración (Nivel: ${desacelLevel}, ${tDesacel.value} s, Percentil: ${Math.round(desacelPct)}%) pero con un tiempo eficiente de giro/COD (Nivel: ${codLevel}, ${tCod.value} s, Percentil: ${Math.round(codPct)}%). Esto indica que el deportista es capaz de girar rápido, pero carece de la fuerza excéntrica para frenar de manera segura y controlada con pocos apoyos. Se recomienda entrenar la fuerza de frenado mediante entrenamiento excéntrico acentuado y drills de desaceleración lineal y angular a intensidades crecientes.`
+                  ) : !isDesacelLow && isCodLow ? (
+                    `Excelente capacidad de desaceleración previa (Nivel: ${desacelLevel}, ${tDesacel.value} s, Percentil: ${Math.round(desacelPct)}%) pero con lentitud en el tiempo neto de giro/COD (Nivel: ${codLevel}, ${tCod.value} s, Percentil: ${Math.round(codPct)}%). El atleta frena de manera eficiente pero pierde fluidez y momentum al reorientar su cuerpo y centro de masa. Se aconseja priorizar drills técnicos de cambio de dirección cerrado, rotaciones de cadera, drills de agilidad de baja a alta velocidad, y pliometría multidireccional con énfasis en empuje lateral inmediato.`
                   ) : (
-                    `Perfil de cambio de dirección excepcional en el test 505. Presenta una transición fluida y veloz en la desaceleración (${tDesacel.value} s) y un giro sumamente reactivo y eficiente (${tCod.value} s). Demuestra un óptimo equilibrio entre fuerza excéntrica de frenado y potencia concéntrica de salida lateral. Se prescribe mantener la carga actual de agilidad, incorporando toma de decisiones reactiva y estresores específicos de juego en fatiga.`
+                    `Perfil de cambio de dirección excepcional en el test 505. Presenta una transición fluida y veloz en la desaceleración (Nivel: ${desacelLevel}, ${tDesacel.value} s, Percentil: ${Math.round(desacelPct)}%) y un giro sumamente reactivo y eficiente (Nivel: ${codLevel}, ${tCod.value} s, Percentil: ${Math.round(codPct)}%). Demuestra un óptimo equilibrio entre fuerza excéntrica de frenado y potencia concéntrica de salida lateral. Se prescribe mantener la carga actual de agilidad, incorporando toma de decisiones reactiva y estresores específicos de juego en fatiga.`
                   )}
                 </p>
               </div>
@@ -3474,7 +3272,7 @@ const AthleteHuella = ({
                     : 'bg-white border-slate-200 text-purple-700 hover:bg-purple-50 hover:border-purple-300'
                 }`}
               >
-                Destacados ({levelSummary.Elite + levelSummary.Sobresaliente})
+                Destacados ({levelSummary['Élite'] + levelSummary['Sobresaliente']})
               </button>
               <button
                 onClick={() => setGeneralProfileFilter('mid')}
@@ -3484,17 +3282,17 @@ const AthleteHuella = ({
                     : 'bg-white border-slate-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300'
                 }`}
               >
-                Promedio ({levelSummary.Promedio})
+                Promedio ({levelSummary['Promedio']})
               </button>
               <button
                 onClick={() => setGeneralProfileFilter('low')}
                 className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
                   generalProfileFilter === 'low'
-                    ? 'bg-red-950 border-red-950 text-white shadow-sm'
-                    : 'bg-white border-slate-200 text-red-600 hover:bg-red-50 hover:border-red-300'
+                    ? 'bg-orange-950 border-orange-950 text-white shadow-sm'
+                    : 'bg-white border-slate-200 text-orange-600 hover:bg-orange-50 hover:border-orange-300'
                 }`}
               >
-                Por Mejorar ({levelSummary['Bajo Promedio'] + levelSummary['Por Mejorar']})
+                Por Mejorar y Alerta ({levelSummary['Por Mejorar'] + levelSummary['Alerta']})
               </button>
             </div>
 
@@ -3510,10 +3308,10 @@ const AthleteHuella = ({
                 <div className="divide-y divide-slate-100">
                   {processedProfileMetrics.map((m) => {
                     let levelBadgeClass = '';
-                    if (m.level === 'Elite') levelBadgeClass = 'bg-purple-50 border-purple-100 text-purple-700';
+                    if (m.level === 'Élite') levelBadgeClass = 'bg-purple-50 border-purple-100 text-purple-700';
                     else if (m.level === 'Sobresaliente') levelBadgeClass = 'bg-emerald-50 border-emerald-100 text-emerald-700';
                     else if (m.level === 'Promedio') levelBadgeClass = 'bg-blue-50 border-blue-100 text-blue-700';
-                    else if (m.level === 'Bajo Promedio') levelBadgeClass = 'bg-orange-50 border-orange-150 text-orange-700';
+                    else if (m.level === 'Por Mejorar') levelBadgeClass = 'bg-orange-50 border-orange-100 text-orange-700';
                     else levelBadgeClass = 'bg-red-50 border-red-100 text-red-600';
 
                     let areaBadgeClass = '';
@@ -3540,10 +3338,10 @@ const AthleteHuella = ({
                             <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                               <div 
                                 className={`h-full rounded-full ${
-                                  m.level === 'Elite' ? 'bg-purple-600' :
+                                  m.level === 'Élite' ? 'bg-purple-500' :
                                   m.level === 'Sobresaliente' ? 'bg-emerald-500' :
                                   m.level === 'Promedio' ? 'bg-blue-500' :
-                                  m.level === 'Bajo Promedio' ? 'bg-orange-500' : 'bg-red-500'
+                                  m.level === 'Por Mejorar' ? 'bg-orange-500' : 'bg-red-500'
                                 }`}
                                 style={{ width: `${m.percentile}%` }}
                               ></div>
@@ -3570,356 +3368,6 @@ const AthleteHuella = ({
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* AI INSIGHTS BENTO - LIVE */}
-      <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="bg-[#0b1220] rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col min-h-[480px]">
-          {/* Top Glowing Header bar */}
-          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-red-600 via-amber-500 to-red-600"></div>
-          
-          {/* Background Light Ambient Effects */}
-          <div className="absolute top-10 right-10 w-96 h-96 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
-          <div className="absolute bottom-10 left-10 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-          <div className="p-8 sm:p-10 flex-1 flex flex-col z-10">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-              <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="px-2 py-0.5 bg-red-600/20 text-red-500 rounded-md text-[8px] font-black uppercase tracking-widest animate-pulse flex items-center gap-1">
-                    <i className="fa-solid fa-sparkles text-[7px]"></i> Motor Gemini Activo
-                  </span>
-                  <span className="text-white/40 text-[10px] font-bold font-mono">Último análisis: Hoy</span>
-                </div>
-                <h3 className="text-2xl font-black uppercase tracking-tight italic flex items-center gap-3 text-white">
-                  <i className="fa-solid fa-robot text-red-500 text-xl"></i>
-                  Perfil de Inteligencia Deportiva
-                </h3>
-              </div>
-
-              {/* Sub-Tabs Switches */}
-              <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 self-start sm:self-auto">
-                <button
-                  onClick={() => setAiTab('perfil')}
-                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 ${
-                    aiTab === 'perfil' 
-                      ? 'bg-red-600 text-white shadow-md shadow-red-600/30' 
-                      : 'text-white/60 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  <i className="fa-solid fa-id-card"></i>
-                  Perfil
-                </button>
-                <button
-                  onClick={() => setAiTab('mejoras')}
-                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 ${
-                    aiTab === 'mejoras' 
-                      ? 'bg-red-600 text-white shadow-md shadow-red-600/30' 
-                      : 'text-white/60 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  <i className="fa-solid fa-list-check"></i>
-                  Tareas
-                  {Object.values(goalStatuses).filter(v => v === 'done').length > 0 && (
-                    <span className="ml-1 w-2 h-2 rounded-full bg-emerald-500 inline-block animate-ping"></span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setAiTab('chat')}
-                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 ${
-                    aiTab === 'chat' 
-                      ? 'bg-red-600 text-white shadow-md shadow-red-600/30' 
-                      : 'text-white/60 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  <i className="fa-solid fa-comment-dots"></i>
-                  Consultar IA
-                </button>
-              </div>
-            </div>
-
-            {loadingAi ? (
-              <div className="flex-1 flex flex-col items-center justify-center py-20 space-y-4">
-                <div className="relative">
-                  <div className="w-16 h-16 border-4 border-red-600/20 border-t-red-600 rounded-full animate-spin"></div>
-                  <i className="fa-solid fa-brain text-red-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-lg animate-pulse"></i>
-                </div>
-                <div className="text-center">
-                  <p className="text-[12px] font-black uppercase tracking-widest text-white/80">Sincronizando Huella Antropométrica...</p>
-                  <p className="text-[10px] text-white/40 mt-1">Generando síntesis diagnóstica en tiempo real</p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col justify-between">
-                <AnimatePresence mode="wait">
-                  {aiTab === 'perfil' && (
-                    <motion.div
-                      key="perfil"
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -15 }}
-                      className="space-y-6 flex-1 flex flex-col justify-between"
-                    >
-                      {/* Quick Player Summary Box (SANS CAT, MADUREZ, ESTADO BOXES AS REQUESTED) */}
-                      <div className="bg-white/5 rounded-3xl p-5 border border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-red-600 to-amber-500 flex items-center justify-center text-white text-lg font-black italic shadow-lg animate-fade-in">
-                            {player?.nombre?.charAt(0) || 'A'}{player?.apellido1?.charAt(0) || 'P'}
-                          </div>
-                          <div>
-                            <p className="text-sm font-black text-white italic">{player?.nombre} {player?.apellido1} {player?.apellido2}</p>
-                            <p className="text-[10px] font-black uppercase text-red-500 tracking-wider flex items-center gap-1.5 mt-0.5">
-                              <i className="fa-solid fa-futbol text-[9px]"></i> {player?.posicion}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Joined Executive Summary Text Row - Occupying full horizontal width */}
-                      <div className="space-y-4">
-                        <h4 className="text-xs font-black text-red-500 uppercase tracking-widest flex items-center gap-2">
-                          <i className="fa-solid fa-compass-drafting"></i> Análisis de Capacidades Físicas y Conclusiones
-                        </h4>
-                        <div className="text-white/80 text-xs sm:text-sm bg-white/[0.02] border border-white/5 p-6 rounded-3xl space-y-4">
-                          <div className="whitespace-pre-line leading-relaxed text-white/90">
-                            {parseAthleteAiSummary(aiSummary)?.capacities}
-                          </div>
-                          <div className="pt-4 border-t border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div className="flex-1">
-                              <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
-                                <i className="fa-solid fa-circle-check text-red-500 text-[8px]"></i> Conclusión Técnico-Científica
-                              </p>
-                              <p className="text-xs text-white/90 italic font-semibold leading-relaxed">
-                                "{parseAthleteAiSummary(aiSummary)?.conclusion || 'El jugador presenta un biotipo físico y motor aeróbico sobresalientes para su categoría.'}"
-                              </p>
-                            </div>
-                            <div className="shrink-0 flex items-center gap-2.5 pt-2 md:pt-0 md:pl-4 border-t md:border-t-0 md:border-l border-white/10">
-                              <div className="w-8 h-8 rounded-full bg-red-600/20 text-red-500 flex items-center justify-center text-xs">
-                                <i className="fa-solid fa-signature"></i>
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-black text-white uppercase tracking-wider">Dirección de Ciencias</p>
-                                <p className="text-[8px] text-white/40 font-bold uppercase">La Roja Performance Hub</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {aiTab === 'mejoras' && (
-                    <motion.div
-                      key="mejoras"
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -15 }}
-                      className="space-y-6 flex-1 flex flex-col"
-                    >
-                      {/* Interactive Checklist Board description */}
-                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white/5 p-5 rounded-3xl border border-white/5">
-                        <div>
-                          <p className="text-xs font-black text-amber-400 uppercase tracking-widest flex items-center gap-1">
-                            <i className="fa-solid fa-bullseye"></i> Objetivos Tácticos Individuales
-                          </p>
-                          <p className="text-[10px] text-white/60 mt-1">Haz clic sobre cada objetivo para actualizar el avance en este microciclo</p>
-                        </div>
-                        
-                        {/* Realtime progress bar */}
-                        <div className="w-full md:w-48">
-                          <div className="flex justify-between text-[9px] font-black uppercase text-white/50 mb-1">
-                            <span>Progreso Microciclo</span>
-                            <span className="text-amber-400 font-mono">
-                              {Math.round(
-                                ((Object.values(goalStatuses).filter(v => v === 'done').length * 1.0 + 
-                                  Object.values(goalStatuses).filter(v => v === 'progress').length * 0.5) / 
-                                 Math.max(1, parseAthleteAiSummary(aiSummary)?.improvements.length || 1)) * 100
-                              )}%
-                            </span>
-                          </div>
-                          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-gradient-to-r from-red-600 to-amber-500 transition-all duration-500 ease-out"
-                              style={{
-                                width: `${
-                                  ((Object.values(goalStatuses).filter(v => v === 'done').length * 1.0 + 
-                                    Object.values(goalStatuses).filter(v => v === 'progress').length * 0.5) / 
-                                   Math.max(1, parseAthleteAiSummary(aiSummary)?.improvements.length || 1)) * 100
-                                }%`
-                              }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Checklist layout */}
-                      <div className="grid grid-cols-1 gap-3">
-                        {parseAthleteAiSummary(aiSummary)?.improvements.map((imp, idx) => {
-                          const status = goalStatuses[idx] || 'todo';
-                          return (
-                            <div
-                              key={idx}
-                              onClick={() => {
-                                const nextStatus: 'todo' | 'progress' | 'done' = 
-                                  status === 'todo' ? 'progress' : status === 'progress' ? 'done' : 'todo';
-                                setGoalStatuses(prev => ({ ...prev, [idx]: nextStatus }));
-                              }}
-                              className={`p-4 rounded-2xl border transition-all duration-300 flex items-center justify-between cursor-pointer group ${
-                                status === 'done' 
-                                  ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20' 
-                                  : status === 'progress'
-                                  ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20 shadow-inner'
-                                  : 'bg-white/5 border-white/5 hover:bg-white/10'
-                              }`}
-                            >
-                              <div className="flex items-center gap-4 flex-1">
-                                {/* Status indicator button */}
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${
-                                  status === 'done' 
-                                    ? 'bg-emerald-500/20 text-emerald-500' 
-                                    : status === 'progress'
-                                    ? 'bg-amber-400/20 text-amber-400 animate-pulse'
-                                    : 'bg-white/10 text-white/50 group-hover:bg-white/20'
-                                }`}>
-                                  {status === 'done' && <i className="fa-solid fa-circle-check text-sm"></i>}
-                                  {status === 'progress' && <i className="fa-solid fa-rotate text-xs animate-spin"></i>}
-                                  {status === 'todo' && <i className="fa-solid fa-circle-notch text-xs"></i>}
-                                </div>
-                                <div className="flex-1">
-                                  <p className={`text-xs font-semibold select-none leading-relaxed ${status === 'done' ? 'text-white/60 line-through' : 'text-white'}`}>
-                                    {imp}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {/* Status badge */}
-                              <div className="ml-4">
-                                <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded-md ${
-                                  status === 'done'
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/10'
-                                    : status === 'progress'
-                                    ? 'bg-amber-400/20 text-amber-400 border border-amber-400/10'
-                                    : 'bg-white/10 text-white/40'
-                                }`}>
-                                  {status === 'done' ? 'Superado' : status === 'progress' ? 'En Curso' : 'Pendiente'}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {aiTab === 'chat' && (
-                    <motion.div
-                      key="chat"
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -15 }}
-                      className="space-y-4 flex-1 flex flex-col h-[320px]"
-                    >
-                      {/* Conversation Board History */}
-                      <div className="flex-1 bg-white/[0.02] rounded-3xl p-4 border border-white/5 overflow-y-auto space-y-3 max-h-[220px] scrollbar-thin scrollbar-thumb-white/10">
-                        {chatHistory.length === 0 ? (
-                          <div className="h-full flex flex-col items-center justify-center p-6 text-center">
-                            <i className="fa-solid fa-comments text-white/10 text-3xl mb-2 animate-bounce"></i>
-                            <p className="text-[10px] uppercase font-black tracking-widest text-white/30">Consultas de Ciencias del Deporte</p>
-                            <p className="text-xs text-white/55 mt-1 max-w-sm leading-relaxed">Pregúntale al Asistente IA sobre cargas semanales, adaptaciones de sprint, o directrices nutricionales personalizadas.</p>
-                          </div>
-                        ) : (
-                          chatHistory.map((msg, idx) => (
-                            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
-                                msg.role === 'user' 
-                                  ? 'bg-red-600 text-white rounded-tr-none' 
-                                  : 'bg-white/10 text-white/90 rounded-tl-none border border-white/5 prose prose-invert prose-xs'
-                              }`}>
-                                {msg.role === 'user' ? (
-                                  msg.text
-                                ) : (
-                                  <Markdown>{msg.text}</Markdown>
-                                )}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                        {chatSending && (
-                          <div className="flex justify-start">
-                            <div className="bg-white/5 text-white/55 rounded-2xl p-3 text-xs flex items-center gap-2">
-                              <div className="w-2.5 h-2.5 border border-white/30 border-t-white rounded-full animate-spin"></div>
-                              <span>Redactando recomendación fisiológica...</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Interactive quick pills */}
-                      {chatHistory.length === 0 && (
-                        <div className="space-y-1.5">
-                          <p className="text-[8px] font-black uppercase text-white/40 tracking-wider">Preguntas Rápidas Sugeridas</p>
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              disabled={chatSending}
-                              onClick={() => handleConsultAssistant(`¿Qué recomendaciones preventivas específicas harías con respecto a su desempeño como ${player?.posicion}?`)}
-                              className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] text-white/80 font-semibold border border-white/5 transition text-left cursor-pointer"
-                            >
-                              ⚡ Prevenir lesiones en su posición
-                            </button>
-                            <button
-                              disabled={chatSending}
-                              onClick={() => handleConsultAssistant(`¿Cómo dosificar el volumen e intensidad de velocidad 10m y fuerza vertical para este microciclo de ${player?.nombre}?`)}
-                              className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] text-white/80 font-semibold border border-white/5 transition text-left cursor-pointer"
-                            >
-                              🎯 Dosificación fuerza/velocidad
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Input Row */}
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={chatQuery}
-                          onChange={(e) => setChatQuery(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleConsultAssistant();
-                          }}
-                          placeholder="Sugiéreme entrenamiento intermitente para asimetrías..."
-                          className="flex-1 bg-white/5 focus:bg-white/10 border border-white/10 focus:border-red-600 rounded-xl px-4 py-2 text-xs text-white placeholder-white/30 focus:outline-none transition"
-                          disabled={chatSending}
-                        />
-                        <button
-                          onClick={() => handleConsultAssistant()}
-                          disabled={chatSending || !chatQuery.trim()}
-                          className="w-10 h-10 bg-red-600 hover:bg-red-500 disabled:bg-white/10 text-white rounded-xl flex items-center justify-center transition cursor-pointer"
-                        >
-                          <i className="fa-solid fa-arrow-up text-xs"></i>
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Refresh bottom-action triggers */}
-                <div className="mt-8 pt-6 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest flex items-center gap-1.5">
-                    <i className="fa-solid fa-code-branch text-red-500"></i> Integrado con la base de datos de entrenamiento La Roja
-                  </p>
-                  <button
-                    onClick={generateAiSummary}
-                    disabled={loadingAi}
-                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/20 text-white/80 text-xs font-black uppercase tracking-wider transition-all border border-white/10 flex items-center justify-center gap-1.5 self-end sm:self-auto cursor-pointer"
-                  >
-                    <i className="fa-solid fa-arrows-rotate text-[10px]"></i>
-                    Forzar Re-Análisis
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -6310,12 +5758,6 @@ const Categorias = ({
   const [metric4, setMetric4] = useState('vo2_max');
   const [metric5, setMetric5] = useState('masa_adiposa_pct');
 
-  const [mode1, setMode1] = useState<'estadisticos' | 'percentiles'>('estadisticos');
-  const [mode2, setMode2] = useState<'estadisticos' | 'percentiles'>('estadisticos');
-  const [mode3, setMode3] = useState<'estadisticos' | 'percentiles'>('estadisticos');
-  const [mode4, setMode4] = useState<'estadisticos' | 'percentiles'>('estadisticos');
-  const [mode5, setMode5] = useState<'estadisticos' | 'percentiles'>('estadisticos');
-
   const BOX1_METRICS = [
     { label: 'IMTP Fuerza Máxima (N)', key: 'imtp_fuerza_n' },
     { label: 'IMTP Fuerza Relativa (N/kg)', key: 'imtp_f_relativa_n_kg' },
@@ -6552,9 +5994,15 @@ const Categorias = ({
 
     const p90 = getP(90);
     const p75 = getP(75);
-    const p50 = getP(50);
-    const p25 = getP(25);
+    const p45 = getP(45);
+    const p20 = getP(20);
+    const p50 = getP(50); // Keep for reference if needed
+
+    // Inverted bounds
     const p10 = getP(10);
+    const p25 = getP(25);
+    const p55 = getP(55);
+    const p80 = getP(80);
 
     const optionInfo = ALL_METRICS_LIST.find(o => o.key === metricKey) as { label: string; key: string; lowerIsBetter?: boolean } | undefined;
     const isInverted = optionInfo?.lowerIsBetter || [
@@ -6570,17 +6018,19 @@ const Categorias = ({
 
     const distribution = isInverted ? {
       elite: values.filter(v => v <= p10).length,
-      competitive: values.filter(v => v > p10 && v <= p25).length,
-      development: values.filter(v => v > p25 && v <= p50).length,
-      attention: values.filter(v => v > p50).length
+      sobresaliente: values.filter(v => v > p10 && v <= p25).length,
+      promedio: values.filter(v => v > p25 && v <= p55).length,
+      bajoPromedio: values.filter(v => v > p55 && v <= p80).length,
+      porMejorar: values.filter(v => v > p80).length
     } : {
       elite: values.filter(v => v >= p90).length,
-      competitive: values.filter(v => v >= p75 && v < p90).length,
-      development: values.filter(v => v >= p50 && v < p75).length,
-      attention: values.filter(v => v < p50).length
+      sobresaliente: values.filter(v => v >= p75 && v < p90).length,
+      promedio: values.filter(v => v >= p45 && v < p75).length,
+      bajoPromedio: values.filter(v => v >= p20 && v < p45).length,
+      porMejorar: values.filter(v => v < p20).length
     };
 
-    return { p90, p75, p50, p25, p10, count: values.length, distribution, isInverted };
+    return { p90, p75, p45, p20, p50, p10, p25, p55, p80, count: values.length, distribution, isInverted };
   };
 
   const renderUnifiedAnalysisBox = (
@@ -6589,13 +6039,10 @@ const Categorias = ({
     title: string,
     subtitle: string,
     options: { label: string, key: string, lowerIsBetter?: boolean }[],
-    mode: 'estadisticos' | 'percentiles',
-    setMode: (m: 'estadisticos' | 'percentiles') => void,
     accentColorClass: string = 'bg-red-600'
   ) => {
     const stats = calculateStats(metricKey);
     const pStats = calculatePercentileStats(metricKey);
-    const isPercentile = mode === 'percentiles';
 
     return (
       <div className="bg-white rounded-[40px] p-6 md:p-8 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-md">
@@ -6608,30 +6055,6 @@ const Categorias = ({
                 <h3 className="text-base font-black text-slate-900 uppercase tracking-tighter italic leading-none">{title}</h3>
                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{subtitle}</p>
               </div>
-            </div>
-            
-            {/* TOGGLE MODE */}
-            <div className="flex bg-slate-100 p-1 rounded-xl">
-              <button
-                onClick={() => setMode('estadisticos')}
-                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                  !isPercentile 
-                    ? 'bg-white text-slate-900 shadow-sm' 
-                    : 'text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                Estadísticos
-              </button>
-              <button
-                onClick={() => setMode('percentiles')}
-                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                  isPercentile 
-                    ? 'bg-white text-slate-900 shadow-sm' 
-                    : 'text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                Percentiles
-              </button>
             </div>
           </div>
 
@@ -6656,37 +6079,20 @@ const Categorias = ({
           ) : (
             <div className="space-y-8">
               {/* RESUMEN METRICAS PRINCIPALES */}
-              {!isPercentile ? (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-900 rounded-3xl p-5 text-white">
-                    <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Promedio (μ)</p>
-                    <p className="text-2xl font-black italic tracking-tighter">
-                      {(stats.avg != null && !isNaN(Number(stats.avg))) ? Number(stats.avg).toFixed(2) : '-'}
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Desv. Estándar (σ)</p>
-                    <p className="text-2xl font-black italic tracking-tighter text-slate-900">
-                      ±{(stats.std != null && !isNaN(Number(stats.std))) ? Number(stats.std).toFixed(2) : '0.00'}
-                    </p>
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-900 rounded-3xl p-5 text-white">
+                  <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Mediana (P50)</p>
+                  <p className="text-2xl font-black italic tracking-tighter">
+                    {(pStats.p50 != null && !isNaN(Number(pStats.p50))) ? Number(pStats.p50).toFixed(2) : '-'}
+                  </p>
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-900 rounded-3xl p-5 text-white">
-                    <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Mediana (P50)</p>
-                    <p className="text-2xl font-black italic tracking-tighter">
-                      {(pStats.p50 != null && !isNaN(Number(pStats.p50))) ? Number(pStats.p50).toFixed(2) : '-'}
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Élite (P90)</p>
-                    <p className="text-2xl font-black italic tracking-tighter text-slate-900">
-                      {(pStats.p90 != null && !isNaN(Number(pStats.p90))) ? Number(pStats.p90).toFixed(2) : '-'}
-                    </p>
-                  </div>
+                <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Élite (P90)</p>
+                  <p className="text-2xl font-black italic tracking-tighter text-slate-900">
+                    {(pStats.p90 != null && !isNaN(Number(pStats.p90))) ? Number(pStats.p90).toFixed(2) : '-'}
+                  </p>
                 </div>
-              )}
+              </div>
 
               {/* MUESTRA TOTAL */}
               <div className="flex justify-center">
@@ -6701,122 +6107,115 @@ const Categorias = ({
               {/* DISTRIBUCIÓN POR NIVELES */}
               <div className="space-y-3">
                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                  Distribución por {!isPercentile ? 'Niveles' : 'Percentiles'}
+                  Distribución por Percentiles
                 </p>
 
                 <div className="space-y-2">
                   {/* ELITE */}
-                  <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between">
+                  <div className="bg-purple-50 border border-purple-100 rounded-2xl p-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-emerald-200">
+                      <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-purple-200">
                         <i className="fa-solid fa-crown text-xs"></i>
                       </div>
                       <div>
-                        <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest leading-none">Élite</p>
+                        <p className="text-[9px] font-black text-purple-600 uppercase tracking-widest leading-none">Élite (≥90%)</p>
                         <p className="text-[10px] text-slate-500 mt-0.5">
-                          {!isPercentile 
-                            ? (stats.isInverted ? 'Inferior a -1σ' : 'Superior a +1σ')
-                            : (pStats.isInverted ? 'Inferior a P10' : 'Superior a P90')
-                          } ({!isPercentile ? stats.distribution.elite : pStats.distribution.elite} jug.)
+                          {pStats.isInverted ? 'Inferior a P10' : 'Superior a P90'} ({pStats.distribution.elite} jug.)
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-purple-700 italic tracking-tighter">
+                        {pStats.isInverted ? '<=' : '>='} {(pStats.isInverted ? pStats.p10 : pStats.p90).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* SOBRESALIENTE */}
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-emerald-200">
+                        <i className="fa-solid fa-bolt text-xs"></i>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest leading-none">Sobresaliente (75-89%)</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {pStats.isInverted ? 'Entre P10 y P25' : 'Entre P75 y P90'} ({pStats.distribution.sobresaliente} jug.)
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-black text-emerald-700 italic tracking-tighter">
-                        {!isPercentile 
-                          ? `${stats.isInverted ? '<' : '>'} ${((stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std) != null && !isNaN(Number(stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std))) ? (stats.isInverted ? stats.avg - stats.std : stats.avg + stats.std).toFixed(2) : '-'}`
-                          : `${pStats.isInverted ? '<=' : '>='} ${(pStats.isInverted ? pStats.p10 : pStats.p90).toFixed(2)}`
+                        {pStats.isInverted 
+                          ? `${pStats.p10.toFixed(2)} - ${pStats.p25.toFixed(2)}`
+                          : `${pStats.p75.toFixed(2)} - ${pStats.p90.toFixed(2)}`
                         }
                       </p>
                     </div>
                   </div>
 
-                  {/* COMPETITIVO */}
-                  <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-center justify-between">
+                  {/* PROMEDIO */}
+                  <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-blue-200">
-                        <i className="fa-solid fa-bolt text-xs"></i>
+                        <i className="fa-solid fa-seedling text-xs"></i>
                       </div>
                       <div>
-                        <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none">Competitivo</p>
+                        <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none">Promedio (45-74%)</p>
                         <p className="text-[10px] text-slate-500 mt-0.5">
-                          {!isPercentile 
-                            ? (stats.isInverted ? 'Entre -1σ y Promedio' : 'Entre Promedio y +1σ')
-                            : (pStats.isInverted ? 'Entre P10 y P25' : 'Entre P75 y P90')
-                          } ({!isPercentile ? stats.distribution.competitive : pStats.distribution.competitive} jug.)
+                          {pStats.isInverted ? 'Entre P25 y P55' : 'Entre P45 y P75'} ({pStats.distribution.promedio} jug.)
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-black text-blue-700 italic tracking-tighter">
-                        {!isPercentile 
-                          ? (stats.isInverted 
-                              ? `${(stats.avg - stats.std != null && !isNaN(Number(stats.avg - stats.std))) ? (stats.avg - stats.std).toFixed(2) : '-'} - ${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'}`
-                              : `${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'} - ${(stats.avg + stats.std != null && !isNaN(Number(stats.avg + stats.std))) ? (stats.avg + stats.std).toFixed(2) : '-'}`
-                            )
-                          : (pStats.isInverted 
-                              ? `${pStats.p10.toFixed(2)} - ${pStats.p25.toFixed(2)}`
-                              : `${pStats.p75.toFixed(2)} - ${pStats.p90.toFixed(2)}`
-                            )
+                        {pStats.isInverted 
+                          ? `${pStats.p25.toFixed(2)} - ${pStats.p55.toFixed(2)}`
+                          : `${pStats.p45.toFixed(2)} - ${pStats.p75.toFixed(2)}`
                         }
                       </p>
                     </div>
                   </div>
 
-                  {/* DESARROLLO */}
-                  <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center justify-between">
+                  {/* POR MEJORAR */}
+                  <div className="bg-orange-50 border border-orange-100 rounded-2xl p-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-amber-200">
-                        <i className="fa-solid fa-seedling text-xs"></i>
+                      <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-orange-200">
+                        <i className="fa-solid fa-circle-exclamation text-xs"></i>
                       </div>
                       <div>
-                        <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest leading-none">En Desarrollo</p>
+                        <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest leading-none">Por Mejorar (20-44%)</p>
                         <p className="text-[10px] text-slate-500 mt-0.5">
-                          {!isPercentile 
-                            ? (stats.isInverted ? 'Entre Promedio y +1σ' : 'Entre -1σ y Promedio')
-                            : (pStats.isInverted ? 'Entre P25 y P50' : 'Entre P50 y P75')
-                          } ({!isPercentile ? stats.distribution.development : pStats.distribution.development} jug.)
+                          {pStats.isInverted ? 'Entre P55 y P80' : 'Entre P20 y P45'} ({pStats.distribution.bajoPromedio} jug.)
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-black text-amber-700 italic tracking-tighter">
-                        {!isPercentile 
-                          ? (stats.isInverted
-                              ? `${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'} - ${(stats.avg + stats.std != null && !isNaN(Number(stats.avg + stats.std))) ? (stats.avg + stats.std).toFixed(2) : '-'}`
-                              : `${(stats.avg - stats.std != null && !isNaN(Number(stats.avg - stats.std))) ? (stats.avg - stats.std).toFixed(2) : '-'} - ${(stats.avg != null && !isNaN(Number(stats.avg))) ? stats.avg.toFixed(2) : '-'}`
-                            )
-                          : (pStats.isInverted
-                              ? `${pStats.p25.toFixed(2)} - ${pStats.p50.toFixed(2)}`
-                              : `${pStats.p50.toFixed(2)} - ${pStats.p75.toFixed(2)}`
-                            )
+                      <p className="text-sm font-black text-orange-700 italic tracking-tighter">
+                        {pStats.isInverted 
+                          ? `${pStats.p55.toFixed(2)} - ${pStats.p80.toFixed(2)}`
+                          : `${pStats.p20.toFixed(2)} - ${pStats.p45.toFixed(2)}`
                         }
                       </p>
                     </div>
                   </div>
 
-                  {/* ATENCION */}
-                  <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center justify-between">
+                  {/* ALERTA */}
+                  <div className="bg-red-50 border border-red-100 rounded-2xl p-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-red-200">
                         <i className="fa-solid fa-triangle-exclamation text-xs"></i>
                       </div>
                       <div>
-                        <p className="text-[9px] font-black text-red-600 uppercase tracking-widest leading-none">Atención</p>
+                        <p className="text-[9px] font-black text-red-600 uppercase tracking-widest leading-none">Alerta (&lt;20%)</p>
                         <p className="text-[10px] text-slate-500 mt-0.5">
-                          {!isPercentile 
-                            ? (stats.isInverted ? 'Superior a +1σ' : 'Inferior a -1σ')
-                            : (pStats.isInverted ? 'Superior a P50' : 'Inferior a P50')
-                          } ({!isPercentile ? stats.distribution.attention : pStats.distribution.attention} jug.)
+                          {pStats.isInverted ? 'Superior a P80' : 'Inferior a P20'} ({pStats.distribution.porMejorar} jug.)
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-black text-red-700 italic tracking-tighter">
-                        {!isPercentile 
-                          ? `${stats.isInverted ? '>' : '<'} ${((stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std) != null && !isNaN(Number(stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std))) ? (stats.isInverted ? stats.avg + stats.std : stats.avg - stats.std).toFixed(2) : '-'}`
-                          : `${pStats.isInverted ? '>' : '<'} ${(pStats.p50 != null && !isNaN(Number(pStats.p50))) ? pStats.p50.toFixed(2) : '0.00'}`
-                        }
+                        {pStats.isInverted ? '>' : '<'} {(pStats.isInverted ? pStats.p80 : pStats.p20).toFixed(2)}
                       </p>
                     </div>
                   </div>
@@ -6843,19 +6242,19 @@ const Categorias = ({
             Análisis de Benchmarks
           </h2>
           <p className="text-xs text-slate-300 font-medium leading-relaxed">
-            Consulte la distribución del plantel nacional dividida por evaluaciones clave del laboratorio de ciencias del deporte. Compare métricas específicas utilizando estadísticas de campana de Gauss (μ/σ) o rangos de percentiles (P) para identificar talentos de nivel Élite o jugadores que requieren atención.
+            Consulte la distribución del plantel nacional dividida por evaluaciones clave del laboratorio de ciencias del deporte. Compare métricas específicas utilizando rangos de percentiles (P) para identificar talentos de nivel Élite o jugadores que requieren atención de manera unificada.
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {renderUnifiedAnalysisBox(metric1, setMetric1, "Fuerza (IMTP)", "Estadísticas de Fuerza Máxima", BOX1_METRICS, mode1, setMode1, "bg-orange-500")}
-        {renderUnifiedAnalysisBox(metric2, setMetric2, "Salto & Reactividad (CMJ)", "Reactividad de Miembro Inferior", BOX2_METRICS, mode2, setMode2, "bg-teal-500")}
-        {renderUnifiedAnalysisBox(metric3, setMetric3, "Velocidad & Agilidad", "Pruebas de Esprint y COD 505", BOX3_METRICS, mode3, setMode3, "bg-blue-500")}
-        {renderUnifiedAnalysisBox(metric4, setMetric4, "Resistencia Aeróbica", "Capacidad y Umbrales Cardiorrespiratorios", BOX4_METRICS, mode4, setMode4, "bg-purple-500")}
+        {renderUnifiedAnalysisBox(metric1, setMetric1, "Fuerza (IMTP)", "Estadísticas de Fuerza Máxima", BOX1_METRICS, "bg-orange-500")}
+        {renderUnifiedAnalysisBox(metric2, setMetric2, "Salto & Reactividad (CMJ)", "Reactividad de Miembro Inferior", BOX2_METRICS, "bg-teal-500")}
+        {renderUnifiedAnalysisBox(metric3, setMetric3, "Velocidad & Agilidad", "Pruebas de Esprint y COD 505", BOX3_METRICS, "bg-blue-500")}
+        {renderUnifiedAnalysisBox(metric4, setMetric4, "Resistencia Aeróbica", "Capacidad y Umbrales Cardiorrespiratorios", BOX4_METRICS, "bg-purple-500")}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {renderUnifiedAnalysisBox(metric5, setMetric5, "Antropometría", "Composición Corporal y Maduración", BOX5_METRICS, mode5, setMode5, "bg-pink-500")}
+        {renderUnifiedAnalysisBox(metric5, setMetric5, "Antropometría", "Composición Corporal y Maduración", BOX5_METRICS, "bg-pink-500")}
       </div>
     </div>
   );
@@ -8268,7 +7667,6 @@ interface MetricOption {
 const BOX1_METRIC_OPTIONS: MetricOption[] = [
   { label: 'IMTP Fuerza Máxima (N)', key: 'imtp_fuerza_n', unit: 'N', icon: 'fa-dumbbell', colorClass: 'text-orange-500 bg-orange-50 stroke-orange-500 border-orange-100' },
   { label: 'IMTP Fuerza Relativa (N/kg)', key: 'imtp_f_relativa_n_kg', unit: 'N/kg', icon: 'fa-bolt', colorClass: 'text-red-500 bg-red-50 stroke-red-500 border-red-100' },
-  { label: 'IMTP Fuerza neta 50ms (N)', key: 'imtp_force_50ms', unit: 'N', icon: 'fa-gauge', colorClass: 'text-amber-500 bg-amber-50 stroke-amber-500 border-amber-100' },
   { label: 'IMTP Fuerza neta 100ms (N)', key: 'imtp_force_100ms', unit: 'N', icon: 'fa-gauge-high', colorClass: 'text-yellow-500 bg-yellow-50 stroke-yellow-500 border-yellow-100' },
   { label: 'IMTP Fuerza neta 150ms (N)', key: 'imtp_force_150ms', unit: 'N', icon: 'fa-bolt', colorClass: 'text-lime-500 bg-lime-50 stroke-lime-500 border-lime-100' },
   { label: 'IMTP Fuerza neta 200ms (N)', key: 'imtp_force_200ms', unit: 'N', icon: 'fa-fire', colorClass: 'text-emerald-500 bg-emerald-50 stroke-emerald-500 border-emerald-100' },
@@ -8283,10 +7681,9 @@ const BOX2_METRIC_OPTIONS: MetricOption[] = [
   { label: 'CMJ RSI Modificado (m/s)', key: 'rsi_modified_m_s', unit: 'm/s', icon: 'fa-bolt', colorClass: 'text-teal-500 bg-teal-50 stroke-teal-500 border-teal-100' },
   { label: 'CMJ Altura Salto (cm)', key: 'jump_height_impmom_cm', unit: 'cm', icon: 'fa-arrows-up-down', colorClass: 'text-cyan-500 bg-cyan-50 stroke-cyan-500 border-cyan-100' },
   { label: 'CMJ Pot. Pico Relativa (W/kg)', key: 'peak_power_bm_w_kg', unit: 'W/kg', icon: 'fa-gauge', colorClass: 'text-sky-500 bg-sky-50 stroke-sky-500 border-sky-100' },
-  { label: 'CMJ Pot. Pico Absoluta (W)', key: 'peak_power_w', unit: 'W', icon: 'fa-fire', colorClass: 'text-violet-500 bg-violet-50 stroke-violet-500 border-violet-100' },
+  { label: 'CMJ Impulso Conc. (Ns)', key: 'concentric_impulse_ns', unit: 'N s', icon: 'fa-gauge-high', colorClass: 'text-rose-500 bg-rose-50 stroke-rose-500 border-rose-100' },
   { label: 'CMJ Profundidad (cm)', key: 'countermovement_depth_cm', unit: 'cm', icon: 'fa-arrow-down', colorClass: 'text-fuchsia-500 bg-fuchsia-50 stroke-fuchsia-500 border-fuchsia-100' },
   { label: 'CMJ Duración Conc. (ms)', key: 'concentric_duration_ms', unit: 'ms', icon: 'fa-clock', colorClass: 'text-pink-500 bg-pink-50 stroke-pink-500 border-pink-100', lowerIsBetter: true },
-  { label: 'CMJ Impulso Conc. (Ns)', key: 'concentric_impulse_ns', unit: 'N s', icon: 'fa-gauge-high', colorClass: 'text-rose-500 bg-rose-50 stroke-rose-500 border-rose-100' },
   { label: 'CMJ Momento Despegue (kg·m/s)', key: 'take_off_momentum_kg_m_s', unit: 'kg·m/s', icon: 'fa-person-running', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100' },
   { label: 'CMJ Rebound RSI', key: 'rebound_rsi', unit: 'Index', icon: 'fa-arrows-spin', colorClass: 'text-indigo-500 bg-indigo-50 stroke-indigo-500 border-indigo-100' },
   { label: 'T. Contacto Rebound (ms)', key: 'rebound_contact_time_ms', unit: 'ms', icon: 'fa-clock', colorClass: 'text-amber-500 bg-amber-50 stroke-amber-500 border-amber-100', lowerIsBetter: true },

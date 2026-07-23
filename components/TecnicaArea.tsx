@@ -72,7 +72,7 @@ const PREDEFINED_ACTIVITIES = [
   { label: 'Charla Nutricional', emoji: '🍎' },
   { label: 'Charla Psicológica', emoji: '🧠' },
   { label: 'Evaluaciones Físicas', emoji: '📏' },
-  { label: 'Evaluación Nutricional', emoji: '⚖️' },
+  { label: 'Evaluación Antropométrica', emoji: '⚖️' },
   { label: 'Atenciones Médicas', emoji: '⚕️' },
   { label: 'Actividad Social', emoji: '🤝' },
   { label: 'Salida', emoji: '🚌' },
@@ -189,7 +189,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     customLocation: '',
     customType: '',
     rival: '',
-    grupo: 'Todos'
+    grupo: 'Todos',
+    physicalEvalType: ''
   });
 
   const [newBibliotecaTarea, setNewBibliotecaTarea] = useState({
@@ -213,7 +214,11 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   ];
 
   const getEmojiForType = (type: string) => {
-    const isCustom = !PREDEFINED_ACTIVITIES.some(a => type === a.label || type.startsWith(a.label + ' vs'));
+    const isCustom = !PREDEFINED_ACTIVITIES.some(a => 
+      type === a.label || 
+      type.startsWith(a.label + ' vs') || 
+      type.startsWith(a.label + ' (')
+    );
     if (isCustom) return '📝';
     
     const found = PREDEFINED_ACTIVITIES.find(a => type.includes(a.label));
@@ -737,9 +742,12 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     const finalType = isCustom ? (activityForm.customType || 'Actividad') : activityForm.type;
 
     const isMatch = finalType === 'Partido Amistoso' || finalType === 'Partido Oficial';
-    const displayType = (isMatch && activityForm.rival.trim()) 
-      ? `${finalType} vs ${activityForm.rival.trim()}` 
-      : finalType;
+    let displayType = finalType;
+    if (finalType === 'Evaluaciones Físicas' && activityForm.physicalEvalType && activityForm.physicalEvalType.trim() !== '') {
+      displayType = `Evaluaciones Físicas (${activityForm.physicalEvalType.trim()})`;
+    } else if (isMatch && activityForm.rival.trim()) {
+      displayType = `${finalType} vs ${activityForm.rival.trim()}`;
+    }
 
     const finalLocation = activityForm.location === 'OTRO' 
       ? (activityForm.customLocation || 'Sin definir') 
@@ -825,7 +833,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         customLocation: '',
         customType: '',
         rival: '',
-        grupo: 'Todos'
+        grupo: 'Todos',
+        physicalEvalType: ''
       });
       
       setEditingActivityId(null);
@@ -1056,6 +1065,12 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       rival = parts[1];
     }
 
+    let physicalEvalType = '';
+    if (type.startsWith('Evaluaciones Físicas (') && type.endsWith(')')) {
+      physicalEvalType = type.substring('Evaluaciones Físicas ('.length, type.length - 1);
+      type = 'Evaluaciones Físicas';
+    }
+
     // Check if it's a predefined activity or custom
     const isPredefined = PREDEFINED_ACTIVITIES.some(pa => pa.label === type);
 
@@ -1066,7 +1081,8 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       customLocation: LOCATIONS.includes(act.location) ? '' : act.location,
       customType: isPredefined ? '' : type,
       rival: rival,
-      grupo: act.grupo || 'Todos'
+      grupo: act.grupo || 'Todos',
+      physicalEvalType: physicalEvalType
     });
     setShowActivityModal(true);
   };
@@ -2710,6 +2726,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                   </button>
                 ))}
               </div>
+              {activityForm.type === 'Evaluaciones Físicas' && (
+                <input placeholder="Especificar Tipo de Evaluación (Ej: Salto, Fuerza, Velocidad)..." className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black animate-in slide-in-from-top-2 duration-200" value={activityForm.physicalEvalType || ''} onChange={e => setActivityForm({...activityForm, physicalEvalType: e.target.value})} />
+              )}
               {activityForm.type === 'OTRA' && (
                 <input required placeholder="Especificar Actividad (Ej: Reunión, Charla)..." className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-black" value={activityForm.customType} onChange={e => setActivityForm({...activityForm, customType: e.target.value})} />
               )}

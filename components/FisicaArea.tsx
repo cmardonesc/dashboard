@@ -8,6 +8,7 @@ import ClubBadge from './ClubBadge';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 const getRangeForMetric = (metricId: string, baseP50: number, factor: number = 1, intensity: 'Baja' | 'Media' | 'Alta' = 'Media') => {
   const mid = baseP50 * factor;
@@ -119,10 +120,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       const formattedPropName = categoryName.trim().toLowerCase().replace('sub ', 'sub_');
       const matchingCat = Object.values(Category).find(c => c.toLowerCase() === formattedPropName);
       if (matchingCat) {
-        setSelectedCategories([matchingCat]);
+        // Guard against infinite update loops by checking if selectedCategories is already identical
+        if (selectedCategories.length !== 1 || selectedCategories[0] !== matchingCat) {
+          setSelectedCategories([matchingCat]);
+        }
       }
     }
-  }, [categoryName]);
+  }, [categoryName, selectedCategories]);
 
   // Filtro de búsqueda interno específico del Reporte Diario
   const [reportPlayerSearch, setReportPlayerSearch] = useState('');
@@ -186,14 +190,53 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // NUEVO: Estados para calcular referencias históricas y alinear con el Pronóstico de Cargas
   const [historicalGpsImport, setHistoricalGpsImport] = useState<any[]>([]);
   const [historicalMicrocycles, setHistoricalMicrocycles] = useState<any[]>([]);
+  const [allPlayersMap, setAllPlayersMap] = useState<Record<number, any>>({});
 
   useEffect(() => {
     const fetchHistoricalData = async () => {
       try {
-        const { data: gpsData } = await supabase.from('gps_import').select('*');
+        let allGpsRows: any[] = [];
+        let page = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const from = page * pageSize;
+          const to = from + pageSize - 1;
+          const { data, error } = await supabase
+            .from('gps_import')
+            .select('*')
+            .range(from, to);
+          
+          if (error) {
+            console.error("Error fetching gps_import page:", page, error);
+            break;
+          }
+          
+          if (!data || data.length === 0) {
+            hasMore = false;
+          } else {
+            allGpsRows = allGpsRows.concat(data);
+            if (data.length < pageSize) {
+              hasMore = false;
+            } else {
+              page++;
+            }
+          }
+        }
+
         const { data: mcData } = await supabase.from('microcycles').select('*');
-        if (gpsData) setHistoricalGpsImport(gpsData);
+        const { data: playersData } = await supabase.from('players').select('player_id, posicion, nombre, apellido1');
+        
+        if (allGpsRows.length > 0) setHistoricalGpsImport(allGpsRows);
         if (mcData) setHistoricalMicrocycles(mcData);
+        if (playersData) {
+          const pMap: Record<number, any> = {};
+          playersData.forEach(p => {
+            pMap[p.player_id] = p;
+          });
+          setAllPlayersMap(pMap);
+        }
       } catch (err) {
         console.error("Error loading historical data for forecast alignment:", err);
       }
@@ -1277,17 +1320,22 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       load: loadValid.reduce((acc, l) => acc + l.sessions.reduce((sacc: number, s: any) => sacc + s.load, 0), 0) / loadValid.length,
     } : null;
 
-    // NUEVO: Cálculo de Promedios para GPS Totales
-    const gpsAvg = gpsImportReport.length ? {
-      minutos: gpsImportReport.reduce((acc, g) => acc + (g.minutos || 0), 0) / gpsImportReport.length,
-      dist: gpsImportReport.reduce((acc, g) => acc + (g.dist_total_m || 0), 0) / gpsImportReport.length,
-      mpm: gpsImportReport.reduce((acc, g) => acc + (g.m_por_min || 0), 0) / gpsImportReport.length,
-      hsr: gpsImportReport.reduce((acc, g) => acc + (g.dist_mai_m_20_kmh || 0), 0) / gpsImportReport.length,
-      ai: gpsImportReport.reduce((acc, g) => acc + (g.dist_ai_m_15_kmh || 0), 0) / gpsImportReport.length,
-      sprint: gpsImportReport.reduce((acc, g) => acc + (g.dist_sprint_m_25_kmh || 0), 0) / gpsImportReport.length,
-      nsp: gpsImportReport.reduce((acc, g) => acc + (g.sprints_n || 0), 0) / gpsImportReport.length,
-      vmax: gpsImportReport.reduce((acc, g) => acc + (g.vel_max_kmh || 0), 0) / gpsImportReport.length,
-      acc: gpsImportReport.reduce((acc, g) => acc + (g.acc_decc_ai_n || 0), 0) / gpsImportReport.length,
+    // NUEVO: Cálculo de Promedios para GPS Totales (Solo jugadores con >= 80% de la duración máxima)
+    const maxDuration = gpsImportReport.length ? Math.max(...gpsImportReport.map(g => g.minutos || 0), 0) : 0;
+    const threshold = maxDuration * 0.8;
+    const filteredGpsForAvg = gpsImportReport.filter(g => (g.minutos || 0) >= threshold);
+    const avgSourceList = filteredGpsForAvg.length ? filteredGpsForAvg : gpsImportReport;
+
+    const gpsAvg = avgSourceList.length ? {
+      minutos: avgSourceList.reduce((acc, g) => acc + (g.minutos || 0), 0) / avgSourceList.length,
+      dist: avgSourceList.reduce((acc, g) => acc + (g.dist_total_m || 0), 0) / avgSourceList.length,
+      mpm: avgSourceList.reduce((acc, g) => acc + (g.m_por_min || 0), 0) / avgSourceList.length,
+      hsr: avgSourceList.reduce((acc, g) => acc + (g.dist_mai_m_20_kmh || 0), 0) / avgSourceList.length,
+      ai: avgSourceList.reduce((acc, g) => acc + (g.dist_ai_m_15_kmh || 0), 0) / avgSourceList.length,
+      sprint: avgSourceList.reduce((acc, g) => acc + (g.dist_sprint_m_25_kmh || 0), 0) / avgSourceList.length,
+      nsp: avgSourceList.reduce((acc, g) => acc + (g.sprints_n || 0), 0) / avgSourceList.length,
+      vmax: avgSourceList.reduce((acc, g) => acc + (g.vel_max_kmh || 0), 0) / avgSourceList.length,
+      acc: avgSourceList.reduce((acc, g) => acc + (g.acc_decc_ai_n || 0), 0) / avgSourceList.length,
     } : null;
 
     // NUEVO: Resumen de Tareas con Min, Avg, Max
@@ -3817,6 +3865,119 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 { name: 'Acc/Decc AI Promedio', value: reportData.gpsAvg?.acc ? `${reportData.gpsAvg.acc.toFixed(1)}` : '—' },
               ];
 
+              const microcycleDates = (() => {
+                if (!activeMicrocycle) return [];
+                const start = new Date(activeMicrocycle.start_date + 'T00:00:00');
+                const end = new Date(activeMicrocycle.end_date + 'T00:00:00');
+                const dates = [];
+                let current = new Date(start);
+                while (current <= end) {
+                  const year = current.getFullYear();
+                  const month = (current.getMonth() + 1).toString().padStart(2, '0');
+                  const day = current.getDate().toString().padStart(2, '0');
+                  dates.push(`${year}-${month}-${day}`);
+                  current.setDate(current.getDate() + 1);
+                }
+                return dates;
+              })();
+
+              const microcyclePositionData = (() => {
+                if (!activeMicrocycle || historicalGpsImport.length === 0 || microcycleDates.length === 0) {
+                  return { positions: [], data: {} };
+                }
+
+                const positionsWithData = new Set<string>();
+                historicalGpsImport.forEach((row: any) => {
+                  const pid = row.player_id;
+                  const player = allPlayersMap[pid];
+                  const pos = player?.posicion || row.players?.posicion || '';
+                  if (pos) {
+                    const normPos = pos.trim().toUpperCase();
+                    if (normPos !== 'ARQUERO' && normPos !== 'PORTEIRO' && normPos !== 'POR' && normPos !== 'ARQUERA' && normPos !== 'S/D' && normPos !== '') {
+                      positionsWithData.add(normPos);
+                    }
+                  }
+                });
+
+                const preferredPositions = [
+                  'VOLANTE',
+                  'DEFENSA CENTRAL',
+                  'DEFENSA LATERAL',
+                  'CENTRO DELANTERO',
+                  'DELANTERO EXTREMO',
+                  'MEDIA PUNTA'
+                ];
+                
+                const sortedPositions = Array.from(positionsWithData).sort((a, b) => {
+                  const idxA = preferredPositions.indexOf(a);
+                  const idxB = preferredPositions.indexOf(b);
+                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                  if (idxA !== -1) return -1;
+                  if (idxB !== -1) return 1;
+                  return a.localeCompare(b);
+                });
+
+                const targetPositions = sortedPositions.slice(0, 6);
+                while (targetPositions.length < 6) {
+                  const missing = preferredPositions.find(p => !targetPositions.includes(p));
+                  if (missing) {
+                    targetPositions.push(missing);
+                  } else {
+                    targetPositions.push('POSICION ' + (targetPositions.length + 1));
+                  }
+                }
+
+                const result: Record<string, any[]> = {};
+
+                const getDayLabel = (dateStr: string, idx: number) => {
+                  try {
+                    const d = new Date(dateStr + 'T12:00:00');
+                    const weekday = d.toLocaleDateString('es-ES', { weekday: 'short' });
+                    return `D${idx + 1} (${weekday.toUpperCase().replace('.', '')})`;
+                  } catch {
+                    return `D${idx + 1}`;
+                  }
+                };
+
+                targetPositions.forEach(pos => {
+                  result[pos] = microcycleDates.map((dateStr, idx) => {
+                    const dayRows = historicalGpsImport.filter((row: any) => {
+                      const pid = row.player_id;
+                      const player = allPlayersMap[pid];
+                      const playerPos = (player?.posicion || row.players?.posicion || '').trim().toUpperCase();
+                      return row.fecha === dateStr && playerPos === pos;
+                    });
+
+                    if (dayRows.length === 0) {
+                      return {
+                        name: getDayLabel(dateStr, idx),
+                        dist_total_m: 0,
+                        dist_mai_m_20_kmh: 0,
+                        acc_decc_ai_n: 0,
+                        fullDate: dateStr
+                      };
+                    }
+
+                    const totalDist = dayRows.reduce((sum, r) => sum + (r.dist_total_m || 0), 0);
+                    const totalHsr = dayRows.reduce((sum, r) => sum + (r.dist_mai_m_20_kmh || 0), 0);
+                    const totalAccDec = dayRows.reduce((sum, r) => sum + (r.acc_decc_ai_n || 0), 0);
+
+                    return {
+                      name: getDayLabel(dateStr, idx),
+                      dist_total_m: Math.round(totalDist / dayRows.length),
+                      dist_mai_m_20_kmh: Math.round(totalHsr / dayRows.length),
+                      acc_decc_ai_n: Number((totalAccDec / dayRows.length).toFixed(1)),
+                      fullDate: dateStr
+                    };
+                  });
+                });
+
+                return {
+                  positions: targetPositions,
+                  data: result
+                };
+              })();
+
               const gpsList = reportData.gpsImportReport || [];
               const needsGpsSplit = gpsList.length > 25;
 
@@ -3829,10 +3990,18 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 gpsPage2 = gpsList.slice(half);
               }
 
+              const mcStart = activeMicrocycle ? new Date(activeMicrocycle.start_date + 'T00:00:00') : null;
+              const mcEnd = activeMicrocycle ? new Date(activeMicrocycle.end_date + 'T00:00:00') : null;
+              const microcycleDaysCount = (mcStart && mcEnd) ? Math.ceil(Math.abs(mcEnd.getTime() - mcStart.getTime()) / (1000 * 60 * 60 * 24)) + 1 : 7;
+
+              const nextDayIdx = getDayIndex() !== -1 ? getDayIndex() + 1 : -1;
+              const showNextDayForecast = nextDayIdx !== -1 && nextDayIdx < microcycleDaysCount;
+
               const gpsByPositionPageNo = needsGpsSplit ? 6 : 5;
-              const comparePageNo = needsGpsSplit ? 7 : 6;
-              const nextDayForecastPageNo = needsGpsSplit ? 8 : 7;
-              const totalPages = needsGpsSplit ? 8 : 7;
+              const microcycleChartsPageNo = needsGpsSplit ? 7 : 6;
+              const comparePageNo = needsGpsSplit ? 8 : 7;
+              const nextDayForecastPageNo = needsGpsSplit ? 9 : 8;
+              const totalPages = showNextDayForecast ? (needsGpsSplit ? 9 : 8) : (needsGpsSplit ? 8 : 7);
 
               const getNextDayDate = (dateStr: string) => {
                 try {
@@ -3860,8 +4029,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 }
               };
 
-              const nextDayIdx = getDayIndex() !== -1 ? getDayIndex() + 1 : -1;
-              const nextIntensity = (nextDayIdx !== -1 && dayIntensities) ? (dayIntensities[nextDayIdx] || 'Media') : 'Media';
+               // nextDayIdx is already defined above
+               const nextIntensity = (nextDayIdx !== -1 && dayIntensities) ? (dayIntensities[nextDayIdx] || 'Media') : 'Media';
 
               const nextDayGpsParams = [
                 { id: 'dist_total_m', name: 'DISTANCIA TOTAL PROMEDIO OBJETIVO' },
@@ -3906,6 +4075,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   dist_mai_m_20_kmh: number[];
                   dist_ai_m_15_kmh: number[];
                   dist_sprint_m_25_kmh: number[];
+                  sprints_n: number[];
                   vel_max_kmh: number[];
                   acc_decc_ai_n: number[];
                   count: number;
@@ -3922,6 +4092,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       dist_mai_m_20_kmh: [],
                       dist_ai_m_15_kmh: [],
                       dist_sprint_m_25_kmh: [],
+                      sprints_n: [],
                       vel_max_kmh: [],
                       acc_decc_ai_n: [],
                       count: 0
@@ -3935,6 +4106,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   if (row.dist_mai_m_20_kmh !== undefined && row.dist_mai_m_20_kmh !== null) groups[pos].dist_mai_m_20_kmh.push(row.dist_mai_m_20_kmh);
                   if (row.dist_ai_m_15_kmh !== undefined && row.dist_ai_m_15_kmh !== null) groups[pos].dist_ai_m_15_kmh.push(row.dist_ai_m_15_kmh);
                   if (row.dist_sprint_m_25_kmh !== undefined && row.dist_sprint_m_25_kmh !== null) groups[pos].dist_sprint_m_25_kmh.push(row.dist_sprint_m_25_kmh);
+                  if (row.sprints_n !== undefined && row.sprints_n !== null) groups[pos].sprints_n.push(row.sprints_n);
                   if (row.vel_max_kmh !== undefined && row.vel_max_kmh !== null) groups[pos].vel_max_kmh.push(row.vel_max_kmh);
                   if (row.acc_decc_ai_n !== undefined && row.acc_decc_ai_n !== null) groups[pos].acc_decc_ai_n.push(row.acc_decc_ai_n);
                 });
@@ -3954,6 +4126,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                     dist_mai_m_20_kmh: getAvg(g.dist_mai_m_20_kmh),
                     dist_ai_m_15_kmh: getAvg(g.dist_ai_m_15_kmh),
                     dist_sprint_m_25_kmh: getAvg(g.dist_sprint_m_25_kmh),
+                    sprints_n: getAvg(g.sprints_n),
                     vel_max_kmh: getMax(g.vel_max_kmh),
                     acc_decc_ai_n: getAvg(g.acc_decc_ai_n)
                   }))
@@ -3982,11 +4155,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       <section className="mt-4">
                         <h3 className="text-xs font-black text-slate-900 border-l-4 border-[#02428c] pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
                           <span>{pageNo}._ DESEMPEÑO GPS COMPLETO DE LA JORNADA {needsGpsSplit ? `(PARTE ${pageNo === 4 ? 'I' : 'II'})` : '(TOTAL DE CARGA EXTERNA)'}</span>
-                          {isLast && reportData.gpsAvg && (
-                            <span className="bg-[#02428c] text-white text-[10px] font-black tracking-widest px-3 py-1 rounded-full font-mono">
-                              DIST. PROMEDIO: {reportData.gpsAvg.dist.toFixed(0)} M | M/MIN HISTÓRICO: {reportData.gpsAvg.mpm.toFixed(1)}
-                            </span>
-                          )}
                         </h3>
 
                         <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
@@ -3998,9 +4166,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <th className="px-1 py-2">DURACIÓN (MIN)</th>
                                 <th className="px-1 py-2">DIST. TOTAL (M)</th>
                                 <th className="px-1 py-2">M/MIN</th>
-                                <th className="px-1 py-2">DIST. HSR (&gt;20)</th>
                                 <th className="px-1 py-2">DIST. AI (&gt;15)</th>
+                                <th className="px-1 py-2">DIST. HSR (&gt;20)</th>
                                 <th className="px-1 py-2">DIST. SPRINT (&gt;25)</th>
+                                <th className="px-1 py-2">#SP</th>
                                 <th className="px-1 py-2">VEL. MÁX (KM/H)</th>
                                 <th className="px-1 py-2">ACC/DECC AI</th>
                               </tr>
@@ -4036,9 +4205,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                     <td className={`px-1 py-1 font-mono ${styleMetrosMin.className}`} style={styleMetrosMin.style}>
                                       {row.m_por_min?.toFixed(1) || '0.0'}
                                     </td>
-                                    <td className={`px-1 py-1 font-mono ${styleDistMAI.className}`} style={styleDistMAI.style}>{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
                                     <td className={`px-1 py-1 font-mono ${styleDistAI.className}`} style={styleDistAI.style}>{row.dist_ai_m_15_kmh?.toFixed(0) || '0'}</td>
+                                    <td className={`px-1 py-1 font-mono ${styleDistMAI.className}`} style={styleDistMAI.style}>{row.dist_mai_m_20_kmh?.toFixed(0) || '0'}</td>
                                     <td className={`px-1 py-1 font-mono ${styleDistSprint.className}`} style={styleDistSprint.style}>{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
+                                    <td className="px-1 py-1 text-slate-700 font-bold font-mono">{row.sprints_n?.toFixed(0) || '0'}</td>
                                     <td className="px-1 py-1 text-red-655 font-extrabold font-mono">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
                                     <td className={`px-1 py-1 font-mono ${styleAccDecc.className}`} style={styleAccDecc.style}>{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
                                   </tr>
@@ -4053,9 +4223,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                   <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.minutos.toFixed(0)}'</td>
                                   <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.dist.toFixed(0)}M</td>
                                   <td className="px-1 py-1 text-sm text-red-500 bg-[#0c1930] font-mono">{reportData.gpsAvg.mpm.toFixed(1)}</td>
-                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.hsr.toFixed(0)}M</td>
                                   <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.ai.toFixed(0)}M</td>
+                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.hsr.toFixed(0)}M</td>
                                   <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.sprint.toFixed(0)}M</td>
+                                  <td className="px-1 py-1 text-xs font-mono">{reportData.gpsAvg.nsp.toFixed(0)}</td>
                                   <td className="px-1 py-1 text-sm text-red-500 font-mono">{reportData.gpsAvg.vmax.toFixed(1)}</td>
                                   <td className="px-1 py-1 text-xs text-white font-mono">{reportData.gpsAvg.acc.toFixed(1)}</td>
                                 </tr>
@@ -4704,9 +4875,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                 <th className="px-1 py-2.5">DURACIÓN PROMEDIO</th>
                                 <th className="px-1 py-2.5">DIST. TOTAL (M)</th>
                                 <th className="px-1 py-2.5">M/MIN</th>
-                                <th className="px-1 py-2.5">DIST. HSR (&gt;20)</th>
                                 <th className="px-1 py-2.5">DIST. AI (&gt;15)</th>
+                                <th className="px-1 py-2.5">DIST. HSR (&gt;20)</th>
                                 <th className="px-1 py-2.5">DIST. SPRINT (&gt;25)</th>
+                                <th className="px-1 py-2.5">#SP</th>
                                 <th className="px-1 py-2.5">VEL. MÁXIMA</th>
                                 <th className="px-1 py-2.5">ACC/DECC AI</th>
                               </tr>
@@ -4734,9 +4906,10 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                     <td className="px-1 py-2 text-slate-400 font-bold font-mono">{row.minutos.toFixed(0)}'</td>
                                     <td className="px-1 py-2 text-slate-900 font-mono font-black">{row.dist_total_m.toFixed(0)} m</td>
                                     <td className="px-1 py-2 text-red-500 bg-red-50/35 font-mono font-black">{row.m_por_min.toFixed(1)}</td>
-                                    <td className="px-1 py-2 text-[#02428c] font-mono font-bold">{row.dist_mai_m_20_kmh.toFixed(0)} m</td>
                                     <td className="px-1 py-2 text-emerald-600 font-mono font-bold">{row.dist_ai_m_15_kmh.toFixed(0)} m</td>
+                                    <td className="px-1 py-2 text-[#02428c] font-mono font-bold">{row.dist_mai_m_20_kmh.toFixed(0)} m</td>
                                     <td className="px-1 py-2 text-indigo-600 font-mono font-bold">{row.dist_sprint_m_25_kmh.toFixed(0)} m</td>
+                                    <td className="px-1 py-2 text-slate-700 font-mono font-bold">{row.sprints_n.toFixed(0)}</td>
                                     <td className="px-1 py-2 text-red-655 font-extrabold font-mono">{row.vel_max_kmh.toFixed(1)} km/h</td>
                                     <td className="px-1 py-2 text-slate-700 font-mono font-bold">{row.acc_decc_ai_n.toFixed(1)}</td>
                                   </tr>
@@ -4748,6 +4921,121 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       </section>
                     </div>
                     <PrintFooter page={gpsByPositionPageNo} />
+                  </div>
+
+                  {/* NUEVA HOJA: DINÁMICA DE CARGA POR POSICIÓN EN EL MICROCICLO */}
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      <PrintHeader 
+                        selectedDate={selectedDate} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={microcycleChartsPageNo} 
+                        total={totalPages} 
+                      />
+
+                      <section className="mt-4">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-650 pl-3 mb-3 uppercase tracking-widest italic flex items-center justify-between">
+                          <span>{microcycleChartsPageNo}._ DINÁMICA DE CARGA ACUMULADA POR POSICIÓN (MICROCICLO ACTUAL)</span>
+                        </h3>
+
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-3">
+                          * TENDENCIA HISTÓRICA DE PARÁMETROS CLAVE (DISTANCIA TOTAL, HSR Y ACC/DEC) DURANTE LOS DÍAS DEL MICROCICLO ACTUAL AGRUPADOS POR PUESTO TÁCTICO.
+                        </p>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          {microcyclePositionData.positions.map((pos: string) => {
+                            const dayData = microcyclePositionData.data[pos] || [];
+                            return (
+                              <div key={pos} className="bg-slate-50/50 p-2.5 rounded-2xl border border-slate-100 flex flex-col justify-between">
+                                {/* Header */}
+                                <div className="flex justify-between items-center mb-1.5">
+                                  <span className="text-[8.5px] font-black text-slate-900 uppercase tracking-wider bg-slate-100/80 px-2 py-0.5 rounded-lg border border-slate-200/50">
+                                    {pos}
+                                  </span>
+                                  <span className="text-[6.5px] font-bold text-slate-400 uppercase tracking-widest">
+                                    3 PARÁMETROS
+                                  </span>
+                                </div>
+
+                                {/* Chart (Using fixed pixel size to ensure perfect HTML2Canvas and layout rendering) */}
+                                <div className="flex justify-center items-center py-1 bg-white rounded-xl border border-slate-100/60 shadow-sm relative overflow-hidden" style={{ width: '315px', height: '65px' }}>
+                                  {dayData.length > 0 ? (
+                                    <BarChart width={310} height={60} data={dayData} margin={{ top: 4, right: 10, left: 10, bottom: 2 }}>
+                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                      <XAxis dataKey="name" hide />
+                                      {/* Left axis for distance */}
+                                      <YAxis yAxisId="left" hide domain={['auto', 'auto']} />
+                                      {/* Right axis for acc/dec and hsr */}
+                                      <YAxis yAxisId="right" hide domain={['auto', 'auto']} />
+                                      
+                                      <Bar 
+                                        yAxisId="left"
+                                        dataKey="dist_total_m" 
+                                        fill="#02428c" 
+                                        radius={[2, 2, 0, 0]}
+                                        barSize={12}
+                                      />
+                                      <Bar 
+                                        yAxisId="right"
+                                        dataKey="dist_mai_m_20_kmh" 
+                                        fill="#dc2626" 
+                                        radius={[2, 2, 0, 0]}
+                                        barSize={12}
+                                      />
+                                      <Bar 
+                                        yAxisId="right"
+                                        dataKey="acc_decc_ai_n" 
+                                        fill="#10b981" 
+                                        radius={[2, 2, 0, 0]}
+                                        barSize={12}
+                                      />
+                                    </BarChart>
+                                  ) : (
+                                    <span className="text-[8px] font-bold text-slate-300 uppercase">Sin Datos Disponibles</span>
+                                  )}
+                                </div>
+
+                                {/* Table with real parameters for professional reading */}
+                                <div className="mt-1.5 overflow-hidden rounded-lg border border-slate-100/70 bg-white">
+                                  <table className="w-full text-center border-collapse">
+                                    <thead>
+                                      <tr className="bg-slate-50 text-[6px] font-black text-slate-400 uppercase border-b border-slate-100">
+                                        <th className="text-left pl-1.5 py-0.5 min-w-[32px]">DÍA</th>
+                                        {dayData.map((d: any, idx: number) => (
+                                          <th key={idx} className="font-mono py-0.5">{`D${idx + 1}`}</th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody className="text-[6.5px] font-bold text-slate-700">
+                                      <tr className="border-b border-slate-100/50">
+                                        <td className="text-left pl-1.5 py-0.5 text-slate-400 font-medium">Dist (m)</td>
+                                        {dayData.map((d: any, idx: number) => (
+                                          <td key={idx} className="font-mono text-slate-900">{d.dist_total_m || '—'}</td>
+                                        ))}
+                                      </tr>
+                                      <tr className="border-b border-slate-100/50">
+                                        <td className="text-left pl-1.5 py-0.5 text-slate-400 font-medium">HSR (m)</td>
+                                        {dayData.map((d: any, idx: number) => (
+                                          <td key={idx} className="font-mono text-[#dc2626]">{d.dist_mai_m_20_kmh || '—'}</td>
+                                        ))}
+                                      </tr>
+                                      <tr>
+                                        <td className="text-left pl-1.5 py-0.5 text-slate-400 font-medium">Acc/Dec</td>
+                                        {dayData.map((d: any, idx: number) => (
+                                          <td key={idx} className="font-mono text-[#10b981]">{d.acc_decc_ai_n || '—'}</td>
+                                        ))}
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    </div>
+                    <PrintFooter page={microcycleChartsPageNo} />
                   </div>
 
                   {/* HOJA DE PRONÓSTICO / COMPARATIVA DE CARGA */}
@@ -4917,61 +5205,87 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             </tbody>
                           </table>
                         </div>
+
+                        {/* MENSAJE ESPECIAL DE LA SESIÓN EN HOJA COMPARATIVA (SOLO SI ES LA ÚLTIMA HOJA) */}
+                        {!showNextDayForecast && specialNote && specialNote.trim() !== '' && (
+                          <div className="mt-4 p-4 bg-red-50/50 border border-red-100 rounded-2xl max-w-4xl mx-auto text-left">
+                            <div className="text-[9px] font-black text-red-700 uppercase tracking-widest mb-1 italic">
+                              Mensaje Especial de la Sesión:
+                            </div>
+                            <p className="text-[10px] font-bold text-slate-700 whitespace-pre-line leading-relaxed">
+                              {specialNote}
+                            </p>
+                          </div>
+                        )}
                       </section>
                     </div>
                     <PrintFooter page={comparePageNo} />
                   </div>
 
                   {/* NUEVA HOJA: PRONÓSTICO DEL DÍA SIGUIENTE */}
-                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
-                    <div>
-                      <PrintHeader 
-                        selectedDate={getNextDayDate(selectedDate)} 
-                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
-                        activeMicrocycle={activeMicrocycle} 
-                        page={nextDayForecastPageNo} 
-                        total={totalPages} 
-                      />
-                      
-                      <section className="mt-4 text-slate-900">
-                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-650 pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
-                          <span>{nextDayForecastPageNo}._ PRONÓSTICO DE CARGA PREVENTIVA PARA MAÑANA ({getNextDayFormatted(selectedDate)})</span>
-                          <span className={`px-2.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                            nextIntensity === 'Alta' ? 'bg-red-50 text-red-700 border border-red-200' :
-                            nextIntensity === 'Media' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                            'bg-blue-50 text-blue-700 border border-blue-200'
-                          }`}>
-                            INTENSIDAD PLANIFICADA: {nextIntensity}
-                          </span>
-                        </h3>
+                  {showNextDayForecast && (
+                    <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                      <div>
+                        <PrintHeader 
+                          selectedDate={getNextDayDate(selectedDate)} 
+                          selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                          activeMicrocycle={activeMicrocycle} 
+                          page={nextDayForecastPageNo} 
+                          total={totalPages} 
+                        />
                         
-                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-6">
-                          * PLANIFICACIÓN FÍSICA PREDICTIVA Y OBJETIVOS DE CARGA EXTERNA SELECCIONADOS PARA LA PRÓXIMA JORNADA DE ENTRENAMIENTO.
-                        </p>
+                        <section className="mt-4 text-slate-900">
+                          <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-650 pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
+                            <span>{nextDayForecastPageNo}._ PRONÓSTICO DE CARGA PREVENTIVA PARA MAÑANA ({getNextDayFormatted(selectedDate)})</span>
+                            <span className={`px-2.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                              nextIntensity === 'Alta' ? 'bg-red-50 text-red-700 border border-red-200' :
+                              nextIntensity === 'Media' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                              'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}>
+                              INTENSIDAD PLANIFICADA: {nextIntensity}
+                            </span>
+                          </h3>
+                          
+                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-6">
+                            * PLANIFICACIÓN FÍSICA PREDICTIVA Y OBJETIVOS DE CARGA EXTERNA SELECCIONADOS PARA LA PRÓXIMA JORNADA DE ENTRENAMIENTO.
+                          </p>
 
-                        <div className="grid grid-cols-5 gap-2 mt-6 mb-6">
-                          {nextDayGpsParams.map((param: any, idx: number) => {
-                            return (
-                              <div key={`next-param-${idx}`} className="p-3 rounded-xl border border-slate-100 bg-slate-50/30 flex flex-col justify-between">
-                                <div className="text-[8px] font-black text-slate-500 uppercase tracking-wider mb-2 leading-snug">
-                                  {param.name}
-                                </div>
-                                <div>
-                                  <div className="text-[13px] font-black text-[#0b1220] font-mono tracking-tight">
-                                    {param.range}
+                          <div className="grid grid-cols-5 gap-2 mt-6 mb-6">
+                            {nextDayGpsParams.map((param: any, idx: number) => {
+                              return (
+                                <div key={`next-param-${idx}`} className="p-3 rounded-xl border border-slate-100 bg-slate-50/30 flex flex-col justify-between">
+                                  <div className="text-[8px] font-black text-slate-500 uppercase tracking-wider mb-2 leading-snug">
+                                    {param.name}
                                   </div>
-                                  <div className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wider mt-1">
-                                    DIFERENCIAL: {param.percentage > 0 ? `+${param.percentage}%` : `${param.percentage}%`}
+                                  <div>
+                                    <div className="text-[13px] font-black text-[#0b1220] font-mono tracking-tight">
+                                      {param.range}
+                                    </div>
+                                    <div className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wider mt-1">
+                                      DIFERENCIAL: {param.percentage > 0 ? `+${param.percentage}%` : `${param.percentage}%`}
+                                    </div>
                                   </div>
                                 </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* MENSAJE ESPECIAL DE LA SESIÓN EN HOJA DE PRONÓSTICO DEL DÍA SIGUIENTE (SIEMPRE LA ÚLTIMA HOJA SI ESTÁ ACTIVA) */}
+                          {specialNote && specialNote.trim() !== '' && (
+                            <div className="mt-4 p-4 bg-red-50/50 border border-red-100 rounded-2xl text-left">
+                              <div className="text-[9px] font-black text-red-700 uppercase tracking-widest mb-1 italic">
+                                Mensaje Especial de la Sesión:
                               </div>
-                            );
-                          })}
-                        </div>
-                      </section>
+                              <p className="text-[10px] font-bold text-slate-700 whitespace-pre-line leading-relaxed">
+                                {specialNote}
+                              </p>
+                            </div>
+                          )}
+                        </section>
+                      </div>
+                      <PrintFooter page={nextDayForecastPageNo} />
                     </div>
-                    <PrintFooter page={nextDayForecastPageNo} />
-                  </div>
+                  )}
                 </>
               );
             })()}

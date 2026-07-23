@@ -340,15 +340,17 @@ export default function GPSIntelligenceDashboard({ performanceRecords, clubs = [
       const formattedPropName = categoryName.trim().toUpperCase();
       const matchingCat = detectedCategories.find(c => c.toUpperCase() === formattedPropName);
       if (matchingCat) {
-        setSelectedCategory(matchingCat);
+        if (selectedCategory !== matchingCat) {
+          setSelectedCategory(matchingCat);
+        }
       } else {
         const partialMatch = detectedCategories.find(c => c.toUpperCase().includes(formattedPropName) || formattedPropName.includes(c.toUpperCase()));
-        if (partialMatch) {
+        if (partialMatch && selectedCategory !== partialMatch) {
           setSelectedCategory(partialMatch);
         }
       }
     }
-  }, [categoryName, detectedCategories, sessionData.length]);
+  }, [categoryName, detectedCategories, sessionData.length, selectedCategory]);
 
   const filteredSessionData = useMemo(() => {
     if (selectedCategory === 'TODAS') return sessionData;
