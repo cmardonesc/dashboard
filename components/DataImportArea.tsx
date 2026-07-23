@@ -228,6 +228,11 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'pasada', label: 'PASADA', required: false, type: 'number' },
       { key: 'mts', label: 'DISTANCIA (m)', required: false, type: 'number' },
       { key: 'vfa', label: 'VFA', required: false, type: 'number' },
+      { key: 'vft', label: 'VFT', required: false, type: 'number' },
+      { key: 've_max', label: 'VE MAX', required: false, type: 'number' },
+      { key: 'rf_max', label: 'RF MAX', required: false, type: 'number' },
+      { key: 'tv_max', label: 'TV MAX', required: false, type: 'number' },
+      { key: 'cop', label: 'COP', required: false, type: 'number' },
       { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
     ]
   },
@@ -348,6 +353,8 @@ export default function DataImportArea() {
   const normalizeString = (str: any) => {
     if (!str) return '';
     return String(str)
+      .replace(/^\ufeff/i, "") // strip BOM
+      .replace(/[\u200b\u200c\u200d\ufeff]/g, "") // strip zero-width characters
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
@@ -610,9 +617,10 @@ export default function DataImportArea() {
             header: true,
             skipEmptyLines: 'greedy',
             delimiter: "", // auto-detect
+            transformHeader: (header) => header.replace(/^\ufeff/i, "").trim(),
             complete: (results) => {
               const fileRows = results.data || [];
-              const fields = results.meta.fields || [];
+              const fields = (results.meta.fields || []).map(f => f.replace(/^\ufeff/i, "").trim());
               
               // Filter out summary/aggregate rows (MAX, AVG, SD, MIN, MEAN, STD, TOTAL, SUM, etc.)
               const filteredFileRows = fileRows.filter((row: any) => {
@@ -644,8 +652,8 @@ export default function DataImportArea() {
               if (selectedType) {
                 const config = IMPORT_CONFIGS[selectedType];
                 const detectedNameHeader = fields.find(h => {
-                  const low = h.toLowerCase();
-                  return low === 'name' || low === 'jugador' || low === 'nombre' || low === 'atleta' || low.includes('jugador');
+                  const low = h.toLowerCase().replace(/^\ufeff/i, "").trim();
+                  return low === 'name' || low === 'jugador' || low === 'nombre' || low === 'atleta' || low.includes('jugador') || low.includes('nombre') || low.includes('name') || low.includes('atleta');
                 });
                 if (detectedNameHeader && !firstDetectedNameHeader) {
                   firstDetectedNameHeader = detectedNameHeader;
@@ -812,6 +820,29 @@ export default function DataImportArea() {
                 match = headersList.find(h => {
                   const hn = normalizeForMatch(h);
                   return hn === 'series' || hn === 'fecha' || hn === 'date';
+                });
+              }
+
+              if (!match && selectedType === 'vo2max') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  if (field.key === 'vt1_vel' && (hn === 'velvt1' || hn === 'vt1vel')) return true;
+                  if (field.key === 'vt1_pct' && (hn === 'vt1' || hn === 'vt1pct')) return true;
+                  if (field.key === 'vt1_fc' && (hn === 'fcvt1' || hn === 'vt1fc' || hn === 'fcvt1')) return true;
+                  if (field.key === 'vt2_vel' && (hn === 'velvt2' || hn === 'vt2vel')) return true;
+                  if (field.key === 'vt2_pct' && (hn === 'vt2' || hn === 'vt2pct')) return true;
+                  if (field.key === 'vt2_fc' && (hn === 'fcvt2' || hn === 'vt2fc' || hn === 'fcvt2')) return true;
+                  if (field.key === 'vo2_max' && (hn === 'vo2max' || hn === 'vo2maximo' || hn === 'consumodeoxigeno')) return true;
+                  if (field.key === 'vft' && (hn === 'vft' || hn === 'vfa' || hn === 'velocidadfinaltest')) return true;
+                  if (field.key === 'fc_max' && (hn === 'fcmax' || hn === 'fcmaxima')) return true;
+                  if (field.key === 'nivel' && hn === 'nivel') return true;
+                  if (field.key === 'pasada' && hn === 'pasada') return true;
+                  if (field.key === 'mts' && (hn === 'metros' || hn === 'distancia' || hn === 'mts' || hn === 'm')) return true;
+                  if (field.key === 've_max' && (hn === 'vemax' || hn === 've')) return true;
+                  if (field.key === 'rf_max' && (hn === 'rfmax' || hn === 'rf')) return true;
+                  if (field.key === 'tv_max' && (hn === 'tvmax' || hn === 'tv')) return true;
+                  if (field.key === 'cop' && hn === 'cop') return true;
+                  return false;
                 });
               }
 
@@ -1060,15 +1091,29 @@ export default function DataImportArea() {
         }
 
         // Use resolved IDs
-        const manualId = resolvedIds[index];
-        const normalizedCleanName = normalizeString(cleanName);
-        const sharedId = Object.entries(resolvedIds).find(([idx, id]) => {
-          const rName = getRowName(csvData[Number(idx)]);
-          return normalizeString(rName) === normalizedCleanName;
-        })?.[1];
+        let pId = resolvedIds[index];
+        if (!pId) {
+          const normalizedCleanName = normalizeString(cleanName);
+          pId = Object.entries(resolvedIds).find(([idx, id]) => {
+            const rName = getRowName(csvData[Number(idx)]);
+            return normalizeString(rName) === normalizedCleanName;
+          })?.[1];
+        }
 
-        if (manualId || sharedId) {
-          const pId = manualId || sharedId;
+        // Fallback: If still no pId, let's try to match by the mapped name/jugador field column
+        if (!pId) {
+          const nameFieldKey = config.fields.find(f => f.key === 'jugador' || f.key === 'jugador_nombre' || f.key === 'athlete_name')?.key;
+          const mappedHeader = nameFieldKey ? mapping[nameFieldKey] : null;
+          const nameVal = mappedHeader ? row[mappedHeader] : null;
+          if (nameVal) {
+            const player = findPlayerByName(String(nameVal).trim());
+            if (player) {
+              pId = player.player_id;
+            }
+          }
+        }
+
+        if (pId) {
           item.player_id = pId;
           const player = players.find(p => p.player_id === pId);
           if (player) {

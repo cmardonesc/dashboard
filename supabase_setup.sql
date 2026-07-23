@@ -442,6 +442,11 @@ create table if not exists public.vo2max_tests (
   pasada float8,
   mts float8,
   vfa float8,
+  vft float8,
+  ve_max float8,
+  rf_max float8,
+  tv_max float8,
+  cop float8,
   observaciones text,
   unique(player_id, fecha)
 );

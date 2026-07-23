@@ -125,7 +125,7 @@ export default function VO2MaxArea({ clubs = [] }: VO2MaxAreaProps) {
       {/* Tabla de Resultados */}
       <div className="bg-white rounded-[40px] border border-slate-100 shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-center min-w-[1200px]">
+          <table className="w-full text-center min-w-[1500px]">
             <thead className="bg-[#0b1220] text-white font-black uppercase text-[10px]">
               <tr>
                 <th className="px-6 py-5 text-left sticky left-0 bg-[#0b1220] z-10">Atleta</th>
@@ -133,24 +133,29 @@ export default function VO2MaxArea({ clubs = [] }: VO2MaxAreaProps) {
                 <th className="px-4 py-5">Peso</th>
                 <th className="px-4 py-5 bg-slate-800/50">VO2 Max</th>
                 <th className="px-4 py-5">VAM</th>
+                <th className="px-4 py-5">VFT / VFA</th>
                 <th className="px-4 py-5">FC Máx</th>
                 <th className="px-4 py-5">VT1 (Vel/FC)</th>
                 <th className="px-4 py-5">VT2 (Vel/FC)</th>
                 <th className="px-4 py-5">Nivel/Pasada</th>
                 <th className="px-4 py-5">MTS</th>
+                <th className="px-4 py-5">VE Máx</th>
+                <th className="px-4 py-5">Rf Máx</th>
+                <th className="px-4 py-5">Tv Máx</th>
+                <th className="px-4 py-5">COP</th>
                 <th className="px-6 py-5 text-right">Observaciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-black italic uppercase text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="py-20">
+                  <td colSpan={16} className="py-20">
                     <div className="w-10 h-10 border-4 border-slate-100 border-t-red-600 rounded-full animate-spin mx-auto"></div>
                   </td>
                 </tr>
               ) : filteredTests.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-20 text-slate-400">No se encontraron evaluaciones</td>
+                  <td colSpan={16} className="py-20 text-slate-400">No se encontraron evaluaciones</td>
                 </tr>
               ) : (
                 filteredTests.map((test, idx) => (
@@ -176,6 +181,7 @@ export default function VO2MaxArea({ clubs = [] }: VO2MaxAreaProps) {
                     <td className="px-4 py-5">{test.peso} kg</td>
                     <td className="px-4 py-5 bg-red-50 text-red-600 text-lg">{test.vo2_max}</td>
                     <td className="px-4 py-5">{test.vam} km/h</td>
+                    <td className="px-4 py-5">{test.vft ?? test.vfa ?? '-'}</td>
                     <td className="px-4 py-5">{test.fc_max} bpm</td>
                     <td className="px-4 py-5 text-[10px]">
                       {test.vt1_vel} km/h | {test.vt1_fc} bpm
@@ -185,6 +191,10 @@ export default function VO2MaxArea({ clubs = [] }: VO2MaxAreaProps) {
                     </td>
                     <td className="px-4 py-5">{test.nivel} / {test.pasada}</td>
                     <td className="px-4 py-5">{test.mts} m</td>
+                    <td className="px-4 py-5">{test.ve_max ?? '-'}</td>
+                    <td className="px-4 py-5">{test.rf_max ?? '-'}</td>
+                    <td className="px-4 py-5">{test.tv_max ?? '-'}</td>
+                    <td className="px-4 py-5">{test.cop ?? '-'}</td>
                     <td className="px-6 py-5 text-right text-[10px] text-slate-400 lowercase italic max-w-xs truncate">
                       {test.observaciones || '-'}
                     </td>
