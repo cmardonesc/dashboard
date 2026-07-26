@@ -89,7 +89,16 @@ interface MedicalExam {
 
 const formatDateGlobal = (dateStr?: string) => {
   if (!dateStr) return 'Pendiente';
-  return new Date(dateStr).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+  const trimmed = dateStr.trim();
+  // Handle YYYY-MM-DD directly without timezone/UTC offset conversion
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    const datePart = trimmed.substring(0, 10);
+    const [year, month, day] = datePart.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
+    return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  const parsed = new Date(dateStr);
+  return parsed.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, onMenuChange, userRole, userClub, userClubId, clubs = [] }) => {
@@ -2312,7 +2321,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                           </td>
                           <td className="px-2 md:px-4 py-4 md:py-6 text-slate-500 font-extrabold text-center">
                              {injury.fecha_estimada_retorno ? (
-                               new Date(injury.fecha_estimada_retorno).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
+                               formatDate(injury.fecha_estimada_retorno)
                              ) : (
                                <span className="text-slate-300 italic">No definido</span>
                              )}
@@ -2592,7 +2601,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                             </span>
                           </td>
                           <td className="py-3 pr-4 text-slate-500 font-mono">
-                            {new Date(item.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            {formatDate(item.date)}
                           </td>
                           <td className="py-3 pr-4 text-slate-900 font-medium">
                             {item.description}
@@ -2708,7 +2717,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                       {medicalUpdates.map(update => (
                         <tr key={update.id} className="hover:bg-slate-100/50 transition-colors">
                           <td className="py-3 pr-4 text-slate-500 font-mono">
-                            {new Date(update.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            {formatDate(update.date)}
                           </td>
                           <td className="py-3 pr-4 text-slate-900 font-medium whitespace-pre-wrap">
                             {update.description}

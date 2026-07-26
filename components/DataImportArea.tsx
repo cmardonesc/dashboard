@@ -327,6 +327,13 @@ export default function DataImportArea() {
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [players, setPlayers] = useState<any[]>([]);
+  const sortedPlayers = useMemo(() => {
+    return [...players].sort((a, b) => {
+      const nameA = `${a.nombre || ''} ${a.apellido1 || ''} ${a.apellido2 || ''}`.trim().toLowerCase();
+      const nameB = `${b.nombre || ''} ${b.apellido1 || ''} ${b.apellido2 || ''}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
+    });
+  }, [players]);
   const [unmatchedRows, setUnmatchedRows] = useState<any[]>([]);
   const [resolvedIds, setResolvedIds] = useState<Record<number, number>>({}); // rowIndex -> playerId
   const [nameHeader, setNameHeader] = useState<string | null>(null);
@@ -3081,7 +3088,7 @@ WITH CHECK (true);`;
                               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-black text-slate-950 outline-none focus:border-amber-500 transition-all appearance-none cursor-pointer"
                             >
                               <option value="">Seleccionar Jugador...</option>
-                              {players.map(p => (
+                              {sortedPlayers.map(p => (
                                 <option key={p.player_id} value={p.player_id}>
                                   {p.nombre} {p.apellido1} (ID: {p.player_id})
                                 </option>
