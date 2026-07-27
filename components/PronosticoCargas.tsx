@@ -69,6 +69,16 @@ const METRICS: MetricDef[] = [
       Media: [80, 110, 140],
       Alta: [140, 180, 220]
     }
+  },
+  {
+    id: 'pse',
+    label: 'PSE (Esfuerzo)',
+    unit: '1-10',
+    fallback: {
+      Baja: [2, 3, 5],
+      Media: [5, 6, 8],
+      Alta: [8, 9, 10]
+    }
   }
 ];
 
@@ -90,7 +100,8 @@ const METRIC_MAX_VALUES: Record<string, number> = {
   dist_ai_m_15_kmh: 3049.4,
   dist_mai_m_20_kmh: 1490.8,
   dist_sprint_m_25_kmh: 499.8,
-  acc_decc_ai_n: 294
+  acc_decc_ai_n: 294,
+  pse: 10
 };
 
 const METRIC_STEPS: Record<string, number> = {
@@ -98,7 +109,8 @@ const METRIC_STEPS: Record<string, number> = {
   dist_ai_m_15_kmh: 10,
   dist_mai_m_20_kmh: 5,
   dist_sprint_m_25_kmh: 1,
-  acc_decc_ai_n: 1
+  acc_decc_ai_n: 1,
+  pse: 1
 };
 
 const METRIC_THREE_VALS: Record<string, number[]> = {
@@ -106,7 +118,8 @@ const METRIC_THREE_VALS: Record<string, number[]> = {
   dist_ai_m_15_kmh: [100, 200, 500],
   dist_mai_m_20_kmh: [50, 150, 300],
   dist_sprint_m_25_kmh: [30, 50, 150],
-  acc_decc_ai_n: [30, 40, 50]
+  acc_decc_ai_n: [30, 40, 50],
+  pse: [2, 6, 9]
 };
 
 type Intensity = 'Baja' | 'Media' | 'Alta';
@@ -121,6 +134,7 @@ export const getRangeForMetric = (metricId: string, baseP50: number, factor: num
   const isMai20 = normId.includes('dist_mai_m_20_kmh') || normId === 'dist_mai_m_20_kmh' || normId.includes('20 km/h') || normId.includes('20km/h') || normId.includes('hsr >20');
   const isSprint25 = normId.includes('dist_sprint_m_25_kmh') || normId === 'dist_sprint_m_25_kmh' || normId.includes('25 km/h') || normId.includes('25km/h') || normId.includes('sprint >25');
   const isAccDec = normId.includes('acc_decc_ai_n') || normId === 'acc_decc_ai_n' || normId.includes('acc/dec') || normId.includes('acc / dec') || normId.includes('acc') || normId.includes('dec');
+  const isPse = normId.includes('pse');
 
   if (intensity === 'Baja') {
     if (isTotal) D = 1500;
@@ -128,18 +142,28 @@ export const getRangeForMetric = (metricId: string, baseP50: number, factor: num
     else if (isMai20) D = 50;
     else if (isSprint25) D = 30;
     else if (isAccDec) D = 30;
+    else if (isPse) D = 2;
   } else if (intensity === 'Alta') {
     if (isTotal) D = 3000;
     else if (isAi15) D = 500;
     else if (isMai20) D = 300;
     else if (isSprint25) D = 150;
     else if (isAccDec) D = 50;
+    else if (isPse) D = 2;
   } else { // Media (or default)
     if (isTotal) D = 2000;
     else if (isAi15) D = 200;
     else if (isMai20) D = 150;
     else if (isSprint25) D = 50;
     else if (isAccDec) D = 40;
+    else if (isPse) D = 2;
+  }
+
+  if (isPse) {
+    const min = Math.max(1, Math.min(10, Math.round(mid - D / 2)));
+    const max = Math.max(1, Math.min(10, min + D));
+    const p50 = Math.max(1, Math.min(10, Math.round(mid)));
+    return { min, max, p50 };
   }
 
   if (D % 50 === 0) {
@@ -629,12 +653,13 @@ export default function PronosticoCargas({
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
     doc.text("FECHA", margin + 3, tableYStart + 5.5);
-    doc.text("INTENSIDAD", margin + 30, tableYStart + 5.5);
-    doc.text("DISTANCIA (M)", margin + 75, tableYStart + 5.5, { align: 'right' });
-    doc.text("HSR (M)", margin + 105, tableYStart + 5.5, { align: 'right' });
-    doc.text("MAI (M)", margin + 130, tableYStart + 5.5, { align: 'right' });
-    doc.text("SPRINT (M)", margin + 155, tableYStart + 5.5, { align: 'right' });
-    doc.text("ACC/DEC", margin + 180, tableYStart + 5.5, { align: 'right' });
+    doc.text("INTENSIDAD", margin + 26, tableYStart + 5.5);
+    doc.text("DISTANCIA (M)", margin + 68, tableYStart + 5.5, { align: 'right' });
+    doc.text("HSR (M)", margin + 93, tableYStart + 5.5, { align: 'right' });
+    doc.text("MAI (M)", margin + 118, tableYStart + 5.5, { align: 'right' });
+    doc.text("SPRINT (M)", margin + 143, tableYStart + 5.5, { align: 'right' });
+    doc.text("ACC/DEC", margin + 165, tableYStart + 5.5, { align: 'right' });
+    doc.text("PSE", margin + 180, tableYStart + 5.5, { align: 'right' });
     
     let currentY = tableYStart + 8;
     
@@ -652,13 +677,13 @@ export default function PronosticoCargas({
       doc.setFontSize(8);
       const dayInfo = getDayDetails(idx);
       const compactLabel = dayInfo.label
-        .replace('Domingo', 'Dom')
-        .replace('Lunes', 'Lun')
-        .replace('Martes', 'Mar')
-        .replace('Miércoles', 'Mié')
-        .replace('Jueves', 'Jue')
-        .replace('Viernes', 'Vie')
-        .replace('Sábado', 'Sáb');
+         .replace('Domingo', 'Dom')
+         .replace('Lunes', 'Lun')
+         .replace('Martes', 'Mar')
+         .replace('Miércoles', 'Mié')
+         .replace('Jueves', 'Jue')
+         .replace('Viernes', 'Vie')
+         .replace('Sábado', 'Sáb');
       doc.text(compactLabel, margin + 3, currentY + 5);
       
       const intensity = dayIntensities[idx] || 'Media';
@@ -672,7 +697,7 @@ export default function PronosticoCargas({
       } else {
         doc.setTextColor(5, 150, 105);
       }
-      doc.text(intensity.toUpperCase(), margin + 30, currentY + 5);
+      doc.text(intensity.toUpperCase(), margin + 26, currentY + 5);
       
       doc.setTextColor(15, 23, 42);
       doc.setFont("helvetica", "normal");
@@ -687,23 +712,27 @@ export default function PronosticoCargas({
       const sprintMax = row['dist_sprint_m_25_kmh_max'] || 0;
       const accMin = row['acc_decc_ai_n_min'] || 0;
       const accMax = row['acc_decc_ai_n_max'] || 0;
+      const pseMin = row['pse_min'] || 0;
+      const pseMax = row['pse_max'] || 0;
       
       const distText = `${distMin.toLocaleString()} - ${distMax.toLocaleString()}`;
       const hsrText = `${hsrMin.toLocaleString()} - ${hsrMax.toLocaleString()}`;
       const maiText = `${maiMin.toLocaleString()} - ${maiMax.toLocaleString()}`;
       const sprintText = `${sprintMin.toLocaleString()} - ${sprintMax.toLocaleString()}`;
       const accText = `${accMin.toLocaleString()} - ${accMax.toLocaleString()}`;
+      const pseText = `${pseMin} - ${pseMax}`;
       
-      doc.text(distText, margin + 75, currentY + 5, { align: 'right' });
-      doc.text(hsrText, margin + 105, currentY + 5, { align: 'right' });
-      doc.text(maiText, margin + 130, currentY + 5, { align: 'right' });
-      doc.text(sprintText, margin + 155, currentY + 5, { align: 'right' });
-      doc.text(accText, margin + 180, currentY + 5, { align: 'right' });
+      doc.text(distText, margin + 68, currentY + 5, { align: 'right' });
+      doc.text(hsrText, margin + 93, currentY + 5, { align: 'right' });
+      doc.text(maiText, margin + 118, currentY + 5, { align: 'right' });
+      doc.text(sprintText, margin + 143, currentY + 5, { align: 'right' });
+      doc.text(accText, margin + 165, currentY + 5, { align: 'right' });
+      doc.text(pseText, margin + 180, currentY + 5, { align: 'right' });
       
       currentY += 7.5;
     });
 
-    // --- FIVE SEPARATE COMPACT CHARTS GRID (3x2 GRID) ---
+    // --- SIX SEPARATE COMPACT CHARTS GRID (3x2 GRID + ROW 4 BOX) ---
     const chartYStart = currentY + 6;
     
     // Modern brand color variants map for [Min, Max]
@@ -712,7 +741,8 @@ export default function PronosticoCargas({
       "dist_ai_m_15_kmh": { min: [110, 231, 183], max: [16, 185, 129] },  // MAI >15 (Green/Verde)
       "dist_mai_m_20_kmh": { min: [254, 215, 170], max: [245, 158, 11] }, // HSR >20 (Orange/Naranjo)
       "dist_sprint_m_25_kmh": { min: [255, 143, 138], max: [226, 35, 26] },// Sprint >25 (Red/Rojo)
-      "acc_decc_ai_n": { min: [192, 132, 252], max: [139, 92, 246] }     // Acc/Dec (Purple)
+      "acc_decc_ai_n": { min: [192, 132, 252], max: [139, 92, 246] },     // Acc/Dec (Purple)
+      "pse": { min: [244, 143, 177], max: [219, 39, 119] }                 // PSE (Fuchsia / Pink)
     };
 
     const drawSmallChart = (
@@ -873,12 +903,18 @@ export default function PronosticoCargas({
       ];
 
       bulletPoints.forEach((text, bIdx) => {
+        const isLeftCol = bIdx < 2;
+        const colX = isLeftCol ? x + 6 : x + (w / 2) + 4;
+        const rowIdx = isLeftCol ? bIdx : bIdx - 2;
+        const bulletY = y + 13 + (rowIdx * 6);
+        const textY = y + 14.5 + (rowIdx * 6);
+
         // Draw elegant circular bullet
         doc.setFillColor(226, 35, 26); // La Roja Red for bullets
-        doc.ellipse(x + 6, y + 13 + (bIdx * 5), 0.5, 0.5, 'F');
+        doc.ellipse(colX, bulletY, 0.5, 0.5, 'F');
 
         doc.setTextColor(71, 85, 105);
-        doc.text(text, x + 9, y + 14.5 + (bIdx * 5));
+        doc.text(text, colX + 3, textY);
       });
     };
 
@@ -896,9 +932,12 @@ export default function PronosticoCargas({
 
     // Row 3
     drawSmallChart(margin, chartYStart + 80, chartW, chartH, "Acc / Dec", "acc_decc_ai_n", "");
-    drawRecommendationsBox(col2X, chartYStart + 80, chartW, chartH);
+    drawSmallChart(col2X, chartYStart + 80, chartW, chartH, "PSE (Esfuerzo)", "pse", "");
 
-    const noteY = chartYStart + 120;
+    // Row 4
+    drawRecommendationsBox(margin, chartYStart + 120, width - (margin * 2), chartH - 6);
+
+    const noteY = chartYStart + 154;
     doc.setFillColor(248, 250, 252);
     doc.roundedRect(margin, noteY, width - (margin * 2), 16, 2, 2, 'F');
     
@@ -1332,6 +1371,7 @@ export default function PronosticoCargas({
                   <Bar dataKey="dist_mai_m_20_kmh" name="HSR >20 km/h" fill="#E2231A" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="dist_sprint_m_25_kmh" name="Sprint >25 km/h" fill="#10B981" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="acc_decc_ai_n" name="Acc / Dec" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="pse" name="PSE (Esfuerzo)" fill="#D946EF" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -1358,6 +1398,10 @@ export default function PronosticoCargas({
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded bg-[#8B5CF6] inline-block"></span>
                   <span className="text-slate-900 font-black">Acc / Dec</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded bg-[#D946EF] inline-block"></span>
+                  <span className="text-slate-900 font-black">PSE</span>
                 </span>
               </div>
               <div className="text-slate-500">
@@ -1452,7 +1496,9 @@ export default function PronosticoCargas({
                             : rec.p50;
                           
                           // Determine dynamic intensity classification based on the selected value
-                          const classified = clasificarGPS(metric.id, currentVal, selectedCategory);
+                          const classified = metric.id === 'pse'
+                            ? (currentVal <= 4 ? 'BAJO' : currentVal <= 7 ? 'MEDIO' : 'ALTO')
+                            : clasificarGPS(metric.id, currentVal, selectedCategory);
                           let currentIntensity: Intensity = 'Media';
                           if (classified === 'BAJO') currentIntensity = 'Baja';
                           else if (classified === 'ALTO') currentIntensity = 'Alta';
@@ -1479,7 +1525,7 @@ export default function PronosticoCargas({
                               catKey = 'sub_20';
                             }
                           }
-                          const currentBounds = BANDAS_GPS[catKey]?.[metric.id] || BANDAS_GPS['GENERAL'][metric.id];
+                          const currentBounds = (BANDAS_GPS as any)[catKey]?.[metric.id] || (BANDAS_GPS as any)['GENERAL']?.[metric.id] || { p25: 4, p75: 7 };
 
                           const maxVal = METRIC_MAX_VALUES[metric.id] || 1000;
                           const stepVal = METRIC_STEPS[metric.id] || 1;
@@ -1544,10 +1590,10 @@ export default function PronosticoCargas({
 
                                   {/* Slider Component */}
                                   <div className="flex items-center gap-4">
-                                    <span className="text-[10px] font-bold text-slate-400 w-12">0 {metric.unit}</span>
+                                    <span className="text-[10px] font-bold text-slate-400 w-12">{metric.id === 'pse' ? '1' : '0'} {metric.unit}</span>
                                     <input
                                       type="range"
-                                      min="0"
+                                      min={metric.id === 'pse' ? "1" : "0"}
                                       max={maxVal}
                                       step={stepVal}
                                       value={currentVal}

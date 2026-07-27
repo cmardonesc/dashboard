@@ -20,6 +20,7 @@ const getRangeForMetric = (metricId: string, baseP50: number, factor: number = 1
   const isMai20 = normId.includes('dist_mai_m_20_kmh') || normId === 'dist_mai_m_20_kmh' || normId.includes('20 km/h') || normId.includes('20km/h') || normId.includes('hsr >20');
   const isSprint25 = normId.includes('dist_sprint_m_25_kmh') || normId === 'dist_sprint_m_25_kmh' || normId.includes('25 km/h') || normId.includes('25km/h') || normId.includes('sprint >25');
   const isAccDec = normId.includes('acc_decc_ai_n') || normId === 'acc_decc_ai_n' || normId.includes('acc/dec') || normId.includes('acc / dec') || normId.includes('acc') || normId.includes('dec');
+  const isPse = normId.includes('pse') || normId.includes('rpe');
 
   if (intensity === 'Baja') {
     if (isTotal) D = 1500;
@@ -27,18 +28,28 @@ const getRangeForMetric = (metricId: string, baseP50: number, factor: number = 1
     else if (isMai20) D = 50;
     else if (isSprint25) D = 30;
     else if (isAccDec) D = 30;
+    else if (isPse) D = 2;
   } else if (intensity === 'Alta') {
     if (isTotal) D = 3000;
     else if (isAi15) D = 500;
     else if (isMai20) D = 300;
     else if (isSprint25) D = 150;
     else if (isAccDec) D = 50;
+    else if (isPse) D = 2;
   } else { // Media (or default)
     if (isTotal) D = 2000;
     else if (isAi15) D = 200;
     else if (isMai20) D = 150;
     else if (isSprint25) D = 50;
     else if (isAccDec) D = 40;
+    else if (isPse) D = 2;
+  }
+
+  if (isPse) {
+    const min = Math.max(1, Math.min(10, Math.round(mid - D / 2)));
+    const max = Math.max(1, Math.min(10, min + D));
+    const p50 = Math.max(1, Math.min(10, Math.round(mid)));
+    return { min, max, p50 };
   }
 
   if (D % 50 === 0) {
@@ -386,6 +397,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       Baja: [40, 60, 80],
       Media: [80, 110, 140],
       Alta: [140, 180, 220]
+    },
+    pse: {
+      Baja: [2, 3, 5],
+      Media: [5, 6, 8],
+      Alta: [8, 9, 10]
     }
   };
 
@@ -3859,10 +3875,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
               const gpsParameters = [
                 { name: 'Distancia Total Promedio (m)', value: reportData.gpsAvg?.dist ? `${reportData.gpsAvg.dist.toFixed(0)} m` : '—' },
-                { name: 'Distancia HSR Promedio (m)', value: reportData.gpsAvg?.hsr ? `${reportData.gpsAvg.hsr.toFixed(0)} m` : '—' },
                 { name: 'Distancia MAI Promedio (m)', value: reportData.gpsAvg?.ai ? `${reportData.gpsAvg.ai.toFixed(0)} m` : '—' },
+                { name: 'Distancia HSR Promedio (m)', value: reportData.gpsAvg?.hsr ? `${reportData.gpsAvg.hsr.toFixed(0)} m` : '—' },
                 { name: 'Distancia Sprint Promedio (m)', value: reportData.gpsAvg?.sprint ? `${reportData.gpsAvg.sprint.toFixed(0)} m` : '—' },
                 { name: 'Acc/Decc AI Promedio', value: reportData.gpsAvg?.acc ? `${reportData.gpsAvg.acc.toFixed(1)}` : '—' },
+                { name: 'PSE (Esfuerzo) Promedio', value: reportData.loadAvg?.rpe ? `${reportData.loadAvg.rpe.toFixed(1)}` : '—' },
               ];
 
               const microcycleDates = (() => {
@@ -4038,6 +4055,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 { id: 'dist_mai_m_20_kmh', name: 'DISTANCIA HSR PROMEDIO OBJETIVO (>20 KM/H)' },
                 { id: 'dist_sprint_m_25_kmh', name: 'DISTANCIA SPRINT PROMEDIO OBJETIVO (>25 KM/H)' },
                 { id: 'acc_decc_ai_n', name: 'ACC/DECC AI PROMEDIO OBJETIVO' },
+                { id: 'pse', name: 'RPE (ESFUERZO) PROMEDIO OBJETIVO' },
               ].map(item => {
                 const itemIntensity = (nextDayIdx !== -1 && dayIntensities) ? (dayIntensities[`${nextDayIdx}_${item.id}`] || dayIntensities[nextDayIdx] || 'Media') : 'Media';
                 
@@ -5108,6 +5126,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                       unit: ''
                                     };
                                   }
+                                  if (paramName.includes('PSE')) {
+                                    return {
+                                      metricId: 'pse',
+                                      realValue: reportData.loadAvg?.rpe || 0,
+                                      unit: ''
+                                    };
+                                  }
                                   return null;
                                 };
 
@@ -5250,7 +5275,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             * PLANIFICACIÓN FÍSICA PREDICTIVA Y OBJETIVOS DE CARGA EXTERNA SELECCIONADOS PARA LA PRÓXIMA JORNADA DE ENTRENAMIENTO.
                           </p>
 
-                          <div className="grid grid-cols-5 gap-2 mt-6 mb-6">
+                          <div className="grid grid-cols-6 gap-2 mt-6 mb-6">
                             {nextDayGpsParams.map((param: any, idx: number) => {
                               return (
                                 <div key={`next-param-${idx}`} className="p-3 rounded-xl border border-slate-100 bg-slate-50/30 flex flex-col justify-between">
