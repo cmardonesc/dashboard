@@ -69,6 +69,7 @@ interface DBInjury {
   lugar_rehabilitacion?: string;
   procedimientos?: any[];
   actualizaciones_medicas?: any[];
+  updated_at?: string;
   players?: {
     nombre: string;
     apellido1: string;
@@ -101,8 +102,46 @@ const formatDateGlobal = (dateStr?: string) => {
   return parsed.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
+const formatLastUpdatedGlobal = (dateStr?: string) => {
+  if (!dateStr) return 'No registrada';
+  try {
+    const parsed = new Date(dateStr);
+    if (isNaN(parsed.getTime())) return dateStr;
+    const datePart = parsed.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+    const timePart = parsed.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    return `${datePart} ${timePart}`;
+  } catch (e) {
+    return dateStr;
+  }
+};
+
+const getLastUpdateTextGlobal = (injury: any) => {
+  const updates = injury.actualizaciones_medicas || [];
+  if (updates.length > 0) {
+    const sorted = [...updates].sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : 0;
+      const timeB = b.date ? new Date(b.date).getTime() : 0;
+      return timeB - timeA;
+    });
+    if (sorted[0]?.description) {
+      return sorted[0].description;
+    }
+  }
+  
+  const rawObs = injury.observaciones || '';
+  const parts = rawObs.split('\n\n[[EXAMS_DATA]]\n');
+  let obsText = parts[0];
+  if (obsText.includes('\n\n[[METADATA_V2]]\n')) {
+    const metaParts = obsText.split('\n\n[[METADATA_V2]]\n');
+    obsText = metaParts[0];
+  }
+  return obsText.trim() || 'Sin notas registradas';
+};
+
 const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, onMenuChange, userRole, userClub, userClubId, clubs = [] }) => {
   const formatDate = formatDateGlobal;
+  const formatLastUpdated = formatLastUpdatedGlobal;
+  const getLastUpdateText = getLastUpdateTextGlobal;
   const [view, setView] = useState<MedicaView>('medical_attention');
   const [reportingPlayer, setReportingPlayer] = useState<User | null>(null);
   const [editingInjuryId, setEditingInjuryId] = useState<string | null>(null);
@@ -253,9 +292,9 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
       if (sortField === 'atleta') {
         valA = `${a.players?.nombre || ''} ${a.players?.apellido1 || ''} ${a.players?.apellido2 || ''}`.trim().toLowerCase();
         valB = `${b.players?.nombre || ''} ${b.players?.apellido1 || ''} ${b.players?.apellido2 || ''}`.trim().toLowerCase();
-      } else if (sortField === 'localizacion') {
-        valA = (a.localizacion || '').toLowerCase();
-        valB = (b.localizacion || '').toLowerCase();
+      } else if (sortField === 'updated_at') {
+        valA = a.updated_at ? new Date(a.updated_at).getTime() : (a.ultimo_control ? new Date(a.ultimo_control).getTime() : 0);
+        valB = b.updated_at ? new Date(b.updated_at).getTime() : (b.ultimo_control ? new Date(b.ultimo_control).getTime() : 0);
       } else if (sortField === 'diagnostico_clinico') {
         valA = (a.diagnostico_clinico || '').toLowerCase();
         valB = (b.diagnostico_clinico || '').toLowerCase();
@@ -699,12 +738,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
 
       return [
         `${athleteName}\n(${position} - ${club})`,
-        (injury.localizacion || 'NO ESPECIFICADO').toUpperCase(),
         (injury.diagnostico_clinico || 'SIN REGISTRO').toUpperCase(),
         (injury.estado || 'KINESIOLOGÍA').toUpperCase(),
         injury.disponibilidad.toUpperCase(),
         formatPDFDate(injury.fecha_estimada_retorno),
-        `${daysElapsed} DÍAS`
+        `${daysElapsed} DÍAS`,
+        getLastUpdateTextGlobal(injury).toUpperCase()
       ];
     });
 
@@ -712,7 +751,7 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
     autoTable(doc, {
       startY: 42,
       margin: { left: margin, right: margin },
-      head: [['ATLETA', 'LOCALIZACIÓN', 'DIAGNÓSTICO', 'ESTADO', 'DISPONIBILIDAD', 'PRONÓSTICO ALTA', 'SEVERIDAD']],
+      head: [['ATLETA', 'DIAGNÓSTICO', 'ESTADO', 'DISPONIBILIDAD', 'PRONÓSTICO ALTA', 'SEVERIDAD', 'ÚLTIMA ACTUALIZACIÓN']],
       body: tableRows,
       theme: 'striped',
       headStyles: {
@@ -730,13 +769,13 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
         textColor: [50, 50, 50]
       },
       columnStyles: {
-        0: { cellWidth: 55, fontStyle: 'bold' }, // Athlete details
-        1: { cellWidth: 35 }, // Location
-        2: { cellWidth: 75 }, // Diagnosis
-        3: { cellWidth: 30 }, // Clinical State
-        4: { cellWidth: 30 }, // Availability
-        5: { cellWidth: 30 }, // Return forecast
-        6: { cellWidth: 22 }  // Severity
+        0: { cellWidth: 45, fontStyle: 'bold' }, // Athlete details
+        1: { cellWidth: 45 }, // Diagnosis
+        2: { cellWidth: 25 }, // Clinical State
+        3: { cellWidth: 22 }, // Availability
+        4: { cellWidth: 23 }, // Return forecast
+        5: { cellWidth: 18 }, // Severity
+        6: { cellWidth: 95 }  // Last written update text
       },
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index === 4) {
@@ -2243,11 +2282,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                         Atleta {renderSortIcon('atleta')}
                       </div>
                     </th>
-                    <th className="px-2 md:px-4 py-4 md:py-6 text-left cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('localizacion')}>
-                      <div className="flex items-center">
-                        Localización {renderSortIcon('localizacion')}
-                      </div>
-                    </th>
                     <th className="px-2 md:px-4 py-4 md:py-6 text-left cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('diagnostico_clinico')}>
                       <div className="flex items-center">
                         Diagnóstico {renderSortIcon('diagnostico_clinico')}
@@ -2271,6 +2305,11 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                     <th className="px-2 md:px-4 py-4 md:py-6 text-center cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('severidad')}>
                       <div className="flex items-center justify-center">
                         Severidad {renderSortIcon('severidad')}
+                      </div>
+                    </th>
+                    <th className="px-2 md:px-4 py-4 md:py-6 text-left cursor-pointer hover:bg-slate-800 transition-colors select-none group/th" onClick={() => handleSort('updated_at')}>
+                      <div className="flex items-center">
+                        Última Actualización {renderSortIcon('updated_at')}
                       </div>
                     </th>
                     <th className="px-6 md:px-10 py-4 md:py-6 text-right">Acciones</th>
@@ -2303,10 +2342,6 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                               {athleteName}
                             </p>
                             <p className="text-[7px] md:text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">{injury.players?.posicion}</p>
-                          </td>
-                          <td className="px-2 md:px-4 py-4 md:py-6 text-left">
-                            <span className="text-slate-900 font-black uppercase tracking-tighter">{injury.localizacion}</span>
-                            <p className="text-[7px] md:text-[8px] text-slate-400 uppercase">{injury.lado}</p>
                           </td>
                           <td className="px-2 md:px-4 py-4 md:py-6 text-left italic text-slate-500 max-w-[150px] md:max-w-xs truncate">{injury.diagnostico_clinico}</td>
                           <td className="px-2 md:px-4 py-4 md:py-6">
@@ -2345,6 +2380,12 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
                                  </span>
                                );
                              })()}
+                          </td>
+                          <td className="px-2 md:px-4 py-4 md:py-6 text-left max-w-[200px] truncate" title={getLastUpdateText(injury)}>
+                            <p className="text-slate-900 font-bold italic leading-tight truncate">{getLastUpdateText(injury)}</p>
+                            <p className="text-[7px] md:text-[8px] text-slate-400 mt-1 uppercase">
+                              Control: {formatDate(injury.ultimo_control || injury.updated_at || injury.fecha_inicio)}
+                            </p>
                           </td>
                           <td className="px-6 md:px-10 py-4 md:py-6 text-right">
                              <div className="flex justify-end gap-1.5 md:gap-2">

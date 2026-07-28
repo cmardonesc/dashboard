@@ -512,6 +512,12 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     return '#e74c3c'; // Rojo
   };
 
+  const getIRPColor = (score: number) => {
+    if (score >= 80) return '#10b981'; // Verde Esmeralda (Élite)
+    if (score >= 50) return '#3b82f6'; // Azul (Competitivo)
+    return '#f59e0b'; // Ámbar (Déficit)
+  };
+
   const matchPosition = (playerPosStr: string, refPosStr: string): boolean => {
     const p = (playerPosStr || '').toUpperCase().replace(/[^A-Z]/g, '');
     const r = (refPosStr || '').toUpperCase().replace(/[^A-Z]/g, '');
@@ -560,14 +566,33 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       if (pIdRef) return pIdRef;
     }
 
-    // 2. Try match category + position
+    // 2. Try match category + position + PROMEDIO
     let ref = refs.find(r => {
       const rCat = normalizeStr(r.Categoria || r.categoria || '');
       const rPos = r.Posicion || r.posicion || '';
-      return rCat === pCat && matchPosition(player.posicion, rPos);
+      const rTipo = (r.Tipo || r.tipo || '').toUpperCase();
+      return rCat === pCat && matchPosition(player.posicion, rPos) && (rTipo.includes('PROM') || rTipo === 'PROMEDIO');
     });
 
-    // 3. Fallback: match position across any category
+    // Fallback if no PROMEDIO matches: match category + position (any type)
+    if (!ref) {
+      ref = refs.find(r => {
+        const rCat = normalizeStr(r.Categoria || r.categoria || '');
+        const rPos = r.Posicion || r.posicion || '';
+        return rCat === pCat && matchPosition(player.posicion, rPos);
+      });
+    }
+
+    // 3. Fallback: match position across any category (preferring PROMEDIO)
+    if (!ref) {
+      ref = refs.find(r => {
+        const rPos = r.Posicion || r.posicion || '';
+        const rTipo = (r.Tipo || r.tipo || '').toUpperCase();
+        return matchPosition(player.posicion, rPos) && (rTipo.includes('PROM') || rTipo === 'PROMEDIO');
+      });
+    }
+
+    // Ultimate fallback: match position across any category and any type
     if (!ref) {
       ref = refs.find(r => {
         const rPos = r.Posicion || r.posicion || '';
@@ -640,6 +665,66 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
     const ifr = (volumen * 0.2) + (intensidad * 0.3) + (neuromuscular * 0.5);
     return ifr;
+  };
+
+  const calcularIRP = (gpsData: any, player: any) => {
+    if (!player) return null;
+    
+    // Si viene precalculado de la base de datos o CSV, usarlo directamente
+    if (gpsData.irp_posicional !== undefined && gpsData.irp_posicional !== null && !isNaN(Number(gpsData.irp_posicional))) {
+      return Number(gpsData.irp_posicional);
+    }
+
+    const pos = player.posicion || player.position || '';
+    const dist = Number(gpsData.dist_total_m) || 0;
+    const int = Number(gpsData.m_por_min) || 0;
+    const hsr = Number(gpsData.dist_mai_m_20_kmh) || 0;
+    const sprint = Number(gpsData.dist_sprint_m_25_kmh) || 0;
+    const maxVel = Number(gpsData.vel_max_kmh) || 0;
+    const accDec = Number(gpsData.acc_decc_ai_n) || 0;
+
+    const mins = Number(gpsData.minutos) || 90;
+    const timeFactor = Math.min(Math.max(mins, 1) / 90, 1.0);
+
+    const baseTargets = {
+      dist: 11000,
+      int: 120,
+      hsr: 800,
+      sprint: 300,
+      maxVel: 32,
+      accDec: 130
+    };
+
+    const targets = {
+      dist: baseTargets.dist * timeFactor,
+      int: baseTargets.int,
+      hsr: baseTargets.hsr * timeFactor,
+      sprint: baseTargets.sprint * timeFactor,
+      maxVel: baseTargets.maxVel,
+      accDec: baseTargets.accDec * timeFactor
+    };
+
+    const ratio = (val: number, target: number) => Math.min(Math.max(val / target, 0), 1);
+    const rawPos = pos.toUpperCase();
+
+    const isVolante = rawPos.includes('VOL') || rawPos.includes('MED');
+    const isLateral = rawPos.includes('LAT') || rawPos.includes('BAND') || rawPos.includes('CARRIL');
+    const isCentral = rawPos.includes('DEFENSA CENTRAL') || rawPos.includes('CENTRAL') || (rawPos.includes('DEFENSA') && !isLateral);
+    const isExtremo = rawPos.includes('EXTREMO') || rawPos.includes('WINGER') || rawPos.includes('EXT');
+
+    let score = 0;
+    if (isVolante) {
+      score = Math.round(ratio(dist, targets.dist) * 45 + ratio(accDec, targets.accDec) * 25 + ratio(int, targets.int) * 20 + ratio(hsr, targets.hsr) * 10);
+    } else if (isLateral) {
+      score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(int, targets.int) * 25 + ratio(dist, targets.dist) * 15 + ratio(accDec, targets.accDec) * 20);
+    } else if (isCentral) {
+      score = Math.round(ratio(maxVel, targets.maxVel) * 35 + ratio(accDec, targets.accDec) * 30 + ratio(hsr, targets.hsr) * 20 + ratio(dist, targets.dist) * 15);
+    } else if (isExtremo) {
+      score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(accDec, targets.accDec) * 35 + ratio(int, targets.int) * 15 + ratio(dist, targets.dist) * 10);
+    } else {
+      score = Math.round(ratio(hsr, targets.hsr) * 35 + ratio(sprint, targets.sprint) * 25 + ratio(accDec, targets.accDec) * 20 + ratio(dist, targets.dist) * 20);
+    }
+    return score;
   };
 
   // Efecto: Sincronizar Microciclo y Nómina
@@ -1727,6 +1812,14 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         case 'acc_decc_ai_n':
           valA = a.acc_decc_ai_n || 0;
           valB = b.acc_decc_ai_n || 0;
+          break;
+        case 'ifr':
+          valA = calcularIFR(a, a.players) ?? -99999;
+          valB = calcularIFR(b, b.players) ?? -99999;
+          break;
+        case 'irp':
+          valA = calcularIRP(a, a.players) ?? -99999;
+          valB = calcularIRP(b, b.players) ?? -99999;
           break;
         default:
           valA = 0;
@@ -3585,6 +3678,24 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                        </div>
                      </div>
                    </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('ifr')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>IFR (%)</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'ifr' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'ifr' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
+                   <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('irp')}>
+                     <div className="flex items-center gap-1.5 justify-center">
+                       <span>IRP (%)</span>
+                       <div className="flex flex-col text-[7px] leading-none opacity-30 group-hover:opacity-100 transition-opacity">
+                         <i className={`fa-solid fa-caret-up ${gpsSortField === 'irp' && gpsSortDirection === 'asc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                         <i className={`fa-solid fa-caret-down ${gpsSortField === 'irp' && gpsSortDirection === 'desc' ? 'text-red-500 font-bold' : 'text-slate-400'}`}></i>
+                       </div>
+                     </div>
+                   </th>
                    <th className="px-2 md:px-4 py-1.5 md:py-2 cursor-pointer group select-none" onClick={() => handleGpsSort('acc_decc_ai_n')}>
                      <div className="flex items-center gap-1.5 justify-center">
                        <span>Acc/Decc AI</span>
@@ -3605,6 +3716,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                    const isHighlighted = highlightPlayerId && Number(row.player_id) === Number(highlightPlayerId);
                    const ifrValue = calcularIFR(row, player);
                    const ifrColor = ifrValue !== null ? getIFRColor(ifrValue) : null;
+                   const irpValue = calcularIRP(row, player);
+                   const irpColor = irpValue !== null ? getIRPColor(irpValue) : null;
 
                     const playerRef = obtenerReferenciaJugador(player);
                     const refDistTotal = playerRef ? Number(playerRef['Total Distance (m)'] || playerRef.distancia_total || playerRef.dist_total_m) || null : null;
@@ -3659,6 +3772,12 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                        <td className={`px-2 md:px-4 py-1 md:py-1 ${styleDistSprint.className}`} style={styleDistSprint.style}>{row.dist_sprint_m_25_kmh?.toFixed(0) || '0'}</td>
                        <td className="px-2 md:px-4 py-1 md:py-1">{row.sprints_n?.toFixed(0) || '0'}</td>
                        <td className="px-2 md:px-4 py-1 md:py-1 text-red-600 font-black">{row.vel_max_kmh?.toFixed(1) || '0.0'}</td>
+                       <td className="px-2 md:px-4 py-1 md:py-1 font-extrabold text-center" style={{ color: ifrColor || undefined }}>
+                         {ifrValue !== null ? `${ifrValue.toFixed(1)}%` : 'S/D'}
+                       </td>
+                       <td className="px-2 md:px-4 py-1 md:py-1 font-extrabold text-center" style={{ color: irpColor || undefined }}>
+                         {irpValue !== null ? `${irpValue.toFixed(1)}%` : 'S/D'}
+                       </td>
                        <td className={`px-2 md:px-4 py-1 md:py-1 ${styleAccDecc.className}`} style={styleAccDecc.style}>{row.acc_decc_ai_n?.toFixed(0) || '0'}</td>
 
                      </tr>

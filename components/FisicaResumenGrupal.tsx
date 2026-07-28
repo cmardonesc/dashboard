@@ -2570,6 +2570,8 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
                       key={mc.id}
                       onClick={() => {
                         setSelectedMicrocycleId(mc.id);
+                        if (mc.start_date) setStartDate(mc.start_date);
+                        if (mc.end_date) setEndDate(mc.end_date);
                         setIsMicrocycleDropdownOpen(false);
                       }}
                       className={`w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-xs font-bold transition-all ${

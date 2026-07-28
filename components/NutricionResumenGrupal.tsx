@@ -1,12 +1,14 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AthletePerformanceRecord, NutritionData } from '../types';
+import { AthletePerformanceRecord, NutritionData, REVERSE_CATEGORY_ID_MAP } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { normalizeClub, getDriveDirectLink } from '../lib/utils';
 import ClubBadge from './ClubBadge';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { FEDERATION_LOGO } from '../constants';
+import { supabase } from '../lib/supabase';
+import JSZip from 'jszip';
 
 interface NutricionResumenGrupalProps {
   performanceRecords: AthletePerformanceRecord[];
@@ -44,6 +46,14 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   const [isGenerating, setIsGenerating] = useState(false);
   const [showOnlyLatest, setShowOnlyLatest] = useState<boolean>(false);
   const hasInitializedDates = useRef(false);
+
+  // Microcycle Filter States
+  const [microcycles, setMicrocycles] = useState<any[]>([]);
+  const [citaciones, setCitaciones] = useState<any[]>([]);
+  const [selectedMicrocycleId, setSelectedMicrocycleId] = useState<number | null>(null);
+  const [isMicrocycleDropdownOpen, setIsMicrocycleDropdownOpen] = useState(false);
+  const [microcycleQuery, setMicrocycleQuery] = useState('');
+  const [isGeneratingZip, setIsGeneratingZip] = useState(false);
 
   // Sorting States
   const [sortConfig, setSortConfig] = useState<{
@@ -206,6 +216,23 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     }
   }, [performanceRecords]);
 
+  // Fetch microcycles and citaciones on mount
+  useEffect(() => {
+    const fetchMicrocycleData = async () => {
+      try {
+        const [mcRes, citRes] = await Promise.all([
+          supabase.from('microcycles').select('*'),
+          supabase.from('citaciones').select('*')
+        ]);
+        if (mcRes.data) setMicrocycles(mcRes.data);
+        if (citRes.data) setCitaciones(citRes.data);
+      } catch (err) {
+        console.error("Error loading microcycle data for nutrition:", err);
+      }
+    };
+    fetchMicrocycleData();
+  }, []);
+
   const getCellColor = (value: number, type: 'muscular' | 'adiposa' | 'pliegues' | 'imo', birthYear: number) => {
     if (type === 'imo') {
       if (value > 4.4) return 'bg-emerald-100 text-emerald-700';
@@ -292,6 +319,28 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     return positions.filter(pos => pos.toLowerCase().includes(positionQuery.toLowerCase()));
   }, [positions, positionQuery]);
 
+  const citedPlayerIdsForSelectedMicrocycle = useMemo(() => {
+    if (selectedMicrocycleId === null) return null;
+    const set = new Set<number>();
+    citaciones.forEach(c => {
+      if (c.microcycle_id === selectedMicrocycleId && c.player_id) {
+        set.add(Number(c.player_id));
+      }
+    });
+    return set;
+  }, [citaciones, selectedMicrocycleId]);
+
+  const filteredMicrocyclesBySearch = useMemo(() => {
+    if (!microcycles) return [];
+    const sorted = [...microcycles].sort((a, b) => (b.micro_number || 0) - (a.micro_number || 0));
+    if (!microcycleQuery) return sorted;
+    return sorted.filter(mc => {
+      const catLabel = REVERSE_CATEGORY_ID_MAP[mc.category_id] || `Sub-${mc.category_id}`;
+      const label = `MC #${mc.micro_number} - ${catLabel}`;
+      return label.toLowerCase().includes(microcycleQuery.toLowerCase());
+    });
+  }, [microcycles, microcycleQuery]);
+
   const objectivesList = useMemo(() => [
     'Recomposición Corporal',
     'Aumento Muscular',
@@ -332,7 +381,11 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
             return need.label === so;
           });
 
-          return matchesDate && matchesClub && matchesCategory && matchesPosition && matchesObjective;
+          const matchesMicrocycle = citedPlayerIdsForSelectedMicrocycle === null || 
+            (record.player.player_id && citedPlayerIdsForSelectedMicrocycle.has(Number(record.player.player_id))) ||
+            (record.player.id && citedPlayerIdsForSelectedMicrocycle.has(Number(record.player.id)));
+
+          return matchesDate && matchesClub && matchesCategory && matchesPosition && matchesObjective && matchesMicrocycle;
         });
 
         if (hasMatchingNutrition) {
@@ -343,7 +396,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
       }
     });
     return Array.from(names).sort();
-  }, [performanceRecords, userRole, userClub, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives]);
+  }, [performanceRecords, userRole, userClub, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives, citedPlayerIdsForSelectedMicrocycle]);
 
   const filteredPlayersBySearch = useMemo(() => {
     if (!playerQuery) return availablePlayers;
@@ -384,14 +437,18 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
           const displayName = isMyClub ? record.player.name : `Jugador [${record.player.player_id || record.player.id || 'Anon'}]`;
           const matchesPlayer = selectedPlayers.length === 0 || selectedPlayers.includes(displayName);
 
-          return matchesDate && matchesClub && matchesCategory && matchesPosition && matchesObjective && matchesPlayer;
+          const matchesMicrocycle = citedPlayerIdsForSelectedMicrocycle === null || 
+            (record.player.player_id && citedPlayerIdsForSelectedMicrocycle.has(Number(record.player.player_id))) ||
+            (record.player.id && citedPlayerIdsForSelectedMicrocycle.has(Number(record.player.id)));
+
+          return matchesDate && matchesClub && matchesCategory && matchesPosition && matchesObjective && matchesPlayer && matchesMicrocycle;
         })
         .map(n => ({
           player: record.player,
           data: n
         }));
     });
-  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives, selectedPlayers, userRole, userClub]);
+  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives, selectedPlayers, userRole, userClub, citedPlayerIdsForSelectedMicrocycle]);
 
   const filteredData = useMemo(() => {
     if (!showOnlyLatest) return allFilteredData;
@@ -625,8 +682,8 @@ La composición tisular grupal cumple robustamente con los estándares internaci
     return { bg: [255, 255, 255], text: [30, 41, 59] };
   };
 
-  const downloadPdfReport = () => {
-    if (sortedFilteredData.length === 0) return;
+  const generatePdfReportInstance = (clubNameForAnonymization?: string): any => {
+    if (sortedFilteredData.length === 0) return null;
 
     try {
       const doc = new jsPDF({
@@ -753,7 +810,9 @@ La composición tisular grupal cumple robustamente con los estándares internaci
       
       const filterText = [
         `RANGO: ${new Date(startDate).toLocaleDateString('es-CL')} AL ${new Date(endDate).toLocaleDateString('es-CL')}`,
-        `CLUBES: ${selectedClubs.length > 0 ? selectedClubs.join(', ') : 'TODOS'}`,
+        clubNameForAnonymization 
+          ? `CLUB DESTINATARIO: ${clubNameForAnonymization.toUpperCase()}`
+          : `CLUBES: ${selectedClubs.length > 0 ? selectedClubs.join(', ') : 'TODOS'}`,
         `CATEGORÍAS: ${selectedCategories.length > 0 ? selectedCategories.join(', ') : 'TODAS'}`,
         `POSICIONES: ${selectedPositions.length > 0 ? selectedPositions.join(', ') : 'TODAS'}`
       ].join('  |  ');
@@ -925,8 +984,9 @@ La composición tisular grupal cumple robustamente con los estándares internaci
 
       // AutoTable Data
       const tableData = sortedFilteredData.map((item, i) => {
-        const isMyClub = userRole !== 'club' || (userClub && normalizeClub(item.player.club || '') === normalizeClub(userClub));
-        const displayName = isMyClub ? item.player.name : `Jugador [${item.player.player_id || item.player.id || 'Anon'}]`;
+        const isPlayerOfTargetClub = !clubNameForAnonymization || (normalizeClub(item.player.club || '') === normalizeClub(clubNameForAnonymization));
+        const isMyClub = isPlayerOfTargetClub && (userRole !== 'club' || (userClub && normalizeClub(item.player.club || '') === normalizeClub(userClub)));
+        const displayName = isMyClub ? item.player.name : `Jugador Anónimo [ID: ${item.player.player_id || item.player.id || 'Anon'}]`;
         const displayClub = isMyClub ? (item.player.club || 'S/C') : 'OTRO CLUB';
         const position = item.player.position || 'N/A';
         const fecha = new Date(item.data.fecha_medicion).toLocaleDateString('es-CL');
@@ -1065,16 +1125,71 @@ La composición tisular grupal cumple robustamente con los estándares internaci
         doc.text("LA ROJA PERFORMANCE HUB - INFORME ANTROPOMÉTRICO GRUPAL (S/I)", margin, pageHeight - 10);
       }
 
+      return doc;
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("Hubo un error al generar el PDF del reporte.");
+      return null;
+    }
+  };
+
+  const downloadPdfReport = () => {
+    if (sortedFilteredData.length === 0) return;
+    try {
+      const doc = generatePdfReportInstance();
+      if (!doc) return;
       let clubSuffix = "Grupal";
       if (selectedClubs.length > 0) {
         clubSuffix = selectedClubs.map(c => c.trim().replace(/[^a-zA-Z0-9]/g, '_')).join('_');
       }
-
       const dateStr = new Date().toISOString().split('T')[0];
       doc.save(`Reporte_Nutricion_${clubSuffix}_${dateStr}.pdf`);
     } catch (error) {
-      console.error("Error generating PDF:", error);
-      alert("Hubo un error al generar el PDF del reporte.");
+      console.error("Error generating PDF download:", error);
+    }
+  };
+
+  const downloadClubZipReport = async () => {
+    if (sortedFilteredData.length === 0) return;
+    setIsGeneratingZip(true);
+    try {
+      const zip = new JSZip();
+      
+      const clubsInFilteredData = Array.from(new Set(
+        sortedFilteredData
+          .map(item => item.player.club || item.player.club_name)
+          .filter(Boolean)
+      ));
+
+      if (clubsInFilteredData.length === 0) {
+        alert("No hay clubes en el listado actual para generar reportes individuales.");
+        setIsGeneratingZip(false);
+        return;
+      }
+
+      for (const clubName of clubsInFilteredData) {
+        const doc = generatePdfReportInstance(clubName);
+        if (doc) {
+          const pdfBlob = doc.output('blob');
+          const clubSafeName = clubName.trim().replace(/[^a-zA-Z0-9]/g, '_');
+          zip.file(`Reporte_Nutricion_${clubSafeName}.pdf`, pdfBlob);
+        }
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Reportes_Nutricion_Clubes_${new Date().toISOString().split('T')[0]}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error generating ZIP:", err);
+      alert("Hubo un error al generar el archivo ZIP de reportes.");
+    } finally {
+      setIsGeneratingZip(false);
     }
   };
 
@@ -1098,7 +1213,7 @@ La composición tisular grupal cumple robustamente con los estándares internaci
 
       {/* Filters Bar */}
       <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-6">
           {/* Date Range Filter */}
           <div className="lg:col-span-2 space-y-2">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Rango de Fechas (Evaluaciones)</label>
@@ -1116,6 +1231,96 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                 onChange={e => setEndDate(e.target.value)}
                 className="flex-1 bg-transparent border-none text-xs font-bold outline-none px-4"
               />
+            </div>
+          </div>
+
+          {/* Microcycle Filter */}
+          <div className="space-y-2 relative">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Microciclo</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsMicrocycleDropdownOpen(!isMicrocycleDropdownOpen)}
+                className="w-full bg-slate-50 hover:bg-slate-100/70 text-slate-800 border-none rounded-2xl px-6 py-4 text-xs font-bold transition-all flex items-center justify-between gap-3 focus:outline-none"
+              >
+                <span className="truncate">
+                  {!selectedMicrocycleId 
+                    ? 'Todos' 
+                    : microcycles.find(m => m.id === selectedMicrocycleId)?.nombre || 'MC Seleccionado'}
+                </span>
+                <i className={`fa-solid fa-chevron-down text-[8px] transition-transform duration-200 ${isMicrocycleDropdownOpen ? 'rotate-180' : ''}`}></i>
+              </button>
+
+              {isMicrocycleDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10 cursor-default" onClick={() => setIsMicrocycleDropdownOpen(false)} />
+                  <div className="origin-top-right absolute right-0 mt-2 w-full min-w-[280px] rounded-3xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20 p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                      <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Microciclos</span>
+                      {selectedMicrocycleId && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMicrocycleId(null)}
+                          className="px-2.5 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Limpiar
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="relative mb-3">
+                      <input
+                        type="text"
+                        placeholder="Buscar microciclo..."
+                        className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-red-500/20 outline-none"
+                        onChange={(e) => setMicrocycleQuery(e.target.value)}
+                        value={microcycleQuery}
+                      />
+                      <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedMicrocycleId(null);
+                          setIsMicrocycleDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-[10px] font-bold rounded-xl hover:bg-slate-50 transition-all uppercase tracking-wider ${!selectedMicrocycleId ? 'bg-red-50/30 text-red-900 font-extrabold' : 'text-slate-700'}`}
+                      >
+                        Todos los Microciclos
+                      </button>
+                      {filteredMicrocyclesBySearch.map(m => {
+                        const isSelected = selectedMicrocycleId === m.id;
+                        const catLabel = REVERSE_CATEGORY_ID_MAP[m.category_id] || `Sub-${m.category_id}`;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedMicrocycleId(m.id);
+                              if (m.start_date) setStartDate(m.start_date);
+                              if (m.end_date) setEndDate(m.end_date);
+                              setIsMicrocycleDropdownOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between text-left px-3 py-2 text-[10px] font-bold rounded-xl hover:bg-slate-50 transition-all uppercase tracking-wider ${isSelected ? 'bg-red-50/30 text-red-900 font-extrabold' : 'text-slate-700'}`}
+                          >
+                            <div className="flex flex-col text-left leading-tight">
+                              <span>MC #{m.micro_number} - {catLabel}</span>
+                              {m.start_date && m.end_date && (
+                                <span className="text-[8px] text-slate-400 font-normal normal-case mt-0.5">
+                                  {m.start_date} al {m.end_date}
+                                </span>
+                              )}
+                            </div>
+                            {isSelected && <i className="fa-solid fa-circle-check text-red-600 text-[10px]"></i>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -1633,14 +1838,34 @@ La composición tisular grupal cumple robustamente con los estándares internaci
       <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
         <div className="p-8 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-sm font-black text-slate-900 uppercase italic tracking-tighter">Listado de Evaluaciones ({filteredData.length})</h3>
-          <button
-            type="button"
-            onClick={downloadPdfReport}
-            className="flex items-center justify-center gap-2 bg-[#0b1220] hover:bg-red-600 active:scale-95 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md hover:shadow-lg focus:outline-none cursor-pointer"
-          >
-            <i className="fa-solid fa-file-pdf text-xs"></i>
-            Descargar PDF (Sin IA)
-          </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={downloadPdfReport}
+              className="flex items-center justify-center gap-2 bg-[#0b1220] hover:bg-red-600 active:scale-95 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md hover:shadow-lg focus:outline-none cursor-pointer"
+            >
+              <i className="fa-solid fa-file-pdf text-xs"></i>
+              Descargar PDF (Sin IA)
+            </button>
+            <button
+              type="button"
+              onClick={downloadClubZipReport}
+              disabled={isGeneratingZip}
+              className={`flex items-center justify-center gap-2 ${isGeneratingZip ? 'bg-slate-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'} active:scale-95 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md hover:shadow-lg focus:outline-none cursor-pointer`}
+            >
+              {isGeneratingZip ? (
+                <>
+                  <i className="fa-solid fa-circle-notch animate-spin text-xs"></i>
+                  Generando ZIP...
+                </>
+              ) : (
+                <>
+                  <i className="fa-solid fa-file-zipper text-xs"></i>
+                  Descargar ZIP por Club (Sin IA)
+                </>
+              )}
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">

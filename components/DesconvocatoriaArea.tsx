@@ -133,6 +133,7 @@ export default function DesconvocatoriaArea({
   const [medicalTextPlayer, setMedicalTextPlayer] = useState<User | null>(null);
   const [tempMedicalText, setTempMedicalText] = useState('');
   const [tempDoctorName, setTempDoctorName] = useState('');
+  const [includeMedicalCertificate, setIncludeMedicalCertificate] = useState(true);
 
   useEffect(() => {
     fetchMicrocycles()
@@ -1408,10 +1409,11 @@ export default function DesconvocatoriaArea({
         </div>
 
         {/* PÁGINA 4: ÁREA MÉDICA Y SEGUIMIENTO */}
-        <div 
-          id={`player-report-page-4-${player.id}`}
-          className="bg-white p-12 min-h-[297mm] flex flex-col shadow-sm print:shadow-none player-report-page"
-        >
+        {includeMedicalCertificate && (
+          <div 
+            id={`player-report-page-4-${player.id}`}
+            className="bg-white p-12 min-h-[297mm] flex flex-col shadow-sm print:shadow-none player-report-page"
+          >
           <Header />
           
           <div className="mb-6">
@@ -1598,6 +1600,7 @@ export default function DesconvocatoriaArea({
             </div>
           </div>
         </div>
+      )}
       </div>
     );
   };
@@ -1612,12 +1615,17 @@ export default function DesconvocatoriaArea({
                 <h2 className="text-xl font-black uppercase tracking-tighter italic">REPORTE CONSOLIDADO: {selectedClubForPrint.name}</h2>
              </div>
              <div className="flex gap-4">
-                <button 
-                  onClick={shareClubReportWhatsApp}
-                  className="bg-[#25D366] text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-[#128C7E] flex items-center gap-3 transition-all"
-                >
-                  <i className="fa-brands fa-whatsapp text-lg"></i> COMPARTIR
-                </button>
+                <label className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 cursor-pointer select-none hover:bg-slate-100 transition-all">
+                  <input 
+                    type="checkbox" 
+                    checked={includeMedicalCertificate} 
+                    onChange={(e) => setIncludeMedicalCertificate(e.target.checked)}
+                    className="w-4 h-4 rounded text-red-600 focus:ring-red-500 border-slate-300 accent-red-600 cursor-pointer"
+                  />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 whitespace-nowrap">
+                    INCLUIR ÁREA MÉDICA
+                  </span>
+                </label>
                 <button 
                   onClick={async () => {
                     if (!selectedClubForPrint) return;
@@ -1679,17 +1687,17 @@ export default function DesconvocatoriaArea({
              </div>
 
              <div className="flex gap-4">
-                <button 
-                  onClick={() => {
-                      if (!selectedMicro) return;
-                      const category = formatCategoryLabel(selectedMicro.category_id);
-                      const text = encodeURIComponent(`*NOTIFICACIÓN DE DESCONVOCATORIAS*\n\n⚽ *Categoría:* ${category}\n🔄 *Microciclo:* #${selectedMicro.micro_number || selectedMicro.id}\n\nSe han oficializado las desconvocatorias del proceso. Saludos!`);
-                      window.open(`https://wa.me/?text=${text}`, '_blank');
-                  }}
-                  className="bg-[#25D366] text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-[#128C7E] flex items-center gap-3 transition-all transform active:scale-95"
-                >
-                  <i className="fa-brands fa-whatsapp text-lg"></i> COMPARTIR
-                </button>
+                <label className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 cursor-pointer select-none hover:bg-slate-100 transition-all">
+                  <input 
+                    type="checkbox" 
+                    checked={includeMedicalCertificate} 
+                    onChange={(e) => setIncludeMedicalCertificate(e.target.checked)}
+                    className="w-4 h-4 rounded text-red-600 focus:ring-red-500 border-slate-300 accent-red-600 cursor-pointer"
+                  />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 whitespace-nowrap">
+                    INCLUIR ÁREA MÉDICA
+                  </span>
+                </label>
                 <button 
                   onClick={downloadAllClubsZip}
                   disabled={loading || isGeneratingZip}
@@ -1742,12 +1750,17 @@ export default function DesconvocatoriaArea({
               <h2 className="text-xl font-black uppercase tracking-tighter italic">Certificado Técnico: {processingBajaAtleta.name}</h2>
             </div>
             <div className="flex gap-4">
-               <button 
-                 onClick={shareIndividualReportWhatsApp}
-                 className="bg-[#25D366] text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-[#128C7E] flex items-center gap-3 transition-all"
-               >
-                 <i className="fa-brands fa-whatsapp text-lg"></i> COMPARTIR
-               </button>
+               <label className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 cursor-pointer select-none hover:bg-slate-100 transition-all">
+                 <input 
+                   type="checkbox" 
+                   checked={includeMedicalCertificate} 
+                   onChange={(e) => setIncludeMedicalCertificate(e.target.checked)}
+                   className="w-4 h-4 rounded text-red-600 focus:ring-red-500 border-slate-300 accent-red-600 cursor-pointer"
+                 />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 whitespace-nowrap">
+                   INCLUIR ÁREA MÉDICA
+                 </span>
+               </label>
                <button 
                  onClick={async () => {
                    await downloadReportPDF('report-printable', getIndividualFileName());

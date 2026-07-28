@@ -341,6 +341,10 @@ export default function DataImportArea() {
   const [syncingCatapult, setSyncingCatapult] = useState(false);
   const [selectedActivityStats, setSelectedActivityStats] = useState<any>(null);
   const [inspectingStats, setInspectingStats] = useState(false);
+  const [currentPreview, setCurrentPreview] = useState<any | null>(null);
+  const [selectedMatcheados, setSelectedMatcheados] = useState<Record<string, boolean>>({});
+  const [loadedSessionIds, setLoadedSessionIds] = useState<Set<string>>(new Set());
+  const [sessionPreviews, setSessionPreviews] = useState<Record<string, any>>({});
 
   const [catapultAthletes, setCatapultAthletes] = useState<any[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<any>(null);
@@ -725,7 +729,7 @@ export default function DataImportArea() {
             config.fields.forEach(field => {
               const normalizeForMatch = (s: string) => {
                 return s.toLowerCase()
-                  .replace(/[\s\r\n\t_()\-.,;]+/g, '')
+                  .replace(/[\s\r\n\t_()\-.,;%]+/g, '')
                   .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // remove accents
               };
 
@@ -734,11 +738,18 @@ export default function DataImportArea() {
 
               let match = headersList.find(h => {
                 const hNorm = normalizeForMatch(h);
-                return hNorm.includes(fieldKeyNorm) || 
-                       hNorm.includes(fieldLabelNorm) || 
-                       fieldKeyNorm.includes(hNorm) || 
-                       fieldLabelNorm.includes(hNorm);
+                return hNorm === fieldKeyNorm || hNorm === fieldLabelNorm;
               });
+
+              if (!match) {
+                match = headersList.find(h => {
+                  const hNorm = normalizeForMatch(h);
+                  return hNorm.includes(fieldKeyNorm) || 
+                         hNorm.includes(fieldLabelNorm) || 
+                         fieldKeyNorm.includes(hNorm) || 
+                         fieldLabelNorm.includes(hNorm);
+                });
+              }
 
               // Extra fallbacks for backward compatibility
               if (!match && field.key === 'Peak Vertical Force [N]') {
@@ -826,29 +837,29 @@ export default function DataImportArea() {
               if (!match && field.key === 'fecha') {
                 match = headersList.find(h => {
                   const hn = normalizeForMatch(h);
-                  return hn === 'series' || hn === 'fecha' || hn === 'date';
+                  return hn === 'series' || hn === 'fecha' || hn === 'date' || hn === 'fechatest' || hn.includes('fecha');
                 });
               }
 
               if (!match && selectedType === 'vo2max') {
                 match = headersList.find(h => {
                   const hn = normalizeForMatch(h);
-                  if (field.key === 'vt1_vel' && (hn === 'velvt1' || hn === 'vt1vel')) return true;
-                  if (field.key === 'vt1_pct' && (hn === 'vt1' || hn === 'vt1pct')) return true;
-                  if (field.key === 'vt1_fc' && (hn === 'fcvt1' || hn === 'vt1fc' || hn === 'fcvt1')) return true;
-                  if (field.key === 'vt2_vel' && (hn === 'velvt2' || hn === 'vt2vel')) return true;
-                  if (field.key === 'vt2_pct' && (hn === 'vt2' || hn === 'vt2pct')) return true;
-                  if (field.key === 'vt2_fc' && (hn === 'fcvt2' || hn === 'vt2fc' || hn === 'fcvt2')) return true;
-                  if (field.key === 'vo2_max' && (hn === 'vo2max' || hn === 'vo2maximo' || hn === 'consumodeoxigeno')) return true;
-                  if (field.key === 'vft' && (hn === 'vft' || hn === 'vfa' || hn === 'velocidadfinaltest')) return true;
-                  if (field.key === 'fc_max' && (hn === 'fcmax' || hn === 'fcmaxima')) return true;
-                  if (field.key === 'nivel' && hn === 'nivel') return true;
-                  if (field.key === 'pasada' && hn === 'pasada') return true;
-                  if (field.key === 'mts' && (hn === 'metros' || hn === 'distancia' || hn === 'mts' || hn === 'm')) return true;
-                  if (field.key === 've_max' && (hn === 'vemax' || hn === 've')) return true;
-                  if (field.key === 'rf_max' && (hn === 'rfmax' || hn === 'rf')) return true;
-                  if (field.key === 'tv_max' && (hn === 'tvmax' || hn === 'tv')) return true;
-                  if (field.key === 'cop' && hn === 'cop') return true;
+                  if (field.key === 'vt1_vel' && (hn === 'velvt1' || hn === 'vt1vel' || hn.includes('vt1vel') || hn.includes('velvt1'))) return true;
+                  if (field.key === 'vt1_pct' && (hn === 'vt1' || hn === 'vt1pct' || hn.includes('vt1pct') || hn === 'vt1porcentaje' || hn.includes('vt1%') || hn.includes('vt1porcentaje') || hn === 'vt1')) return true;
+                  if (field.key === 'vt1_fc' && (hn === 'fcvt1' || hn === 'vt1fc' || hn.includes('vt1fc'))) return true;
+                  if (field.key === 'vt2_vel' && (hn === 'velvt2' || hn === 'vt2vel' || hn.includes('vt2vel') || hn.includes('velvt2'))) return true;
+                  if (field.key === 'vt2_pct' && (hn === 'vt2' || hn === 'vt2pct' || hn.includes('vt2pct') || hn === 'vt2porcentaje' || hn.includes('vt2%') || hn.includes('vt2porcentaje') || hn === 'vt2')) return true;
+                  if (field.key === 'vt2_fc' && (hn === 'fcvt2' || hn === 'vt2fc' || hn.includes('vt2fc'))) return true;
+                  if (field.key === 'vo2_max' && (hn === 'vo2max' || hn === 'vo2maximo' || hn === 'consumodeoxigeno' || hn.includes('vo2max') || hn.includes('consumo'))) return true;
+                  if (field.key === 'vft' && (hn === 'vft' || hn === 'vfa' || hn === 'velocidadfinaltest' || hn.includes('vfa') || hn.includes('vft'))) return true;
+                  if (field.key === 'fc_max' && (hn === 'fcmax' || hn === 'fcmaxima' || hn.includes('fcmax') || hn.includes('fcmaxima'))) return true;
+                  if (field.key === 'nivel' && (hn === 'nivel' || hn.includes('nivel'))) return true;
+                  if (field.key === 'pasada' && (hn === 'pasada' || hn.includes('pasada'))) return true;
+                  if (field.key === 'mts' && (hn === 'metros' || hn === 'distancia' || hn === 'mts' || hn === 'm' || hn.includes('mtsestimados') || hn.includes('distancia') || hn.includes('mts'))) return true;
+                  if (field.key === 've_max' && (hn === 'vemax' || hn === 've' || hn.includes('vemax'))) return true;
+                  if (field.key === 'rf_max' && (hn === 'rfmax' || hn === 'rf' || hn.includes('rfmax'))) return true;
+                  if (field.key === 'tv_max' && (hn === 'tvmax' || hn === 'tv' || hn.includes('tvmax'))) return true;
+                  if (field.key === 'cop' && (hn === 'cop' || hn.includes('cop'))) return true;
                   return false;
                 });
               }
@@ -1044,7 +1055,11 @@ export default function DataImportArea() {
               }
 
               if (field.type === 'number') {
-                const numVal = Number(val.toString().replace(',', '.'));
+                let strVal = val.toString().trim();
+                if (field.key === 'mts' && /^\d\.\d{3}$/.test(strVal)) {
+                  strVal = strVal.replace('.', '');
+                }
+                const numVal = Number(strVal.replace(',', '.'));
                 val = isNaN(numVal) ? null : numVal;
               }
               if (field.type === 'date') {
@@ -1974,8 +1989,8 @@ export default function DataImportArea() {
 
   const handleInspectActivity = async (activity: any) => {
     setSyncingCatapult(true);
-    // Clear previous error for this specific session when user tries again
     const activityId = activity?.id || activity?.Identifier || activity?.activity_id;
+    
     if (activityId) {
       setSessionErrors(prev => {
         const copy = { ...prev };
@@ -1984,10 +1999,7 @@ export default function DataImportArea() {
       });
     }
     setMessage(null);
-    
-    // Set initial activity object
     setSelectedActivity(activity);
-    console.log("Inspecting Activity:", activity);
     
     try {
       if (activity?.bakestatus === 'SIN ARCHIVOS') {
@@ -1997,312 +2009,210 @@ export default function DataImportArea() {
         throw new Error("La sesión aún se está procesando (Baking). Espera unos minutos y vuelve a intentar.");
       }
 
-      // Prioritize identifying the best ID for the stats call
-      const bestId = activity.id || activity.Identifier || activity.identifier || activity.activity_id;
-      console.log(`Fetching stats for ID: ${bestId}`);
-
-      // Try to fetch real session details to resolve the actual registered name
-      let realSessionName = activity.name || activity.Name || '';
-      try {
-        console.log(`Fetching detail for activity: ${bestId}`);
-        const detail = await fetchCatapultActivityDetail(bestId);
-        if (detail) {
-          const fetchedName = detail.name || detail.Name || detail.tag || detail.activity_name || detail.SessionName;
-          if (fetchedName && fetchedName !== 'Sesión sin nombre' && fetchedName !== 'SESIÓN SIN NOMBRE' && String(fetchedName).toLowerCase() !== 'null' && fetchedName !== 'Sesión Registrada Catapult') {
-            realSessionName = fetchedName;
-            activity.name = fetchedName;
-            activity.Name = fetchedName;
-          }
-        }
-      } catch (detailErr) {
-        console.log("Failed to fetch activity detail on inspect:", detailErr);
-      }
-      
-      // Resolve name - fallback to bestId if empty or generic
-      let finalResolvedName = realSessionName;
-      if (finalResolvedName) {
-        const lowerName = finalResolvedName.trim().toLowerCase();
-        if (lowerName === 'sesión registrada catapult' || lowerName === 'sesión sin nombre' || lowerName === 'null' || lowerName === 'undefined') {
-          finalResolvedName = bestId || 'Sesión sin ID';
-        }
-      } else {
-        finalResolvedName = bestId || 'Sesión sin ID';
-      }
-      
-      // Update selected activity with resolved real name
-      setSelectedActivity({ ...activity, name: finalResolvedName });
-      
-      let statsResponse;
-      try {
-        statsResponse = await fetchCatapultActivityStats(bestId);
-      } catch (statsErr: any) {
-        console.error("Initial stats fetch failed:", statsErr);
-        
-        // Fallback 1: Try activity_id or other IDs
-        const fallbackId = activity.activity_id || activity.activityId || (bestId === activity.Identifier ? activity.id : activity.Identifier);
-        
-        let fallbackSucceeded = false;
-        if (fallbackId && fallbackId !== bestId) {
-          console.log(`Attempting fallback with ID: ${fallbackId}`);
-          try {
-            statsResponse = await fetchCatapultActivityStats(fallbackId);
-            fallbackSucceeded = true;
-          } catch (e2) {
-            console.log("Fallback ID check failed:", e2);
-          }
-        }
-        
-        if (!fallbackSucceeded) {
-          // Fallback 2: Maybe fetch the full activity and check if stats are embedded
-          try {
-            console.log("Trying to fetch full activity detail as fallback...");
-            const detail = await fetchCatapultActivityDetail(bestId);
-            if (detail && (detail.stats || detail.results)) {
-              statsResponse = detail.stats || detail.results;
-              fallbackSucceeded = true;
-            }
-          } catch (e3) {
-            console.log("Activity detail fallback failed:", e3);
-          }
-        }
-        
-        if (!fallbackSucceeded) {
-          throw new Error("Esta sesión no tiene archivos sincronizados en Catapult Cloud.");
-        }
-      }
-
-      console.log("Catapult Stats Received:", statsResponse);
-      
-      // Normalize stats to an array of athletes
-      let athletesData = [];
-      if (Array.isArray(statsResponse)) {
-        athletesData = statsResponse;
-      } else if (statsResponse && statsResponse.data) {
-        athletesData = statsResponse.data;
-      } else if (statsResponse && statsResponse.results) {
-        athletesData = statsResponse.results;
-      }
-
-      if (athletesData.length === 0) {
-        throw new Error("Esta sesión no tiene archivos sincronizados en Catapult Cloud.");
-      }
-
-      // Initial auto-mapping
-      const initialAthletes = athletesData.map((ath: any, index: number) => {
-        const athName = ath.athlete_name || ath.name || ath.athlete?.name || ath.AthleteName || ath.Athlete?.Name || '';
-        const matchedPlayer = findPlayerByName(athName);
-        return {
-          id: index,
-          catapult_name: athName,
-          stats: ath,
-          supabase_player_id: matchedPlayer ? matchedPlayer.player_id : null,
-          matched_player: matchedPlayer
-        };
+      console.log(`Calling catapult-import-preview for activity_id: ${activityId}`);
+      const { data, error } = await supabase.functions.invoke('catapult-import-preview', {
+        body: { activity_id: activityId }
       });
 
-      setCatapultAthletes(initialAthletes);
+      if (error) {
+        throw new Error(error.message || "Error al obtener la vista previa de importación.");
+      }
+
+      if (!data || !data.success) {
+        throw new Error(data?.error || "Error al procesar la vista previa en el servidor.");
+      }
+
+      console.log("catapult-import-preview response:", data);
+      
+      // Store preview response
+      setCurrentPreview(data);
+      
+      // Save preview in map so we can access athlete counts in the card UI!
+      if (activityId) {
+        setSessionPreviews(prev => ({
+          ...prev,
+          [activityId]: data
+        }));
+      }
+
+      // Initialize checkbox selection for all matched athletes
+      const initialSelected: Record<string, boolean> = {};
+      (data.matcheados || []).forEach((m: any) => {
+        const key = m.athlete_uuid || m.athlete_name || String(m.player_id);
+        initialSelected[key] = true;
+      });
+      setSelectedMatcheados(initialSelected);
+
       setInspectingStats(true);
     } catch (err: any) {
-      console.error("Critical error in handleInspectActivity:", err);
+      console.error("Error in handleInspectActivity:", err);
       if (activityId) {
         setSessionErrors(prev => ({
           ...prev,
-          [activityId]: err.message || "Esta sesión no tiene archivos sincronizados en Catapult Cloud."
+          [activityId]: err.message || "No se pudo conectar o procesar la sesión de Catapult."
         }));
       }
-      setInspectingStats(false);
-      setSelectedActivity(null);
     } finally {
       setSyncingCatapult(false);
     }
   };
 
-  const handleSyncToSupabase = async () => {
-    if (!selectedActivity || catapultAthletes.length === 0) return;
+  const handleUpdatePlayerMapping = (athlete: any, newPlayerIdStr: string) => {
+    const newPlayerId = newPlayerIdStr ? Number(newPlayerIdStr) : null;
+    const player = players.find(p => p.player_id === newPlayerId);
     
-    // Validate that at least some are mapped
-    const validMappings = catapultAthletes.filter(a => a.supabase_player_id);
-    if (validMappings.length === 0) {
-      setMessage({ type: 'error', text: 'Debes asociar al menos un atleta a un jugador del sistema.' });
+    setCurrentPreview((prev: any) => {
+      if (!prev) return prev;
+      
+      let nextMatcheados = [...(prev.matcheados || [])];
+      let nextSinMapear = [...(prev.sin_mapear || [])];
+      
+      const athleteKey = athlete.athlete_uuid || athlete.athlete_name;
+      
+      const inMatchedIndex = nextMatcheados.findIndex(
+        m => (m.athlete_uuid || m.athlete_name) === athleteKey
+      );
+      
+      const inSinMapearIndex = nextSinMapear.findIndex(
+        sm => (sm.athlete_uuid || sm.athlete_name) === athleteKey
+      );
+      
+      if (newPlayerId === null) {
+        // Move to unlinked
+        if (inMatchedIndex !== -1) {
+          const removed = nextMatcheados[inMatchedIndex];
+          nextMatcheados.splice(inMatchedIndex, 1);
+          
+          if (!nextSinMapear.some(sm => (sm.athlete_uuid || sm.athlete_name) === athleteKey)) {
+            nextSinMapear.push({
+              ...removed,
+              player_id: null,
+              player_nombre: null
+            });
+          }
+        }
+        
+        // Deselect
+        setSelectedMatcheados(prevSel => {
+          const nextSel = { ...prevSel };
+          delete nextSel[athleteKey];
+          return nextSel;
+        });
+      } else if (player) {
+        // Map to a player
+        if (inSinMapearIndex !== -1) {
+          const removed = nextSinMapear[inSinMapearIndex];
+          nextSinMapear.splice(inSinMapearIndex, 1);
+          
+          nextMatcheados.push({
+            ...removed,
+            player_id: player.player_id,
+            player_nombre: `${player.nombre} ${player.apellido1}`,
+          });
+        } else if (inMatchedIndex !== -1) {
+          // Update existing
+          nextMatcheados[inMatchedIndex] = {
+            ...nextMatcheados[inMatchedIndex],
+            player_id: player.player_id,
+            player_nombre: `${player.nombre} ${player.apellido1}`,
+          };
+        }
+        
+        // Auto select
+        setSelectedMatcheados(prevSel => ({
+          ...prevSel,
+          [athleteKey]: true
+        }));
+      }
+      
+      return {
+        ...prev,
+        matcheados: nextMatcheados,
+        sin_mapear: nextSinMapear,
+        n_matcheados: nextMatcheados.length,
+        n_sin_mapear: nextSinMapear.length
+      };
+    });
+  };
+
+  const handleConfirmImport = async () => {
+    if (!currentPreview || !currentPreview.matcheados) return;
+
+    // Filter only selected matcheados
+    const selectedRows = currentPreview.matcheados.filter((m: any) => {
+      const key = m.athlete_uuid || m.athlete_name || String(m.player_id);
+      return !!selectedMatcheados[key];
+    });
+
+    if (selectedRows.length === 0) {
+      setMessage({ type: 'error', text: 'Debes seleccionar al menos un atleta vinculado para realizar la carga.' });
       return;
     }
 
     setSyncingToSupabase(true);
+    setMessage(null);
+
     try {
-      // ✅ NUEVO: Extraer datos de sesión
-      const sessionDate = selectedActivity.startTime 
-        ? selectedActivity.startTime.split('T')[0] 
-        : (() => {
-            const d = new Date();
-            const offset = d.getTimezoneOffset();
-            const localDate = new Date(d.getTime() - (offset * 60 * 1000));
-            return localDate.toISOString().split('T')[0];
-          })();
-      
-      const sessionName = selectedActivity.name || 'Sesión sin nombre';
-      const catapultId = selectedActivity.id || null;
-      
-      console.log(`📊 Sincronizando sesión: ${sessionName} (${sessionDate})`);
-      console.log(`🔗 Catapult ID: ${catapultId}`);
-      
-      let recordsToInsert = validMappings.map(ath => {
-        const metrics = mapCatapultMetrics(ath.stats);
-        const player = players.find(p => p.player_id === ath.supabase_player_id);
-        
-        return {
-          player_id: ath.supabase_player_id,
-          fecha: sessionDate,
-          // ✅ NUEVO: Campos de sesión
-          nombre_sesion: sessionName,
-          catapult_sync_id: catapultId,
-          // Métricas GPS
-          ...metrics
-        };
+      const filas = selectedRows.map((a: any) => ({
+        player_id: a.player_id,
+        fecha: a.fecha,
+        minutos: a.minutos,
+        dist_total_m: a.dist_total_m,
+        m_por_min: a.m_por_min,
+        dist_ai_m_15_kmh: a.dist_ai_m_15_kmh,
+        dist_mai_m_20_kmh: a.dist_mai_m_20_kmh,
+        dist_sprint_m_25_kmh: a.dist_sprint_m_25_kmh,
+        sprints_n: a.sprints_n,
+        vel_max_kmh: a.vel_max_kmh,
+        acc_decc_ai_n: a.acc_decc_ai_n,
+        nombre_sesion: a.nombre_sesion,
+        catapult_sync_id: a.catapult_sync_id
+      }));
+
+      console.log("Calling catapult-import-confirm with payload:", filas);
+      const { data, error } = await supabase.functions.invoke('catapult-import-confirm', {
+        body: { filas }
       });
 
-      // NUEVO: Agregación para Catapult Sync
-      const playerIds = Array.from(new Set(recordsToInsert.map(d => d.player_id)));
-      const { data: existingDBRecords } = await supabase
-        .from('gps_import')
-        .select('*')
-        .in('player_id', playerIds)
-        .eq('fecha', sessionDate)
-        .eq('catapult_sync_id', catapultId || null);
+      if (error) {
+        throw new Error(error.message || "Error al confirmar la carga de datos.");
+      }
 
-      const aggregatedMap = new Map<number, any>();
-      recordsToInsert.forEach(item => {
-        if (aggregatedMap.has(item.player_id)) {
-          const existing = aggregatedMap.get(item.player_id);
-          existing.minutos = (existing.minutos || 0) + (item.minutos || 0);
-          existing.dist_total_m = (existing.dist_total_m || 0) + (item.dist_total_m || 0);
-          existing.dist_ai_m_15_kmh = (existing.dist_ai_m_15_kmh || 0) + (item.dist_ai_m_15_kmh || 0);
-          existing.dist_mai_m_20_kmh = (existing.dist_mai_m_20_kmh || 0) + (item.dist_mai_m_20_kmh || 0);
-          existing.dist_sprint_m_25_kmh = (existing.dist_sprint_m_25_kmh || 0) + (item.dist_sprint_m_25_kmh || 0);
-          existing.sprints_n = (existing.sprints_n || 0) + (item.sprints_n || 0);
-          existing.acc_decc_ai_n = (existing.acc_decc_ai_n || 0) + (item.acc_decc_ai_n || 0);
-          existing.vel_max_kmh = Math.max(existing.vel_max_kmh || 0, item.vel_max_kmh || 0);
-          if (existing.minutos > 0) {
-            existing.m_por_min = existing.dist_total_m / existing.minutos;
-          }
-          // ✅ Mantener datos de sesión
-          existing.nombre_sesion = sessionName;
-          existing.catapult_sync_id = catapultId;
-        } else {
-          aggregatedMap.set(item.player_id, { ...item });
-        }
-      });
+      console.log("catapult-import-confirm response:", data);
 
-      recordsToInsert = Array.from(aggregatedMap.values());
-
-      let uploadError = null;
-      try {
-        const { error } = await supabase.from('gps_import').upsert(recordsToInsert, {
-          onConflict: 'player_id,fecha,nombre_sesion'
+      if (data && data.success) {
+        const upsertedCount = data.upserted ?? selectedRows.length;
+        setMessage({ 
+          type: 'success', 
+          text: `✅ ${upsertedCount} sesiones cargadas correctamente` 
         });
-        if (error) {
-          uploadError = error;
-        }
-      } catch (upsertCatchError: any) {
-        uploadError = upsertCatchError;
-      }
 
-      if (uploadError) {
-        console.warn("⚠️ Native upsert for gps_import failed, attempting custom self-healing merge fallback...", uploadError);
-        try {
-          const tableName = 'gps_import';
-          const conflictCols = ['player_id', 'fecha', 'nombre_sesion'];
-          
-          const validPlayerIds = Array.from(new Set(
-            recordsToInsert
-              .map(d => Number(d.player_id))
-              .filter(id => !isNaN(id) && id > 0)
-          ));
-
-          if (validPlayerIds.length === 0) {
-            throw new Error("No hay registros válidos con un ID de jugador registrado en el sistema.");
-          }
-
-          let query = supabase.from(tableName).select('*').in('player_id', validPlayerIds);
-          const uniqDates = Array.from(new Set(recordsToInsert.map(d => d.fecha).filter(Boolean)));
-          if (uniqDates.length > 0) {
-            query = query.in('fecha', uniqDates);
-          }
-
-          const { data: existingData, error: selectError } = await query;
-          if (selectError) throw selectError;
-
-          const existingMap = new Map<string, any>();
-          if (existingData) {
-            existingData.forEach((row: any) => {
-              const key = conflictCols.map(col => String(row[col] ?? '')).join('|');
-              existingMap.set(key, row);
-            });
-          }
-
-          const toInsert: any[] = [];
-          const toUpdate: { id: any; data: any; filters: any }[] = [];
-
-          recordsToInsert.forEach(item => {
-            const key = conflictCols.map(col => String(item[col] ?? '')).join('|');
-            const matchedRow = existingMap.get(key);
-
-            if (matchedRow) {
-              const filters: any = {};
-              conflictCols.forEach(col => {
-                filters[col] = item[col];
-              });
-              toUpdate.push({
-                id: matchedRow.id || null,
-                data: item,
-                filters
-              });
-            } else {
-              toInsert.push(item);
-            }
+        // Mark this session card as loaded
+        const sessionId = selectedActivity?.id || selectedActivity?.Identifier || selectedActivity?.activity_id;
+        if (sessionId) {
+          setLoadedSessionIds(prev => {
+            const next = new Set(prev);
+            next.add(sessionId);
+            return next;
           });
-
-          if (toInsert.length > 0) {
-            const { error: insertErr } = await supabase.from(tableName).insert(toInsert);
-            if (insertErr) throw insertErr;
-          }
-
-          if (toUpdate.length > 0) {
-            const batchSize = 25;
-            for (let i = 0; i < toUpdate.length; i += batchSize) {
-              const chunk = toUpdate.slice(i, i + batchSize);
-              await Promise.all(
-                chunk.map(async (up) => {
-                  let updateQuery = supabase.from(tableName).update(up.data);
-                  if (up.id) {
-                    updateQuery = updateQuery.eq('id', up.id);
-                  } else {
-                    Object.entries(up.filters).forEach(([col, val]) => {
-                      updateQuery = updateQuery.eq(col, val);
-                    });
-                  }
-                  const { error: updateErr } = await updateQuery;
-                  if (updateErr) {
-                    console.error(`Error updating record in fallback merge for ${tableName}:`, updateErr);
-                  }
-                })
-              );
-            }
-          }
-          console.log(`✅ Custom fallback merge for gps_import successfully processed: ${toInsert.length} inserts & ${toUpdate.length} updates.`);
-        } catch (fallbackError: any) {
-          console.error("❌ Custom self-healing merge fallback for gps_import also failed:", fallbackError);
-          throw uploadError;
         }
-      }
 
-      console.log(`✅ ${recordsToInsert.length} registros sincronizados`);
-      setMessage({ type: 'success', text: `✅ Sincronización Exitosa: ${recordsToInsert.length} registros. Sesión: "${sessionName}"` });
-      setInspectingStats(false);
-      setCatapultAthletes([]);
-      setSelectedActivity(null);
+        // Close wizard modal
+        setInspectingStats(false);
+        setCurrentPreview(null);
+      } else {
+        // Show errors or descartadas
+        let errorMsg = "Error al confirmar la importación.";
+        if (data?.errores && data.errores.length > 0) {
+          errorMsg += ` Detalles: ${data.errores.join(', ')}`;
+        } else if (data?.descartadas_por_player_inexistente > 0) {
+          errorMsg += ` ${data.descartadas_por_player_inexistente} descartadas por jugador inexistente.`;
+        }
+        throw new Error(errorMsg);
+      }
     } catch (err: any) {
-      console.error("❌ Error sincronizando:", err);
-      setMessage({ type: 'error', text: `Error al sincronizar: ${err.message}` });
+      console.error("Error in handleConfirmImport:", err);
+      setMessage({ type: 'error', text: err.message || "No se pudo realizar la carga de datos." });
     } finally {
       setSyncingToSupabase(false);
     }
@@ -2440,8 +2350,17 @@ export default function DataImportArea() {
                     </div>
                     <h5 className="text-slate-900 font-black uppercase tracking-tight text-sm mb-1">{session.name || 'Sesión sin nombre'}</h5>
                     <div className="flex items-center justify-between mb-4">
-                      <p className="text-slate-400 text-[10px] font-bold uppercase">{session.athleteCount || 1} {Number(session.athleteCount) === 1 ? 'ATLETA' : 'ATLETAS'} • {session.duration || 0} min</p>
-                      {session.bakestatus && (
+                      <p className="text-slate-400 text-[10px] font-bold uppercase">
+                        {sessionPreviews[session.id] ? (
+                          `${sessionPreviews[session.id].total_atletas} ${sessionPreviews[session.id].total_atletas === 1 ? 'ATLETA' : 'ATLETAS'} • `
+                        ) : null}
+                        {session.duration || 0} min
+                      </p>
+                      {loadedSessionIds.has(session.id) ? (
+                        <span className="text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter bg-emerald-600 text-white shadow-sm">
+                          CARGADO
+                        </span>
+                      ) : session.bakestatus && (
                         <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter ${
                           session.bakestatus.toUpperCase().includes('READY') || session.bakestatus.toUpperCase().includes('BAKED') ? 'bg-emerald-50 text-emerald-600' : 
                           session.bakestatus.toUpperCase().includes('BAKING') || session.bakestatus.toUpperCase().includes('BAKE') ? 'bg-amber-50 text-amber-600 animate-pulse' : 
@@ -2473,7 +2392,7 @@ export default function DataImportArea() {
             ) : null}
 
             {/* SYNC WIZARD MODAL */}
-            {inspectingStats && catapultAthletes.length > 0 && (
+            {inspectingStats && currentPreview && (
               <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-[48px] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in duration-300 border border-white/20">
                   <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/80">
@@ -2482,21 +2401,28 @@ export default function DataImportArea() {
                         <i className="fa-solid fa-link text-xl"></i>
                       </div>
                       <div>
-                        <h4 className="text-xl font-black text-slate-900 uppercase tracking-tight">Sincronización Inteligente Catapult</h4>
-                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest leading-none mt-1">Sesión: <span className="text-sky-600">{selectedActivity?.name}</span> • {new Date(selectedActivity?.startTime).toLocaleDateString()}</p>
+                        <h4 className="text-xl font-black text-slate-900 uppercase tracking-tight">
+                          Revisión de Importación
+                        </h4>
+                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest leading-none mt-1">
+                          Sesión: <span className="text-sky-600">{currentPreview.nombre_sesion || selectedActivity?.name}</span> • {currentPreview.fecha || 'Fecha N/A'} • {currentPreview.total_atletas} Atletas en total
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={handleSyncToSupabase}
-                        disabled={syncingToSupabase}
+                        onClick={handleConfirmImport}
+                        disabled={syncingToSupabase || !Object.values(selectedMatcheados).some(Boolean)}
                         className="bg-emerald-600 text-white px-8 py-4 rounded-full text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-emerald-900/20"
                       >
                         {syncingToSupabase ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
-                        Sincronizar {catapultAthletes.filter(a => a.supabase_player_id).length} jugadores
+                        Confirmar Carga ({Object.values(selectedMatcheados).filter(Boolean).length})
                       </button>
                       <button 
-                        onClick={() => setInspectingStats(false)}
+                        onClick={() => {
+                          setInspectingStats(false);
+                          setCurrentPreview(null);
+                        }}
                         className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
                       >
                         <i className="fa-solid fa-xmark"></i>
@@ -2504,145 +2430,208 @@ export default function DataImportArea() {
                     </div>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-10 bg-slate-50/30">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                      {catapultAthletes.map((ath) => {
-                        const metrics = mapCatapultMetrics(ath.stats);
-                        const isMapped = !!ath.supabase_player_id;
-                        
-                        return (
-                          <div key={ath.id} className={`bg-white p-6 rounded-[32px] border ${isMapped ? 'border-emerald-100 shadow-sm' : 'border-amber-200 border-dashed bg-amber-50/5'} transition-all`}>
-                            <div className="flex justify-between items-start mb-6">
-                              <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Nombre en Catapult</span>
-                                <span className="text-sm font-black text-slate-900 uppercase tracking-tight">{ath.catapult_name}</span>
-                              </div>
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isMapped ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-500'}`}>
-                                <i className={`fa-solid ${isMapped ? 'fa-check-double' : 'fa-user-plus'}`}></i>
-                              </div>
-                            </div>
-
-                            <div className="space-y-4">
-                              <div className="flex flex-col gap-1.5">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Enlace en Plataforma (Por ID o Nombre)</span>
-                                <div className="relative">
-                                  <input
-                                    type="text"
-                                    placeholder="Ingresa ID o escribe para buscar..."
-                                    value={ath.input_id !== undefined ? ath.input_id : (ath.supabase_player_id ? String(ath.supabase_player_id) : '')}
-                                    onChange={(e) => {
-                                      const text = e.target.value;
-                                      const cleanText = text.trim();
-                                      const numId = cleanText === '' ? null : Number(cleanText);
-                                      
-                                      let matchedPlayer = null;
-                                      if (numId !== null && !isNaN(numId)) {
-                                        matchedPlayer = players.find(p => p.player_id === numId);
-                                      } else if (cleanText !== '') {
-                                        matchedPlayer = players.find(p => {
-                                          const fullName = `${p.nombre} ${p.apellido1}`.toLowerCase();
-                                          return fullName.includes(cleanText.toLowerCase());
-                                        });
-                                      }
-
-                                      setCatapultAthletes(prev => prev.map(item => {
-                                        if (item.id === ath.id) {
-                                          return {
-                                            ...item,
-                                            input_id: text,
-                                            supabase_player_id: matchedPlayer ? matchedPlayer.player_id : null,
-                                            matched_player: matchedPlayer
-                                          };
-                                        }
-                                        return item;
-                                      }));
-                                    }}
-                                    className={`w-full ${isMapped ? 'bg-emerald-50/50 border-emerald-100 focus:border-emerald-500 font-bold text-emerald-800' : 'bg-slate-50 border-slate-200 focus:border-sky-500 text-slate-900'} border rounded-2xl pl-10 pr-4 py-3 text-[11px] outline-none transition-all placeholder:text-slate-400`}
-                                  />
-                                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-                                    <i className="fa-solid fa-keyboard text-[10px]"></i>
-                                  </div>
-                                </div>
-                                {isMapped ? (
-                                  <div className="p-2 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center justify-between mt-1">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[7px]" style={{ minWidth: '20px', minHeight: '20px' }}>
-                                        <i className="fa-solid fa-check"></i>
-                                      </div>
-                                      <span className="text-[10px] font-black text-emerald-800 uppercase tracking-tight truncate max-w-[130px]">
-                                        {ath.matched_player ? `${ath.matched_player.nombre} ${ath.matched_player.apellido1}` : 'Jugador Enlazado'}
-                                      </span>
-                                    </div>
-                                    <span className="font-mono text-[9px] font-bold text-emerald-600 bg-white px-2 py-0.5 rounded-lg border border-emerald-100 shrink-0">
-                                      ID: {ath.supabase_player_id}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <div className="p-2 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 mt-1">
-                                    <div className="w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center text-[7px]" style={{ minWidth: '20px', minHeight: '20px' }}>
-                                      <i className="fa-solid fa-triangle-exclamation"></i>
-                                    </div>
-                                    <span className="text-[10px] font-bold text-rose-700 uppercase tracking-tight truncate">
-                                      {ath.input_id ? 'ID / Jugador no encontrado' : 'Sin vincular - Ingresar ID'}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="pt-4 border-t border-slate-50 grid grid-cols-2 gap-y-3 gap-x-6">
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Dist. Total</span>
-                                  <span className="text-xs font-black text-sky-600 tracking-tight">{metrics.dist_total_m.toFixed(0)}m</span>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Vel. Max</span>
-                                  <span className="text-xs font-black text-red-600 tracking-tight">{metrics.vel_max_kmh.toFixed(1)} km/h</span>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">AInt (+15)</span>
-                                  <span className="text-xs font-black text-slate-700 tracking-tight">{metrics.dist_ai_m_15_kmh.toFixed(0)}m</span>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Sprint (+25)</span>
-                                  <span className="text-xs font-black text-amber-600 tracking-tight">{metrics.dist_sprint_m_25_kmh.toFixed(0)}m</span>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Acc+Decc AI</span>
-                                  <span className="text-xs font-black text-indigo-600 tracking-tight">{metrics.acc_decc_ai_n}</span>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Minutos</span>
-                                  <span className="text-xs font-black text-slate-400 tracking-tight">{(metrics.minutos).toFixed(0)} min</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                  <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30">
+                    {/* Resumen Header Banner */}
+                    <div className="mb-6 p-4 rounded-3xl bg-sky-50 border border-sky-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="bg-sky-500 text-white text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                          Resumen de Mapeo
+                        </span>
+                        <p className="text-xs font-bold text-sky-900">
+                          {currentPreview.n_matcheados} listos para cargar · {currentPreview.n_sin_mapear} sin vincular
+                        </p>
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-medium italic">
+                        Desmarca los atletas que no deseas incluir en esta carga
+                      </p>
                     </div>
+
+                    {/* Tabla de Matcheados */}
+                    {currentPreview.matcheados && currentPreview.matcheados.length > 0 ? (
+                      <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-slate-100 text-[10px] md:text-[11px]">
+                            <thead>
+                              <tr className="bg-slate-50/75 text-slate-500 font-black uppercase tracking-wider text-left">
+                                <th className="px-4 py-4 text-center w-12">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={currentPreview.matcheados.length > 0 && currentPreview.matcheados.every((m: any) => selectedMatcheados[m.athlete_uuid || m.athlete_name || String(m.player_id)])} 
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      const nextSelected = { ...selectedMatcheados };
+                                      currentPreview.matcheados.forEach((m: any) => {
+                                        const key = m.athlete_uuid || m.athlete_name || String(m.player_id);
+                                        nextSelected[key] = checked;
+                                      });
+                                      setSelectedMatcheados(nextSelected);
+                                    }}
+                                    className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer"
+                                  />
+                                </th>
+                                <th className="px-4 py-4">Atleta Catapult → Sistema</th>
+                                <th className="px-3 py-4 text-right">Minutos</th>
+                                <th className="px-3 py-4 text-right">Dist. Total (m)</th>
+                                <th className="px-3 py-4 text-right">M/Min</th>
+                                <th className="px-3 py-4 text-right">HI (+15)</th>
+                                <th className="px-3 py-4 text-right">VHI (+20)</th>
+                                <th className="px-3 py-4 text-right">Sprint (+25)</th>
+                                <th className="px-3 py-4 text-right">Sprints</th>
+                                <th className="px-3 py-4 text-right">Vel. Máx</th>
+                                <th className="px-3 py-4 text-right">Acc/Dec AI</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {currentPreview.matcheados.map((m: any) => {
+                                const key = m.athlete_uuid || m.athlete_name || String(m.player_id);
+                                const isChecked = !!selectedMatcheados[key];
+                                return (
+                                  <tr key={key} className={`hover:bg-slate-50/50 transition-colors ${isChecked ? '' : 'opacity-50'}`}>
+                                    <td className="px-4 py-4 text-center">
+                                      <input 
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          setSelectedMatcheados(prev => ({
+                                            ...prev,
+                                            [key]: e.target.checked
+                                          }));
+                                        }}
+                                        className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer"
+                                      />
+                                    </td>
+                                    <td className="px-4 py-4 font-black text-slate-900 uppercase">
+                                      <div className="flex flex-col gap-1.5 max-w-[220px]">
+                                        <span className="text-xs tracking-tight leading-none">{m.athlete_name}</span>
+                                        <div className="relative">
+                                          <select
+                                            value={m.player_id || ''}
+                                            onChange={(e) => handleUpdatePlayerMapping(m, e.target.value)}
+                                            className="w-full text-[10px] font-black uppercase tracking-tight text-sky-700 bg-sky-50/60 hover:bg-sky-50 border border-sky-100 rounded-xl px-2.5 py-1.5 outline-none focus:border-sky-500 cursor-pointer appearance-none pr-8 transition-colors"
+                                          >
+                                            <option value="" className="text-slate-400 font-bold">-- Desvincular Atleta --</option>
+                                            {sortedPlayers.map(p => (
+                                              <option key={p.player_id} value={p.player_id} className="text-slate-900 font-bold">
+                                                {p.nombre} {p.apellido1} {p.apellido2 || ''} (ID: {p.player_id})
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sky-600 pointer-events-none">
+                                            <i className="fa-solid fa-chevron-down text-[8px]"></i>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.minutos !== undefined ? m.minutos.toFixed(1) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.dist_total_m !== undefined ? m.dist_total_m.toFixed(0) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.m_por_min !== undefined ? m.m_por_min.toFixed(1) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.dist_ai_m_15_kmh !== undefined ? m.dist_ai_m_15_kmh.toFixed(0) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.dist_mai_m_20_kmh !== undefined ? m.dist_mai_m_20_kmh.toFixed(0) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.dist_sprint_m_25_kmh !== undefined ? m.dist_sprint_m_25_kmh.toFixed(0) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.sprints_n !== undefined ? m.sprints_n : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.vel_max_kmh !== undefined ? m.vel_max_kmh.toFixed(1) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.acc_decc_ai_n !== undefined ? m.acc_decc_ai_n : '-'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="py-12 bg-white rounded-[32px] border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400">
+                        <i className="fa-solid fa-users-slash text-3xl mb-3"></i>
+                        <p className="text-xs font-bold uppercase tracking-wider">No hay atletas vinculados listos para cargar</p>
+                      </div>
+                    )}
+
+                    {/* Sección de Sin Mapear */}
+                    {currentPreview.sin_mapear && currentPreview.sin_mapear.length > 0 && (
+                      <div className="bg-amber-50/50 border border-amber-100 rounded-[32px] p-6 mt-6 space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                            <i className="fa-solid fa-triangle-exclamation"></i>
+                          </div>
+                          <div>
+                            <h5 className="text-xs font-black text-slate-900 uppercase tracking-widest">
+                              Atletas sin vincular ({currentPreview.sin_mapear.length})
+                            </h5>
+                            <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-tight mt-0.5 leading-relaxed">
+                              Estos atletas no están vinculados a un jugador. Resuélvelos en el mapeo de atletas antes de cargarlos.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                          {currentPreview.sin_mapear.map((sm: any) => {
+                            const key = sm.athlete_uuid || sm.athlete_name;
+                            return (
+                              <div 
+                                key={key}
+                                className="bg-amber-50/50 hover:bg-amber-50 border border-amber-200/40 rounded-3xl p-4 flex flex-col justify-between gap-3 shadow-sm transition-all"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                                    <i className="fa-solid fa-user-slash text-[10px]"></i>
+                                  </div>
+                                  <span className="text-xs font-black uppercase text-amber-900 tracking-tight">
+                                    {sm.athlete_name} {sm.jersey ? `(N° ${sm.jersey})` : ''}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-[8px] font-black uppercase text-amber-600 tracking-wider">Vincular a Jugador del Sistema</span>
+                                  <div className="relative">
+                                    <select
+                                      value=""
+                                      onChange={(e) => handleUpdatePlayerMapping(sm, e.target.value)}
+                                      className="w-full text-[10px] font-black uppercase tracking-tight text-slate-700 bg-white border border-slate-200 rounded-xl px-2.5 py-2 outline-none focus:border-amber-500 cursor-pointer appearance-none pr-8 transition-colors"
+                                    >
+                                      <option value="" className="text-slate-400 font-bold">-- Seleccionar Jugador --</option>
+                                      {sortedPlayers.map(p => (
+                                        <option key={p.player_id} value={p.player_id} className="text-slate-900 font-bold">
+                                          {p.nombre} {p.apellido1} {p.apellido2 || ''} (ID: {p.player_id})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                                      <i className="fa-solid fa-chevron-down text-[8px]"></i>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="p-8 border-t border-slate-50 bg-slate-50/50 flex items-center justify-between">
                     <div className="flex items-center gap-6">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                        <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{catapultAthletes.filter(a => a.supabase_player_id).length} Enlazados</span>
+                        <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                          {Object.values(selectedMatcheados).filter(Boolean).length} seleccionados para cargar
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-                        <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{catapultAthletes.filter(a => !a.supabase_player_id).length} Pendientes</span>
-                      </div>
+                      {currentPreview.n_sin_mapear > 0 && (
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                            {currentPreview.n_sin_mapear} sin vincular (omitidos)
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-4">
                       <p className="text-slate-400 text-[10px] font-medium max-w-[300px] text-right">
-                        Los datos se guardarán automáticamente en la tabla <b>gps_import</b> vinculando la actividad física con la ficha del jugador.
+                        Los datos se guardarán automáticamente en la tabla <b>gps_import</b> de forma idempotente (UPSERT).
                       </p>
                       <button 
-                        onClick={handleSyncToSupabase}
-                        disabled={syncingToSupabase || catapultAthletes.filter(a => a.supabase_player_id).length === 0}
+                        onClick={handleConfirmImport}
+                        disabled={syncingToSupabase || !Object.values(selectedMatcheados).some(Boolean)}
                         className="bg-sky-600 text-white px-10 py-4 rounded-full text-xs font-black uppercase tracking-widest hover:bg-sky-700 transition-all shadow-xl shadow-sky-600/20 disabled:opacity-30"
                       >
-                        Iniciar Carga de Datos
+                        Confirmar Carga
                       </button>
                     </div>
                   </div>
