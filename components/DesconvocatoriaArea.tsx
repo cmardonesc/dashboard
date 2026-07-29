@@ -249,11 +249,11 @@ export default function DesconvocatoriaArea({
     setLoadingPlayers(true)
     fetchBajaReasons(microId);
     try {
-      // Intentar cargar textos médicos (dictamen) de citaciones
+      // Intentar cargar textos médicos (dictamen) de citaciones de forma segura usando la columna 'observacion'
       try {
         const { data: medData, error: medError } = await supabase
           .from('citaciones')
-          .select('player_id, medical_text, doctor_name, observacion')
+          .select('player_id, observacion')
           .eq('microcycle_id', microId);
 
         if (!medError && medData) {
@@ -261,13 +261,7 @@ export default function DesconvocatoriaArea({
           const loadedDoctors: Record<number, string> = {};
 
           medData.forEach((row: any) => {
-            // Caso 1: Columnas nativas de la opción 1 (si existen)
-            if (row.medical_text !== undefined && row.medical_text !== null) {
-              loadedTexts[row.player_id] = row.medical_text || '';
-              loadedDoctors[row.player_id] = row.doctor_name || '';
-            } 
-            // Caso 2: Fallback serializado en observacion (si las columnas nativas no existen o están vacías)
-            else if (row.observacion && row.observacion.startsWith('[[MEDICAL_DICTAMEN]]:')) {
+            if (row.observacion && row.observacion.startsWith('[[MEDICAL_DICTAMEN]]:')) {
               try {
                 const parsed = JSON.parse(row.observacion.replace('[[MEDICAL_DICTAMEN]]:', ''));
                 loadedTexts[row.player_id] = parsed.medical_text || '';
@@ -564,42 +558,26 @@ export default function DesconvocatoriaArea({
     localStorage.setItem('local_medical_texts', JSON.stringify(updatedTexts));
     localStorage.setItem('local_doctor_names', JSON.stringify(updatedDoctors));
 
-    // Guardar en Supabase (citaciones)
+    // Guardar en Supabase (citaciones) usando la columna 'observacion' (Opción B)
     if (selectedMicro) {
       try {
-        // 1. Intentar guardar en columnas nativas de citaciones (Opción 1 si están creadas)
-        const { error: nativeError } = await supabase
+        const serializedValue = '[[MEDICAL_DICTAMEN]]:' + JSON.stringify({
+          medical_text: tempMedicalText,
+          doctor_name: tempDoctorName
+        });
+        
+        const { error: saveError } = await supabase
           .from('citaciones')
           .update({
-            medical_text: tempMedicalText,
-            doctor_name: tempDoctorName
-          } as any)
+            observacion: serializedValue
+          })
           .eq('microcycle_id', selectedMicro.id)
           .eq('player_id', pId);
 
-        if (nativeError) {
-          console.log("No se pudo guardar en columnas nativas, intentando guardar serializado en observacion...", nativeError.message);
-          
-          // 2. Fallback: Serializar y guardar en columna observacion
-          const serializedValue = '[[MEDICAL_DICTAMEN]]:' + JSON.stringify({
-            medical_text: tempMedicalText,
-            doctor_name: tempDoctorName
-          });
-          const { error: fallbackError } = await supabase
-            .from('citaciones')
-            .update({
-              observacion: serializedValue
-            })
-            .eq('microcycle_id', selectedMicro.id)
-            .eq('player_id', pId);
-
-          if (fallbackError) {
-            console.error("Error al guardar fallback serializado en Supabase:", fallbackError.message);
-          } else {
-            console.log("Guardado con éxito serializado en observacion");
-          }
+        if (saveError) {
+          console.error("Error al guardar el dictamen médico en Supabase:", saveError.message);
         } else {
-          console.log("Guardado con éxito en columnas nativas de Supabase");
+          console.log("Dictamen médico guardado con éxito en la columna observacion de Supabase");
         }
       } catch (dbErr) {
         console.error("Error conectando a Supabase para guardar texto médico:", dbErr);
