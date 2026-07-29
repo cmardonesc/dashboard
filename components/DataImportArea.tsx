@@ -1279,12 +1279,21 @@ export default function DataImportArea() {
       let sanitizedData = dataToInsert.map(item => {
         const cleanItem: any = {};
         
-        // Only include fields that are defined in config.fields
-        config.fields.forEach(f => {
-          if (item[f.key] !== undefined && item[f.key] !== null) {
-            cleanItem[f.key] = item[f.key];
-          }
-        });
+        if (selectedType === 'antropometria') {
+          // Preserve all mapped fields for antropometria since it has custom DB columns
+          Object.keys(item).forEach(k => {
+            if (item[k] !== undefined && item[k] !== null && k !== 'jugador' && k !== 'jugador_nombre') {
+              cleanItem[k] = item[k];
+            }
+          });
+        } else {
+          // Only include fields that are defined in config.fields
+          config.fields.forEach(f => {
+            if (item[f.key] !== undefined && item[f.key] !== null) {
+              cleanItem[f.key] = item[f.key];
+            }
+          });
+        }
 
         // Ensure physical_tests has test_type
         if (config.table === 'physical_tests') {

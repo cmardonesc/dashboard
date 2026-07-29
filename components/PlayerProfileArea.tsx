@@ -566,10 +566,9 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     }
     if (profileData.anio) {
       const year = Number(profileData.anio);
-      if (year === 2011) return 'sub_15';
-      if (year === 2009 || year === 2010) return 'sub_16';
-      if (year === 2007 || year === 2008) return 'sub_17';
-      if (year >= 2012) return 'sub_13';
+      if (year === 2011 || year === 2012) return 'sub_15';
+      if (year === 2009 || year === 2010) return 'sub_17';
+      if (year <= 2008) return 'sub_20';
     }
     return 'SUB 17'; // Default fallback
   }, [profileData, citations]);

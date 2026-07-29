@@ -52,50 +52,74 @@ export default function NutritionReport({ data, history, player, onClose, clubs 
   const getCellColor = (value: number, type: 'muscular' | 'adiposa' | 'pliegues' | 'imo') => {
     const birthYear = player.anio || 0;
     
-    // Lógica para nacidos ANTES de 2008 (Mayores)
-    if (birthYear < 2008 && birthYear > 0) {
+    // Sub-15 (2011, 2012)
+    if (birthYear === 2011 || birthYear === 2012) {
       if (type === 'muscular') {
-        if (value > 54) return 'bg-emerald-100 text-emerald-700';
-        if (value >= 50) return 'bg-amber-100 text-amber-700';
-        return 'bg-red-100 text-red-700';
+        if (value >= 50.0) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+        if (value >= 48.0) return 'bg-amber-100 text-amber-700'; // RO
+        return 'bg-red-100 text-red-700'; // RD
       }
       if (type === 'adiposa') {
-        if (value < 16) return 'bg-emerald-100 text-emerald-700';
-        if (value <= 20) return 'bg-amber-100 text-amber-700';
-        return 'bg-red-100 text-red-700';
+        if (value < 21.5) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+        if (value < 22.5) return 'bg-amber-100 text-amber-700'; // RO
+        return 'bg-red-100 text-red-700'; // RD
       }
       if (type === 'pliegues') {
-        if (value < 35) return 'bg-emerald-100 text-emerald-700';
-        if (value <= 50) return 'bg-amber-100 text-amber-700';
-        return 'bg-red-100 text-red-700';
+        if (value < 48) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+        if (value <= 55) return 'bg-amber-100 text-amber-700'; // RO
+        return 'bg-red-100 text-red-700'; // RD
       }
       if (type === 'imo') {
-        if (value > 4.5) return 'bg-emerald-100 text-emerald-700';
-        if (value >= 4.0) return 'bg-amber-100 text-amber-700';
-        return 'bg-red-100 text-red-700';
+        if (value >= 4.0) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+        if (value >= 3.8) return 'bg-amber-100 text-amber-700'; // RO
+        return 'bg-red-100 text-red-700'; // RD
       }
     }
 
-    // Lógica para nacidos en 2008 o DESPUÉS (Menores)
+    // Sub-17 (2009, 2010)
+    if (birthYear === 2009 || birthYear === 2010) {
+      if (type === 'muscular') {
+        if (value >= 52.0) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+        if (value >= 50.0) return 'bg-amber-100 text-amber-700'; // RO
+        return 'bg-red-100 text-red-700'; // RD
+      }
+      if (type === 'adiposa') {
+        if (value < 21.0) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+        if (value < 22.5) return 'bg-amber-100 text-amber-700'; // RO
+        return 'bg-red-100 text-red-700'; // RD
+      }
+      if (type === 'pliegues') {
+        if (value < 45) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+        if (value <= 49) return 'bg-amber-100 text-amber-700'; // RO
+        return 'bg-red-100 text-red-700'; // RD
+      }
+      if (type === 'imo') {
+        if (value >= 4.0) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+        if (value >= 3.8) return 'bg-amber-100 text-amber-700'; // RO
+        return 'bg-red-100 text-red-700'; // RD
+      }
+    }
+
+    // Sub-20 (2008 and older, default fallback)
     if (type === 'muscular') {
-      if (value > 52) return 'bg-emerald-100 text-emerald-700';
-      if (value >= 50) return 'bg-amber-100 text-amber-700';
-      return 'bg-red-100 text-red-700';
+      if (value >= 52.0) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+      if (value >= 50.0) return 'bg-amber-100 text-amber-700'; // RO
+      return 'bg-red-100 text-red-700'; // RD
     }
     if (type === 'adiposa') {
-      if (value < 18) return 'bg-emerald-100 text-emerald-700';
-      if (value <= 20) return 'bg-amber-100 text-amber-700';
-      return 'bg-red-100 text-red-700';
+      if (value < 19.0) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+      if (value < 21.0) return 'bg-amber-100 text-amber-700'; // RO
+      return 'bg-red-100 text-red-700'; // RD
     }
     if (type === 'pliegues') {
-      if (value < 40) return 'bg-emerald-100 text-emerald-700';
-      if (value <= 50) return 'bg-amber-100 text-amber-700';
-      return 'bg-red-100 text-red-700';
+      if (value < 44) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+      if (value <= 49) return 'bg-amber-100 text-amber-700'; // RO
+      return 'bg-red-100 text-red-700'; // RD
     }
     if (type === 'imo') {
-      if (value > 4.3) return 'bg-emerald-100 text-emerald-700';
-      if (value >= 4.0) return 'bg-amber-100 text-amber-700';
-      return 'bg-red-100 text-red-700';
+      if (value >= 4.0) return 'bg-emerald-100 text-emerald-700'; // RCE/RCSBA
+      if (value >= 3.8) return 'bg-amber-100 text-amber-700'; // RO
+      return 'bg-red-100 text-red-700'; // RD
     }
     return '';
   };
