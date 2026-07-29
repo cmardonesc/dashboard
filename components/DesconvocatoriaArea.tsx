@@ -1110,6 +1110,64 @@ export default function DesconvocatoriaArea({
       return Number(val).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
     };
 
+    const calcularIRP = (g: any, p: any) => {
+      if (!p) return null;
+      if (g.irp_posicional !== undefined && g.irp_posicional !== null && !isNaN(Number(g.irp_posicional))) {
+        return Number(g.irp_posicional);
+      }
+
+      const pos = p.posicion || p.position || '';
+      const dist = Number(g.dist_total_m || g.dist_total || 0);
+      const int = Number(g.m_por_min || 0);
+      const hsr = Number(g.dist_mai_m_20_kmh || g.dist_20 || 0);
+      const sprint = Number(g.dist_sprint_m_25_kmh || g.dist_25 || 0);
+      const maxVel = Number(g.vel_max_kmh || 0);
+      const accDec = Number(g.acc_decc_ai_n || g.acc_dec || 0);
+
+      const mins = Number(g.minutos || 90);
+      const timeFactor = Math.min(Math.max(mins, 1) / 90, 1.0);
+
+      const baseTargets = {
+        dist: 11000,
+        int: 120,
+        hsr: 800,
+        sprint: 300,
+        maxVel: 32,
+        accDec: 130
+      };
+
+      const targets = {
+        dist: baseTargets.dist * timeFactor,
+        int: baseTargets.int,
+        hsr: baseTargets.hsr * timeFactor,
+        sprint: baseTargets.sprint * timeFactor,
+        maxVel: baseTargets.maxVel,
+        accDec: baseTargets.accDec * timeFactor
+      };
+
+      const ratio = (val: number, target: number) => Math.min(Math.max(val / target, 0), 1);
+      const rawPos = pos.toUpperCase();
+
+      const isVolante = rawPos.includes('VOL') || rawPos.includes('MED');
+      const isLateral = rawPos.includes('LAT') || rawPos.includes('BAND') || rawPos.includes('CARRIL');
+      const isCentral = rawPos.includes('DEFENSA CENTRAL') || rawPos.includes('CENTRAL') || (rawPos.includes('DEFENSA') && !isLateral);
+      const isExtremo = rawPos.includes('EXTREMO') || rawPos.includes('WINGER') || rawPos.includes('EXT');
+
+      let score = 0;
+      if (isVolante) {
+        score = Math.round(ratio(dist, targets.dist) * 45 + ratio(accDec, targets.accDec) * 25 + ratio(int, targets.int) * 20 + ratio(hsr, targets.hsr) * 10);
+      } else if (isLateral) {
+        score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(int, targets.int) * 25 + ratio(dist, targets.dist) * 15 + ratio(accDec, targets.accDec) * 20);
+      } else if (isCentral) {
+        score = Math.round(ratio(maxVel, targets.maxVel) * 35 + ratio(accDec, targets.accDec) * 30 + ratio(hsr, targets.hsr) * 20 + ratio(dist, targets.dist) * 15);
+      } else if (isExtremo) {
+        score = Math.round(ratio(sprint, targets.sprint) * 40 + ratio(accDec, targets.accDec) * 35 + ratio(int, targets.int) * 15 + ratio(dist, targets.dist) * 10);
+      } else {
+        score = Math.round(ratio(hsr, targets.hsr) * 35 + ratio(sprint, targets.sprint) * 25 + ratio(accDec, targets.accDec) * 20 + ratio(dist, targets.dist) * 20);
+      }
+      return score;
+    };
+
     const Header = () => (
       <div className="flex justify-between items-start mb-10 border-b-4 border-[#0b1220] pb-6">
         <div className="flex items-center gap-6">
@@ -1332,26 +1390,87 @@ export default function DesconvocatoriaArea({
               <p className="text-xs font-black uppercase tracking-widest italic text-center">Sin registros de GPS cargados para este período</p>
             </div>
           ) : (
-            <div className="space-y-5 flex-1 flex flex-col justify-between">
+            <div className="space-y-4 flex-1 flex flex-col justify-between">
+              {/* Tabla Resumen de Carga Externa (GPS) */}
+              <div className="space-y-2">
+                <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex justify-between items-center border-b border-slate-100 pb-1">
+                  <span>Tabla Resumen de Carga Externa (GPS) por Jornada</span>
+                  <span className="text-slate-400 text-[8px] font-bold">MONITOREO DE PARÁMETROS DIARIOS E IRP</span>
+                </h4>
+                <div className="rounded-[16px] overflow-hidden border border-slate-100 shadow-sm bg-white">
+                  <table className="w-full text-center text-[8px] border-collapse">
+                    <thead className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
+                      <tr>
+                        <th className="px-2.5 py-1.5 text-left pl-4">FECHA</th>
+                        <th className="px-2 py-1.5 text-left">SESIÓN</th>
+                        <th className="px-1 py-1.5">MINS</th>
+                        <th className="px-1 py-1.5">DIST (M)</th>
+                        <th className="px-1 py-1.5">M/MIN</th>
+                        <th className="px-1 py-1.5">HSR {">"}15 (M)</th>
+                        <th className="px-1 py-1.5">HSR {">"}20 (M)</th>
+                        <th className="px-1 py-1.5">SPR {">"}25 (M)</th>
+                        <th className="px-1 py-1.5">SPRINTS</th>
+                        <th className="px-1 py-1.5">ACC+DEC</th>
+                        <th className="px-2.5 py-1.5 text-right pr-4">IRP (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="font-bold text-slate-700 uppercase italic">
+                      {history.gps.map((g, idx) => {
+                        const irpVal = calcularIRP(g, player);
+                        let irpClass = '';
+                        if (irpVal !== null) {
+                          if (irpVal >= 80) irpClass = 'bg-emerald-500 text-white';
+                          else if (irpVal >= 50) irpClass = 'bg-blue-500 text-white';
+                          else irpClass = 'bg-amber-500 text-white';
+                        }
+                        return (
+                          <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                            <td className="px-2.5 py-1.5 text-left pl-4 font-extrabold">{formatDateShort(g.date)}</td>
+                            <td className="px-2 py-1.5 text-left max-w-[120px] truncate normal-case font-bold text-slate-600">{g.nombre_sesion || 'Entrenamiento'}</td>
+                            <td className="px-1 py-1.5">{g.minutos || '-'}</td>
+                            <td className="px-1 py-1.5 text-[#0038A8] font-extrabold">{formatNum(g.dist_total_m)} m</td>
+                            <td className="px-1 py-1.5">{formatNum(g.m_por_min)}</td>
+                            <td className="px-1 py-1.5 text-slate-500">{formatNum(g.dist_ai_m_15_kmh)} m</td>
+                            <td className="px-1 py-1.5 text-slate-600">{formatNum(g.dist_mai_m_20_kmh)} m</td>
+                            <td className="px-1 py-1.5 text-amber-600">{formatNum(g.dist_sprint_m_25_kmh)} m</td>
+                            <td className="px-1 py-1.5 text-emerald-600 font-extrabold">{g.sprints_n || '0'}</td>
+                            <td className="px-1 py-1.5 text-rose-600 font-extrabold">{g.acc_decc_ai_n || '0'}</td>
+                            <td className="px-2.5 py-1.5 text-right pr-4">
+                              {irpVal !== null ? (
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-black ${irpClass}`}>
+                                  {irpVal.toFixed(0)}%
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 font-normal">S/D</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               {/* Gráfico 1: Distancia Total vs. Acc/Dec */}
               <div className="flex flex-col">
-                <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5 flex justify-between items-center border-b border-slate-100 pb-1">
+                <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 flex justify-between items-center border-b border-slate-100 pb-0.5">
                   <span>1. Distancia Total (m) vs. Aceleraciones y Deceleraciones</span>
                   <span className="text-slate-400 text-[8px] font-bold">BARRA: DIST. TOTAL (IZQ) | LÍNEA: ACC + DEC (DER)</span>
                 </h4>
-                <div className="h-[145px] w-full bg-slate-50/50 rounded-[24px] p-3 flex items-center justify-center overflow-hidden">
-                  <ComposedChart width={700} height={135} data={gpsChartData} margin={{ top: 15, right: 30, left: 10, bottom: 5 }}>
+                <div className="h-[110px] w-full bg-slate-50/50 rounded-[20px] p-2 flex items-center justify-center overflow-hidden">
+                  <ComposedChart width={700} height={100} data={gpsChartData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                     <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 900, fill: '#475569'}} />
                     <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 900, fill: '#0038A8'}} />
                     <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 900, fill: '#CF1B2B'}} />
                     <Tooltip />
-                    <Legend verticalAlign="top" height={20} iconType="circle" wrapperStyle={{ fontSize: '8px', fontWeight: '900', textTransform: 'uppercase' }} />
-                    <Bar yAxisId="left" isAnimationActive={false} name="Distancia Total (m)" dataKey="dist_total" fill="#0038A8" radius={[4, 4, 0, 0]}>
-                      <LabelList dataKey="dist_total" position="top" offset={5} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#0038A8' }} />
+                    <Legend verticalAlign="top" height={15} iconType="circle" wrapperStyle={{ fontSize: '7px', fontWeight: '900', textTransform: 'uppercase' }} />
+                    <Bar yAxisId="left" isAnimationActive={false} name="Distancia Total (m)" dataKey="dist_total" fill="#0038A8" radius={[3, 3, 0, 0]}>
+                      <LabelList dataKey="dist_total" position="top" offset={3} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#0038A8' }} />
                     </Bar>
-                    <Line yAxisId="right" isAnimationActive={false} type="monotone" name="Acc + Dec" dataKey="acc_dec" stroke="#CF1B2B" strokeWidth={3} dot={{ r: 3, fill: '#CF1B2B' }}>
-                      <LabelList dataKey="acc_dec" position="top" offset={5} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#CF1B2B' }} />
+                    <Line yAxisId="right" isAnimationActive={false} type="monotone" name="Acc + Dec" dataKey="acc_dec" stroke="#CF1B2B" strokeWidth={2.5} dot={{ r: 2.5, fill: '#CF1B2B' }}>
+                      <LabelList dataKey="acc_dec" position="top" offset={3} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#CF1B2B' }} />
                     </Line>
                   </ComposedChart>
                 </div>
@@ -1359,23 +1478,23 @@ export default function DesconvocatoriaArea({
 
               {/* Gráfico 2: Distancia > 15 vs. Distancia > 20 */}
               <div className="flex flex-col">
-                <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5 flex justify-between items-center border-b border-slate-100 pb-1">
+                <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 flex justify-between items-center border-b border-slate-100 pb-0.5">
                   <span>2. Distancia {" > "} 15 km/h (m) vs. Distancia {" > "} 20 km/h (m)</span>
                   <span className="text-slate-400 text-[8px] font-bold">BARRA: DIST {" > "} 15 (IZQ) | LÍNEA: DIST {" > "} 20 (DER)</span>
                 </h4>
-                <div className="h-[145px] w-full bg-slate-50/50 rounded-[24px] p-3 flex items-center justify-center overflow-hidden">
-                  <ComposedChart width={700} height={135} data={gpsChartData} margin={{ top: 15, right: 30, left: 10, bottom: 5 }}>
+                <div className="h-[110px] w-full bg-slate-50/50 rounded-[20px] p-2 flex items-center justify-center overflow-hidden">
+                  <ComposedChart width={700} height={100} data={gpsChartData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                     <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 900, fill: '#475569'}} />
                     <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 900, fill: '#0b1220'}} />
                     <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 900, fill: '#CF1B2B'}} />
                     <Tooltip />
-                    <Legend verticalAlign="top" height={20} iconType="circle" wrapperStyle={{ fontSize: '8px', fontWeight: '900', textTransform: 'uppercase' }} />
-                    <Bar yAxisId="left" isAnimationActive={false} name="Dist > 15 km/h" dataKey="dist_15" fill="#0b1220" radius={[4, 4, 0, 0]}>
-                      <LabelList dataKey="dist_15" position="top" offset={5} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#0b1220' }} />
+                    <Legend verticalAlign="top" height={15} iconType="circle" wrapperStyle={{ fontSize: '7px', fontWeight: '900', textTransform: 'uppercase' }} />
+                    <Bar yAxisId="left" isAnimationActive={false} name="Dist > 15 km/h" dataKey="dist_15" fill="#0b1220" radius={[3, 3, 0, 0]}>
+                      <LabelList dataKey="dist_15" position="top" offset={3} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#0b1220' }} />
                     </Bar>
-                    <Line yAxisId="right" isAnimationActive={false} type="monotone" name="Dist > 20 km/h" dataKey="dist_20" stroke="#CF1B2B" strokeWidth={3} dot={{ r: 3, fill: '#CF1B2B' }}>
-                      <LabelList dataKey="dist_20" position="top" offset={5} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#CF1B2B' }} />
+                    <Line yAxisId="right" isAnimationActive={false} type="monotone" name="Dist > 20 km/h" dataKey="dist_20" stroke="#CF1B2B" strokeWidth={2.5} dot={{ r: 2.5, fill: '#CF1B2B' }}>
+                      <LabelList dataKey="dist_20" position="top" offset={3} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#CF1B2B' }} />
                     </Line>
                   </ComposedChart>
                 </div>
@@ -1383,23 +1502,23 @@ export default function DesconvocatoriaArea({
 
               {/* Gráfico 3: Distancia > 25 vs. Sprints */}
               <div className="flex flex-col">
-                <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5 flex justify-between items-center border-b border-slate-100 pb-1">
+                <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 flex justify-between items-center border-b border-slate-100 pb-0.5">
                   <span>3. Distancia {" > "} 25 km/h (m) vs. Cantidad de Sprints</span>
                   <span className="text-slate-400 text-[8px] font-bold">BARRA: DIST {" > "} 25 (IZQ) | LÍNEA: SPRINTS (DER)</span>
                 </h4>
-                <div className="h-[145px] w-full bg-slate-50/50 rounded-[24px] p-3 flex items-center justify-center overflow-hidden">
-                  <ComposedChart width={700} height={135} data={gpsChartData} margin={{ top: 15, right: 30, left: 10, bottom: 5 }}>
+                <div className="h-[110px] w-full bg-slate-50/50 rounded-[20px] p-2 flex items-center justify-center overflow-hidden">
+                  <ComposedChart width={700} height={100} data={gpsChartData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                     <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 900, fill: '#475569'}} />
                     <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 900, fill: '#eab308'}} />
                     <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 900, fill: '#10b981'}} />
                     <Tooltip />
-                    <Legend verticalAlign="top" height={20} iconType="circle" wrapperStyle={{ fontSize: '8px', fontWeight: '900', textTransform: 'uppercase' }} />
-                    <Bar yAxisId="left" isAnimationActive={false} name="Dist > 25 km/h" dataKey="dist_25" fill="#eab308" radius={[4, 4, 0, 0]}>
-                      <LabelList dataKey="dist_25" position="top" offset={5} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#eab308' }} />
+                    <Legend verticalAlign="top" height={15} iconType="circle" wrapperStyle={{ fontSize: '7px', fontWeight: '900', textTransform: 'uppercase' }} />
+                    <Bar yAxisId="left" isAnimationActive={false} name="Dist > 25 km/h" dataKey="dist_25" fill="#eab308" radius={[3, 3, 0, 0]}>
+                      <LabelList dataKey="dist_25" position="top" offset={3} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#eab308' }} />
                     </Bar>
-                    <Line yAxisId="right" isAnimationActive={false} type="monotone" name="Número Sprints" dataKey="sprints" stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981' }}>
-                      <LabelList dataKey="sprints" position="top" offset={5} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#10b981' }} />
+                    <Line yAxisId="right" isAnimationActive={false} type="monotone" name="Número Sprints" dataKey="sprints" stroke="#10b981" strokeWidth={2.5} dot={{ r: 2.5, fill: '#10b981' }}>
+                      <LabelList dataKey="sprints" position="top" offset={3} formatter={formatNum} style={{ fontSize: '7px', fontWeight: '900', fill: '#10b981' }} />
                     </Line>
                   </ComposedChart>
                 </div>

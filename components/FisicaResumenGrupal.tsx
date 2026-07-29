@@ -5,6 +5,8 @@ import { normalizeClub, getDriveDirectLink } from '../lib/utils';
 import ClubBadge from './ClubBadge';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import { FEDERATION_LOGO } from '../constants';
 import { REVERSE_CATEGORY_ID_MAP } from '../types';
 
@@ -142,6 +144,19 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const [isGenerating, setIsGenerating] = useState(false);
   const [showOnlyLatest, setShowOnlyLatest] = useState<boolean>(true);
   const hasInitializedDates = useRef(false);
+
+  // Modal state for selecting evaluations to export
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportType, setExportType] = useState<'pdf' | 'zip'>('pdf');
+  const [selectedEvaluations, setSelectedEvaluations] = useState<Record<string, boolean>>({
+    cmj: true,
+    imtp: true,
+    rebound: true,
+    speed: true,
+    vo2: true,
+    antropometria: true,
+    test505: true
+  });
 
   // Dropdown Refs for Click Outside
   const clubDropdownRef = useRef<HTMLDivElement>(null);
@@ -903,432 +918,653 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
     );
   };
 
-  // Export PDF Report with exact matches - 1 page per evaluation category
-  const downloadPdfReport = () => {
-    if (sortedFilteredData.length === 0) return;
+  // Helper to generate a PDF report for a given set of data with optional club masking and filtered evaluations
+  const generatePdfReportForData = (dataToUse: any[], clubNameForMasking?: string, selectedEvaluationIds?: string[]) => {
+    const doc = new jsPDF({
+      orientation: 'l', // Landscape layout for wider table
+      unit: 'mm',
+      format: 'a4'
+    });
 
-    try {
-      const doc = new jsPDF({
-        orientation: 'l', // Landscape layout for wider table
-        unit: 'mm',
-        format: 'a4'
+    const primaryColor = [11, 18, 32] as [number, number, number];
+    const secondaryColor = [220, 38, 38] as [number, number, number];
+    const margin = 15;
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    const maskName = (fullName: string) => {
+      if (!fullName) return "Jugador Oculto";
+      const parts = fullName.trim().split(/\s+/);
+      return parts.map((part, index) => {
+        if (part.length <= 1) return part;
+        return part[0] + '*'.repeat(part.length - 1);
+      }).join(' ');
+    };
+
+    const finalDataToRender = dataToUse.map(row => {
+      if (clubNameForMasking) {
+        const isSameClub = normalizeClub(row.club_name) === normalizeClub(clubNameForMasking);
+        return {
+          ...row,
+          player_name: isSameClub ? row.player_name : `Jugador_${row.player_id || row.id}`
+        };
+      }
+      return row;
+    });
+
+    // Definitions of the different sheets (pages) for each physical evaluation
+    const evalPages = [
+      {
+        id: 'cmj',
+        title: 'SALTABILIDAD Y POTENCIA (CMJ)',
+        headers: ['Jugador', 'Posición', 'Peso', 'Alt. Salto', 'RSI Mod', 'Peak Pot. Rel.', 'Fuerza CMJ', 'Peak Power', 'Profundidad', 'Con. Dur.', 'Prescripción'],
+        metricMap: {
+          3: 'cmj_altura_salto_im',
+          4: 'cmj_rsi_mod',
+          5: 'cmj_peak_pot_relativa',
+          6: 'fuerza_cmj'
+        } as Record<number, string>,
+        getCards: () => [
+          { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+          { title: 'PROM. ALTURA SALTO', val: `${getAverageForMetric('cmj_altura_salto_im')} cm` },
+          { title: 'PROM. RSI MOD', val: getAverageForMetric('cmj_rsi_mod') },
+          { title: 'PROM. PEAK POT. REL.', val: `${getAverageForMetric('cmj_peak_pot_relativa')} W/kg` },
+          { title: 'PROM. FUERZA CMJ', val: `${getAverageForMetric('fuerza_cmj')} N` },
+        ],
+        getRows: (data: any[]) => data.map(row => [
+          row.player_name || '-',
+          row.posicion || '-',
+          row.latestCmj?.bw_kg ? `${row.latestCmj.bw_kg} kg` : '-',
+          row.latestCmj?.cmj_altura_salto_im || row.cmj_altura_salto_im ? `${(row.latestCmj?.cmj_altura_salto_im || row.cmj_altura_salto_im).toFixed(1)} cm` : '-',
+          row.latestCmj?.cmj_rsi_mod || row.cmj_rsi_mod ? (row.latestCmj?.cmj_rsi_mod || row.cmj_rsi_mod).toFixed(2) : '-',
+          row.latestCmj?.cmj_peak_pot_relativa || row.cmj_peak_pot_relativa ? `${(row.latestCmj?.cmj_peak_pot_relativa || row.cmj_peak_pot_relativa).toFixed(1)} W/kg` : '-',
+          row.latestCmj?.fuerza_cmj || row.fuerza_cmj ? `${row.latestCmj?.fuerza_cmj || row.fuerza_cmj} N` : '-',
+          row.latestCmj?.peak_power_w ? `${row.latestCmj.peak_power_w} W` : '-',
+          row.latestCmj?.countermovement_depth_cm ? `${row.latestCmj.countermovement_depth_cm} cm` : '-',
+          row.latestCmj?.concentric_duration_ms ? `${row.latestCmj.concentric_duration_ms} ms` : '-',
+          getPlayerPrescription(row, 'cmj')
+        ]),
+        colStyles: {
+          0: { fontStyle: 'bold' as const, cellWidth: 45 },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 12 },
+          3: { cellWidth: 15 },
+          4: { cellWidth: 14 },
+          5: { cellWidth: 16 },
+          6: { cellWidth: 16 },
+          7: { cellWidth: 15 },
+          8: { cellWidth: 16 },
+          9: { cellWidth: 14 },
+          10: { fontStyle: 'italic' as const, cellWidth: 80 }, // Prescription
+        }
+      },
+      {
+        id: 'imtp',
+        title: 'FUERZA MÁXIMA E ISOMÉTRICA (IMTP)',
+        headers: ['Jugador', 'Posición', 'Peso', 'Fuerza Máxima', 'F. Relativa', 'Asimetría', 'Lado Débil', 'Force 50ms', 'Force 100ms', 'RFD 150ms', 'Prescripción'],
+        metricMap: {
+          3: 'imtp_fuerza_n',
+          4: 'imtp_f_relativa_n_kg',
+          5: 'imtp_asimetria'
+        } as Record<number, string>,
+        getCards: () => [
+          { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+          { title: 'PROM. FUERZA MÁXIMA', val: `${getAverageForMetric('imtp_fuerza_n')} N` },
+          { title: 'PROM. F. RELATIVA', val: `${getAverageForMetric('imtp_f_relativa_n_kg')} N/kg` },
+          { title: 'PROM. ASIMETRÍA', val: `${getAverageForMetric('imtp_asimetria')}%` },
+          { title: 'PROM. RFD 150ms', val: `${getAverageForMetric('latestImtp.RFD - 150ms [N/s]') || getAverageForMetric('imtp_rfd_150ms')} N/s` },
+        ],
+        getRows: (data: any[]) => data.map(row => [
+          row.player_name || '-',
+          row.posicion || '-',
+          row.latestImtp?.peso || row.latestImtp?.['PESO (kg)'] ? `${row.latestImtp.peso || row.latestImtp['PESO (kg)']} kg` : '-',
+          row.latestImtp?.imtp_fuerza_n ? `${row.latestImtp.imtp_fuerza_n} N` : '-',
+          row.latestImtp?.imtp_f_relativa_n_kg ? `${row.latestImtp.imtp_f_relativa_n_kg} N/kg` : '-',
+          row.latestImtp?.imtp_asimetria !== undefined ? `${row.latestImtp.imtp_asimetria.toFixed(1)}%` : '-',
+          row.latestImtp?.imtp_debil || '-',
+          row.latestImtp?.['Force (Net of BW) at 50ms [N]'] ? `${row.latestImtp['Force (Net of BW) at 50ms [N]']} N` : '-',
+          row.latestImtp?.['Force (Net of BW) at 100ms [N]'] ? `${row.latestImtp['Force (Net of BW) at 100ms [N]']} N` : '-',
+          row.latestImtp?.['RFD - 150ms [N/s]'] ? `${row.latestImtp['RFD - 150ms [N/s]']} N/s` : '-',
+          getPlayerPrescription(row, 'imtp')
+        ]),
+        colStyles: {
+          0: { fontStyle: 'bold' as const, cellWidth: 45 },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 12 },
+          3: { cellWidth: 18 },
+          4: { cellWidth: 16 },
+          5: { cellWidth: 15 },
+          6: { cellWidth: 14 },
+          7: { cellWidth: 16 },
+          8: { cellWidth: 16 },
+          9: { cellWidth: 18 },
+          10: { fontStyle: 'italic' as const, cellWidth: 75 }, // Prescription
+        }
+      },
+      {
+        id: 'rebound',
+        title: 'FUERZA REACTIVA Y CONTACTO (REBOUND)',
+        headers: ['Jugador', 'Posición', 'Peso', 'Rebound RSI', 'Contact Time', 'Flight Time', 'Repeticiones', 'Prescripción'],
+        metricMap: {
+          3: 'rebound_rsi',
+          4: 'rebound_contact_time_ms',
+          5: 'rebound_flight_time_ms'
+        } as Record<number, string>,
+        getCards: () => [
+          { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+          { title: 'PROM. REBOUND RSI', val: getAverageForMetric('rebound_rsi') },
+          { title: 'PROM. CONTACT TIME', val: `${getAverageForMetric('rebound_contact_time_ms')} ms` },
+          { title: 'PROM. FLIGHT TIME', val: `${getAverageForMetric('rebound_flight_time_ms')} ms` },
+        ],
+        getRows: (data: any[]) => data.map(row => [
+          row.player_name || '-',
+          row.posicion || '-',
+          row.latestRebound?.bw_kg ? `${row.latestRebound.bw_kg} kg` : '-',
+          row.latestRebound?.rebound_rsi || row.rebound_rsi ? (row.latestRebound?.rebound_rsi || row.rebound_rsi).toFixed(2) : '-',
+          row.latestRebound?.rebound_contact_time_ms || row.rebound_contact_time_ms ? `${row.latestRebound?.rebound_contact_time_ms || row.rebound_contact_time_ms} ms` : '-',
+          row.latestRebound?.rebound_flight_time_ms || row.rebound_flight_time_ms ? `${row.latestRebound?.rebound_flight_time_ms || row.rebound_flight_time_ms} ms` : '-',
+          row.latestRebound?.reps || '-',
+          getPlayerPrescription(row, 'rebound')
+        ]),
+        colStyles: {
+          0: { fontStyle: 'bold' as const, cellWidth: 50 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 15 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 20 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 20 },
+          7: { fontStyle: 'italic' as const, cellWidth: 95 }, // Prescription
+        }
+      },
+      {
+        id: 'speed',
+        title: 'VELOCIDAD Y SPRINT LINEAL',
+        headers: ['Jugador', 'Posición', 'Tiempo 10m', 'Velocidad 10m', 'Tiempo 10-20m', 'Tiempo 20-30m', 'Tiempo Total 30m', 'Prescripción'],
+        metricMap: {
+          2: 'tiempo_10m',
+          3: 'vel_10m',
+          4: 'tiempo_10_20m',
+          5: 'tiempo_20_30m',
+          6: 'tiempo_total'
+        } as Record<number, string>,
+        getCards: () => [
+          { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+          { title: 'PROM. TIEMPO 10M', val: `${getAverageForMetric('tiempo_10m')} s` },
+          { title: 'PROM. VELOCIDAD 10M', val: `${getAverageForMetric('vel_10m')} m/s` },
+          { title: 'PROM. TIEMPO TOTAL 30M', val: `${getAverageForMetric('tiempo_total')} s` },
+        ],
+        getRows: (data: any[]) => data.map(row => [
+          row.player_name || '-',
+          row.posicion || '-',
+          row.latestSpeed?.tiempo_10m || row.tiempo_10m ? `${(row.latestSpeed?.tiempo_10m || row.tiempo_10m).toFixed(2)} s` : '-',
+          row.latestSpeed?.vel_10m || row.vel_10m ? `${(row.latestSpeed?.vel_10m || row.vel_10m).toFixed(2)} m/s` : '-',
+          row.latestSpeed?.tiempo_10_20m ? `${row.latestSpeed.tiempo_10_20m.toFixed(2)} s` : '-',
+          row.latestSpeed?.tiempo_20_30m ? `${row.latestSpeed.tiempo_20_30m.toFixed(2)} s` : '-',
+          row.latestSpeed?.tiempo_total || row.tiempo_total ? `${(row.latestSpeed?.tiempo_total || row.tiempo_total).toFixed(2)} s` : '-',
+          getPlayerPrescription(row, 'speed')
+        ]),
+        colStyles: {
+          0: { fontStyle: 'bold' as const, cellWidth: 50 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 22 },
+          6: { cellWidth: 25 },
+          7: { fontStyle: 'italic' as const, cellWidth: 95 }, // Prescription
+        }
+      },
+      {
+        id: 'vo2',
+        title: 'CAPACIDAD AERÓBICA (VO2 MAX)',
+        headers: ['Jugador', 'Posición', 'VO2 Max', 'VMA', 'FC Máxima', 'VT1 Vel', 'VT2 Vel', 'VT2 FC', 'Prescripción'],
+        metricMap: {
+          2: 'vo2_max',
+          3: 'vam',
+          4: 'fc_max',
+          7: 'vt2_fc'
+        } as Record<number, string>,
+        getCards: () => [
+          { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+          { title: 'PROM. VO2 MAX', val: `${getAverageForMetric('vo2_max')} ml/kg/min` },
+          { title: 'PROM. VMA', val: `${getAverageForMetric('vam')} km/h` },
+          { title: 'PROM. FC MÁXIMA', val: `${getAverageForMetric('fc_max')} bpm` },
+        ],
+        getRows: (data: any[]) => data.map(row => [
+          row.player_name || '-',
+          row.posicion || '-',
+          row.latestVo2?.vo2_max || row.vo2_max ? `${(row.latestVo2?.vo2_max || row.vo2_max).toFixed(1)} ml/kg/min` : '-',
+          row.latestVo2?.vam || row.vam ? `${(row.latestVo2?.vam || row.vam).toFixed(1)} km/h` : '-',
+          row.latestVo2?.fc_max || row.fc_max ? `${row.latestVo2?.fc_max || row.fc_max} bpm` : '-',
+          row.latestVo2?.vt1_vel ? `${row.latestVo2.vt1_vel} km/h` : '-',
+          row.latestVo2?.vt2_vel ? `${row.latestVo2.vt2_vel} km/h` : '-',
+          row.latestVo2?.vt2_fc ? `${row.latestVo2.vt2_fc} bpm` : '-',
+          getPlayerPrescription(row, 'vo2')
+        ]),
+        colStyles: {
+          0: { fontStyle: 'bold' as const, cellWidth: 50 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 22 },
+          3: { cellWidth: 16 },
+          4: { cellWidth: 16 },
+          5: { cellWidth: 15 },
+          6: { cellWidth: 15 },
+          7: { cellWidth: 15 },
+          8: { fontStyle: 'italic' as const, cellWidth: 90 }, // Prescription
+        }
+      },
+      {
+        id: 'antropometria',
+        title: 'ANTROPOMETRÍA Y COMPOSICIÓN CORPORAL',
+        headers: ['Jugador', 'Posición', 'Masa Corporal', 'Talla', 'Talla Sentado', 'Masa Muscular', 'Masa Adiposa', 'Masa Ósea', 'Prescripción'],
+        metricMap: {
+          2: 'masa_corporal_kg',
+          5: 'masa_muscular_pct',
+          6: 'masa_adiposa_pct'
+        } as Record<number, string>,
+        getCards: () => [
+          { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+          { title: 'PROM. MASA CORPORAL', val: `${getAverageForMetric('masa_corporal_kg')} kg` },
+          { title: 'PROM. MASA MUSCULAR', val: `${getAverageForMetric('masa_muscular_pct')}%` },
+          { title: 'PROM. MASA ADIPOSA', val: `${getAverageForMetric('masa_adiposa_pct')}%` },
+        ],
+        getRows: (data: any[]) => data.map(row => [
+          row.player_name || '-',
+          row.posicion || '-',
+          row.latestAntro?.masa_corporal_kg || row.masa_corporal_kg ? `${(row.latestAntro?.masa_corporal_kg || row.masa_corporal_kg).toFixed(1)} kg` : '-',
+          row.latestAntro?.talla_cm || row.talla_cm ? `${row.latestAntro?.talla_cm || row.talla_cm} cm` : '-',
+          row.latestAntro?.talla_sentada_cm || row.talla_sentada_cm ? `${row.latestAntro?.talla_sentada_cm || row.talla_sentada_cm} cm` : '-',
+          row.latestAntro?.masa_muscular_pct || row.masa_muscular_pct ? `${(row.latestAntro?.masa_muscular_pct || row.masa_muscular_pct).toFixed(1)}%` : '-',
+          row.latestAntro?.masa_adiposa_pct || row.masa_adiposa_pct ? `${(row.latestAntro?.masa_adiposa_pct || row.masa_adiposa_pct).toFixed(1)}%` : '-',
+          row.latestAntro?.masa_osea_pct || row.masa_osea_pct ? `${(row.latestAntro?.masa_osea_pct || row.masa_osea_pct).toFixed(1)}%` : '-',
+          getPlayerPrescription(row, 'antropometria')
+        ]),
+        colStyles: {
+          0: { fontStyle: 'bold' as const, cellWidth: 50 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 15 },
+          4: { cellWidth: 18 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 20 },
+          7: { cellWidth: 15 },
+          8: { fontStyle: 'italic' as const, cellWidth: 83 }, // Prescription
+        }
+      },
+      {
+        id: 'test505',
+        title: 'AGILIDAD Y CAMBIO DE DIRECCIÓN (TEST 505)',
+        headers: ['Jugador', 'Posición', 'T. Acel 2m', 'T. Desacel 2m', 'T. COD 2m', 'T. Reacel 1.2m', 'Z-Score Acel', 'Prescripción'],
+        metricMap: {
+          2: 't_acel_2m',
+          3: 't_desacel_2m',
+          4: 't_cod_2m',
+          5: 't_reacel_1_2m',
+          6: 'z_score_acel'
+        } as Record<number, string>,
+        getCards: () => [
+          { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
+          { title: 'PROM. T. ACEL 2M', val: `${getAverageForMetric('t_acel_2m')} s` },
+          { title: 'PROM. T. DESACEL 2M', val: `${getAverageForMetric('t_desacel_2m')} s` },
+          { title: 'PROM. T. COD 2M', val: `${getAverageForMetric('t_cod_2m')} s` },
+        ],
+        getRows: (data: any[]) => data.map(row => [
+          row.player_name || '-',
+          row.posicion || '-',
+          row.latestTest505?.t_acel_2m || row.t_acel_2m ? `${(row.latestTest505?.t_acel_2m || row.t_acel_2m).toFixed(2)} s` : '-',
+          row.latestTest505?.t_desacel_2m || row.t_desacel_2m ? `${(row.latestTest505?.t_desacel_2m || row.t_desacel_2m).toFixed(2)} s` : '-',
+          row.latestTest505?.t_cod_2m || row.t_cod_2m ? `${(row.latestTest505?.t_cod_2m || row.t_cod_2m).toFixed(2)} s` : '-',
+          row.latestTest505?.t_reacel_1_2m ? `${row.latestTest505.t_reacel_1_2m.toFixed(2)} s` : '-',
+          row.latestTest505?.z_score_acel !== undefined ? row.latestTest505.z_score_acel.toFixed(2) : '-',
+          getPlayerPrescription(row, 'test505')
+        ]),
+        colStyles: {
+          0: { fontStyle: 'bold' as const, cellWidth: 50 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 20 },
+          5: { cellWidth: 22 },
+          6: { cellWidth: 20 },
+          7: { fontStyle: 'italic' as const, cellWidth: 90 }, // Prescription
+        }
+      },
+    ];
+
+    const filteredEvalPages = evalPages.filter(p => !selectedEvaluationIds || selectedEvaluationIds.includes(p.id));
+
+    filteredEvalPages.forEach((page, pageIdx) => {
+      // If not the first page, insert a new page
+      if (pageIdx > 0) {
+        doc.addPage();
+      }
+
+      // Top Header
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(1.5);
+      doc.line(margin, 10, pageWidth - margin, 10);
+      
+      doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.setLineWidth(0.5);
+      doc.line(margin, 11.5, pageWidth - margin, 11.5);
+
+      // Logo
+      const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+      try {
+        doc.addImage(logoUrl, 'PNG', margin, 15, 18, 18);
+      } catch (e) {
+        console.warn("Could not add federation logo", e);
+      }
+
+      // Title
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text("LA ROJA PERFORMANCE HUB", 38, 22);
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      const subTitleSuffix = clubNameForMasking ? ` (Acceso Club: ${clubNameForMasking.toUpperCase()})` : '';
+      doc.text(`REPORTE DE EVALUACIONES FÍSICAS GRUPALES - ${page.title}${subTitleSuffix}`, 38, 27);
+
+      // Cards Grid for this specific evaluation page
+      const cards = page.getCards();
+      const cardWidth = 45;
+      const cardHeight = 16;
+      const cardY = 38;
+      const spacing = 5;
+
+      cards.forEach((card, idx) => {
+        const xPos = margin + idx * (cardWidth + spacing);
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(xPos, cardY, cardWidth, cardHeight, 1.5, 1.5, 'F');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6);
+        doc.setTextColor(100, 116, 139);
+        doc.text(card.title, xPos + 2.5, cardY + 5);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(11, 18, 32);
+        doc.text(card.val, xPos + 2.5, cardY + 11);
       });
 
-      const primaryColor = [11, 18, 32] as [number, number, number];
-      const secondaryColor = [220, 38, 38] as [number, number, number];
-      const margin = 15;
-      const pageWidth = doc.internal.pageSize.getWidth();
-
-      // Definitions of the different sheets (pages) for each physical evaluation
-      const evalPages = [
-        {
-          id: 'cmj',
-          title: 'SALTABILIDAD Y POTENCIA (CMJ)',
-          headers: ['Jugador', 'Club', 'Posición', 'Peso', 'Alt. Salto', 'RSI Mod', 'Peak Pot. Rel.', 'Fuerza CMJ', 'Peak Power', 'Profundidad', 'Con. Dur.', 'Prescripción'],
-          metricMap: {
-            4: 'cmj_altura_salto_im',
-            5: 'cmj_rsi_mod',
-            6: 'cmj_peak_pot_relativa',
-            7: 'fuerza_cmj'
-          } as Record<number, string>,
-          getCards: () => [
-            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
-            { title: 'PROM. ALTURA SALTO', val: `${getAverageForMetric('cmj_altura_salto_im')} cm` },
-            { title: 'PROM. RSI MOD', val: getAverageForMetric('cmj_rsi_mod') },
-            { title: 'PROM. PEAK POT. REL.', val: `${getAverageForMetric('cmj_peak_pot_relativa')} W/kg` },
-            { title: 'PROM. FUERZA CMJ', val: `${getAverageForMetric('fuerza_cmj')} N` },
-          ],
-          getRows: (data: any[]) => data.map(row => [
-            row.player_name || '-',
-            row.club_name || '-',
-            row.posicion || '-',
-            row.latestCmj?.bw_kg ? `${row.latestCmj.bw_kg} kg` : '-',
-            row.latestCmj?.cmj_altura_salto_im || row.cmj_altura_salto_im ? `${(row.latestCmj?.cmj_altura_salto_im || row.cmj_altura_salto_im).toFixed(1)} cm` : '-',
-            row.latestCmj?.cmj_rsi_mod || row.cmj_rsi_mod ? (row.latestCmj?.cmj_rsi_mod || row.cmj_rsi_mod).toFixed(2) : '-',
-            row.latestCmj?.cmj_peak_pot_relativa || row.cmj_peak_pot_relativa ? `${(row.latestCmj?.cmj_peak_pot_relativa || row.cmj_peak_pot_relativa).toFixed(1)} W/kg` : '-',
-            row.latestCmj?.fuerza_cmj || row.fuerza_cmj ? `${row.latestCmj?.fuerza_cmj || row.fuerza_cmj} N` : '-',
-            row.latestCmj?.peak_power_w ? `${row.latestCmj.peak_power_w} W` : '-',
-            row.latestCmj?.countermovement_depth_cm ? `${row.latestCmj.countermovement_depth_cm} cm` : '-',
-            row.latestCmj?.concentric_duration_ms ? `${row.latestCmj.concentric_duration_ms} ms` : '-',
-            getPlayerPrescription(row, 'cmj')
-          ]),
-          colStyles: {
-            0: { fontStyle: 'bold' as const, cellWidth: 35 },
-            1: { cellWidth: 20 },
-            2: { cellWidth: 20 },
-            3: { cellWidth: 12 },
-            4: { cellWidth: 15 },
-            5: { cellWidth: 14 },
-            6: { cellWidth: 16 },
-            7: { cellWidth: 16 },
-            8: { cellWidth: 15 },
-            9: { cellWidth: 16 },
-            10: { cellWidth: 14 },
-            11: { fontStyle: 'italic' as const, cellWidth: 70 }, // Prescription
-          }
-        },
-        {
-          id: 'imtp',
-          title: 'FUERZA MÁXIMA E ISOMÉTRICA (IMTP)',
-          headers: ['Jugador', 'Club', 'Posición', 'Peso', 'Fuerza Máxima', 'F. Relativa', 'Asimetría', 'Lado Débil', 'Force 50ms', 'Force 100ms', 'RFD 150ms', 'Prescripción'],
-          metricMap: {
-            4: 'imtp_fuerza_n',
-            5: 'imtp_f_relativa_n_kg',
-            6: 'imtp_asimetria'
-          } as Record<number, string>,
-          getCards: () => [
-            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
-            { title: 'PROM. FUERZA MÁXIMA', val: `${getAverageForMetric('imtp_fuerza_n')} N` },
-            { title: 'PROM. F. RELATIVA', val: `${getAverageForMetric('imtp_f_relativa_n_kg')} N/kg` },
-            { title: 'PROM. ASIMETRÍA', val: `${getAverageForMetric('imtp_asimetria')}%` },
-            { title: 'PROM. RFD 150ms', val: `${getAverageForMetric('latestImtp.RFD - 150ms [N/s]') || getAverageForMetric('imtp_rfd_150ms')} N/s` },
-          ],
-          getRows: (data: any[]) => data.map(row => [
-            row.player_name || '-',
-            row.club_name || '-',
-            row.posicion || '-',
-            row.latestImtp?.peso || row.latestImtp?.['PESO (kg)'] ? `${row.latestImtp.peso || row.latestImtp['PESO (kg)']} kg` : '-',
-            row.latestImtp?.imtp_fuerza_n ? `${row.latestImtp.imtp_fuerza_n} N` : '-',
-            row.latestImtp?.imtp_f_relativa_n_kg ? `${row.latestImtp.imtp_f_relativa_n_kg} N/kg` : '-',
-            row.latestImtp?.imtp_asimetria !== undefined ? `${row.latestImtp.imtp_asimetria.toFixed(1)}%` : '-',
-            row.latestImtp?.imtp_debil || '-',
-            row.latestImtp?.['Force (Net of BW) at 50ms [N]'] ? `${row.latestImtp['Force (Net of BW) at 50ms [N]']} N` : '-',
-            row.latestImtp?.['Force (Net of BW) at 100ms [N]'] ? `${row.latestImtp['Force (Net of BW) at 100ms [N]']} N` : '-',
-            row.latestImtp?.['RFD - 150ms [N/s]'] ? `${row.latestImtp['RFD - 150ms [N/s]']} N/s` : '-',
-            getPlayerPrescription(row, 'imtp')
-          ]),
-          colStyles: {
-            0: { fontStyle: 'bold' as const, cellWidth: 35 },
-            1: { cellWidth: 20 },
-            2: { cellWidth: 20 },
-            3: { cellWidth: 12 },
-            4: { cellWidth: 18 },
-            5: { cellWidth: 16 },
-            6: { cellWidth: 15 },
-            7: { cellWidth: 14 },
-            8: { cellWidth: 16 },
-            9: { cellWidth: 16 },
-            10: { cellWidth: 18 },
-            11: { fontStyle: 'italic' as const, cellWidth: 65 }, // Prescription
-          }
-        },
-        {
-          id: 'rebound',
-          title: 'FUERZA REACTIVA Y CONTACTO (REBOUND)',
-          headers: ['Jugador', 'Club', 'Posición', 'Peso', 'Rebound RSI', 'Contact Time', 'Flight Time', 'Repeticiones', 'Prescripción'],
-          metricMap: {
-            4: 'rebound_rsi',
-            5: 'rebound_contact_time_ms',
-            6: 'rebound_flight_time_ms'
-          } as Record<number, string>,
-          getCards: () => [
-            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
-            { title: 'PROM. REBOUND RSI', val: getAverageForMetric('rebound_rsi') },
-            { title: 'PROM. CONTACT TIME', val: `${getAverageForMetric('rebound_contact_time_ms')} ms` },
-            { title: 'PROM. FLIGHT TIME', val: `${getAverageForMetric('rebound_flight_time_ms')} ms` },
-          ],
-          getRows: (data: any[]) => data.map(row => [
-            row.player_name || '-',
-            row.club_name || '-',
-            row.posicion || '-',
-            row.latestRebound?.bw_kg ? `${row.latestRebound.bw_kg} kg` : '-',
-            row.latestRebound?.rebound_rsi || row.rebound_rsi ? (row.latestRebound?.rebound_rsi || row.rebound_rsi).toFixed(2) : '-',
-            row.latestRebound?.rebound_contact_time_ms || row.rebound_contact_time_ms ? `${row.latestRebound?.rebound_contact_time_ms || row.rebound_contact_time_ms} ms` : '-',
-            row.latestRebound?.rebound_flight_time_ms || row.rebound_flight_time_ms ? `${row.latestRebound?.rebound_flight_time_ms || row.rebound_flight_time_ms} ms` : '-',
-            row.latestRebound?.reps || '-',
-            getPlayerPrescription(row, 'rebound')
-          ]),
-          colStyles: {
-            0: { fontStyle: 'bold' as const, cellWidth: 40 },
-            1: { cellWidth: 25 },
-            2: { cellWidth: 25 },
-            3: { cellWidth: 15 },
-            4: { cellWidth: 20 },
-            5: { cellWidth: 20 },
-            6: { cellWidth: 20 },
-            7: { cellWidth: 20 },
-            8: { fontStyle: 'italic' as const, cellWidth: 80 }, // Prescription
-          }
-        },
-        {
-          id: 'speed',
-          title: 'VELOCIDAD Y SPRINT LINEAL',
-          headers: ['Jugador', 'Club', 'Posición', 'Tiempo 10m', 'Velocidad 10m', 'Tiempo 10-20m', 'Tiempo 20-30m', 'Tiempo Total 30m', 'Prescripción'],
-          metricMap: {
-            3: 'tiempo_10m',
-            4: 'vel_10m',
-            5: 'tiempo_10_20m',
-            6: 'tiempo_20_30m',
-            7: 'tiempo_total'
-          } as Record<number, string>,
-          getCards: () => [
-            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
-            { title: 'PROM. TIEMPO 10M', val: `${getAverageForMetric('tiempo_10m')} s` },
-            { title: 'PROM. VELOCIDAD 10M', val: `${getAverageForMetric('vel_10m')} m/s` },
-            { title: 'PROM. TIEMPO TOTAL 30M', val: `${getAverageForMetric('tiempo_total')} s` },
-          ],
-          getRows: (data: any[]) => data.map(row => [
-            row.player_name || '-',
-            row.club_name || '-',
-            row.posicion || '-',
-            row.latestSpeed?.tiempo_10m || row.tiempo_10m ? `${(row.latestSpeed?.tiempo_10m || row.tiempo_10m).toFixed(2)} s` : '-',
-            row.latestSpeed?.vel_10m || row.vel_10m ? `${(row.latestSpeed?.vel_10m || row.vel_10m).toFixed(2)} m/s` : '-',
-            row.latestSpeed?.tiempo_10_20m ? `${row.latestSpeed.tiempo_10_20m.toFixed(2)} s` : '-',
-            row.latestSpeed?.tiempo_20_30m ? `${row.latestSpeed.tiempo_20_30m.toFixed(2)} s` : '-',
-            row.latestSpeed?.tiempo_total || row.tiempo_total ? `${(row.latestSpeed?.tiempo_total || row.tiempo_total).toFixed(2)} s` : '-',
-            getPlayerPrescription(row, 'speed')
-          ]),
-          colStyles: {
-            0: { fontStyle: 'bold' as const, cellWidth: 40 },
-            1: { cellWidth: 25 },
-            2: { cellWidth: 25 },
-            3: { cellWidth: 20 },
-            4: { cellWidth: 20 },
-            5: { cellWidth: 22 },
-            6: { cellWidth: 22 },
-            7: { cellWidth: 25 },
-            8: { fontStyle: 'italic' as const, cellWidth: 80 }, // Prescription
-          }
-        },
-        {
-          id: 'vo2',
-          title: 'CAPACIDAD AERÓBICA (VO2 MAX)',
-          headers: ['Jugador', 'Club', 'Posición', 'VO2 Max', 'VMA', 'FC Máxima', 'VT1 Vel', 'VT2 Vel', 'VT2 FC', 'Prescripción'],
-          metricMap: {
-            3: 'vo2_max',
-            4: 'vam',
-            5: 'fc_max',
-            8: 'vt2_fc'
-          } as Record<number, string>,
-          getCards: () => [
-            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
-            { title: 'PROM. VO2 MAX', val: `${getAverageForMetric('vo2_max')} ml/kg/min` },
-            { title: 'PROM. VMA', val: `${getAverageForMetric('vam')} km/h` },
-            { title: 'PROM. FC MÁXIMA', val: `${getAverageForMetric('fc_max')} bpm` },
-          ],
-          getRows: (data: any[]) => data.map(row => [
-            row.player_name || '-',
-            row.club_name || '-',
-            row.posicion || '-',
-            row.latestVo2?.vo2_max || row.vo2_max ? `${(row.latestVo2?.vo2_max || row.vo2_max).toFixed(1)} ml/kg/min` : '-',
-            row.latestVo2?.vam || row.vam ? `${(row.latestVo2?.vam || row.vam).toFixed(1)} km/h` : '-',
-            row.latestVo2?.fc_max || row.fc_max ? `${row.latestVo2?.fc_max || row.fc_max} bpm` : '-',
-            row.latestVo2?.vt1_vel ? `${row.latestVo2.vt1_vel} km/h` : '-',
-            row.latestVo2?.vt2_vel ? `${row.latestVo2.vt2_vel} km/h` : '-',
-            row.latestVo2?.vt2_fc ? `${row.latestVo2.vt2_fc} bpm` : '-',
-            getPlayerPrescription(row, 'vo2')
-          ]),
-          colStyles: {
-            0: { fontStyle: 'bold' as const, cellWidth: 40 },
-            1: { cellWidth: 25 },
-            2: { cellWidth: 25 },
-            3: { cellWidth: 22 },
-            4: { cellWidth: 16 },
-            5: { cellWidth: 16 },
-            6: { cellWidth: 15 },
-            7: { cellWidth: 15 },
-            8: { cellWidth: 15 },
-            9: { fontStyle: 'italic' as const, cellWidth: 75 }, // Prescription
-          }
-        },
-        {
-          id: 'antropometria',
-          title: 'ANTROPOMETRÍA Y COMPOSICIÓN CORPORAL',
-          headers: ['Jugador', 'Club', 'Posición', 'Masa Corporal', 'Talla', 'Talla Sentado', 'Masa Muscular', 'Masa Adiposa', 'Masa Ósea', 'Prescripción'],
-          metricMap: {
-            3: 'masa_corporal_kg',
-            6: 'masa_muscular_pct',
-            7: 'masa_adiposa_pct'
-          } as Record<number, string>,
-          getCards: () => [
-            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
-            { title: 'PROM. MASA CORPORAL', val: `${getAverageForMetric('masa_corporal_kg')} kg` },
-            { title: 'PROM. MASA MUSCULAR', val: `${getAverageForMetric('masa_muscular_pct')}%` },
-            { title: 'PROM. MASA ADIPOSA', val: `${getAverageForMetric('masa_adiposa_pct')}%` },
-          ],
-          getRows: (data: any[]) => data.map(row => [
-            row.player_name || '-',
-            row.club_name || '-',
-            row.posicion || '-',
-            row.latestAntro?.masa_corporal_kg || row.masa_corporal_kg ? `${(row.latestAntro?.masa_corporal_kg || row.masa_corporal_kg).toFixed(1)} kg` : '-',
-            row.latestAntro?.talla_cm || row.talla_cm ? `${row.latestAntro?.talla_cm || row.talla_cm} cm` : '-',
-            row.latestAntro?.talla_sentada_cm || row.talla_sentada_cm ? `${row.latestAntro?.talla_sentada_cm || row.talla_sentada_cm} cm` : '-',
-            row.latestAntro?.masa_muscular_pct || row.masa_muscular_pct ? `${(row.latestAntro?.masa_muscular_pct || row.masa_muscular_pct).toFixed(1)}%` : '-',
-            row.latestAntro?.masa_adiposa_pct || row.masa_adiposa_pct ? `${(row.latestAntro?.masa_adiposa_pct || row.masa_adiposa_pct).toFixed(1)}%` : '-',
-            row.latestAntro?.masa_osea_pct || row.masa_osea_pct ? `${(row.latestAntro?.masa_osea_pct || row.masa_osea_pct).toFixed(1)}%` : '-',
-            getPlayerPrescription(row, 'antropometria')
-          ]),
-          colStyles: {
-            0: { fontStyle: 'bold' as const, cellWidth: 40 },
-            1: { cellWidth: 25 },
-            2: { cellWidth: 25 },
-            3: { cellWidth: 20 },
-            4: { cellWidth: 15 },
-            5: { cellWidth: 18 },
-            6: { cellWidth: 20 },
-            7: { cellWidth: 20 },
-            8: { cellWidth: 15 },
-            9: { fontStyle: 'italic' as const, cellWidth: 68 }, // Prescription
-          }
-        },
-        {
-          id: 'test505',
-          title: 'AGILIDAD Y CAMBIO DE DIRECCIÓN (TEST 505)',
-          headers: ['Jugador', 'Club', 'Posición', 'T. Acel 2m', 'T. Desacel 2m', 'T. COD 2m', 'T. Reacel 1.2m', 'Z-Score Acel', 'Prescripción'],
-          metricMap: {
-            3: 't_acel_2m',
-            4: 't_desacel_2m',
-            5: 't_cod_2m',
-            6: 't_reacel_1_2m',
-            7: 'z_score_acel'
-          } as Record<number, string>,
-          getCards: () => [
-            { title: 'JUGADORES EVALUADOS', val: `${filteredProfiles.length} JUG` },
-            { title: 'PROM. T. ACEL 2M', val: `${getAverageForMetric('t_acel_2m')} s` },
-            { title: 'PROM. T. DESACEL 2M', val: `${getAverageForMetric('t_desacel_2m')} s` },
-            { title: 'PROM. T. COD 2M', val: `${getAverageForMetric('t_cod_2m')} s` },
-          ],
-          getRows: (data: any[]) => data.map(row => [
-            row.player_name || '-',
-            row.club_name || '-',
-            row.posicion || '-',
-            row.latestTest505?.t_acel_2m || row.t_acel_2m ? `${(row.latestTest505?.t_acel_2m || row.t_acel_2m).toFixed(2)} s` : '-',
-            row.latestTest505?.t_desacel_2m || row.t_desacel_2m ? `${(row.latestTest505?.t_desacel_2m || row.t_desacel_2m).toFixed(2)} s` : '-',
-            row.latestTest505?.t_cod_2m || row.t_cod_2m ? `${(row.latestTest505?.t_cod_2m || row.t_cod_2m).toFixed(2)} s` : '-',
-            row.latestTest505?.t_reacel_1_2m ? `${row.latestTest505.t_reacel_1_2m.toFixed(2)} s` : '-',
-            row.latestTest505?.z_score_acel !== undefined ? row.latestTest505.z_score_acel.toFixed(2) : '-',
-            getPlayerPrescription(row, 'test505')
-          ]),
-          colStyles: {
-            0: { fontStyle: 'bold' as const, cellWidth: 40 },
-            1: { cellWidth: 25 },
-            2: { cellWidth: 25 },
-            3: { cellWidth: 20 },
-            4: { cellWidth: 20 },
-            5: { cellWidth: 20 },
-            6: { cellWidth: 22 },
-            7: { cellWidth: 20 },
-            8: { fontStyle: 'italic' as const, cellWidth: 75 }, // Prescription
-          }
-        },
-      ];
-
-      evalPages.forEach((page, pageIdx) => {
-        // If not the first page, insert a new page
-        if (pageIdx > 0) {
-          doc.addPage();
-        }
-
-        // Top Header
-        doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.setLineWidth(1.5);
-        doc.line(margin, 10, pageWidth - margin, 10);
-        
-        doc.setDrawColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-        doc.setLineWidth(0.5);
-        doc.line(margin, 11.5, pageWidth - margin, 11.5);
-
-        // Logo
-        const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
-        try {
-          doc.addImage(logoUrl, 'PNG', margin, 15, 18, 18);
-        } catch (e) {
-          console.warn("Could not add federation logo", e);
-        }
-
-        // Title
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
-        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.text("LA ROJA PERFORMANCE HUB", 38, 22);
-
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 116, 139);
-        doc.text(`REPORTE DE EVALUACIONES FÍSICAS GRUPALES - ${page.title}`, 38, 27);
-
-        // Cards Grid for this specific evaluation page
-        const cards = page.getCards();
-        const cardWidth = 45;
-        const cardHeight = 16;
-        const cardY = 38;
-        const spacing = 5;
-
-        cards.forEach((card, idx) => {
-          const xPos = margin + idx * (cardWidth + spacing);
-          doc.setFillColor(248, 250, 252);
-          doc.roundedRect(xPos, cardY, cardWidth, cardHeight, 1.5, 1.5, 'F');
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(6);
-          doc.setTextColor(100, 116, 139);
-          doc.text(card.title, xPos + 2.5, cardY + 5);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8.5);
-          doc.setTextColor(11, 18, 32);
-          doc.text(card.val, xPos + 2.5, cardY + 11);
-        });
-
-        // Render the autoTable with exact data rows and columns, including custom threshold styles
-        autoTable(doc, {
-          head: [page.headers],
-          body: page.getRows(sortedFilteredData),
-          startY: 60,
-          theme: 'striped',
-          styles: { fontSize: 7.5, cellPadding: 2, halign: 'center', overflow: 'linebreak' },
-          headStyles: { fillColor: [11, 18, 32], textColor: [255, 255, 255], fontStyle: 'bold' },
-          columnStyles: page.colStyles,
-          didParseCell: (data) => {
-            if (data.section === 'body') {
-              const colIndex = data.column.index;
-              const metricMap = (page as any).metricMap;
-              if (metricMap && metricMap[colIndex]) {
-                const metricKey = metricMap[colIndex];
-                const originalRow = sortedFilteredData[data.row.index];
-                if (originalRow) {
-                  const val = originalRow[metricKey];
-                  const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS[metricKey]);
-                  if (status.label === 'Excelente') {
-                    data.cell.styles.fillColor = [209, 250, 229]; // emerald-100
-                    data.cell.styles.textColor = [0, 0, 0];
-                  } else if (status.label === 'Por Mejorar') {
-                    data.cell.styles.fillColor = [254, 243, 199]; // amber-100
-                    data.cell.styles.textColor = [0, 0, 0];
-                  } else if (status.label === 'Alerta') {
-                    data.cell.styles.fillColor = [255, 228, 230]; // rose-100
-                    data.cell.styles.textColor = [0, 0, 0];
-                  }
+      // Render the autoTable with exact data rows and columns, including custom threshold styles
+      autoTable(doc, {
+        head: [page.headers],
+        body: page.getRows(finalDataToRender),
+        startY: 60,
+        theme: 'striped',
+        styles: { fontSize: 7.5, cellPadding: 2, halign: 'center', overflow: 'linebreak' },
+        headStyles: { fillColor: [11, 18, 32], textColor: [255, 255, 255], fontStyle: 'bold' },
+        columnStyles: page.colStyles,
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            const colIndex = data.column.index;
+            const metricMap = (page as any).metricMap;
+            if (metricMap && metricMap[colIndex]) {
+              const metricKey = metricMap[colIndex];
+              const originalRow = finalDataToRender[data.row.index];
+              if (originalRow) {
+                const val = originalRow[metricKey];
+                const status = getPhysicalStatusDynamic(val, ALL_METRIC_CONFIGS[metricKey]);
+                if (status.label === 'Excelente') {
+                  data.cell.styles.fillColor = [209, 250, 229]; // emerald-100
+                  data.cell.styles.textColor = [0, 0, 0];
+                } else if (status.label === 'Por Mejorar') {
+                  data.cell.styles.fillColor = [254, 243, 199]; // amber-100
+                  data.cell.styles.textColor = [0, 0, 0];
+                } else if (status.label === 'Alerta') {
+                  data.cell.styles.fillColor = [255, 228, 230]; // rose-100
+                  data.cell.styles.textColor = [0, 0, 0];
                 }
               }
+            }
 
-              // Color the prescription column
-              if (colIndex === page.headers.length - 1) {
-                const originalRow = sortedFilteredData[data.row.index];
-                if (originalRow) {
-                  const colorInfo = getPrescriptionColorInfo(originalRow, page.id);
-                  if (colorInfo.label === 'Óptimo') {
-                    data.cell.styles.fillColor = [209, 250, 229]; // emerald-100
-                    data.cell.styles.textColor = [4, 120, 87]; // emerald-700
-                  } else if (colorInfo.label === 'Por Mejorar') {
-                    data.cell.styles.fillColor = [254, 243, 199]; // amber-100
-                    data.cell.styles.textColor = [180, 83, 9]; // amber-700
-                  } else if (colorInfo.label === 'Alerta') {
-                    data.cell.styles.fillColor = [255, 228, 230]; // rose-100
-                    data.cell.styles.textColor = [190, 24, 74]; // rose-700
-                  } else {
-                    data.cell.styles.fillColor = [248, 250, 252]; // slate-50
-                    data.cell.styles.textColor = [100, 116, 139]; // slate-500
-                  }
+            // Color the prescription column
+            if (colIndex === page.headers.length - 1) {
+              const originalRow = finalDataToRender[data.row.index];
+              if (originalRow) {
+                const colorInfo = getPrescriptionColorInfo(originalRow, page.id);
+                if (colorInfo.label === 'Óptimo') {
+                  data.cell.styles.fillColor = [209, 250, 229]; // emerald-100
+                  data.cell.styles.textColor = [4, 120, 87]; // emerald-700
+                } else if (colorInfo.label === 'Por Mejorar') {
+                  data.cell.styles.fillColor = [254, 243, 199]; // amber-100
+                  data.cell.styles.textColor = [180, 83, 9]; // amber-700
+                } else if (colorInfo.label === 'Alerta') {
+                  data.cell.styles.fillColor = [255, 228, 230]; // rose-100
+                  data.cell.styles.textColor = [190, 24, 74]; // rose-700
+                } else {
+                  data.cell.styles.fillColor = [248, 250, 252]; // slate-50
+                  data.cell.styles.textColor = [100, 116, 139]; // slate-500
                 }
               }
             }
           }
-        });
+        }
       });
 
+      // Add a nice parameter level reference table, legend, and note at the bottom of each evaluation table
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const thresholdRows: any[] = [];
+      
+      if (page.metricMap) {
+        Object.values(page.metricMap).forEach((metricKey: any) => {
+          const config = ALL_METRIC_CONFIGS[metricKey];
+          if (config) {
+            const { excellent, normal } = config.thresholds;
+            const unit = config.unit ? ` ${config.unit}` : '';
+            let greenRange = '';
+            let yellowRange = '';
+            let redRange = '';
+
+            if (config.lowerIsBetter) {
+              greenRange = `<= ${excellent}${unit}`;
+              yellowRange = `De > ${excellent} a <= ${normal}${unit}`;
+              redRange = `> ${normal}${unit}`;
+            } else {
+              greenRange = `>= ${excellent}${unit}`;
+              yellowRange = `De >= ${normal} a < ${excellent}${unit}`;
+              redRange = `< ${normal}${unit}`;
+            }
+
+            thresholdRows.push([
+              config.label,
+              greenRange,
+              yellowRange,
+              redRange
+            ]);
+          }
+        });
+      }
+
+      if (thresholdRows.length > 0) {
+        const finalY = (doc as any).lastAutoTable?.finalY || 60;
+        let refStartY = finalY + 6;
+        
+        // Check if thresholds table fits on current page (approx 30mm height needed)
+        if (refStartY + 30 > pageHeight - 15) {
+          doc.addPage();
+          refStartY = 25;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(30, 41, 59); // slate-800
+        doc.text("VALORES DE REFERENCIA / UMBRALES DE PARÁMETROS", margin, refStartY);
+
+        autoTable(doc, {
+          head: [['Parámetro', 'Excelente / Óptimo', 'Por Mejorar', 'Alerta']],
+          body: thresholdRows,
+          startY: refStartY + 2,
+          theme: 'grid',
+          styles: { fontSize: 6.5, cellPadding: 1.5, halign: 'center' },
+          headStyles: { fillColor: [71, 85, 105], textColor: [255, 255, 255], fontStyle: 'bold' },
+          columnStyles: {
+            0: { halign: 'left', cellWidth: 55, fontStyle: 'bold' },
+            1: { cellWidth: 42 },
+            2: { cellWidth: 46 },
+            3: { cellWidth: 42 }
+          },
+          didParseCell: (cellData) => {
+            if (cellData.section === 'body') {
+              if (cellData.column.index === 1) {
+                cellData.cell.styles.fillColor = [209, 250, 229]; // emerald-100
+                cellData.cell.styles.textColor = [5, 150, 105]; // emerald-600
+              } else if (cellData.column.index === 2) {
+                cellData.cell.styles.fillColor = [254, 243, 199]; // amber-100
+                cellData.cell.styles.textColor = [217, 119, 6]; // amber-600
+              } else if (cellData.column.index === 3) {
+                cellData.cell.styles.fillColor = [255, 228, 230]; // rose-100
+                cellData.cell.styles.textColor = [225, 29, 72]; // rose-600
+              }
+            }
+          }
+        });
+      }
+
+      const finalYAfterRef = (doc as any).lastAutoTable?.finalY || 60;
+      let legendY = finalYAfterRef + 6;
+      
+      // Check if legend fits before the footer area
+      if (legendY + 12 > pageHeight - 12) {
+        doc.addPage();
+        legendY = 25;
+      }
+
+      // Draw horizontal line for legend
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(0.3);
+      doc.line(margin, legendY, pageWidth - margin, legendY);
+      
+      legendY += 5;
+
+      // Label
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(71, 85, 105); // slate-600
+      doc.text("LEYENDA DE NIVELES:", margin, legendY);
+
+      // Emerald (Green) - Excelente
+      let xOffset = margin + 35;
+      doc.setFillColor(209, 250, 229); // emerald-100
+      doc.roundedRect(xOffset, legendY - 3, 3.5, 3.5, 0.5, 0.5, 'F');
+      doc.setDrawColor(16, 185, 129); // emerald-500
+      doc.setLineWidth(0.2);
+      doc.roundedRect(xOffset, legendY - 3, 3.5, 3.5, 0.5, 0.5, 'S');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(5, 150, 105); // emerald-600
+      doc.text("Excelente / Óptimo", xOffset + 5, legendY - 0.5);
+
+      // Amber (Yellow) - Por Mejorar
+      xOffset += 45;
+      doc.setFillColor(254, 243, 199); // amber-100
+      doc.roundedRect(xOffset, legendY - 3, 3.5, 3.5, 0.5, 0.5, 'F');
+      doc.setDrawColor(245, 158, 11); // amber-500
+      doc.setLineWidth(0.2);
+      doc.roundedRect(xOffset, legendY - 3, 3.5, 3.5, 0.5, 0.5, 'S');
+      doc.setTextColor(217, 119, 6); // amber-600
+      doc.text("Por Mejorar", xOffset + 5, legendY - 0.5);
+
+      // Rose (Red) - Alerta
+      xOffset += 35;
+      doc.setFillColor(255, 228, 230); // rose-100
+      doc.roundedRect(xOffset, legendY - 3, 3.5, 3.5, 0.5, 0.5, 'F');
+      doc.setDrawColor(239, 68, 68); // rose-500
+      doc.setLineWidth(0.2);
+      doc.roundedRect(xOffset, legendY - 3, 3.5, 3.5, 0.5, 0.5, 'S');
+      doc.setTextColor(225, 29, 72); // rose-600
+      doc.text("Alerta", xOffset + 5, legendY - 0.5);
+
+      // Note on the right hand side
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7);
+      doc.setTextColor(71, 85, 105); // slate-600
+      doc.text("* Los rangos de colores y parámetros son de referencia de jugadores de selección.", pageWidth - margin, legendY - 0.5, { align: 'right' });
+    });
+
+    // Add footer watermark and page numbers to all pages
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Footer text/watermark
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(148, 163, 184); // light gray slate-400 equivalent for watermark
+      
+      // Center aligned watermark/footer text
+      doc.text("cmsportech.com", pageWidth / 2, pageHeight - 8, { align: 'center' });
+      
+      // Page number on the right
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Página ${i} de ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: 'right' });
+    }
+
+    return doc;
+  };
+
+  // Real implementation for executing the download of the PDF report with selected evaluations
+  const executeDownloadPdfReport = (selectedIds: string[]) => {
+    if (sortedFilteredData.length === 0) return;
+
+    try {
+      const doc = generatePdfReportForData(sortedFilteredData, undefined, selectedIds);
       doc.save(`Reporte_Completo_Evaluaciones_Fisicas_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (err) {
       console.error("Error creating physical evaluation PDF:", err);
     }
+  };
+
+  // Real implementation for executing the download of the ZIP by club with selected evaluations
+  const executeDownloadZipByClub = async (selectedIds: string[]) => {
+    if (sortedFilteredData.length === 0) return;
+
+    try {
+      const zip = new JSZip();
+
+      // Get all distinct clubs represented in our current filtered data
+      let targetClubs = Array.from(new Set(
+        sortedFilteredData
+          .map(p => p.club_name)
+          .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+      ));
+
+      if (targetClubs.length === 0) {
+        targetClubs = ['General'];
+      }
+
+      for (const clubName of targetClubs) {
+        const doc = generatePdfReportForData(sortedFilteredData, clubName, selectedIds);
+        const pdfBytes = doc.output('arraybuffer');
+        const safeClubName = clubName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        zip.file(`Reporte_Evaluaciones_${safeClubName}.pdf`, pdfBytes);
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      saveAs(blob, `Reportes_PDF_Fisicos_Por_Club_${new Date().toISOString().split('T')[0]}.zip`);
+    } catch (err) {
+      console.error("Error creating physical evaluation ZIP:", err);
+    }
+  };
+
+  // Export PDF Report - triggers selection modal
+  const downloadPdfReport = () => {
+    setExportType('pdf');
+    setIsExportModalOpen(true);
+  };
+
+  // Export ZIP containing PDF files for each club - triggers selection modal
+  const downloadZipByClub = async () => {
+    setExportType('zip');
+    setIsExportModalOpen(true);
   };
 
   interface TableColumn {
@@ -2296,6 +2532,14 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
             <i className="fa-solid fa-file-pdf"></i>
             Exportar PDF
           </button>
+          <button
+            onClick={downloadZipByClub}
+            disabled={sortedFilteredData.length === 0}
+            className="flex items-center gap-2 bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed px-5 py-3 rounded-xl text-xs font-black tracking-widest uppercase transition-all shadow-md shadow-red-600/10"
+          >
+            <i className="fa-solid fa-file-zipper"></i>
+            Exportar ZIP Por Club
+          </button>
         </div>
       </div>
 
@@ -3020,6 +3264,155 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
           </table>
         </div>
       </div>
+
+      {/* Modal de Selección de Evaluaciones para Exportar */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden transform scale-100 transition-all">
+            {/* Header del Modal */}
+            <div className="bg-slate-900 px-6 py-5 flex items-center justify-between text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/20">
+                  <i className={`fa-solid ${exportType === 'pdf' ? 'fa-file-pdf' : 'fa-file-zipper'} text-sm text-white`}></i>
+                </div>
+                <div>
+                  <h3 className="text-xs font-black tracking-wider uppercase">Configurar Reporte</h3>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none mt-1">
+                    {exportType === 'pdf' ? 'Descarga Reporte PDF' : 'Generar ZIP por Club'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsExportModalOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <i className="fa-solid fa-xmark text-base"></i>
+              </button>
+            </div>
+
+            {/* Contenido del Modal */}
+            <div className="p-6 flex flex-col gap-5">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Selecciona las evaluaciones a incluir
+                </span>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Cada evaluación seleccionada se generará como una sección independiente en el reporte final, respetando el formato original de visualización.
+                </p>
+              </div>
+
+              {/* Botones de Selección Rápida */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvaluations({
+                    cmj: true,
+                    imtp: true,
+                    rebound: true,
+                    speed: true,
+                    vo2: true,
+                    antropometria: true,
+                    test505: true
+                  })}
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                >
+                  Seleccionar Todo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvaluations({
+                    cmj: false,
+                    imtp: false,
+                    rebound: false,
+                    speed: false,
+                    vo2: false,
+                    antropometria: false,
+                    test505: false
+                  })}
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                >
+                  Deseleccionar Todo
+                </button>
+              </div>
+
+              {/* Listado con Checks */}
+              <div className="flex flex-col gap-2.5 max-h-[260px] overflow-y-auto pr-1">
+                {[
+                  { id: 'cmj', name: 'Saltabilidad (CMJ)', desc: 'Saltabilidad y potencia muscular' },
+                  { id: 'imtp', name: 'Fuerza Máxima (IMTP)', desc: 'Fuerza isométrica máxima y asimetrías' },
+                  { id: 'rebound', name: 'Fuerza Reactiva (CMJ Rebound)', desc: 'Tiempo de contacto y reactividad' },
+                  { id: 'speed', name: 'Velocidad & Sprint', desc: 'Tiempos de sprint lineal y velocidades' },
+                  { id: 'vo2', name: 'Resistencia (VO2 Max)', desc: 'Consumo de oxígeno, VMA y FC' },
+                  { id: 'antropometria', name: 'Antropometría', desc: 'Composición corporal y masas' },
+                  { id: 'test505', name: 'Agilidad (Test 505)', desc: 'Cambio de dirección y aceleración' }
+                ].map(evalItem => {
+                  const isChecked = selectedEvaluations[evalItem.id];
+                  return (
+                    <label
+                      key={evalItem.id}
+                      className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer select-none ${
+                        isChecked
+                          ? 'bg-red-50/40 border-red-200 shadow-sm'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => setSelectedEvaluations(prev => ({
+                              ...prev,
+                              [evalItem.id]: e.target.checked
+                            }))}
+                            className="w-4 h-4 text-red-600 bg-slate-100 border-slate-300 rounded focus:ring-red-500 focus:ring-2 cursor-pointer accent-red-600"
+                          />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-xs font-black text-slate-800 uppercase tracking-wide leading-tight">
+                            {evalItem.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-semibold leading-normal">
+                            {evalItem.desc}
+                          </span>
+                        </div>
+                      </div>
+                      <div className={`w-2 h-2 rounded-full ${isChecked ? 'bg-red-600' : 'bg-slate-200'}`}></div>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* Acciones del Modal */}
+              <div className="flex gap-3 border-t border-slate-100 pt-5 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsExportModalOpen(false)}
+                  className="flex-1 px-4 py-3 rounded-xl text-xs font-black tracking-widest uppercase text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={!Object.values(selectedEvaluations).some(Boolean)}
+                  onClick={() => {
+                    const selectedIds = Object.keys(selectedEvaluations).filter(k => selectedEvaluations[k]);
+                    setIsExportModalOpen(false);
+                    if (exportType === 'pdf') {
+                      executeDownloadPdfReport(selectedIds);
+                    } else {
+                      executeDownloadZipByClub(selectedIds);
+                    }
+                  }}
+                  className="flex-1 px-4 py-3 rounded-xl text-xs font-black tracking-widest uppercase text-white bg-red-600 hover:bg-red-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors shadow-lg shadow-red-600/15"
+                >
+                  {exportType === 'pdf' ? 'Confirmar' : 'Generar ZIP'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
