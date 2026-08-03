@@ -188,10 +188,11 @@ interface SportsScienceAreaProps {
   userClub?: string;
   userClubId?: number | null;
   clubs?: any[];
+  defaultTab?: TabId;
 }
 
-const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClub, userClubId, clubs = [] }) => {
-  const [activeTab, setActiveTab] = useState<TabId>('huella');
+const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClub, userClubId, clubs = [], defaultTab }) => {
+  const [activeTab, setActiveTab] = useState<TabId>(defaultTab || 'huella');
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedAnios, setSelectedAnios] = useState<number[]>([]);
   const [selectedPosiciones, setSelectedPosiciones] = useState<string[]>([]);
@@ -559,29 +560,37 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 bg-red-600 rounded-2xl flex items-center justify-center shadow-lg shadow-red-900/40">
-              <i className="fa-solid fa-microscope text-xl"></i>
+              <i className={`fa-solid ${defaultTab === 'huella' ? 'fa-shoe-prints' : 'fa-microscope'} text-xl`}></i>
             </div>
             <div>
               <h1 className="text-3xl md:text-5xl font-black italic tracking-tighter uppercase leading-none">
-                SPORT <span className="text-red-600">SCIENCE</span>
+                {defaultTab === 'huella' ? (
+                  <>HUELLA DEL <span className="text-red-600">ATLETA</span></>
+                ) : (
+                  <>SPORT <span className="text-red-600">SCIENCE</span></>
+                )}
               </h1>
-              <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1">High Performance Data Hub</p>
+              <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1">
+                {defaultTab === 'huella' ? 'Perfil de Rendimiento de Alta Competencia' : 'High Performance Data Hub'}
+              </p>
             </div>
           </div>
 
           {/* TAB NAVIGATION */}
-          <div className="flex flex-wrap gap-2 mt-10">
-            <TabButton active={activeTab === 'huella'} label="Huella del Atleta" icon="fa-fingerprint" onClick={() => setActiveTab('huella')} />
-            <TabButton active={activeTab === 'individual'} label="Reporte Individual" icon="fa-chart-line" onClick={() => setActiveTab('individual')} />
-            <TabButton active={activeTab === 'grupal'} label="Análisis Grupal" icon="fa-users-rays" onClick={() => setActiveTab('grupal')} />
-            <TabButton active={activeTab === 'laboratorio'} label="Laboratorio" icon="fa-flask-vial" onClick={() => setActiveTab('laboratorio')} />
-            <TabButton active={activeTab === 'categorias'} label="Categorías" icon="fa-layer-group" onClick={() => setActiveTab('categorias')} />
-            <TabButton active={activeTab === 'tabla'} label="Tabla de Datos" icon="fa-table" onClick={() => setActiveTab('tabla')} />
-            <TabButton active={activeTab === 'top10'} label="Top Ten" icon="fa-ranking-star" onClick={() => {
-              setActiveTab('top10');
-              setSelectedPlayerId(null);
-            }} />
-          </div>
+          {defaultTab !== 'huella' && (
+            <div className="flex flex-wrap gap-2 mt-10">
+              <TabButton active={activeTab === 'huella'} label="Huella del Atleta" icon="fa-fingerprint" onClick={() => setActiveTab('huella')} />
+              <TabButton active={activeTab === 'individual'} label="Reporte Individual" icon="fa-chart-line" onClick={() => setActiveTab('individual')} />
+              <TabButton active={activeTab === 'grupal'} label="Análisis Grupal" icon="fa-users-rays" onClick={() => setActiveTab('grupal')} />
+              <TabButton active={activeTab === 'laboratorio'} label="Laboratorio" icon="fa-flask-vial" onClick={() => setActiveTab('laboratorio')} />
+              <TabButton active={activeTab === 'categorias'} label="Categorías" icon="fa-layer-group" onClick={() => setActiveTab('categorias')} />
+              <TabButton active={activeTab === 'tabla'} label="Tabla de Datos" icon="fa-table" onClick={() => setActiveTab('tabla')} />
+              <TabButton active={activeTab === 'top10'} label="Top Ten" icon="fa-ranking-star" onClick={() => {
+                setActiveTab('top10');
+                setSelectedPlayerId(null);
+              }} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -1100,7 +1109,7 @@ const getLatestMetricValue = (
   return undefined;
 };
 
-const TachometerGauge = ({ 
+export const TachometerGauge = ({ 
   value, 
   average, 
   maxValue, 
@@ -1420,7 +1429,7 @@ const TachometerGauge = ({
 };
 
 
-const getLatestCompositeAntro = (records: any[], playerId: number): any => {
+export const getLatestCompositeAntro = (records: any[], playerId: number): any => {
   const sorted = records
     .filter(d => Number(d.player_id) === Number(playerId))
     .sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime());
@@ -1456,7 +1465,7 @@ const getLatestCompositeAntro = (records: any[], playerId: number): any => {
   return composite;
 };
 
-const AthleteHuella = ({ 
+export const AthleteHuella = ({ 
   player, imtp, speed, antropometria, vo2max, test505 = [], medicalReports, internalLoads, gps,
   allImtp, allSpeed, allAntro, allVo2, allTest505 = [], allPlayers, clubs,
   cmjRebound = [], allCmjRebound = []
@@ -2230,6 +2239,93 @@ const AthleteHuella = ({
 
     return result;
   }, [evaluatedMetrics, generalProfileSearch, generalProfileFilter, generalProfileSort]);
+
+  const prescriptionData = useMemo(() => {
+    if (!player) return null;
+    const imtpRel = getGaugeData('imtp_f_relativa_n_kg', allImtp, false, '', '', '', '', 30);
+    const cmjHeight = getGaugeData('jump_height_impmom_cm', allImtp, false, '', '', '', '', 40);
+    const reboundRsi = getGaugeData('rebound_rsi', allCmjRebound, false, '', '', '', '', 2.0);
+
+    const imtpRelVal = imtpRel?.value || 0;
+    const imtpRelAvg = imtpRel?.average || 0;
+    const cmjHeightVal = cmjHeight?.value || 0;
+    const cmjHeightAvg = cmjHeight?.average || 0;
+    const reboundRsiVal = reboundRsi?.value || 0;
+    const reboundRsiAvg = reboundRsi?.average || 0;
+
+    let profileTitle = 'Perfil Equilibrado';
+    let profileDesc = 'El atleta muestra una relación balanceada entre fuerza base, fuerza reactiva de ciclo lento (CMJ) y elasticidad de ciclo rápido (Rebound). Se sugiere continuar con el microciclo estándar de potencia mixta.';
+    let recommendationList: string[] = [];
+    let priorityTag = 'Mantener Potencia Mixta';
+    let priorityColor = 'bg-slate-50 text-slate-700 border-slate-100';
+
+    if (imtpRelVal > 0 && cmjHeightVal > 0 && reboundRsiVal > 0) {
+      const fRatio = imtpRelAvg > 0 ? imtpRelVal / imtpRelAvg : 1;
+      const cRatio = cmjHeightAvg > 0 ? cmjHeightVal / cmjHeightAvg : 1;
+      const rRatio = reboundRsiAvg > 0 ? reboundRsiVal / reboundRsiAvg : 1;
+
+      if (fRatio > 1.05 && cRatio < 0.95 && rRatio < 0.95) {
+        profileTitle = 'Perfil Fuerza-Dominante (Déficit Elástico)';
+        profileDesc = 'Excelente capacidad de producción de fuerza concéntrica máxima, pero con transferencia elástica ineficiente y tiempos de contacto prolongados. Requiere re-entrenamiento neuromuscular.';
+        priorityTag = 'Pliometría & Reactividad Rápida';
+        priorityColor = 'bg-blue-50 text-blue-700 border-blue-200';
+      } else if (fRatio < 0.95 && (cRatio > 1.05 || rRatio > 1.05)) {
+        profileTitle = 'Perfil Velocidad-Elástico Dominante (Déficit de Fuerza)';
+        profileDesc = 'Excelente reactividad de tobillo y altura de vuelo relativa, pero limitado por bajos niveles de fuerza estructural base. Su potencial elástico está limitado por su fuerza máxima.';
+        priorityTag = 'Fuerza Máxima & Hipertrofia Funcional';
+        priorityColor = 'bg-red-50 text-red-700 border-red-200';
+      } else if (fRatio < 0.95 && cRatio < 0.95 && rRatio < 0.95) {
+        profileTitle = 'Perfil de Capacidad Condicional Baja (Déficit Concurrente)';
+        profileDesc = 'El atleta se encuentra por debajo del promedio de su categoría en todas las áreas de fuerza e impacto elástico. Se recomienda un microciclo de acondicionamiento general de base.';
+        priorityTag = 'Acondicionamiento General Concurrente';
+        priorityColor = 'bg-amber-50 text-amber-700 border-amber-200';
+      } else if (fRatio > 1.05 && cRatio > 1.05 && rRatio > 1.05) {
+        profileTitle = 'Perfil Élite de Alto Rendimiento';
+        profileDesc = 'Excelente desempeño neuromuscular concurrente. Niveles de fuerza absoluta, reactividad de ciclo corto y capacidad de salto por encima de la media. Enfoque en mantenimiento preventivo.';
+        priorityTag = 'Optimización Fina & Prevención';
+        priorityColor = 'bg-purple-50 text-purple-700 border-purple-200';
+      }
+    }
+
+    // Generate dynamic prescriptions based on performance compared to averages
+    if (imtpRelVal > 0) {
+      if (imtpRelVal < imtpRelAvg) {
+        recommendationList.push('Fuerza Máxima: Déficit de Fuerza Máxima Dinámica y Estructural. Prescribir protocolo de sobrecarga progresiva orientado al desarrollo de la fuerza general de base. Utilizar pautas de intensidad media-alta con velocidad concéntrica máxima intencional, asegurando pausas de recuperación completas para optimizar la adaptación neuromuscular.');
+      } else {
+        recommendationList.push('Fuerza Máxima: Mantenimiento y Optimización de la Fuerza de Base. Prescribir estímulos dinámicos orientados a la potencia y velocidad de ejecución. Mantener volumen bajo y foco en la calidad técnica, incorporando variaciones unilaterales para favorecer la simetría y estabilidad del miembro inferior.');
+      }
+    } else {
+      recommendationList.push('Fuerza Máxima: Fuerza Máxima (Sin Datos). Pauta pendiente. Se requiere completar evaluación de fuerza isométrica (IMTP) para caracterizar la capacidad de producción de fuerza concéntrica máxima.');
+    }
+
+    if (cmjHeightVal > 0) {
+      if (cmjHeightVal < cmjHeightAvg) {
+        recommendationList.push('Potencia de Salto (CMJ): Déficit de Potencia y Eficiencia del Ciclo Estiramiento-Acortamiento Lento. Prescribir estímulo neuromuscular de potencia mecánica vertical. Foco en pautas de transferencia de aceleración, utilizando saltos balísticos de baja a moderada carga externa que estimulen la máxima velocidad de salida del centro de gravedad.');
+      } else {
+        recommendationList.push('Potencia Exclusiva (CMJ): Potencia Exclusiva y Optimización de la Saltoabilidad. Prescribir estímulo dinámico reactivo asistido o balístico puro. Utilizar pautas de velocidad supra-máxima e impulsión explosiva para potenciar el componente elástico y de triple extensión del miembro inferior.');
+      }
+    } else {
+      recommendationList.push('Neuromuscular (CMJ): Neuromuscular CMJ (Sin Datos). Pauta pendiente. Se requiere registro de evaluación de salto vertical con contramovimiento (CMJ) para caracterizar la eficiencia del ciclo de estiramiento-acortamiento lento.');
+    }
+
+    if (reboundRsiVal > 0) {
+      if (reboundRsiVal < reboundRsiAvg) {
+        recommendationList.push('Reactividad Rápida (SSC): Déficit de Rigidez Activa y Ciclo Estiramiento-Acortamiento Rápido. Prescribir estímulos de pliometría de baja a moderada intensidad. Foco en la reducción drástica de los tiempos de contacto con el suelo y en la rigidez del complejo tobillo-pie mediante pautas de rebote reactivo continuo.');
+      } else {
+        recommendationList.push('Rigidez (Fast SSC Avanzado): Optimización de Rigidez Activa y Fast-SSC Avanzado. Prescribir pautas pliométricas de alta intensidad y reactividad unilateral. Foco en maximizar la transmisión de energía elástica y soportar altas cargas de impacto excéntrico con deformación mínima en fase de amortiguación.');
+      }
+    } else {
+      recommendationList.push('Reactividad Rápida: Reactividad Rápida Rebound (Sin Datos). Pauta pendiente. Se requiere registro de evaluación de rebotes continuos (Rebound) para programar volumen e intensidad de pliometría de ciclo rápido.');
+    }
+
+    return {
+      profileTitle,
+      profileDesc,
+      recommendationList,
+      priorityTag,
+      priorityColor
+    };
+  }, [player, allImtp, allCmjRebound]);
 
   if (!player) return (
     <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
@@ -3371,6 +3467,69 @@ const AthleteHuella = ({
           </div>
         </div>
       </div>
+
+      {prescriptionData && (
+        <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+            <div className="flex items-center gap-2">
+              <i className="fa-solid fa-clipboard-list text-[#CF1B2B] text-sm"></i>
+              <span className="text-xs font-black uppercase tracking-widest text-slate-500">
+                Prescripción de Entrenamiento Individualizada
+              </span>
+            </div>
+            <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase border ${prescriptionData.priorityColor}`}>
+              Foco: {prescriptionData.priorityTag}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-50/50 rounded-[32px] p-6 border border-slate-100/60">
+            {/* Diagnóstico */}
+            <div className="lg:col-span-5 space-y-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Diagnóstico de Perfil</p>
+              <h4 className="text-lg font-black italic text-slate-900 tracking-tight leading-snug">
+                {prescriptionData.profileTitle}
+              </h4>
+              <p className="text-xs leading-relaxed text-slate-600 font-medium">
+                {prescriptionData.profileDesc}
+              </p>
+            </div>
+
+            {/* Directrices de Trabajo */}
+            <div className="lg:col-span-7 space-y-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Directrices de Trabajo Recomendadas</p>
+              <div className="space-y-3">
+                {prescriptionData.recommendationList.map((rec, index) => {
+                  let icon = 'fa-dumbbell';
+                  let iconColor = 'text-red-500 bg-red-50';
+                  if (rec.includes('CMJ')) {
+                    icon = 'fa-person-running';
+                    iconColor = 'text-blue-500 bg-blue-50';
+                  } else if (rec.includes('Rebound') || rec.includes('Reactividad')) {
+                    icon = 'fa-bolt';
+                    iconColor = 'text-emerald-500 bg-emerald-50';
+                  }
+
+                  return (
+                    <div key={index} className="flex gap-4 items-start bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:border-slate-200 transition-all">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${iconColor}`}>
+                        <i className={`fa-solid ${icon} text-xs`}></i>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold leading-relaxed text-slate-800">
+                          {rec.split(':')[0]}:
+                        </p>
+                        <p className="text-xs leading-relaxed text-slate-600 font-medium">
+                          {rec.split(':').slice(1).join(':').trim()}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

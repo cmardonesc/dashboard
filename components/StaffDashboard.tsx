@@ -1454,6 +1454,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         return <DataImportArea />;
       case 'sports_science':
         return <SportsScienceArea userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} />;
+      case 'huella_atleta':
+        return <SportsScienceArea userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} defaultTab="huella" />;
       case 'telegram_notifications':
         return <TelegramNotificationsArea performanceRecords={performanceRecords} />;
       default:

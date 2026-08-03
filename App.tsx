@@ -1282,6 +1282,7 @@ export default function App() {
   const menuTitle = role === 'club' 
     ? `${userClub || 'CLUB'} - PERFIL DE CLUB`
     : (activeMenu === 'citaciones' ? 'CITAS' : 
+       activeMenu === 'huella_atleta' ? 'HUELLA DEL ATLETA' :
        activeMenu === 'fisica_carga_externa_tareas' ? 'CARGA TAREAS' : 
        (activeMenu === 'tecnica' || activeMenu.startsWith('tecnica_')) ? 'ÁREA TÉCNICA' : 
        activeMenu.toUpperCase().replace('_', ' '))

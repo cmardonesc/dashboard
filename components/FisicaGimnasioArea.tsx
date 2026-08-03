@@ -2,9 +2,27 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { MicrocicloDB, Category, UserRole, REVERSE_CATEGORY_ID_MAP } from '../types'
 import { GYM_EXERCISES_DATA, GymExerciseTemplate } from './gymExercisesData'
+import GymSessionDesigner from './GymSessionDesigner'
 import { motion, AnimatePresence } from 'motion/react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area
+} from 'recharts'
 
 interface MicrocicloUI extends MicrocicloDB {
   id: number;
@@ -25,6 +43,12 @@ interface GymExercise {
   carga_kg: string;
   rpe_sugerido?: number;
   target_group?: string;
+  image_0?: string;
+  image_1?: string;
+  musculos_secundarios?: string[];
+  nivel?: string;
+  mecanica?: string;
+  fuerza?: string;
 }
 
 interface GymSession {
@@ -87,6 +111,18 @@ const unpackGrupoMuscular = (packed: string) => {
     targetGroup: 'TODOS',
     grupoMuscular: packed
   };
+};
+
+const parseReps = (repsStr: string | number | undefined): number => {
+  if (repsStr === undefined || repsStr === null) return 0;
+  const match = String(repsStr).match(/\d+/);
+  return match ? parseInt(match[0]) : 10;
+};
+
+const parseWeight = (weightStr: string | number | undefined): number => {
+  if (weightStr === undefined || weightStr === null) return 0;
+  const match = String(weightStr).match(/[\d.]+/);
+  return match ? parseFloat(match[0]) : 0;
 };
 
 interface PredefinedExercise {
@@ -511,7 +547,10 @@ export default function FisicaGimnasioArea({
     activo: boolean;
     tipo: 'Kinesiología' | 'Trabajo Diferenciado' | 'Gimnasio Especial' | 'Otro';
     observaciones: string;
+    ejercicios?: GymExercise[];
   }>>({})
+  const [activeGymTab, setActiveGymTab] = useState<'planificacion' | 'dashboard' | 'pauta_individual'>('planificacion')
+  const [pautaSelectedPlayerId, setPautaSelectedPlayerId] = useState<number | null>(null)
   const [showIndividualPautaModal, setShowIndividualPautaModal] = useState(false)
   const [savingToDb, setSavingToDb] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -1063,9 +1102,11 @@ export default function FisicaGimnasioArea({
     }
   };
 
-  const ensureActiveSessionExist = async (): Promise<string | number | null> => {
-    if (!selectedMicro) return null;
-    let targetSessionId = activeDaySessions.length > 0 ? activeDaySessions[0].id : null;
+  const ensureActiveSessionExist = async (currentSessions: GymSession[] = sessions): Promise<{ targetSessionId: string | number | null; updatedSessions: GymSession[] }> => {
+    if (!selectedMicro) return { targetSessionId: null, updatedSessions: currentSessions };
+    const daySessions = currentSessions.filter(s => s.dia_semana === selectedDia);
+    let targetSessionId = daySessions.length > 0 ? daySessions[0].id : null;
+    let updatedSessions = [...currentSessions];
     
     if (!targetSessionId) {
       const defaultSessionName = `Trabajo Gimnasio - ${selectedDia}`;
@@ -1078,35 +1119,56 @@ export default function FisicaGimnasioArea({
       };
 
       if (isDbMode) {
-        const { data, error } = await supabase
-          .from('fisica_gimnasio_sesion')
-          .insert([sessionPayload])
-          .select()
-          .single();
+        try {
+          const { data, error } = await supabase
+            .from('fisica_gimnasio_sesion')
+            .insert([sessionPayload])
+            .select()
+            .single();
 
-        if (error) throw error;
-        targetSessionId = data.id;
+          if (error) throw error;
+          targetSessionId = data.id;
+          const newDbSession = {
+            ...data,
+            ejercicios: []
+          };
+          updatedSessions.push(newDbSession);
+          setSessions(updatedSessions);
+        } catch (dbErr: any) {
+          console.warn("Error creating session in DB, falling back to local:", dbErr);
+          setIsDbMode(false);
+          
+          const newSessionId = `local-${Date.now()}`;
+          const newLocalSession = {
+            id: newSessionId,
+            ...sessionPayload,
+            ejercicios: []
+          };
+          updatedSessions.push(newLocalSession);
+          targetSessionId = newSessionId;
+          saveSessionsLocal(selectedMicro.id, updatedSessions);
+          setSessions(updatedSessions);
+        }
       } else {
-        const newSessionId = Date.now() + Math.random();
-        const localSessions = [...sessions];
+        const newSessionId = `local-${Date.now()}`;
         const newLocalSession = {
           id: newSessionId,
           ...sessionPayload,
           ejercicios: []
         };
-        localSessions.push(newLocalSession);
+        updatedSessions.push(newLocalSession);
         targetSessionId = newSessionId;
-        saveSessionsLocal(selectedMicro.id, localSessions);
-        setSessions(localSessions);
+        saveSessionsLocal(selectedMicro.id, updatedSessions);
+        setSessions(updatedSessions);
       }
     }
-    return targetSessionId;
+    return { targetSessionId, updatedSessions };
   };
 
   const handleAddNextExerciseOfGroup = async (targetGroupId: string) => {
     if (!selectedMicro) return;
     try {
-      const targetSessionId = await ensureActiveSessionExist();
+      const { targetSessionId, updatedSessions } = await ensureActiveSessionExist(sessions);
       if (!targetSessionId) return;
 
       // Get predefined list
@@ -1127,7 +1189,8 @@ export default function FisicaGimnasioArea({
       }
 
       // Count current exercises of this group
-      const dayExercises = activeDaySessions.flatMap(s => s.ejercicios || []);
+      const activeSessionsForDay = updatedSessions.filter(s => s.dia_semana === selectedDia);
+      const dayExercises = activeSessionsForDay.flatMap(s => s.ejercicios || []);
       const currentExCountForGroup = dayExercises.filter(ex => {
         const exGroup = ex.target_group || 'TODOS';
         return exGroup === targetGroupId;
@@ -1136,41 +1199,70 @@ export default function FisicaGimnasioArea({
       const templateEx = exercisesList[currentExCountForGroup % exercisesList.length];
 
       if (isDbMode) { // Offline edit during incremental exercise addition
-        // Fetch current exercises count for order
-        const { data: existingExs } = await supabase
-          .from('fisica_gimnasio_ejercicio')
-          .select('id')
-          .eq('sesion_id', targetSessionId);
-        
-        const orderIndex = existingExs ? existingExs.length : 0;
+        try {
+          // Fetch current exercises count for order
+          const { data: existingExs } = await supabase
+            .from('fisica_gimnasio_ejercicio')
+            .select('id')
+            .eq('sesion_id', targetSessionId);
+          
+          const orderIndex = existingExs ? existingExs.length : 0;
 
-        const { error } = await supabase
-          .from('fisica_gimnasio_ejercicio')
-          .insert([{
-            sesion_id: targetSessionId,
-            grupo_muscular: packGrupoMuscular(templateEx.grupo_muscular, targetGroupId),
-            ejercicio: templateEx.ejercicio,
-            equipamiento: templateEx.equipamiento || 'Ninguno',
-            tecnica_ejecucion: templateEx.tecnica_ejecucion || '',
-            series: Number(templateEx.series) || 3,
-            repeticiones: templateEx.repeticiones || '10',
-            carga_kg: templateEx.carga_kg || '0',
-            rpe_sugerido: Number(templateEx.rpe_sugerido) || 7,
-            orden: orderIndex
-          }]);
+          const { error } = await supabase
+            .from('fisica_gimnasio_ejercicio')
+            .insert([{
+              sesion_id: targetSessionId,
+              grupo_muscular: packGrupoMuscular(templateEx.grupo_muscular, targetGroupId),
+              ejercicio: templateEx.ejercicio,
+              equipamiento: templateEx.equipamiento || 'Ninguno',
+              tecnica_ejecucion: templateEx.tecnica_ejecucion || '',
+              series: Number(templateEx.series) || 3,
+              repeticiones: templateEx.repeticiones || '10',
+              carga_kg: templateEx.carga_kg || '0',
+              rpe_sugerido: Number(templateEx.rpe_sugerido) || 7,
+              orden: orderIndex
+            }]);
 
-        if (error) throw error;
-        await fetchSessionsForMicro(selectedMicro.id);
+          if (error) throw error;
+          await fetchSessionsForMicro(selectedMicro.id);
+        } catch (dbErr: any) {
+          console.warn("Error inserting exercise in DB, falling back to local:", dbErr);
+          setIsDbMode(false);
+          
+          // Local fallback
+          const localSessions = [...updatedSessions];
+          const sIndex = localSessions.findIndex(s => s.id === targetSessionId);
+          if (sIndex !== -1) {
+            if (!localSessions[sIndex].ejercicios) {
+              localSessions[sIndex].ejercicios = [];
+            }
+            localSessions[sIndex].ejercicios.push({
+              id: `local-ex-${Date.now()}-${Math.random()}`,
+              grupo_muscular: templateEx.grupo_muscular,
+              ejercicio: templateEx.ejercicio,
+              equipamiento: templateEx.equipamiento || 'Ninguno',
+              tecnica_ejecucion: templateEx.tecnica_ejecucion || '',
+              series: Number(templateEx.series) || 3,
+              repeticiones: templateEx.repeticiones || '10',
+              carga_kg: templateEx.carga_kg || '0',
+              rpe_sugerido: Number(templateEx.rpe_sugerido) || 7,
+              target_group: targetGroupId
+            });
+            saveSessionsLocal(selectedMicro.id, localSessions);
+            setSessions(localSessions);
+            setHasUnsavedChanges(true);
+          }
+        }
       } else {
         // Local mode
-        const localSessions = [...sessions];
+        const localSessions = [...updatedSessions];
         const sIndex = localSessions.findIndex(s => s.id === targetSessionId);
         if (sIndex !== -1) {
           if (!localSessions[sIndex].ejercicios) {
             localSessions[sIndex].ejercicios = [];
           }
           localSessions[sIndex].ejercicios.push({
-            id: Date.now() + Math.random(),
+            id: `local-ex-${Date.now()}-${Math.random()}`,
             grupo_muscular: templateEx.grupo_muscular,
             ejercicio: templateEx.ejercicio,
             equipamiento: templateEx.equipamiento || 'Ninguno',
@@ -1199,31 +1291,56 @@ export default function FisicaGimnasioArea({
 
     try {
       if (isDbMode) { // Offline edit during incremental exercise removal
-        // Find exercises of this target group in this session
-        const { data: existingExs, error: errFetch } = await supabase
-          .from('fisica_gimnasio_ejercicio')
-          .select('*')
-          .eq('sesion_id', targetSessionId);
-
-        if (errFetch) throw errFetch;
-
-        const targetGroupExs = (existingExs || []).filter(e => {
-          const unpacked = unpackGrupoMuscular(e.grupo_muscular);
-          return unpacked.targetGroup === targetGroupId;
-        });
-
-        if (targetGroupExs.length > 0) {
-          // Sort by order or id desc to remove the last one
-          targetGroupExs.sort((a, b) => (b.orden || 0) - (a.orden || 0));
-          const lastId = targetGroupExs[0].id;
-
-          const { error: errDelete } = await supabase
+        try {
+          // Find exercises of this target group in this session
+          const { data: existingExs, error: errFetch } = await supabase
             .from('fisica_gimnasio_ejercicio')
-            .delete()
-            .eq('id', lastId);
+            .select('*')
+            .eq('sesion_id', targetSessionId);
 
-          if (errDelete) throw errDelete;
-          await fetchSessionsForMicro(selectedMicro.id);
+          if (errFetch) throw errFetch;
+
+          const targetGroupExs = (existingExs || []).filter(e => {
+            const unpacked = unpackGrupoMuscular(e.grupo_muscular);
+            return unpacked.targetGroup === targetGroupId;
+          });
+
+          if (targetGroupExs.length > 0) {
+            // Sort by order or id desc to remove the last one
+            targetGroupExs.sort((a, b) => (b.orden || 0) - (a.orden || 0));
+            const lastId = targetGroupExs[0].id;
+
+            const { error: errDelete } = await supabase
+              .from('fisica_gimnasio_ejercicio')
+              .delete()
+              .eq('id', lastId);
+
+            if (errDelete) throw errDelete;
+            await fetchSessionsForMicro(selectedMicro.id);
+          }
+        } catch (dbErr: any) {
+          console.warn("Error removing last exercise from DB, falling back to local:", dbErr);
+          setIsDbMode(false);
+          
+          // Local fallback
+          const localSessions = [...sessions];
+          const sIndex = localSessions.findIndex(s => s.id === targetSessionId);
+          if (sIndex !== -1 && localSessions[sIndex].ejercicios) {
+            const exercises = localSessions[sIndex].ejercicios;
+            let foundIndex = -1;
+            for (let i = exercises.length - 1; i >= 0; i--) {
+              if (exercises[i].target_group === targetGroupId) {
+                foundIndex = i;
+                break;
+              }
+            }
+            if (foundIndex !== -1) {
+              exercises.splice(foundIndex, 1);
+              saveSessionsLocal(selectedMicro.id, localSessions);
+              setSessions(localSessions);
+              setHasUnsavedChanges(true);
+            }
+          }
         }
       } else {
         // Local mode
@@ -1263,28 +1380,45 @@ export default function FisicaGimnasioArea({
 
       try {
         if (isDbMode) { // Offline edit during focus group removal
-          const { data: existingExs, error: errFetch } = await supabase
-            .from('fisica_gimnasio_ejercicio')
-            .select('*')
-            .eq('sesion_id', targetSessionId);
-
-          if (errFetch) throw errFetch;
-
-          const exercisesToDelete = (existingExs || []).filter(e => {
-            const unpacked = unpackGrupoMuscular(e.grupo_muscular);
-            return unpacked.targetGroup === targetGroupId;
-          });
-
-          const idsToDelete = exercisesToDelete.map(e => e.id);
-
-          if (idsToDelete.length > 0) {
-            const { error: errDel } = await supabase
+          try {
+            const { data: existingExs, error: errFetch } = await supabase
               .from('fisica_gimnasio_ejercicio')
-              .delete()
-              .in('id', idsToDelete);
+              .select('*')
+              .eq('sesion_id', targetSessionId);
+
+            if (errFetch) throw errFetch;
+
+            const exercisesToDelete = (existingExs || []).filter(e => {
+              const unpacked = unpackGrupoMuscular(e.grupo_muscular);
+              return unpacked.targetGroup === targetGroupId;
+            });
+
+            const idsToDelete = exercisesToDelete.map(e => e.id);
+
+            if (idsToDelete.length > 0) {
+              const { error: errDel } = await supabase
+                .from('fisica_gimnasio_ejercicio')
+                .delete()
+                .in('id', idsToDelete);
+              
+              if (errDel) throw errDel;
+              await fetchSessionsForMicro(selectedMicro.id);
+            }
+          } catch (dbErr: any) {
+            console.warn("Error deleting focus group exercises from DB, falling back to local:", dbErr);
+            setIsDbMode(false);
             
-            if (errDel) throw errDel;
-            await fetchSessionsForMicro(selectedMicro.id);
+            // Local Mode Fallback
+            const localSessions = [...sessions];
+            const sIndex = localSessions.findIndex(s => s.id === targetSessionId);
+            if (sIndex !== -1 && localSessions[sIndex].ejercicios) {
+              localSessions[sIndex].ejercicios = localSessions[sIndex].ejercicios.filter(
+                (ex: any) => ex.target_group !== targetGroupId
+              );
+              saveSessionsLocal(selectedMicro.id, localSessions);
+              setSessions(localSessions);
+              setHasUnsavedChanges(true);
+            }
           }
         } else {
           // Local Mode
@@ -1306,7 +1440,7 @@ export default function FisicaGimnasioArea({
     } else {
       // "INCORPORAR" - Add predefined exercises (auto-assign for this single group)
       try {
-        const targetSessionId = await ensureActiveSessionExist();
+        const { targetSessionId, updatedSessions } = await ensureActiveSessionExist(sessions);
         if (!targetSessionId) return;
 
         let exercisesToInsert: any[] = [];
@@ -1348,36 +1482,67 @@ export default function FisicaGimnasioArea({
         }
 
         if (isDbMode) { // Offline edit during focus group assignment
-          // Fetch existing to get orderIndex
-          const { data: existingExs } = await supabase
-            .from('fisica_gimnasio_ejercicio')
-            .select('id')
-            .eq('sesion_id', targetSessionId);
-          
-          let orderIndex = existingExs ? existingExs.length : 0;
+          try {
+            // Fetch existing to get orderIndex
+            const { data: existingExs } = await supabase
+              .from('fisica_gimnasio_ejercicio')
+              .select('id')
+              .eq('sesion_id', targetSessionId);
+            
+            let orderIndex = existingExs ? existingExs.length : 0;
 
-          const inserts = exercisesToInsert.map(ex => ({
-            sesion_id: targetSessionId,
-            grupo_muscular: packGrupoMuscular(ex.grupo_muscular, targetGroupId),
-            ejercicio: ex.ejercicio,
-            equipamiento: ex.equipamiento || 'Ninguno',
-            tecnica_ejecucion: ex.tecnica_ejecucion || '',
-            series: Number(ex.series) || 3,
-            repeticiones: ex.repeticiones || '10',
-            carga_kg: ex.carga_kg || '0',
-            rpe_sugerido: Number(ex.rpe_sugerido) || 7,
-            orden: orderIndex++
-          }));
+            const inserts = exercisesToInsert.map(ex => ({
+              sesion_id: targetSessionId,
+              grupo_muscular: packGrupoMuscular(ex.grupo_muscular, targetGroupId),
+              ejercicio: ex.ejercicio,
+              equipamiento: ex.equipamiento || 'Ninguno',
+              tecnica_ejecucion: ex.tecnica_ejecucion || '',
+              series: Number(ex.series) || 3,
+              repeticiones: ex.repeticiones || '10',
+              carga_kg: ex.carga_kg || '0',
+              rpe_sugerido: Number(ex.rpe_sugerido) || 7,
+              orden: orderIndex++
+            }));
 
-          const { error } = await supabase
-            .from('fisica_gimnasio_ejercicio')
-            .insert(inserts);
+            const { error } = await supabase
+              .from('fisica_gimnasio_ejercicio')
+              .insert(inserts);
 
-          if (error) throw error;
-          await fetchSessionsForMicro(selectedMicro.id);
+            if (error) throw error;
+            await fetchSessionsForMicro(selectedMicro.id);
+          } catch (dbErr: any) {
+            console.warn("Error inserting focus group exercises in DB, falling back to local:", dbErr);
+            setIsDbMode(false);
+
+            // Local fallback
+            const localSessions = [...updatedSessions];
+            const sIndex = localSessions.findIndex(s => s.id === targetSessionId);
+            if (sIndex !== -1) {
+              if (!localSessions[sIndex].ejercicios) {
+                localSessions[sIndex].ejercicios = [];
+              }
+              exercisesToInsert.forEach(ex => {
+                localSessions[sIndex].ejercicios.push({
+                  id: `local-ex-${Date.now()}-${Math.random()}`,
+                  grupo_muscular: ex.grupo_muscular,
+                  ejercicio: ex.ejercicio,
+                  equipamiento: ex.equipamiento || 'Ninguno',
+                  tecnica_ejecucion: ex.tecnica_ejecucion || '',
+                  series: Number(ex.series) || 3,
+                  repeticiones: ex.repeticiones || '10',
+                  carga_kg: ex.carga_kg || '0',
+                  rpe_sugerido: Number(ex.rpe_sugerido) || 7,
+                  target_group: targetGroupId
+                });
+              });
+              saveSessionsLocal(selectedMicro.id, localSessions);
+              setSessions(localSessions);
+              setHasUnsavedChanges(true);
+            }
+          }
         } else {
           // Local mode
-          const localSessions = [...sessions];
+          const localSessions = [...updatedSessions];
           const sIndex = localSessions.findIndex(s => s.id === targetSessionId);
           if (sIndex !== -1) {
             if (!localSessions[sIndex].ejercicios) {
@@ -1385,7 +1550,7 @@ export default function FisicaGimnasioArea({
             }
             exercisesToInsert.forEach(ex => {
               localSessions[sIndex].ejercicios.push({
-                id: Date.now() + Math.random(),
+                id: `local-ex-${Date.now()}-${Math.random()}`,
                 grupo_muscular: ex.grupo_muscular,
                 ejercicio: ex.ejercicio,
                 equipamiento: ex.equipamiento || 'Ninguno',
@@ -2319,43 +2484,33 @@ export default function FisicaGimnasioArea({
     setTempExercises(prev => prev.filter(e => e.id !== exId))
   }
 
-  // Save Session (Database or Local)
-  const handleSaveSession = async () => {
-    if (!sessionForm.nombre_sesion || !selectedMicro) return
+  // Save Session (Database or Local) - Advanced and Upgraded
+  const handleSaveSessionAdvanced = async (sessionPayload: any, exercisesPayload: any[]) => {
+    if (!selectedMicro) return;
 
-    const sessionPayload: any = {
-      microcycle_id: selectedMicro.id,
-      dia_semana: sessionForm.dia_semana,
-      fecha_sesion: sessionForm.fecha_sesion || null,
-      nombre_sesion: sessionForm.nombre_sesion,
-      observaciones: sessionForm.observaciones
-    }
-
-    if (isDbMode) { // Offline edit during session form saving
+    if (isDbMode) {
       try {
         let savedSessionId: number | string;
 
         if (editingSession) {
           // Actualización
-          const { data, error } = await supabase
+          const { error } = await supabase
             .from('fisica_gimnasio_sesion')
             .update(sessionPayload)
-            .eq('id', editingSession.id)
-            .select()
-            .single()
+            .eq('id', editingSession.id);
 
-          if (error) throw error
-          savedSessionId = editingSession.id
+          if (error) throw error;
+          savedSessionId = editingSession.id;
         } else {
           // Inserción de nueva sesión
           const { data, error } = await supabase
             .from('fisica_gimnasio_sesion')
             .insert([sessionPayload])
             .select()
-            .single()
+            .single();
 
-          if (error) throw error
-          savedSessionId = data.id
+          if (error) throw error;
+          savedSessionId = data.id;
         }
 
         // Borrar los ejercicios anteriores de esta sesión si editamos
@@ -2363,47 +2518,66 @@ export default function FisicaGimnasioArea({
           await supabase
             .from('fisica_gimnasio_ejercicio')
             .delete()
-            .eq('sesion_id', savedSessionId)
+            .eq('sesion_id', savedSessionId);
         }
 
         // Insertar los nuevos ejercicios
-        if (tempExercises.length > 0) {
-          const exercisesPayload = tempExercises.map((e, index) => ({
+        if (exercisesPayload.length > 0) {
+          const finalExercises = exercisesPayload.map((e, index) => ({
+            ...e,
             sesion_id: savedSessionId,
-            grupo_muscular: packGrupoMuscular(e.grupo_muscular, e.target_group || 'TODOS'),
-            ejercicio: e.ejercicio,
-            equipamiento: e.equipamiento,
-            tecnica_ejecucion: e.tecnica_ejecucion,
-            series: e.series,
-            repeticiones: e.repeticiones,
-            carga_kg: e.carga_kg,
-            rpe_sugerido: e.rpe_sugerido,
             orden: index
-          }))
+          }));
 
           const { error: errEx } = await supabase
             .from('fisica_gimnasio_ejercicio')
-            .insert(exercisesPayload)
+            .insert(finalExercises);
 
-          if (errEx) throw errEx
+          if (errEx) throw errEx;
         }
 
         // Recargar
-        await fetchSessionsForMicro(selectedMicro.id)
-        setShowSessionModal(false)
-        resetSessionForm()
+        await fetchSessionsForMicro(selectedMicro.id);
+        setShowSessionModal(false);
+        resetSessionForm();
+        alert("¡Sesión y prescripciones guardadas exitosamente en base de datos!");
       } catch (err: any) {
-        console.error("Error al guardar sesión en la DB:", err)
-        setErrorMsg("Error de base de datos. Guardando localmente en este microciclo...")
-        setIsDbMode(false)
-        // Fallback inmediato a local
-        saveLocalSessionFallback(sessionPayload)
+        console.error("Error al guardar sesión avanzada en DB:", err);
+        setErrorMsg("Error de base de datos. Guardando localmente en este microciclo...");
+        setIsDbMode(false);
+        saveLocalSessionFallbackAdvanced(sessionPayload, exercisesPayload);
       }
     } else {
-      saveLocalSessionFallback(sessionPayload)
-      setHasUnsavedChanges(true)
+      saveLocalSessionFallbackAdvanced(sessionPayload, exercisesPayload);
+      setHasUnsavedChanges(true);
     }
-  }
+  };
+
+  const saveLocalSessionFallbackAdvanced = (sessionPayload: any, exercisesPayload: any[]) => {
+    if (!selectedMicro) return;
+    let updatedSessions = [...sessions];
+
+    const formattedLocalSession: GymSession = {
+      ...sessionPayload,
+      id: editingSession ? editingSession.id : `local-${Date.now()}`,
+      ejercicios: exercisesPayload.map((e, index) => ({
+        ...e,
+        id: e.id || `local-ex-${Date.now()}-${index}`
+      }))
+    };
+
+    if (editingSession) {
+      updatedSessions = updatedSessions.map(s => s.id === editingSession.id ? formattedLocalSession : s);
+    } else {
+      updatedSessions.push(formattedLocalSession);
+    }
+
+    setSessions(updatedSessions);
+    saveSessionsLocal(selectedMicro.id, updatedSessions);
+    setShowSessionModal(false);
+    resetSessionForm();
+    alert("¡Sesión guardada en almacenamiento local de respaldo!");
+  };
 
   const saveLocalSessionFallback = (sessionPayload: any) => {
     if (!selectedMicro) return
@@ -2582,6 +2756,137 @@ export default function FisicaGimnasioArea({
     return nominatedPlayers.filter(p => p.name.toLowerCase().includes(q));
   }, [nominatedPlayers, playerSearchQuery]);
 
+  // Compute dashboard loads, volumes and distribution analytics
+  const dashboardData = useMemo(() => {
+    let totalVolume = 0;
+    let totalRepsCount = 0;
+    let rpeSum = 0;
+    let rpeCount = 0;
+    let exercisesCount = 0;
+
+    // Let's compute daily workloads
+    const dailyLoads = DIAS_SEMANA.map(dia => {
+      let dayVol = 0;
+      let dayReps = 0;
+      const daySessions = sessions.filter(s => s.dia_semana === dia);
+      daySessions.forEach(s => {
+        (s.ejercicios || []).forEach(ex => {
+          const sets = Number(ex.series) || 3;
+          const reps = parseReps(ex.repeticiones);
+          const weight = parseWeight(ex.carga_kg) || 20; // fallback bar weight
+
+          // Multiply by number of players performing it to get total volume
+          const assignedGroup = ex.target_group || 'TODOS';
+          let factor = nominatedPlayers.length;
+          if (assignedGroup !== 'TODOS' && !['TREN_SUPERIOR', 'TREN_INFERIOR', 'CORE_ZONA_MEDIA'].includes(assignedGroup)) {
+            // It's a specific neuromuscular group. Count how many players are in this group!
+            factor = nominatedPlayers.filter(p => (playerAssignments[p.player_id] || 'TODOS') === assignedGroup).length;
+          }
+
+          const repsTotal = sets * reps * factor;
+          const volTotal = sets * reps * weight * factor;
+
+          dayVol += volTotal;
+          dayReps += repsTotal;
+
+          totalVolume += volTotal;
+          totalRepsCount += repsTotal;
+          exercisesCount++;
+
+          if (ex.rpe_sugerido) {
+            rpeSum += ex.rpe_sugerido;
+            rpeCount++;
+          }
+        });
+      });
+
+      return {
+        name: dia,
+        Volumen: Math.round(dayVol),
+        Repeticiones: dayReps
+      };
+    });
+
+    // Load by target group
+    const groupLoads = TARGET_GROUPS_CONFIG.map(group => {
+      let vol = 0;
+      let reps = 0;
+      sessions.forEach(s => {
+        (s.ejercicios || []).filter(ex => ex.target_group === group.id).forEach(ex => {
+          const sets = Number(ex.series) || 3;
+          const rVal = parseReps(ex.repeticiones);
+          const wVal = parseWeight(ex.carga_kg) || 20;
+          vol += sets * rVal * wVal;
+          reps += sets * rVal;
+        });
+      });
+      return {
+        name: group.shortLabel || group.label,
+        Volumen: Math.round(vol),
+        Repeticiones: reps
+      };
+    }).filter(g => g.Volumen > 0 || g.Repeticiones > 0);
+
+    // Load by muscle group (Pie Chart)
+    const muscleGroups: Record<string, number> = {};
+    sessions.forEach(s => {
+      (s.ejercicios || []).forEach(ex => {
+        const sets = Number(ex.series) || 3;
+        const reps = parseReps(ex.repeticiones);
+        const muscle = ex.grupo_muscular || 'Otro';
+        muscleGroups[muscle] = (muscleGroups[muscle] || 0) + (sets * reps);
+      });
+    });
+
+    const muscleData = Object.entries(muscleGroups).map(([name, value]) => ({
+      name: name.toUpperCase(),
+      value
+    }));
+
+    // Player workloads
+    const playerLoads = nominatedPlayers.map(p => {
+      const assignedGroup = playerAssignments[p.player_id] || 'TODOS';
+      let vol = 0;
+      let reps = 0;
+
+      sessions.forEach(s => {
+        (s.ejercicios || []).forEach(ex => {
+          const isGeneralGroup = ['TREN_SUPERIOR', 'TREN_INFERIOR', 'CORE_ZONA_MEDIA'].includes(ex.target_group || '');
+          const isMySpecificGroup = ex.target_group === assignedGroup;
+          const isTodos = ex.target_group === 'TODOS';
+          
+          if (isGeneralGroup || isTodos || isMySpecificGroup) {
+            const sets = Number(ex.series) || 3;
+            const rVal = parseReps(ex.repeticiones);
+            const wVal = parseWeight(ex.carga_kg) || 20;
+            vol += sets * rVal * wVal;
+            reps += sets * rVal;
+          }
+        });
+      });
+
+      return {
+        name: p.name.split(' ').slice(0, 2).join(' '), // Shorten name
+        Volumen: Math.round(vol),
+        Repeticiones: reps
+      };
+    }).sort((a, b) => b.Volumen - a.Volumen).slice(0, 8); // Top 8 players
+
+    const activeIndividualPautasCount = Object.values(individualPautas).filter((p: any) => p?.activo).length;
+
+    return {
+      totalVolume,
+      totalRepsCount,
+      avgRpeTotal: rpeCount > 0 ? (rpeSum / rpeCount).toFixed(1) : '7.0',
+      exercisesCount,
+      activeIndividualPautasCount,
+      dailyLoads,
+      groupLoads,
+      muscleData,
+      playerLoads
+    };
+  }, [sessions, nominatedPlayers, playerAssignments, individualPautas]);
+
   // Grid view of microcycles
   if (viewMode === 'grid') {
     return (
@@ -2736,6 +3041,44 @@ export default function FisicaGimnasioArea({
         </div>
       )}
 
+      {/* THREE MAIN TABS */}
+      <div className="flex border-b border-slate-100 bg-slate-50/50 p-1.5 rounded-2xl max-w-fit gap-1 text-left">
+        <button
+          onClick={() => setActiveGymTab('planificacion')}
+          className={`px-5 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+            activeGymTab === 'planificacion'
+              ? 'bg-white text-slate-900 shadow-sm border border-slate-100'
+              : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100/50'
+          }`}
+        >
+          <i className="fa-solid fa-calendar-day text-xs text-[#CF1B2B]"></i>
+          Asignación en Microciclos
+        </button>
+        <button
+          onClick={() => setActiveGymTab('dashboard')}
+          className={`px-5 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+            activeGymTab === 'dashboard'
+              ? 'bg-white text-slate-900 shadow-sm border border-slate-100'
+              : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100/50'
+          }`}
+        >
+          <i className="fa-solid fa-chart-line text-xs text-[#CF1B2B]"></i>
+          Análisis de Cargas & Volúmenes
+        </button>
+        <button
+          onClick={() => setActiveGymTab('pauta_individual')}
+          className={`px-5 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+            activeGymTab === 'pauta_individual'
+              ? 'bg-white text-slate-900 shadow-sm border border-slate-100'
+              : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100/50'
+          }`}
+        >
+          <i className="fa-solid fa-user-doctor text-xs text-[#CF1B2B]"></i>
+          Pautas Individuales
+        </button>
+      </div>
+
+      {activeGymTab === 'planificacion' && (
         <div className="space-y-8 animate-in fade-in duration-300">
           {/* SECTION: NOMINATED PLAYERS NEUROMUSCULAR PRESCRIPTIONS */}
           <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-6 space-y-6">
@@ -3036,9 +3379,18 @@ export default function FisicaGimnasioArea({
                             />
                           </td>
                           <td className="py-3 pr-4">
-                            <span className={`px-2.5 py-1 rounded text-[8px] font-black uppercase text-white ${g.colorClass} inline-block`}>
-                              {g.label}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span 
+                                className="shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black bg-[#0b1220] text-white border border-slate-800/10 flex items-center gap-1 shadow-sm"
+                                title={`${g.id === 'TODOS' ? nominatedPlayers.length : totalCount} jugadores asignados a este foco`}
+                              >
+                                <i className="fa-solid fa-users text-[8px] text-[#CF1B2B]"></i>
+                                <span>{g.id === 'TODOS' ? nominatedPlayers.length : totalCount} { (g.id === 'TODOS' ? nominatedPlayers.length : totalCount) === 1 ? 'JUGADOR' : 'JUGADORES' }</span>
+                              </span>
+                              <span className={`px-2.5 py-1 rounded text-[8px] font-black uppercase text-white ${g.colorClass} inline-block`}>
+                                {g.label}
+                              </span>
+                            </div>
                           </td>
                           <td className="py-3 pr-4 text-center">
                             <div className="flex items-center justify-center gap-1.5">
@@ -3271,7 +3623,765 @@ export default function FisicaGimnasioArea({
               </div>
             )}
           </div>
+
+          {/* SECTION: REGISTRO DE TAREAS SELECCIONADAS */}
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-6 space-y-6">
+            <div className="flex items-center gap-2.5 text-left border-b border-slate-50 pb-4">
+              <div className="w-8 h-8 bg-slate-50 text-slate-800 rounded-lg flex items-center justify-center border border-slate-100/50">
+                <i className="fa-solid fa-clipboard-list text-sm text-[#CF1B2B]"></i>
+              </div>
+              <div>
+                <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">REGISTRO DE TAREAS SELECCIONADAS</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                  Planificación de ejercicios activos y guías técnicas para el {selectedDia}
+                </p>
+              </div>
+            </div>
+
+            {(() => {
+              const dayExercises = activeDaySessions.flatMap(s => s.ejercicios || []);
+              const groupsWithExercises = TARGET_GROUPS_CONFIG.map(g => {
+                const exercises = dayExercises.filter(ex => ex.target_group === g.id);
+                return {
+                  group: g,
+                  exercises
+                };
+              }).filter(item => item.exercises.length > 0);
+
+              if (dayExercises.length === 0) {
+                return (
+                  <div className="text-center py-12 bg-slate-50/50 border-2 border-dashed border-slate-100 rounded-[32px]">
+                    <i className="fa-solid fa-dumbbell text-slate-200 text-4xl mb-3"></i>
+                    <p className="text-slate-400 text-xs font-black uppercase tracking-wider">No hay tareas seleccionadas para el {selectedDia}</p>
+                    <p className="text-slate-400 text-[10px] font-semibold mt-1">
+                      Agrega ejercicios utilizando los botones de las tablas superiores para poblar el entrenamiento de hoy.
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-6">
+                  {groupsWithExercises.map(({ group, exercises }) => {
+                    return (
+                      <div key={group.id} className="bg-slate-50/40 rounded-3xl p-5 border border-slate-100 space-y-4 text-left">
+                        {/* Group Header */}
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2.5 py-1 rounded text-[8px] font-black uppercase text-white ${group.colorClass}`}>
+                              {group.label}
+                            </span>
+                            <span className="text-[10px] font-black text-slate-400 bg-slate-100/70 px-2 py-0.5 rounded-md uppercase">
+                              {exercises.length} {exercises.length === 1 ? 'Ejercicio' : 'Ejercicios'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Exercises Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {exercises.map((ex, exIdx) => {
+                            return (
+                              <div key={ex.id || exIdx} className="bg-white rounded-2xl border border-slate-100 p-4 hover:border-red-500/10 hover:shadow-md transition-all flex flex-col justify-between">
+                                <div className="space-y-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="space-y-1">
+                                      <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">
+                                        {ex.grupo_muscular}
+                                      </span>
+                                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight line-clamp-2 mt-1 leading-tight">
+                                        {exIdx + 1}. {ex.ejercicio}
+                                      </h4>
+                                    </div>
+                                    <span className="shrink-0 bg-red-50 text-red-600 border border-red-100 font-black text-[9px] px-2 py-0.5 rounded-lg">
+                                      {ex.series}x{ex.repeticiones}
+                                    </span>
+                                  </div>
+
+                                  {/* Images gallery in Coach Register if available */}
+                                  {(ex.image_0 || ex.image_1) && (
+                                    <div className="grid grid-cols-2 gap-2 my-2">
+                                      {ex.image_0 && (
+                                        <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-100 bg-slate-50 flex items-center justify-center">
+                                          <img 
+                                            src={ex.image_0} 
+                                            alt={ex.ejercicio} 
+                                            referrerPolicy="no-referrer"
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => {
+                                              (e.target as HTMLElement).style.display = 'none';
+                                            }}
+                                          />
+                                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-[7px] font-bold rounded uppercase">Principal</span>
+                                        </div>
+                                      )}
+                                      {ex.image_1 && (
+                                        <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-100 bg-slate-50 flex items-center justify-center">
+                                          <img 
+                                            src={ex.image_1} 
+                                            alt={`${ex.ejercicio} alt`} 
+                                            referrerPolicy="no-referrer"
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => {
+                                              (e.target as HTMLElement).style.display = 'none';
+                                            }}
+                                          />
+                                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-[7px] font-bold rounded uppercase">Detalle</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {ex.tecnica_ejecucion && (
+                                    <p className="text-[10px] text-slate-500 font-medium leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                      <strong className="text-slate-600 uppercase text-[8px] block mb-0.5 tracking-wider">Técnica:</strong>
+                                      {ex.tecnica_ejecucion}
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 mt-3 pt-2.5 border-t border-slate-50">
+                                  <span>EQUIPO: <span className="text-slate-700 font-extrabold">{ex.equipamiento || 'Ninguno'}</span></span>
+                                  {ex.rpe_sugerido && (
+                                    <span>RPE: <span className="text-red-500 font-extrabold">{ex.rpe_sugerido}/10</span></span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
         </div>
+      )}
+
+      {/* TAB 2: ANALISIS DE CARGAS & VOLUMENES */}
+      {activeGymTab === 'dashboard' && (
+        <div className="space-y-8 animate-in fade-in duration-500 text-left">
+          {/* KPI Summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white rounded-[24px] p-6 border border-slate-100 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Volumen Estimado Total</span>
+                <span className="text-2xl font-black text-[#0b1220] mt-1.5 block">
+                  {dashboardData.totalVolume.toLocaleString('es-CL')} kg
+                </span>
+                <span className="text-[9px] text-slate-400 font-bold uppercase block mt-1">∑ (series × reps × peso)</span>
+              </div>
+              <div className="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center text-[#CF1B2B] border border-red-100/50">
+                <i className="fa-solid fa-weight-hanging text-lg"></i>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[24px] p-6 border border-slate-100 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Repeticiones Totales</span>
+                <span className="text-2xl font-black text-indigo-600 mt-1.5 block">
+                  {dashboardData.totalRepsCount.toLocaleString('es-CL')} reps
+                </span>
+                <span className="text-[9px] text-slate-400 font-bold uppercase block mt-1">Contracciones prescritas</span>
+              </div>
+              <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 border border-indigo-100/50">
+                <i className="fa-solid fa-repeat text-lg"></i>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[24px] p-6 border border-slate-100 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Intensidad Media</span>
+                <span className="text-2xl font-black text-amber-500 mt-1.5 block">
+                  {dashboardData.avgRpeTotal} / 10
+                </span>
+                <span className="text-[9px] text-slate-400 font-bold uppercase block mt-1">RPE Sugerido Promedio</span>
+              </div>
+              <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500 border border-amber-100/50">
+                <i className="fa-solid fa-bolt text-lg"></i>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[24px] p-6 border border-slate-100 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Pautas Exclusivas</span>
+                <span className="text-2xl font-black text-emerald-600 mt-1.5 block">
+                  {dashboardData.activeIndividualPautasCount} Jugadores
+                </span>
+                <span className="text-[9px] text-slate-400 font-bold uppercase block mt-1">Eximidos del trabajo general</span>
+              </div>
+              <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 border border-emerald-100/50">
+                <i className="fa-solid fa-user-doctor text-lg"></i>
+              </div>
+            </div>
+          </div>
+
+          {/* Charts Row 1: Daily load fluctuation & Workload by target group */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-4">
+              <div>
+                <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">Distribución Diaria de Carga</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Progresión semanal de volumen estimado (kg)</p>
+              </div>
+              <div className="h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={dashboardData.dailyLoads} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorVolumen" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#CF1B2B" stopOpacity={0.2}/>
+                        <stop offset="95%" stopColor="#CF1B2B" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} fontWeight="900" />
+                    <YAxis stroke="#94a3b8" fontSize={9} fontWeight="900" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#0b1220', border: 'none', borderRadius: '16px', color: '#fff' }}
+                      labelStyle={{ fontWeight: 'black', textTransform: 'uppercase', fontSize: '9px', color: '#94a3b8' }}
+                      itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                    />
+                    <Area type="monotone" dataKey="Volumen" stroke="#CF1B2B" strokeWidth={3} fillOpacity={1} fill="url(#colorVolumen)" name="Volumen (kg)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-4">
+              <div>
+                <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">Carga por Foco de Trabajo</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Volumen cuantificado por objetivo neuromuscular</p>
+              </div>
+              <div className="h-72 w-full">
+                {dashboardData.groupLoads.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                    <i className="fa-solid fa-chart-bar text-4xl mb-2"></i>
+                    <p className="text-xs font-bold uppercase">No hay cargas planificadas aún</p>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={dashboardData.groupLoads} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={8} fontWeight="900" interval={0} tickFormatter={(v) => v.substring(0, 15)} />
+                      <YAxis stroke="#94a3b8" fontSize={9} fontWeight="900" />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#0b1220', border: 'none', borderRadius: '16px', color: '#fff' }}
+                        labelStyle={{ fontWeight: 'black', textTransform: 'uppercase', fontSize: '9px', color: '#94a3b8' }}
+                        itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                      />
+                      <Bar dataKey="Volumen" fill="#312e81" radius={[8, 8, 0, 0]} name="Volumen (kg)">
+                        {dashboardData.groupLoads.map((entry, idx) => (
+                          <Cell key={`cell-${idx}`} fill={idx % 2 === 0 ? '#CF1B2B' : '#0b1220'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Charts Row 2: Muscular distribution (Pie) & Player workload ranking (Horizontal Bar) */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+            <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-4 lg:col-span-2">
+              <div>
+                <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">Distribución por Grupo Muscular</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Porcentaje de contracciones prescritas</p>
+              </div>
+              <div className="h-72 w-full flex flex-col justify-between items-center">
+                {dashboardData.muscleData.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                    <i className="fa-solid fa-circle-notch text-4xl mb-2"></i>
+                    <p className="text-xs font-bold uppercase">Sin datos de ejercicios</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="h-52 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={dashboardData.muscleData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={5}
+                            dataKey="value"
+                          >
+                            {dashboardData.muscleData.map((entry, index) => {
+                              const colors = ['#CF1B2B', '#0b1220', '#4f46e5', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+                              return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
+                            })}
+                          </Pie>
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#0b1220', border: 'none', borderRadius: '16px', color: '#fff' }}
+                            itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {/* Legend */}
+                    <div className="flex flex-wrap gap-2 justify-center mt-2 max-h-16 overflow-y-auto">
+                      {dashboardData.muscleData.map((entry, index) => {
+                        const colors = ['#CF1B2B', '#0b1220', '#4f46e5', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+                        return (
+                          <div key={index} className="flex items-center gap-1.5 text-[8px] font-black text-slate-500 uppercase bg-slate-50 border border-slate-100/80 px-2 py-0.5 rounded-lg">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colors[index % colors.length] }}></span>
+                            <span>{entry.name}: {entry.value} reps</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-4 lg:col-span-3">
+              <div>
+                <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">Top 8 Carga por Jugador</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Volumen programado acumulado según focos de trabajo asignados</p>
+              </div>
+              <div className="h-72 w-full">
+                {dashboardData.playerLoads.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                    <i className="fa-solid fa-users text-4xl mb-2"></i>
+                    <p className="text-xs font-bold uppercase">No hay jugadores convocados en este microciclo</p>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={dashboardData.playerLoads}
+                      layout="vertical"
+                      margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" stroke="#94a3b8" fontSize={9} fontWeight="900" />
+                      <YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={8} fontWeight="900" width={80} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#0b1220', border: 'none', borderRadius: '16px', color: '#fff' }}
+                        labelStyle={{ fontWeight: 'black', textTransform: 'uppercase', fontSize: '9px', color: '#94a3b8' }}
+                        itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                      />
+                      <Bar dataKey="Volumen" fill="#10b981" radius={[0, 6, 6, 0]} name="Volumen (kg)" barSize={12} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: PAUTA INDIVIDUAL BUILDER */}
+      {activeGymTab === 'pauta_individual' && (
+        <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-8 text-left space-y-8 animate-in fade-in duration-500">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-50 pb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-indigo-50 text-[#CF1B2B] rounded-2xl flex items-center justify-center border border-indigo-100/50">
+                <i className="fa-solid fa-user-doctor text-xl"></i>
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-[#0b1220] uppercase tracking-wider">CREADOR DE PAUTAS INDIVIDUALES</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                  Arma rutinas personalizadas de rehabilitación, kinesiología o fuerza especial vinculadas directamente al perfil de cada jugador
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Left side: Players list */}
+            <div className="lg:col-span-4 space-y-4">
+              <div className="relative">
+                <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input
+                  type="text"
+                  placeholder="Filtrar jugadores..."
+                  value={playerSearchQuery}
+                  onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#CF1B2B] focus:bg-white transition-all"
+                />
+              </div>
+
+              <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1.5 custom-scrollbar">
+                {filteredPlayersList.map((player) => {
+                  const hasPauta = individualPautas[player.player_id]?.activo;
+                  const pautaType = individualPautas[player.player_id]?.tipo;
+                  const exercisesCount = individualPautas[player.player_id]?.ejercicios?.length || 0;
+                  const isSelected = pautaSelectedPlayerId === player.player_id;
+
+                  return (
+                    <button
+                      key={player.player_id}
+                      onClick={() => setPautaSelectedPlayerId(player.player_id)}
+                      className={`w-full p-4 rounded-2xl border transition-all text-left flex items-start gap-3.5 relative overflow-hidden ${
+                        isSelected 
+                          ? 'bg-[#0b1220] text-white border-[#0b1220] shadow-md' 
+                          : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-100 hover:border-slate-200'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs uppercase shadow-inner shrink-0 ${
+                        isSelected ? 'bg-white/10 text-white' : 'bg-slate-50 text-slate-800'
+                      }`}>
+                        {player.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                      </div>
+
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="text-xs font-black uppercase tracking-tight truncate">{player.name}</h4>
+                          {hasPauta && (
+                            <span className="bg-[#CF1B2B] text-white text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase shrink-0">
+                              Activa
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-[9px] font-bold uppercase tracking-wider truncate ${isSelected ? 'text-slate-400' : 'text-slate-400'}`}>
+                          {player.position}
+                        </p>
+
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                          {hasPauta && (
+                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded flex items-center gap-1 ${
+                              isSelected ? 'bg-white/10 text-amber-300' : 'bg-amber-50 text-amber-700 border border-amber-100/50'
+                            }`}>
+                              <i className="fa-solid fa-user-doctor"></i>
+                              {pautaType}
+                            </span>
+                          )}
+                          {exercisesCount > 0 && (
+                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded flex items-center gap-1 ${
+                              isSelected ? 'bg-white/10 text-indigo-300' : 'bg-indigo-50 text-indigo-700 border border-indigo-100/50'
+                            }`}>
+                              <i className="fa-solid fa-dumbbell"></i>
+                              {exercisesCount} {exercisesCount === 1 ? 'Ejerc.' : 'Ejercs.'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right side: Selected player's builder */}
+            <div className="lg:col-span-8">
+              {(() => {
+                const selectedPlayer = nominatedPlayers.find(p => p.player_id === pautaSelectedPlayerId);
+                if (!selectedPlayer) {
+                  return (
+                    <div className="border-2 border-dashed border-slate-100 rounded-[32px] p-16 text-center text-slate-400 bg-slate-50/20 h-[520px] flex flex-col justify-center items-center">
+                      <i className="fa-solid fa-address-card text-slate-200 text-5xl mb-4"></i>
+                      <p className="text-xs font-black uppercase tracking-wider text-slate-500">Ningún Jugador Seleccionado</p>
+                      <p className="text-[10px] text-slate-400 mt-1.5 font-bold max-w-sm uppercase tracking-wide leading-relaxed">
+                        Selecciona un jugador del roster lateral para iniciar el armado de su Pauta de Entrenamiento Individual de Élite.
+                      </p>
+                    </div>
+                  );
+                }
+
+                const currentPauta = individualPautas[selectedPlayer.player_id] || {
+                  activo: false,
+                  tipo: 'Kinesiología',
+                  observaciones: '',
+                  ejercicios: []
+                };
+
+                return (
+                  <div className="bg-slate-50/50 rounded-[32px] p-6 border border-slate-100 space-y-6 animate-in fade-in duration-300">
+                    {/* Selected Player Profile Card info */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-[#0b1220] text-white flex items-center justify-center text-sm font-black uppercase tracking-tight">
+                          {selectedPlayer.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">{selectedPlayer.name}</h4>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                            Club: {selectedPlayer.club || 'Libre'} • Demarcación: {selectedPlayer.position}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">¿Activar Pauta?</span>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={currentPauta.activo}
+                            onChange={(e) => {
+                              const updated = {
+                                ...individualPautas,
+                                [selectedPlayer.player_id]: {
+                                  ...currentPauta,
+                                  activo: e.target.checked
+                                }
+                              };
+                              setIndividualPautas(updated);
+                              localStorage.setItem(`lr-gym-individual-pautas-${selectedMicro?.id}`, JSON.stringify(updated));
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#CF1B2B]"></div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {currentPauta.activo ? (
+                      <div className="space-y-6 animate-in fade-in duration-200">
+                        {/* Pauta Type Selector */}
+                        <div className="bg-white rounded-2xl p-5 border border-slate-100 space-y-3">
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Pauta Especial</label>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {(['Kinesiología', 'Trabajo Diferenciado', 'Gimnasio Especial', 'Otro'] as const).map((t) => {
+                              const isSelected = currentPauta.tipo === t;
+                              return (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = {
+                                      ...individualPautas,
+                                      [selectedPlayer.player_id]: {
+                                        ...currentPauta,
+                                        tipo: t
+                                      }
+                                    };
+                                    setIndividualPautas(updated);
+                                    localStorage.setItem(`lr-gym-individual-pautas-${selectedMicro?.id}`, JSON.stringify(updated));
+                                  }}
+                                  className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all cursor-pointer ${
+                                    isSelected 
+                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                      : 'bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  {t}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Observations / Technical Indications */}
+                        <div className="bg-white rounded-2xl p-5 border border-slate-100 space-y-3">
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Indicaciones Médicas / Kinesiológicas / Objetivos</label>
+                          <textarea
+                            rows={3}
+                            placeholder="Escribe aquí las pautas técnicas, diagnósticos o restricciones específicas para este jugador..."
+                            value={currentPauta.observaciones || ''}
+                            onChange={(e) => {
+                              const updated = {
+                                ...individualPautas,
+                                [selectedPlayer.player_id]: {
+                                  ...currentPauta,
+                                  observaciones: e.target.value
+                                }
+                              };
+                              setIndividualPautas(updated);
+                              localStorage.setItem(`lr-gym-individual-pautas-${selectedMicro?.id}`, JSON.stringify(updated));
+                            }}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500 transition-all"
+                          />
+                        </div>
+
+                        {/* Exercise Prescriptions */}
+                        <div className="bg-white rounded-2xl p-5 border border-slate-100 space-y-4">
+                          <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                              Prescripción de Ejercicios de la Pauta
+                            </label>
+                            <span className="bg-slate-100 text-slate-600 text-[9px] font-black px-2 py-0.5 rounded">
+                              {currentPauta.ejercicios?.length || 0} Ejercicios
+                            </span>
+                          </div>
+
+                          {/* Exercise List */}
+                          {(!currentPauta.ejercicios || currentPauta.ejercicios.length === 0) ? (
+                            <div className="text-center py-8 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                              <i className="fa-solid fa-list-check text-slate-300 text-2xl mb-1.5"></i>
+                              <p className="text-[10px] font-black uppercase">Sin Ejercicios Prescritos</p>
+                              <p className="text-[9px] font-semibold mt-0.5">Agrega ejercicios a continuación para armar la rutina individual.</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-3 max-h-80 overflow-y-auto pr-1.5 custom-scrollbar">
+                              {currentPauta.ejercicios.map((ex, idx) => (
+                                <div key={idx} className="flex items-start justify-between bg-slate-50 hover:bg-slate-100/50 p-4 rounded-xl border border-slate-100 transition-all gap-4">
+                                  <div className="space-y-1.5 min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest bg-white border border-slate-100 px-1.5 py-0.5 rounded">
+                                        {ex.grupo_muscular}
+                                      </span>
+                                      <h5 className="text-xs font-black text-slate-800 uppercase truncate">{ex.ejercicio}</h5>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 font-bold">
+                                      Prescripción: <span className="text-indigo-600">{ex.series} series × {ex.repeticiones} reps</span> @ <span className="text-slate-700">{ex.carga_kg}</span>
+                                      {ex.rpe_sugerido && <span className="ml-2 bg-red-50 text-red-600 font-extrabold px-1.5 py-0.5 rounded text-[8px]">RPE {ex.rpe_sugerido}</span>}
+                                    </p>
+                                    {ex.tecnica_ejecucion && (
+                                      <p className="text-[9px] text-slate-400 italic line-clamp-1">Guía: {ex.tecnica_ejecucion}</p>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    onClick={() => {
+                                      const updatedExs = [...(currentPauta.ejercicios || [])];
+                                      updatedExs.splice(idx, 1);
+                                      const updated = {
+                                        ...individualPautas,
+                                        [selectedPlayer.player_id]: {
+                                          ...currentPauta,
+                                          ejercicios: updatedExs
+                                        }
+                                      };
+                                      setIndividualPautas(updated);
+                                      localStorage.setItem(`lr-gym-individual-pautas-${selectedMicro?.id}`, JSON.stringify(updated));
+                                    }}
+                                    className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-500 text-red-600 hover:text-white flex items-center justify-center transition-all cursor-pointer border border-red-100/50"
+                                    title="Quitar ejercicio"
+                                  >
+                                    <i className="fa-solid fa-trash text-xs"></i>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Interactive Exercise Search & Add Sub-form */}
+                          <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/50 space-y-4">
+                            <div className="flex items-center gap-1.5 text-left pb-1 border-b border-slate-100">
+                              <i className="fa-solid fa-plus text-[#CF1B2B] text-xs"></i>
+                              <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">Añadir Ejercicio de Catálogo</span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div className="space-y-1 text-left">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Grupo Muscular</span>
+                                <select
+                                  id="pauta-grupo-muscular"
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none"
+                                >
+                                  {Array.from(new Set(GYM_EXERCISES_DATA.map(e => e.grupo_muscular))).sort().map(g => (
+                                    <option key={g} value={g}>{g.toUpperCase()}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="space-y-1 text-left">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Ejercicio (Escribe o Selecciona)</span>
+                                <select
+                                  id="pauta-ejercicio-select"
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none"
+                                >
+                                  {GYM_EXERCISES_DATA.map((e, idx) => (
+                                    <option key={idx} value={e.ejercicio}>{e.ejercicio.toUpperCase()}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-4 gap-2">
+                              <div className="space-y-1 text-left">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Series</span>
+                                <input
+                                  id="pauta-series"
+                                  type="number"
+                                  defaultValue={3}
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-center text-slate-800 focus:outline-none"
+                                />
+                              </div>
+                              <div className="space-y-1 text-left">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Reps</span>
+                                <input
+                                  id="pauta-repeticiones"
+                                  type="text"
+                                  defaultValue="10"
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-center text-slate-800 focus:outline-none"
+                                />
+                              </div>
+                              <div className="space-y-1 text-left">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Peso</span>
+                                <input
+                                  id="pauta-carga"
+                                  type="text"
+                                  defaultValue="15 kg"
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-center text-slate-800 focus:outline-none"
+                                />
+                              </div>
+                              <div className="space-y-1 text-left">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">RPE</span>
+                                <select
+                                  id="pauta-rpe"
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-center text-slate-800 focus:outline-none"
+                                >
+                                  {[10,9,8,7,6,5,4,3,2,1].map(n => (
+                                    <option key={n} value={n}>{n}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const gmSelect = document.getElementById('pauta-grupo-muscular') as HTMLSelectElement;
+                                const ejSelect = document.getElementById('pauta-ejercicio-select') as HTMLSelectElement;
+                                const setsInput = document.getElementById('pauta-series') as HTMLInputElement;
+                                const repsInput = document.getElementById('pauta-repeticiones') as HTMLInputElement;
+                                const weightInput = document.getElementById('pauta-carga') as HTMLInputElement;
+                                const rpeSelect = document.getElementById('pauta-rpe') as HTMLSelectElement;
+
+                                const template = GYM_EXERCISES_DATA.find(e => e.ejercicio === ejSelect.value);
+
+                                const newEx: GymExercise = {
+                                  grupo_muscular: gmSelect.value,
+                                  ejercicio: ejSelect.value,
+                                  series: parseInt(setsInput.value) || 3,
+                                  repeticiones: repsInput.value || '10',
+                                  carga_kg: weightInput.value || '20 kg',
+                                  rpe_sugerido: parseInt(rpeSelect.value) || 7,
+                                  equipamiento: template?.equipamiento || 'Ninguno',
+                                  tecnica_ejecucion: template?.tecnica_ejecucion || '',
+                                  target_group: template?.target_group || 'TODOS'
+                                };
+
+                                const updatedExs = [...(currentPauta.ejercicios || []), newEx];
+                                const updated = {
+                                  ...individualPautas,
+                                  [selectedPlayer.player_id]: {
+                                    ...currentPauta,
+                                    ejercicios: updatedExs
+                                  }
+                                };
+                                setIndividualPautas(updated);
+                                localStorage.setItem(`lr-gym-individual-pautas-${selectedMicro?.id}`, JSON.stringify(updated));
+                                alert(`Ejercicio "${newEx.ejercicio}" agregado con éxito a la pauta de ${selectedPlayer.name}`);
+                              }}
+                              className="w-full py-2.5 bg-[#0b1220] hover:bg-[#CF1B2B] text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                            >
+                              <i className="fa-solid fa-plus-circle text-xs"></i>
+                              Prescribir Ejercicio
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-[24px] p-10 text-center border border-slate-100 text-slate-400 space-y-2">
+                        <i className="fa-solid fa-toggle-off text-3xl text-slate-300"></i>
+                        <h5 className="text-xs font-black uppercase tracking-wider">Pauta Individual Desactivada</h5>
+                        <p className="text-[10px] text-slate-400 font-medium max-w-xs mx-auto uppercase leading-relaxed">
+                          Activa la pauta con el switch superior para habilitar el cargador de pautas kinesiológicas o trabajos de gimnasio adaptados.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SHOW PLAYER EXERCISES MODAL */}
       <AnimatePresence>
@@ -3843,324 +4953,16 @@ export default function FisicaGimnasioArea({
       {/* CREATE / EDIT SESSION MODAL */}
       <AnimatePresence>
         {showSessionModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-[40px] w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
-            >
-              {/* Modal Header */}
-              <div className="bg-[#0b1220] text-white px-8 py-6 flex items-center justify-between border-b border-white/5">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-[#CF1B2B] rounded-xl flex items-center justify-center">
-                    <i className="fa-solid fa-dumbbell text-sm"></i>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black uppercase italic tracking-tight">
-                      {editingSession ? 'EDITAR SESIÓN GIMNASIO' : 'NUEVA SESIÓN GIMNASIO'}
-                    </h3>
-                    <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mt-0.5">
-                      Día: {sessionForm.dia_semana}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowSessionModal(false)}
-                  className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
-                >
-                  <i className="fa-solid fa-xmark text-sm"></i>
-                </button>
-              </div>
-
-              {/* Modal Body */}
-              <div className="flex-1 overflow-y-auto p-8 space-y-8">
-                {/* 1. Datos de Sesión */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Nombre de la Sesión *</label>
-                    <input
-                      type="text"
-                      placeholder="Ej: Fuerza Reactiva o RFD"
-                      value={sessionForm.nombre_sesion}
-                      onChange={(e) => setSessionForm(prev => ({ ...prev, nombre_sesion: e.target.value }))}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#CF1B2B]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Día de la semana</label>
-                    <select
-                      value={sessionForm.dia_semana}
-                      onChange={(e) => setSessionForm(prev => ({ ...prev, dia_semana: e.target.value }))}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#CF1B2B]"
-                    >
-                      {DIAS_SEMANA.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Fecha (Opcional)</label>
-                    <input
-                      type="date"
-                      value={sessionForm.fecha_sesion}
-                      onChange={(e) => setSessionForm(prev => ({ ...prev, fecha_sesion: e.target.value }))}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#CF1B2B]"
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Observaciones generales</label>
-                    <input
-                      type="text"
-                      placeholder="Ej: Calentamiento específico de tobillos y caderas..."
-                      value={sessionForm.observaciones}
-                      onChange={(e) => setSessionForm(prev => ({ ...prev, observaciones: e.target.value }))}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#CF1B2B]"
-                    />
-                  </div>
-                </div>
-
-                <hr className="border-slate-100" />
-
-                {/* 2. Buscador y Constructor de Ejercicios */}
-                <div className="bg-slate-50/50 rounded-3xl p-6 border border-slate-100 space-y-6">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-[#0b1220] flex items-center gap-2">
-                    <i className="fa-solid fa-plus-circle text-[#CF1B2B]"></i> AGREGAR EJERCICIOS A ESTA SESIÓN
-                  </h4>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
-                    {/* Búsqueda inteligente de Ejercicio */}
-                    <div className="md:col-span-2 relative">
-                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Buscar Ejercicio en el Catálogo CSV</label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="Ej: Flexión, Sentadilla, Press..."
-                          value={exerciseSearchTerm}
-                          onChange={(e) => {
-                            setExerciseSearchTerm(e.target.value);
-                            setExerciseInput(prev => ({ ...prev, ejercicio: e.target.value }));
-                            setShowExercisesDropdown(true);
-                          }}
-                          onFocus={() => setShowExercisesDropdown(true)}
-                          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#CF1B2B]"
-                        />
-                        <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
-                      </div>
-
-                      {/* Dropdown de sugerencias */}
-                      {showExercisesDropdown && filteredExerciseTemplates.length > 0 && (
-                        <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-56 overflow-y-auto z-50">
-                          {filteredExerciseTemplates.map((item, index) => (
-                            <button
-                              key={index}
-                              type="button"
-                              onClick={() => handleSelectTemplate(item)}
-                              className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors flex flex-col gap-0.5 border-b border-slate-50 last:border-none"
-                            >
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs font-black text-slate-900">{item.ejercicio}</span>
-                                <span className="bg-slate-100 text-[8px] font-black uppercase text-slate-500 px-1.5 py-0.5 rounded">
-                                  {item.grupo_muscular}
-                                </span>
-                              </div>
-                              <span className="text-[10px] text-slate-400 font-semibold truncate">Técnica: {item.tecnica_ejecucion}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Grupo Muscular</label>
-                      <input
-                        type="text"
-                        placeholder="Ej: Piernas, Pecho"
-                        value={exerciseInput.grupo_muscular}
-                        onChange={(e) => setExerciseInput(prev => ({ ...prev, grupo_muscular: e.target.value }))}
-                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Equipamiento</label>
-                      <input
-                        type="text"
-                        placeholder="Ej: Barra, Mancuerna, Banda elástica"
-                        value={exerciseInput.equipamiento}
-                        onChange={(e) => setExerciseInput(prev => ({ ...prev, equipamiento: e.target.value }))}
-                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Grupo Objetivo (Perfil)</label>
-                      <select
-                        value={exerciseInput.target_group || 'TODOS'}
-                        onChange={(e) => setExerciseInput(prev => ({ ...prev, target_group: e.target.value }))}
-                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#CF1B2B]"
-                      >
-                        {TARGET_GROUPS_CONFIG.map((g) => (
-                          <option key={g.id} value={g.id}>
-                            {g.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="md:col-span-3">
-                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Técnica de Ejecución</label>
-                      <textarea
-                        rows={2}
-                        placeholder="Instrucciones específicas sobre cómo realizar el ejercicio..."
-                        value={exerciseInput.tecnica_ejecucion}
-                        onChange={(e) => setExerciseInput(prev => ({ ...prev, tecnica_ejecucion: e.target.value }))}
-                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none"
-                      />
-                    </div>
-
-                    {/* Sets, Reps, Load, RPE */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:col-span-3">
-                      <div>
-                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Series</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          value={exerciseInput.series}
-                          onChange={(e) => setExerciseInput(prev => ({ ...prev, series: Number(e.target.value) }))}
-                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Repeticiones</label>
-                        <input
-                          type="text"
-                          placeholder="Ej: 10, 8-10, Al fallo"
-                          value={exerciseInput.repeticiones}
-                          onChange={(e) => setExerciseInput(prev => ({ ...prev, repeticiones: e.target.value }))}
-                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Peso / Carga (kg)</label>
-                        <input
-                          type="text"
-                          placeholder="Ej: 40, Banda fuerte"
-                          value={exerciseInput.carga_kg}
-                          onChange={(e) => setExerciseInput(prev => ({ ...prev, carga_kg: e.target.value }))}
-                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">RPE Sugerido (1-10)</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={10}
-                          value={exerciseInput.rpe_sugerido}
-                          onChange={(e) => setExerciseInput(prev => ({ ...prev, rpe_sugerido: Number(e.target.value) }))}
-                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="md:col-span-3 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={handleAddExerciseToForm}
-                        disabled={!exerciseInput.ejercicio}
-                        className="bg-[#0b1220] hover:bg-slate-800 disabled:opacity-40 text-white px-6 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-                      >
-                        Añadir Ejercicio a la Lista
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. List of exercises currently inside the Form */}
-                <div className="space-y-4">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-900">
-                    EJERCICIOS AGREGADOS ({tempExercises.length})
-                  </h4>
-
-                  {tempExercises.length === 0 ? (
-                    <p className="text-slate-400 text-xs font-semibold py-6 text-center border-2 border-dashed border-slate-100 rounded-3xl">
-                      Aún no has agregado ejercicios a esta sesión. Completa los campos superiores para añadir tu primer ejercicio.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {tempExercises.map((e, idx) => (
-                        <div
-                          key={e.id || idx}
-                          className="bg-white border border-slate-100 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm"
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3">
-                              <span className="w-6 h-6 bg-slate-50 border border-slate-100 rounded-full flex items-center justify-center text-[10px] font-black text-slate-500">
-                                {idx + 1}
-                              </span>
-                              <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded text-[8px] font-black uppercase">
-                                {e.grupo_muscular}
-                              </span>
-                              <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase text-white ${
-                                e.target_group === 'IMTP' ? 'bg-amber-500' :
-                                e.target_group === 'CMJ' ? 'bg-blue-600' :
-                                e.target_group === 'CMJ_REBOUND' ? 'bg-emerald-600' :
-                                e.target_group === 'TREN_SUPERIOR' ? 'bg-indigo-600' :
-                                'bg-slate-400'
-                              }`}>
-                                {e.target_group === 'IMTP' ? 'IMTP - Fuerza Máxima' :
-                                 e.target_group === 'CMJ' ? 'CMJ - Potencia / Pliom. Ext.' :
-                                 e.target_group === 'CMJ_REBOUND' ? 'CMJ REB - Drop Jump' :
-                                 e.target_group === 'TREN_SUPERIOR' ? 'TREN SUPERIOR' :
-                                 'TODOS'}
-                              </span>
-                              <h5 className="text-xs font-black text-slate-900">{e.ejercicio}</h5>
-                            </div>
-                            <p className="text-slate-400 text-[10px] font-bold uppercase mt-1">
-                              Equipamiento: {e.equipamiento} • {e.series} x {e.repeticiones} reps • Carga: {e.carga_kg ? `${e.carga_kg} kg` : 'N/A'} • Sugerido: RPE {e.rpe_sugerido}
-                            </p>
-                            {e.tecnica_ejecucion && (
-                              <p className="text-slate-500 text-[10px] mt-1 italic max-w-xl truncate">
-                                Técnica: {e.tecnica_ejecucion}
-                              </p>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => e.id && handleRemoveExerciseFromForm(e.id)}
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2.5 rounded-xl transition-colors text-xs font-bold flex items-center gap-1.5 self-end md:self-center"
-                          >
-                            <i className="fa-solid fa-trash"></i> Quitar
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="bg-slate-50 px-8 py-6 border-t border-slate-100 flex justify-between items-center">
-                <button
-                  type="button"
-                  onClick={() => setShowSessionModal(false)}
-                  className="bg-white text-slate-800 hover:bg-slate-100 border border-slate-200 px-6 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveSession}
-                  disabled={!sessionForm.nombre_sesion || tempExercises.length === 0}
-                  className="bg-[#CF1B2B] hover:bg-red-700 disabled:opacity-40 text-white px-8 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg"
-                >
-                  {editingSession ? 'GUARDAR CAMBIOS' : 'CREAR SESIÓN'}
-                </button>
-              </div>
-            </motion.div>
-          </div>
+          <GymSessionDesigner
+            session={editingSession}
+            microcycle={selectedMicro}
+            nominatedPlayers={nominatedPlayers}
+            isDbMode={isDbMode}
+            playerAssignments={playerAssignments}
+            individualPautas={individualPautas}
+            onClose={() => setShowSessionModal(false)}
+            onSave={handleSaveSessionAdvanced}
+          />
         )}
       </AnimatePresence>
 

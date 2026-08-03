@@ -48,6 +48,175 @@ const getLocalDateString = (d: Date = new Date()) => {
   return localDate.toISOString().split('T')[0];
 };
 
+interface TachometerGaugeProps {
+  value: number;
+  average: number;
+  maxValue: number;
+  title: string;
+  unit: string;
+  color?: string;
+  fillColor?: string;
+  lowerIsBetter?: boolean;
+  percentile?: number;
+  outlier?: 'low' | 'high';
+  referenceMax?: number;
+  personalMax?: number;
+  penultimateValue?: number;
+  swc?: number;
+  mdc?: number;
+}
+
+const TachometerGauge: React.FC<TachometerGaugeProps> = ({ 
+  value, 
+  average, 
+  maxValue, 
+  title, 
+  unit, 
+  color = 'stroke-red-600',
+  fillColor = 'text-red-600',
+  lowerIsBetter = false,
+  percentile,
+}) => {
+  const safeVal = isNaN(value) || value < 0 ? 0 : value;
+  const safeAvg = isNaN(average) || average < 0 ? 0 : average;
+  const max = isNaN(maxValue) || maxValue <= 0 ? 100 : maxValue;
+  
+  const valuePct = Math.min(100, Math.max(0, (safeVal / max) * 100));
+  const avgPct = Math.min(100, Math.max(0, (safeAvg / max) * 100));
+
+  const r = 70;
+  const cx = 100;
+  const cy = 90;
+  const circ = Math.PI * r; 
+  const strokeDashoffset = circ - (valuePct / 100) * circ;
+
+  const avgAngleRad = Math.PI - (avgPct / 100) * Math.PI;
+  const avgX = cx + r * Math.cos(avgAngleRad);
+  const avgY = cy - r * Math.sin(avgAngleRad);
+
+  const valueAngleRad = Math.PI - (valuePct / 100) * Math.PI;
+  const needleLen = r - 10;
+  const needleX = cx + needleLen * Math.cos(valueAngleRad);
+  const needleY = cy - needleLen * Math.sin(valueAngleRad);
+
+  const isBetter = lowerIsBetter 
+    ? (safeVal > 0 && safeAvg > 0 ? safeVal <= safeAvg : false) 
+    : (safeVal >= safeAvg);
+
+  const pctDiff = safeAvg > 0 
+    ? (lowerIsBetter 
+        ? ((safeAvg - safeVal) / safeAvg) * 100 
+        : ((safeVal - safeAvg) / safeAvg) * 100
+      )
+    : 0;
+
+  const getPercentileLevel = (pct: number) => {
+    if (pct >= 90) return 'Élite';
+    if (pct >= 75) return 'Sobresaliente';
+    if (pct >= 45) return 'Promedio';
+    if (pct >= 20) return 'Por Mejorar';
+    return 'Alerta';
+  };
+
+  const getPercentileColorClass = (pct: number) => {
+    if (pct >= 90) return 'text-purple-600 bg-purple-50 border-purple-100';
+    if (pct >= 75) return 'text-emerald-600 bg-emerald-50 border-emerald-100';
+    if (pct >= 45) return 'text-blue-600 bg-blue-50 border-blue-100';
+    if (pct >= 20) return 'text-orange-600 bg-orange-50 border-orange-100';
+    return 'text-red-500 bg-red-50 border-red-100';
+  };
+
+  return (
+    <div key={title} className="bg-slate-50/50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center justify-between hover:border-slate-200 hover:bg-slate-50 transition-all duration-300 w-full">
+      <div className="text-center w-full">
+        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">{title}</span>
+        <div className="flex justify-center items-baseline gap-1">
+          <span className="text-base font-black text-slate-900 italic tracking-tight">
+            {safeVal > 0 ? safeVal.toLocaleString('es-ES', { maximumFractionDigits: 1 }) : 'S/D'}
+          </span>
+          {safeVal > 0 && <span className="text-[8px] font-bold text-slate-400 uppercase">{unit}</span>}
+        </div>
+      </div>
+
+      <div className="relative w-full h-20 my-1 flex items-center justify-center overflow-hidden">
+        <svg viewBox="0 0 200 110" className="w-28 h-20">
+          <path 
+            d="M 30 90 A 70 70 0 0 1 170 90" 
+            fill="none" 
+            stroke="#f1f5f9" 
+            strokeWidth="10" 
+            strokeLinecap="round"
+          />
+          {safeVal > 0 && (
+            <path 
+              d="M 30 90 A 70 70 0 0 1 170 90" 
+              fill="none" 
+              className={`${color} stroke-current`}
+              strokeWidth="10" 
+              strokeLinecap="round"
+              strokeDasharray={`${circ} ${circ * 2}`}
+              strokeDashoffset={strokeDashoffset}
+            />
+          )}
+
+          {safeAvg > 0 && (
+            <circle 
+              cx={avgX} 
+              cy={avgY} 
+              r="4" 
+              fill="#0f172a" 
+              stroke="#ffffff"
+              strokeWidth="1"
+            />
+          )}
+
+          <circle cx={cx} cy={cy} r="4" className={fillColor} fill="currentColor" />
+
+          {safeVal > 0 && (
+            <line 
+              x1={cx} 
+              y1={cy} 
+              x2={needleX} 
+              y2={needleY} 
+              stroke="#0f172a" 
+              strokeWidth="3" 
+              strokeLinecap="round"
+            />
+          )}
+        </svg>
+
+        <div className="absolute bottom-0 text-center">
+          <p className="text-[7px] font-black uppercase text-slate-400 tracking-wider">Prom. Cat</p>
+          <p className="text-[9px] font-black text-slate-700">
+            {safeAvg > 0 ? `${safeAvg.toLocaleString('es-ES', { maximumFractionDigits: 1 })} ${unit}` : 'S/D'}
+          </p>
+        </div>
+      </div>
+
+      <div className="w-full flex flex-col items-center justify-center bg-white py-1 rounded-xl border border-slate-100 z-10 mt-1">
+        <p className="text-[6px] font-black uppercase text-slate-400 tracking-wider">vs Promedio</p>
+        <p className={`text-[8px] font-black italic ${isBetter && safeVal > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+          {safeVal > 0 && safeAvg > 0 ? `${isBetter ? '+' : ''}${pctDiff.toFixed(1)}%` : '—'}
+        </p>
+      </div>
+
+      {percentile !== undefined && safeVal > 0 && (
+        <div className="w-full flex justify-between items-center bg-white px-2 py-0.5 mt-1 rounded-xl border border-slate-100 z-10">
+          <div className="text-left">
+            <p className="text-[6px] font-black uppercase text-slate-400 tracking-wider">Percentil</p>
+            <p className="text-[8px] font-black italic text-slate-900">
+              P{percentile}
+            </p>
+          </div>
+          <div className={`px-1.5 py-0.5 rounded-full text-[6px] font-black uppercase border ${getPercentileColorClass(percentile)}`}>
+            {getPercentileLevel(percentile)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   player,
   wellness = [],
@@ -85,6 +254,399 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   const [isOtherClub, setIsOtherClub] = useState(false)
   const [realActivities, setRealActivities] = useState<any[]>([])
   const [loadingActivities, setLoadingActivities] = useState(false)
+
+  // Physical Evaluations States
+  const [evalImtp, setEvalImtp] = useState<any[]>([])
+  const [evalCmj, setEvalCmj] = useState<any[]>([])
+  const [evalCmjRebound, setEvalCmjRebound] = useState<any[]>([])
+  const [allPlayers, setAllPlayers] = useState<any[]>([])
+  const [loadingEvals, setLoadingEvals] = useState(false)
+
+  const playerYearRaw = useMemo(() => {
+    return player ? ((player as any).anio ? Number((player as any).anio) : (player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : NaN)) : NaN;
+  }, [player]);
+  const playerYear = useMemo(() => isNaN(playerYearRaw) ? '-' : playerYearRaw, [playerYearRaw]);
+
+  const activeComparisonPlayerIds = useMemo(() => {
+    if (!player) return [];
+    return allPlayers.filter(p => {
+      const pYear = (p as any).anio ? Number((p as any).anio) : (p.fecha_nacimiento ? new Date(p.fecha_nacimiento).getFullYear() : NaN);
+      return pYear === playerYear;
+    }).map(p => p.player_id);
+  }, [allPlayers, playerYear, player]);
+
+  const getAvg = (data: any[], key: string) => {
+    if (!data || data.length === 0) return 0;
+    const values = data
+      .map(d => Number(d[key]))
+      .filter(v => !isNaN(v) && v > 0);
+    if (values.length === 0) return 0;
+    return Number((values.reduce((sum, v) => sum + v, 0) / values.length).toFixed(1));
+  };
+
+  const getGlobalMax = (data: any[], key: string) => {
+    if (!data || data.length === 0) return 0;
+    const values = data
+      .map(d => Number(d[key]))
+      .filter(v => !isNaN(v) && v > 0);
+    if (values.length === 0) return 0;
+    return Math.max(...values);
+  };
+
+  const calculatePercentile = (playerValue: number, data: any[], key: string, lowerIsBetter: boolean = false) => {
+    if (isNaN(playerValue) || playerValue <= 0) return undefined;
+
+    let targetPlayerIds = activeComparisonPlayerIds;
+    let playerBestValues = targetPlayerIds.map(pId => {
+      const pRows = data.filter(d => Number(d.player_id) === Number(pId) && d[key] != null && !isNaN(Number(d[key])));
+      if (pRows.length === 0) return null;
+      const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+      if (numericVals.length === 0) return null;
+      return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+    }).filter((v): v is number => v !== null);
+
+    // Fallback: use all players if we don't have enough data in the specific age category
+    if (playerBestValues.length <= 1) {
+      const allPlayerIds = allPlayers.map(p => p.player_id);
+      playerBestValues = allPlayerIds.map(pId => {
+        const pRows = data.filter(d => Number(d.player_id) === Number(pId) && d[key] != null && !isNaN(Number(d[key])));
+        if (pRows.length === 0) return null;
+        const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+        if (numericVals.length === 0) return null;
+        return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+      }).filter((v): v is number => v !== null);
+    }
+
+    if (playerBestValues.length === 0) return undefined;
+    if (playerBestValues.length === 1) return 50;
+
+    let countWorse = 0;
+    let countEqual = 0;
+
+    playerBestValues.forEach(val => {
+      if (lowerIsBetter) {
+        if (val > playerValue) {
+          countWorse++;
+        } else if (val === playerValue) {
+          countEqual++;
+        }
+      } else {
+        if (val < playerValue) {
+          countWorse++;
+        } else if (val === playerValue) {
+          countEqual++;
+        }
+      }
+    });
+
+    const rank = countWorse + (countEqual - 1) * 0.5;
+    const percentile = (rank / (playerBestValues.length - 1)) * 100;
+    return Math.min(99, Math.max(1, Math.round(percentile)));
+  };
+
+  const checkOutlier = (playerValue: number, data: any[], key: string, lowerIsBetter: boolean = false) => {
+    if (isNaN(playerValue) || playerValue <= 0) return undefined;
+
+    let targetPlayerIds = activeComparisonPlayerIds;
+    let playerBestValues = targetPlayerIds.map(pId => {
+      const pRows = data.filter(d => Number(d.player_id) === Number(pId) && d[key] != null && !isNaN(Number(d[key])));
+      if (pRows.length === 0) return null;
+      const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+      if (numericVals.length === 0) return null;
+      return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+    }).filter((v): v is number => v !== null);
+
+    // Fallback if not enough data
+    if (playerBestValues.length < 4) {
+      const allPlayerIds = allPlayers.map(p => p.player_id);
+      playerBestValues = allPlayerIds.map(pId => {
+        const pRows = data.filter(d => Number(d.player_id) === Number(pId) && d[key] != null && !isNaN(Number(d[key])));
+        if (pRows.length === 0) return null;
+        const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+        if (numericVals.length === 0) return null;
+        return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+      }).filter((v): v is number => v !== null);
+    }
+
+    if (playerBestValues.length < 4) return undefined;
+
+    const sorted = [...playerBestValues].sort((a, b) => a - b);
+    
+    const getQuantile = (q: number) => {
+      const pos = (sorted.length - 1) * q;
+      const base = Math.floor(pos);
+      const rest = pos - base;
+      if (sorted[base + 1] !== undefined) {
+        return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+      } else {
+        return sorted[base];
+      }
+    };
+
+    const q1 = getQuantile(0.25);
+    const q3 = getQuantile(0.75);
+    const iqr = q3 - q1;
+
+    const lowBoundary = q1 - 1.5 * iqr;
+    const highBoundary = q3 + 1.5 * iqr;
+
+    if (playerValue < lowBoundary) {
+      return 'low';
+    } else if (playerValue > highBoundary) {
+      return 'high';
+    }
+    return undefined;
+  };
+
+  const getCohortBest = (data: any[], key: string, lowerIsBetter: boolean = false) => {
+    let targetPlayerIds = activeComparisonPlayerIds;
+    let playerBestValues = targetPlayerIds.map(pId => {
+      const pRows = data.filter(d => Number(d.player_id) === Number(pId) && d[key] != null && !isNaN(Number(d[key])));
+      if (pRows.length === 0) return null;
+      const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+      if (numericVals.length === 0) return null;
+      return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+    }).filter((v): v is number => v !== null);
+
+    if (playerBestValues.length === 0) {
+      const allPlayerIds = allPlayers.map(p => p.player_id);
+      playerBestValues = allPlayerIds.map(pId => {
+        const pRows = data.filter(d => Number(d.player_id) === Number(pId) && d[key] != null && !isNaN(Number(d[key])));
+        if (pRows.length === 0) return null;
+        const numericVals = pRows.map(r => Number(r[key])).filter(v => v > 0);
+        if (numericVals.length === 0) return null;
+        return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+      }).filter((v): v is number => v !== null);
+    }
+
+    if (playerBestValues.length === 0) return 0;
+    return lowerIsBetter ? Math.min(...playerBestValues) : Math.max(...playerBestValues);
+  };
+
+  const calculateCohortSD = (list: any[], key: string): number => {
+    if (!list || list.length === 0) return 0;
+    const values = list
+      .map(d => Number(d[key]))
+      .filter(v => !isNaN(v) && v > 0);
+    if (values.length <= 1) return 0;
+    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (values.length - 1);
+    return Math.sqrt(variance);
+  };
+
+  const getGaugeData = (
+    metricKey: string,
+    dataList: any[],
+    lowerIsBetter: boolean = false,
+    title: string,
+    unit: string,
+    color: string,
+    fillColor: string,
+    fallbackMax: number = 100
+  ) => {
+    const playerRows = (dataList || [])
+      .filter(d => Number(d.player_id) === Number(player?.player_id) && d[metricKey] != null && d[metricKey] !== '' && !isNaN(Number(d[metricKey])));
+    
+    const sortedPlayerRows = [...playerRows].sort((a, b) => {
+      const dateA = a.fecha_test ? new Date(a.fecha_test).getTime() : (a.fecha ? new Date(a.fecha).getTime() : 0);
+      const dateB = b.fecha_test ? new Date(b.fecha_test).getTime() : (b.fecha ? new Date(b.fecha).getTime() : 0);
+      return dateB - dateA;
+    });
+
+    const latestValue = sortedPlayerRows.length > 0 ? Number(sortedPlayerRows[0][metricKey]) : 0;
+    const penultimateValue = sortedPlayerRows.length >= 2 ? Number(sortedPlayerRows[1][metricKey]) : undefined;
+    
+    let bestValue = 0;
+    if (playerRows.length > 0) {
+      const numericVals = playerRows.map(d => Number(d[metricKey]));
+      bestValue = lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+    }
+    
+    const average = getAvg(dataList, metricKey);
+    const globalMax = getGlobalMax(dataList, metricKey);
+    const maxValue = Math.max(latestValue, bestValue, average, globalMax, fallbackMax) * 1.1;
+    
+    const percentile = calculatePercentile(latestValue, dataList, metricKey, lowerIsBetter);
+    const outlier = checkOutlier(latestValue, dataList, metricKey, lowerIsBetter);
+    const cohortBest = getCohortBest(dataList, metricKey, lowerIsBetter);
+
+    const cohortSd = calculateCohortSD(dataList, metricKey);
+    let swc = cohortSd * 0.2;
+    let mdc = cohortSd * 0.88;
+    
+    if (cohortSd === 0 && penultimateValue !== undefined && penultimateValue > 0) {
+      swc = penultimateValue * 0.02;
+      mdc = penultimateValue * 0.05;
+    }
+    
+    return {
+      value: latestValue,
+      average,
+      maxValue,
+      title,
+      unit,
+      color,
+      fillColor,
+      lowerIsBetter,
+      percentile,
+      outlier: outlier as 'high' | 'low' | undefined,
+      referenceMax: cohortBest,
+      personalMax: bestValue,
+      penultimateValue,
+      swc,
+      mdc
+    };
+  };
+
+  const prescriptionData = useMemo(() => {
+    if (loadingEvals) return null;
+    
+    const imtpRel = getGaugeData('imtp_f_relativa_n_kg', evalImtp, false, '', '', '', '', 30);
+    const cmjHeight = getGaugeData('cmj_altura_salto_im', evalCmj, false, '', '', '', '', 40);
+    const reboundRsi = getGaugeData('rebound_rsi', evalCmjRebound, false, '', '', '', '', 2.0);
+
+    const imtpRelVal = imtpRel.value || 0;
+    const imtpRelAvg = imtpRel.average || 0;
+    const cmjHeightVal = cmjHeight.value || 0;
+    const cmjHeightAvg = cmjHeight.average || 0;
+    const reboundRsiVal = reboundRsi.value || 0;
+    const reboundRsiAvg = reboundRsi.average || 0;
+
+    let profileTitle = 'Perfil Equilibrado';
+    let profileDesc = 'El atleta muestra una relación balanceada entre fuerza base, fuerza reactiva de ciclo lento (CMJ) y elasticidad de ciclo rápido (Rebound). Se sugiere continuar con el microciclo estándar de potencia mixta.';
+    let recommendationList: string[] = [];
+    let priorityTag = 'Mantener Potencia Mixta';
+    let priorityColor = 'bg-slate-50 text-slate-700 border-slate-100';
+
+    if (imtpRelVal > 0 && cmjHeightVal > 0 && reboundRsiVal > 0) {
+      const fRatio = imtpRelAvg > 0 ? imtpRelVal / imtpRelAvg : 1;
+      const cRatio = cmjHeightAvg > 0 ? cmjHeightVal / cmjHeightAvg : 1;
+      const rRatio = reboundRsiAvg > 0 ? reboundRsiVal / reboundRsiAvg : 1;
+
+      if (fRatio > 1.05 && cRatio < 0.95 && rRatio < 0.95) {
+        profileTitle = 'Perfil Fuerza-Dominante (Déficit Elástico)';
+        profileDesc = 'Excelente capacidad de producción de fuerza concéntrica máxima, pero con transferencia elástica ineficiente y tiempos de contacto prolongados. Requiere re-entrenamiento neuromuscular.';
+        priorityTag = 'Pliometría & Reactividad Rápida';
+        priorityColor = 'bg-blue-50 text-blue-700 border-blue-200';
+      } else if (fRatio < 0.95 && (cRatio > 1.05 || rRatio > 1.05)) {
+        profileTitle = 'Perfil Velocidad-Elástico Dominante (Déficit de Fuerza)';
+        profileDesc = 'Excelente reactividad de tobillo y altura de vuelo relativa, pero limitado por bajos niveles de fuerza estructural base. Su potencial elástico está limitado por su fuerza máxima.';
+        priorityTag = 'Fuerza Máxima & Hipertrofia Funcional';
+        priorityColor = 'bg-red-50 text-red-700 border-red-200';
+      } else if (fRatio < 0.95 && cRatio < 0.95 && rRatio < 0.95) {
+        profileTitle = 'Perfil de Capacidad Condicional Baja (Déficit Concurrente)';
+        profileDesc = 'El atleta se encuentra por debajo del promedio de su categoría en todas las áreas de fuerza e impacto elástico. Se recomienda un microciclo de acondicionamiento general de base.';
+        priorityTag = 'Acondicionamiento General Concurrente';
+        priorityColor = 'bg-amber-50 text-amber-700 border-amber-200';
+      } else if (fRatio > 1.05 && cRatio > 1.05 && rRatio > 1.05) {
+        profileTitle = 'Perfil Élite de Alto Rendimiento';
+        profileDesc = 'Excelente desempeño neuromuscular concurrente. Niveles de fuerza absoluta, reactividad de ciclo corto y capacidad de salto por encima de la media. Enfoque en mantenimiento preventivo.';
+        priorityTag = 'Optimización Fina & Prevención';
+        priorityColor = 'bg-purple-50 text-purple-700 border-purple-200';
+      }
+    }
+
+    // Generate dynamic prescriptions based on performance compared to averages
+    if (imtpRelVal > 0) {
+      if (imtpRelVal < imtpRelAvg) {
+        recommendationList.push('Fuerza Máxima: Déficit de Fuerza Máxima Dinámica y Estructural. Prescribir protocolo de sobrecarga progresiva orientado al desarrollo de la fuerza general de base. Utilizar pautas de intensidad media-alta con velocidad concéntrica máxima intencional, asegurando pausas de recuperación completas para optimizar la adaptación neuromuscular.');
+      } else {
+        recommendationList.push('Fuerza Máxima: Mantenimiento y Optimización de la Fuerza de Base. Prescribir estímulos dinámicos orientados a la potencia y velocidad de ejecución. Mantener volumen bajo y foco en la calidad técnica, incorporando variaciones unilaterales para favorecer la simetría y estabilidad del miembro inferior.');
+      }
+    } else {
+      recommendationList.push('Fuerza Máxima: Fuerza Máxima (Sin Datos). Pauta pendiente. Se requiere completar evaluación de fuerza isométrica (IMTP) para caracterizar la capacidad de producción de fuerza concéntrica máxima.');
+    }
+
+    if (cmjHeightVal > 0) {
+      if (cmjHeightVal < cmjHeightAvg) {
+        recommendationList.push('Potencia de Salto (CMJ): Déficit de Potencia y Eficiencia del Ciclo Estiramiento-Acortamiento Lento. Prescribir estímulo neuromuscular de potencia mecánica vertical. Foco en pautas de transferencia de aceleración, utilizando saltos balísticos de baja a moderada carga externa que estimulen la máxima velocidad de salida del centro de gravedad.');
+      } else {
+        recommendationList.push('Potencia Exclusiva (CMJ): Potencia Exclusiva y Optimización de la Saltoabilidad. Prescribir estímulo dinámico reactivo asistido o balístico puro. Utilizar pautas de velocidad supra-máxima e impulsión explosiva para potenciar el componente elástico y de triple extensión del miembro inferior.');
+      }
+    } else {
+      recommendationList.push('Neuromuscular (CMJ): Neuromuscular CMJ (Sin Datos). Pauta pendiente. Se requiere registro de evaluación de salto vertical con contramovimiento (CMJ) para caracterizar la eficiencia del ciclo de estiramiento-acortamiento lento.');
+    }
+
+    if (reboundRsiVal > 0) {
+      if (reboundRsiVal < reboundRsiAvg) {
+        recommendationList.push('Reactividad Rápida (SSC): Déficit de Rigidez Activa y Ciclo Estiramiento-Acortamiento Rápido. Prescribir estímulos de pliometría de baja a moderada intensidad. Foco en la reducción drástica de los tiempos de contacto con el suelo y en la rigidez del complejo tobillo-pie mediante pautas de rebote reactivo continuo.');
+      } else {
+        recommendationList.push('Rigidez (Fast SSC Avanzado): Optimización de Rigidez Activa y Fast-SSC Avanzado. Prescribir pautas pliométricas de alta intensidad y reactividad unilateral. Foco en maximizar la transmisión de energía elástica y soportar altas cargas de impacto excéntrico con deformación mínima en fase de amortiguación.');
+      }
+    } else {
+      recommendationList.push('Reactividad Rápida: Reactividad Rápida Rebound (Sin Datos). Pauta pendiente. Se requiere registro de evaluación de rebotes continuos (Rebound) para programar volumen e intensidad de pliometría de ciclo rápido.');
+    }
+
+    return {
+      profileTitle,
+      profileDesc,
+      recommendationList,
+      priorityTag,
+      priorityColor
+    };
+  }, [evalImtp, evalCmj, evalCmjRebound, loadingEvals]);
+
+  useEffect(() => {
+    const fetchEvaluations = async () => {
+      if (!player?.player_id) return;
+      setLoadingEvals(true);
+      try {
+        const { data: pData } = await supabase.from('players').select('*');
+        if (pData) setAllPlayers(pData);
+
+        const { data: imtpData } = await supabase.from('evaluaciones_imtp').select('*');
+        if (imtpData) {
+          const processed = imtpData.map((item: any) => {
+            const newItem = { ...item };
+            if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
+              newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
+            } else if (newItem.imtp_fuerza_n !== undefined && newItem.imtp_fuerza_n !== null) {
+              newItem['Peak Vertical Force [N]'] = newItem.imtp_fuerza_n;
+            }
+            if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
+              newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
+            } else if (newItem.imtp_f_relativa_n_kg !== undefined && newItem.imtp_f_relativa_n_kg !== null) {
+              newItem['Peak Vertical Force / BM [N/kg]'] = newItem.imtp_f_relativa_n_kg;
+            }
+            return newItem;
+          });
+          setEvalImtp(processed);
+        }
+
+        const { data: cmjData } = await supabase.from('evaluaciones_cmj').select('*');
+        if (cmjData) {
+          const processed = cmjData.map((item: any) => {
+            const newItem = { ...item };
+            if (newItem.concentric_peak_force_n !== undefined && newItem.concentric_peak_force_n !== null) {
+              newItem.fuerza_cmj = Number(newItem.concentric_peak_force_n);
+            } else if (newItem.fuerza_cmj !== undefined && newItem.fuerza_cmj !== null) {
+              newItem.concentric_peak_force_n = Number(newItem.fuerza_cmj);
+            }
+            if (newItem.rsi_modified_m_s !== undefined && newItem.rsi_modified_m_s !== null) {
+              newItem.cmj_rsi_mod = Number(newItem.rsi_modified_m_s);
+            } else if (newItem.cmj_rsi_mod !== undefined && newItem.cmj_rsi_mod !== null) {
+              newItem.rsi_modified_m_s = Number(newItem.cmj_rsi_mod);
+            }
+            if (newItem.jump_height_impmom_cm !== undefined && newItem.jump_height_impmom_cm !== null) {
+              newItem.cmj_altura_salto_im = Number(newItem.jump_height_impmom_cm);
+            } else if (newItem.cmj_altura_salto_im !== undefined && newItem.cmj_altura_salto_im !== null) {
+              newItem.jump_height_impmom_cm = Number(newItem.cmj_altura_salto_im);
+            }
+            return newItem;
+          });
+          setEvalCmj(processed);
+        }
+
+        const { data: cmjReboundData } = await supabase.from('evaluaciones_cmj_rebound').select('*');
+        if (cmjReboundData) setEvalCmjRebound(cmjReboundData);
+      } catch (err) {
+        console.error('Error fetching evaluations in PlayerDashboard:', err);
+      } finally {
+        setLoadingEvals(false);
+      }
+    };
+    fetchEvaluations();
+  }, [player?.player_id]);
 
   const todayStr = useMemo(() => getLocalDateString(), []);
   const todayWellness = useMemo(() => wellness.find(w => w.date === todayStr), [wellness, todayStr]);
@@ -942,43 +1504,43 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             </div>
 
             {/* Quick Actions Shortcuts */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
               <button 
                 onClick={() => setActiveMenu('reportes_wellness' as PlayerMenuId)}
-                className="bg-[#CF1B2B] text-white p-6 rounded-[32px] shadow-lg shadow-red-500/10 hover:bg-black transition-all flex flex-col items-center gap-3 group border border-red-500/20"
+                className="bg-[#CF1B2B] text-white p-4 rounded-[20px] md:rounded-[24px] shadow-lg shadow-red-500/10 hover:bg-black transition-all flex flex-col items-center gap-2 group border border-red-500/20"
               >
-                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-base group-hover:scale-110 transition-transform">
                   <i className="fa-solid fa-sun"></i>
                 </div>
                 <div className="text-center">
-                  <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Check-in Wellness</p>
-                  <p className="text-[8px] font-bold opacity-60 uppercase tracking-tighter">Reporte Matutino</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1">Check-in Wellness</p>
+                  <p className="text-[7px] font-bold opacity-60 uppercase tracking-tighter">Reporte Matutino</p>
                 </div>
               </button>
               
               <button 
                 onClick={() => setActiveMenu('reportes_load' as PlayerMenuId)}
-                className="bg-blue-600 text-white p-6 rounded-[32px] shadow-xl hover:bg-blue-700 transition-all flex flex-col items-center gap-3 group border border-white/5"
+                className="bg-blue-600 text-white p-4 rounded-[20px] md:rounded-[24px] shadow-xl hover:bg-blue-700 transition-all flex flex-col items-center gap-2 group border border-white/5"
               >
-                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-base group-hover:scale-110 transition-transform">
                   <i className="fa-solid fa-chart-line"></i>
                 </div>
                 <div className="text-center">
-                  <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Check-out Carga</p>
-                  <p className="text-[8px] font-bold opacity-60 uppercase tracking-tighter">Post-Entrenamiento</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1">Check-out Carga</p>
+                  <p className="text-[7px] font-bold opacity-60 uppercase tracking-tighter">Post-Entrenamiento</p>
                 </div>
               </button>
 
               <button 
                 onClick={() => setActiveMenu('reportes_match' as PlayerMenuId)}
-                className="bg-white border-2 border-slate-100 text-slate-900 p-6 rounded-[32px] shadow-sm hover:border-[#CF1B2B] hover:text-[#CF1B2B] transition-all flex flex-col items-center gap-3 group"
+                className="bg-white border-2 border-slate-100 text-slate-900 p-4 rounded-[20px] md:rounded-[24px] shadow-sm hover:border-[#CF1B2B] hover:text-[#CF1B2B] transition-all flex flex-col items-center gap-2 group"
               >
-                <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-base group-hover:scale-110 transition-transform">
                   <i className="fa-solid fa-trophy"></i>
                 </div>
                 <div className="text-center">
-                  <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Competición</p>
-                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Reporte de Partido</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1">Competición</p>
+                  <p className="text-[7px] font-bold text-slate-400 uppercase tracking-tighter">Reporte de Partido</p>
                 </div>
               </button>
             </div>
@@ -1028,6 +1590,128 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* Últimas Evaluaciones Físicas */}
+            <div className="bg-white rounded-[32px] md:rounded-[40px] p-6 md:p-8 shadow-sm border border-slate-100">
+              <h3 className="text-[10px] md:text-sm font-black text-slate-900 uppercase tracking-[0.2em] mb-4 md:mb-6 flex items-center gap-3">
+                <span className="w-1.5 md:w-2 h-5 md:h-6 bg-red-600 rounded-full"></span>
+                Últimas Evaluaciones Físicas
+              </h3>
+              {loadingEvals ? (
+                <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                  <div className="w-8 h-8 border-4 border-[#CF1B2B] border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Cargando evaluaciones...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* IMTP */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                      <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-700">Fuerza Isométrica - IMTP</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <TachometerGauge {...getGaugeData('imtp_fuerza_n', evalImtp, false, 'Fuerza Máxima (IMTP)', 'N', 'stroke-red-600', 'text-red-600', 3000)} />
+                      <TachometerGauge {...getGaugeData('imtp_f_relativa_n_kg', evalImtp, false, 'Fuerza Relativa (IMTP)', 'N/kg', 'stroke-red-600', 'text-red-600', 30)} />
+                    </div>
+                  </div>
+
+                  {/* CMJ */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                      <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-700">Neuromuscular - CMJ</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <TachometerGauge {...getGaugeData('cmj_rsi_mod', evalCmj, false, 'RSI Modificado (CMJ)', 'm/s', 'stroke-blue-600', 'text-blue-600', 1.5)} />
+                      <TachometerGauge {...getGaugeData('cmj_altura_salto_im', evalCmj, false, 'Altura Salto (CMJ)', 'cm', 'stroke-blue-600', 'text-blue-600', 40)} />
+                    </div>
+                  </div>
+
+                  {/* CMJ Rebound */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                      <div className="w-2 h-2 bg-emerald-600 rounded-full animate-pulse"></div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-700">Reactividad - Rebound</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <TachometerGauge {...getGaugeData('rebound_rsi', evalCmjRebound, false, 'RSI Rebound', 'm/s', 'stroke-emerald-600', 'text-emerald-600', 2.0)} />
+                      <TachometerGauge {...getGaugeData('rebound_contact_time_ms', evalCmjRebound, true, 'Tiempo Contacto', 'ms', 'stroke-emerald-600', 'text-emerald-600', 300)} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sección de Prescripción de Entrenamiento Individualizada */}
+                <div className="mt-8 pt-6 border-t border-slate-100">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                    <div className="flex items-center gap-2">
+                      <i className="fa-solid fa-clipboard-list text-red-600 text-sm"></i>
+                      <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-500">
+                        Prescripción de Entrenamiento Individualizada
+                      </span>
+                    </div>
+                    {prescriptionData && (
+                      <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase border ${prescriptionData.priorityColor}`}>
+                        Foco: {prescriptionData.priorityTag}
+                      </span>
+                    )}
+                  </div>
+
+                  {prescriptionData ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-50/50 rounded-2xl p-4 md:p-6 border border-slate-100">
+                      {/* Diagnóstico */}
+                      <div className="lg:col-span-5 space-y-2">
+                        <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Diagnóstico de Perfil</p>
+                        <h4 className="text-base font-black italic text-slate-900 tracking-tight leading-snug">
+                          {prescriptionData.profileTitle}
+                        </h4>
+                        <p className="text-[11px] leading-relaxed text-slate-600 font-medium">
+                          {prescriptionData.profileDesc}
+                        </p>
+                      </div>
+
+                      {/* Directrices de Trabajo */}
+                      <div className="lg:col-span-7 space-y-3">
+                        <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Directrices de Trabajo Recomendadas</p>
+                        <div className="space-y-2.5">
+                          {prescriptionData.recommendationList.map((rec, index) => {
+                            let icon = 'fa-dumbbell';
+                            let iconColor = 'text-red-500 bg-red-50';
+                            if (rec.includes('CMJ')) {
+                              icon = 'fa-person-running';
+                              iconColor = 'text-blue-500 bg-blue-50';
+                            } else if (rec.includes('Rebound') || rec.includes('Reactividad')) {
+                              icon = 'fa-bolt';
+                              iconColor = 'text-emerald-500 bg-emerald-50';
+                            }
+
+                            return (
+                              <div key={index} className="flex gap-3 items-start bg-white p-3 rounded-xl border border-slate-100/80 shadow-sm hover:border-slate-200 transition-all">
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${iconColor}`}>
+                                  <i className={`fa-solid ${icon} text-xs`}></i>
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="text-[11px] font-semibold leading-relaxed text-slate-800">
+                                    {rec.split(':')[0]}:
+                                  </p>
+                                  <p className="text-[11px] leading-relaxed text-slate-600 font-medium">
+                                    {rec.split(':').slice(1).join(':').trim()}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 uppercase font-bold text-center py-4">No hay datos de evaluación disponibles para generar la prescripción.</p>
+                  )}
+                </div>
+                </>
+              )}
             </div>
 
             <div className="max-w-xl mx-auto w-full flex flex-col gap-6">
@@ -1208,8 +1892,19 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             />
           </div>
         );
+      case 'huella_atleta':
+        return (
+          <div className="w-full max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <PlayerProfileArea 
+              userRole="player"
+              initialPlayerId={player?.player_id}
+              clubs={dbClubs}
+              initialTab="huella"
+            />
+          </div>
+        );
       case 'gym_trainer':
-        return <AITrainer />;
+        return <AITrainer player={player} />;
       case 'perfil':
         return (
           <div className="w-full max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">

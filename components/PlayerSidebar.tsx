@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type PlayerMenuId = 'inicio' | 'reportes_wellness' | 'reportes_load' | 'reportes_match' | 'nutricion_antropometria' | 'nutricion_recomendaciones' | 'nutricion_formularios' | 'nutricion_chef' | 'gym_trainer' | 'perfil' | 'perfil_jugador';
+export type PlayerMenuId = 'inicio' | 'reportes_wellness' | 'reportes_load' | 'reportes_match' | 'nutricion_antropometria' | 'nutricion_recomendaciones' | 'nutricion_formularios' | 'nutricion_chef' | 'gym_trainer' | 'perfil' | 'perfil_jugador' | 'huella_atleta';
 
 interface PlayerSidebarProps {
   activeMenu: PlayerMenuId;
@@ -69,6 +69,16 @@ const PlayerSidebar: React.FC<PlayerSidebarProps> = ({ activeMenu, onMenuChange,
         >
           <i className="fa-solid fa-id-card text-lg"></i>
           {!isCollapsed && <span className="font-bold text-sm">Ficha Técnica</span>}
+        </button>
+
+        <button
+          onClick={() => handleMenuClick('huella_atleta')}
+          className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-6'} py-4 rounded-2xl transition-all ${
+            activeMenu === 'huella_atleta' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+          }`}
+        >
+          <i className="fa-solid fa-shoe-prints text-lg"></i>
+          {!isCollapsed && <span className="font-bold text-sm">Huella del Atleta</span>}
         </button>
 
         <button

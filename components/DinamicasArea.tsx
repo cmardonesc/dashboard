@@ -214,6 +214,78 @@ function BoxPlot({ label, unit, values, color = '#CF1B2B' }: BoxPlotProps) {
   );
 }
 
+// Helpers para normalización y coincidencia difusa de nombres de tareas
+function cleanStringForMatching(str: string) {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove accents
+    .replace(/\bdinamica\b/g, '')
+    .replace(/\bvs\b/g, 'v')
+    .replace(/\b1c\b/g, 'c')
+    .replace(/\bcomodin\b/g, 'c')
+    .replace(/[+_\s()-]/g, '')
+    .trim();
+}
+
+function getFuzzySignatureForMatching(s: string) {
+  let clean = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  clean = clean.replace(/\b1c\b/g, 'c').replace(/(\d+)v(\d+)/g, '$1 $2').replace(/(\d+)vs(\d+)/g, '$1 $2');
+  
+  const numbers = clean.match(/\d+/g) || [];
+  const hasC = clean.includes('c') || clean.includes('comodin');
+  const hasA = clean.includes('a') || clean.includes('arco') || clean.includes('portil') || clean.includes('portico');
+  
+  return {
+    numbers: Array.from(new Set(numbers)).sort(),
+    hasC,
+    hasA
+  };
+}
+
+function findMatchedTareaInList(drillName: string, tareasList: any[]) {
+  if (!drillName || drillName === 'TODAS' || tareasList.length === 0) return null;
+
+  const cleanGps = cleanStringForMatching(drillName);
+  
+  // 1. Intento de coincidencia exacta limpia
+  for (const t of tareasList) {
+    const cleanDb = cleanStringForMatching(t.nombre);
+    if (cleanGps === cleanDb && cleanGps !== '') {
+      return t;
+    }
+  }
+
+  // 2. Intento de coincidencia de subcadena
+  for (const t of tareasList) {
+    const cleanDb = cleanStringForMatching(t.nombre);
+    if (cleanGps.includes(cleanDb) || cleanDb.includes(cleanGps)) {
+      if (cleanGps.length > 2 && cleanDb.length > 2) {
+        return t;
+      }
+    }
+  }
+
+  // 3. Firma difusa (comparando números y banderas como 'c' y 'a')
+  const gpsSig = getFuzzySignatureForMatching(drillName);
+  
+  for (const t of tareasList) {
+    const dbSig = getFuzzySignatureForMatching(t.nombre);
+    
+    const numbersMatch = gpsSig.numbers.length > 0 && 
+                         dbSig.numbers.length > 0 && 
+                         gpsSig.numbers.every(num => dbSig.numbers.includes(num)) &&
+                         dbSig.numbers.every(num => gpsSig.numbers.includes(num));
+                         
+    if (numbersMatch && gpsSig.hasC === dbSig.hasC && gpsSig.hasA === dbSig.hasA) {
+      return t;
+    }
+  }
+
+  return null;
+}
+
 export default function DinamicasArea() {
   const [data, setData] = useState<DrillGpsRecord[]>([]);
   const [tareas, setTareas] = useState<any[]>([]);
@@ -221,8 +293,9 @@ export default function DinamicasArea() {
   const [seeding, setSeeding] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // Filtro ÚNICO de Dinámica y Pestañas de Posición
+  // Filtro ÚNICO de Dinámica, Tipo de Tarea y Pestañas de Posición
   const [selectedDrill, setSelectedDrill] = useState<string>('');
+  const [selectedType, setSelectedType] = useState<string>('TODOS');
   const [selectedPosition, setSelectedPosition] = useState<string>('TODAS');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -252,11 +325,11 @@ export default function DinamicasArea() {
         });
       }
 
-      // Fetch the tareas table for video links
+      // Fetch the tareas table with all dynamic details
       try {
         const { data: tData } = await supabase
           .from('tareas')
-          .select('id, nombre, dinamica, link_video');
+          .select('id, nombre, link_foto, link_video, tipo, descripcion, contenidos_ofensivos, contenidos_defensivos, consignas, reglas, variantes');
         if (tData) {
           setTareas(tData);
         }
@@ -330,19 +403,10 @@ export default function DinamicasArea() {
         // Ordenar por fecha descendente
         allMergedRecords.sort((a, b) => b.session_date.localeCompare(a.session_date));
         setData(allMergedRecords);
-
-        // Seleccionar automáticamente la primera dinámica si está vacía o no existe
-        if (selectedDrill === '' || !allMergedRecords.some(m => m.drill_name === selectedDrill)) {
-          const firstDrill = allMergedRecords[0].drill_name;
-          setSelectedDrill(firstDrill);
-        }
       } else {
         // Si no hay datos, cargamos los datos fallback locales de inmediato
         const fallback = generateLocalFallbackData();
         setData(fallback);
-        if (fallback.length > 0 && (selectedDrill === '' || !fallback.some(f => f.drill_name === selectedDrill))) {
-          setSelectedDrill(fallback[0].drill_name);
-        }
         setMsg({
           text: "La tabla 'drill_gps_data' está vacía. Mostrando datos de Dinámicas GPS de muestra.",
           type: 'success'
@@ -352,9 +416,6 @@ export default function DinamicasArea() {
       console.error("Error al cargar datos de drill_gps_data, cargando fallback:", err);
       const fallback = generateLocalFallbackData();
       setData(fallback);
-      if (fallback.length > 0 && (selectedDrill === '' || !fallback.some(f => f.drill_name === selectedDrill))) {
-        setSelectedDrill(fallback[0].drill_name);
-      }
       setMsg({
         text: "Modo offline: Visualizando datos locales de Dinámicas GPS.",
         type: 'success'
@@ -368,11 +429,42 @@ export default function DinamicasArea() {
     fetchDrillData();
   }, []);
 
-  // Lista de dinámicas únicas para el selector de filtro
+  // Lista de dinámicas únicas desde la columna 'nombre' de la tabla de tareas
   const uniqueDrills = useMemo(() => {
-    const drills = data.map(r => r.drill_name).filter(Boolean);
+    const drills = tareas.map(t => t.nombre).filter(Boolean);
     return Array.from(new Set(drills)).sort((a, b) => a.localeCompare(b));
-  }, [data]);
+  }, [tareas]);
+
+  // Lista de tipos de tareas únicas para el nuevo filtro de categoría
+  const uniqueTypes = useMemo(() => {
+    const types = tareas.map(t => t.tipo).filter(Boolean);
+    return Array.from(new Set(types)).sort((a, b) => a.localeCompare(b));
+  }, [tareas]);
+
+  // Mapa que asocia cada dinámica con su respectivo tipo en la base de datos de tareas
+  const drillToTypeMap = useMemo(() => {
+    const map = new Map<string, string>();
+    uniqueDrills.forEach(d => {
+      const match = tareas.find(t => t.nombre === d);
+      map.set(d, match && match.tipo ? match.tipo : 'sin tipo');
+    });
+    return map;
+  }, [uniqueDrills, tareas]);
+
+  // Lista de dinámicas filtradas según el tipo seleccionado
+  const filteredDrillsForSelect = useMemo(() => {
+    if (selectedType === 'TODOS') return uniqueDrills;
+    return uniqueDrills.filter(d => drillToTypeMap.get(d) === selectedType);
+  }, [uniqueDrills, selectedType, drillToTypeMap]);
+
+  // Auto-ajuste de selectedDrill cuando cambia el tipo seleccionado
+  useEffect(() => {
+    if (filteredDrillsForSelect.length > 0) {
+      if (!filteredDrillsForSelect.includes(selectedDrill)) {
+        setSelectedDrill(filteredDrillsForSelect[0]);
+      }
+    }
+  }, [filteredDrillsForSelect, selectedDrill]);
 
   // Lista de posiciones únicas para las pestañas de filtro
   const uniquePositions = useMemo(() => {
@@ -484,10 +576,23 @@ export default function DinamicasArea() {
     }
   };
 
-  // Filtrado de datos por el selector único de Dinámica y la pestaña de Posición
+  // Filtrado de datos por el selector de Dinámica (desde tareas) y la pestaña de Posición
   const filteredData = useMemo(() => {
+    if (!selectedDrill) return [];
+    
+    // Obtenemos la tarea actual correspondiente al selectedDrill para comparar los nombres en forma flexible/fuzzy
+    const currentMatchedTarea = tareas.find(t => t.nombre === selectedDrill);
+    
     return data.filter(record => {
-      if (selectedDrill !== 'TODAS' && record.drill_name !== selectedDrill) return false;
+      // Si tenemos la tarea, verificamos si este registro de GPS corresponde a ella usando coincidencia flexible/fuzzy
+      if (currentMatchedTarea) {
+        const isMatch = findMatchedTareaInList(record.drill_name, [currentMatchedTarea]);
+        if (!isMatch) return false;
+      } else {
+        // Fallback si por alguna razón no se ha cargado/encontrado la tarea
+        if (record.drill_name !== selectedDrill) return false;
+      }
+
       if (selectedPosition !== 'TODAS' && record.position_name !== selectedPosition) return false;
       
       if (searchTerm) {
@@ -500,7 +605,7 @@ export default function DinamicasArea() {
       }
       return true;
     });
-  }, [data, selectedDrill, selectedPosition, searchTerm]);
+  }, [data, selectedDrill, tareas, selectedPosition, searchTerm]);
 
   // Arreglos numéricos para alimentar el gráfico de cajas de la dinámica seleccionada
   const boxPlotData = useMemo(() => {
@@ -519,74 +624,8 @@ export default function DinamicasArea() {
 
   // Encontrar la tarea correspondiente y su link de video
   const matchedTarea = useMemo(() => {
-    if (!selectedDrill || selectedDrill === 'TODAS' || tareas.length === 0) return null;
-    
-    const cleanString = (str: string) => {
-      if (!str) return '';
-      return str
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "") // remove accents
-        .replace(/\bdinamica\b/g, '')
-        .replace(/\bvs\b/g, 'v')
-        .replace(/\b1c\b/g, 'c')
-        .replace(/\bcomodin\b/g, 'c')
-        .replace(/[+_\s()-]/g, '')
-        .trim();
-    };
-
-    const cleanGps = cleanString(selectedDrill);
-    
-    // 1. Intento de coincidencia exacta limpia
-    for (const t of tareas) {
-      const cleanDb = cleanString(t.nombre);
-      if (cleanGps === cleanDb && cleanGps !== '') {
-        return t;
-      }
-    }
-
-    // 2. Intento de coincidencia de subcadena
-    for (const t of tareas) {
-      const cleanDb = cleanString(t.nombre);
-      if (cleanGps.includes(cleanDb) || cleanDb.includes(cleanGps)) {
-        if (cleanGps.length > 2 && cleanDb.length > 2) {
-          return t;
-        }
-      }
-    }
-
-    // 3. Firma difusa (comparando números y banderas como 'c' y 'a')
-    const getFuzzySignature = (s: string) => {
-      let clean = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      clean = clean.replace(/\b1c\b/g, 'c').replace(/(\d+)v(\d+)/g, '$1 $2').replace(/(\d+)vs(\d+)/g, '$1 $2');
-      
-      const numbers = clean.match(/\d+/g) || [];
-      const hasC = clean.includes('c') || clean.includes('comodin');
-      const hasA = clean.includes('a') || clean.includes('arco') || clean.includes('portil') || clean.includes('portico');
-      
-      return {
-        numbers: Array.from(new Set(numbers)).sort(),
-        hasC,
-        hasA
-      };
-    };
-
-    const gpsSig = getFuzzySignature(selectedDrill);
-    
-    for (const t of tareas) {
-      const dbSig = getFuzzySignature(t.nombre);
-      
-      const numbersMatch = gpsSig.numbers.length > 0 && 
-                           dbSig.numbers.length > 0 && 
-                           gpsSig.numbers.every(num => dbSig.numbers.includes(num)) &&
-                           dbSig.numbers.every(num => gpsSig.numbers.includes(num));
-                           
-      if (numbersMatch && gpsSig.hasC === dbSig.hasC && gpsSig.hasA === dbSig.hasA) {
-        return t;
-      }
-    }
-
-    return null;
+    if (!selectedDrill) return null;
+    return tareas.find(t => t.nombre === selectedDrill) || null;
   }, [selectedDrill, tareas]);
 
   const embedVideoUrl = useMemo(() => {
@@ -706,21 +745,42 @@ export default function DinamicasArea() {
             </div>
           </div>
 
-          {/* Selector ÚNICO de Filtro solicitado */}
-          <div className="w-full xl:w-96 relative">
-            <label className="absolute -top-2 left-4 px-1.5 bg-white text-[8px] font-black text-red-600 uppercase tracking-widest z-10">
-              Seleccionar Dinámica
-            </label>
-            <select
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black text-slate-900 outline-none appearance-none cursor-pointer shadow-sm focus:ring-4 focus:ring-slate-100 transition-all uppercase"
-              value={selectedDrill}
-              onChange={(e) => setSelectedDrill(e.target.value)}
-            >
-              {uniqueDrills.map(d => (
-                <option key={d} value={d}>{d.toUpperCase()}</option>
-              ))}
-            </select>
-            <i className="fa-solid fa-chevron-down absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[10px]"></i>
+          {/* Selectores de Filtro de Tipo y Dinámica */}
+          <div className="flex flex-col md:flex-row gap-4 w-full xl:w-auto xl:min-w-[600px]">
+            {/* Filtro por Tipo de Tarea */}
+            <div className="w-full md:w-1/2 relative">
+              <label className="absolute -top-2 left-4 px-1.5 bg-white text-[8px] font-black text-red-600 uppercase tracking-widest z-10">
+                Filtrar por Tipo de Tarea
+              </label>
+              <select
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black text-slate-900 outline-none appearance-none cursor-pointer shadow-sm focus:ring-4 focus:ring-slate-100 transition-all uppercase"
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+              >
+                <option value="TODOS">TODOS LOS TIPOS</option>
+                {uniqueTypes.map(t => (
+                  <option key={t} value={t}>{t.toUpperCase()}</option>
+                ))}
+              </select>
+              <i className="fa-solid fa-filter absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[10px]"></i>
+            </div>
+
+            {/* Selector de Dinámica */}
+            <div className="w-full md:w-1/2 relative">
+              <label className="absolute -top-2 left-4 px-1.5 bg-white text-[8px] font-black text-red-600 uppercase tracking-widest z-10">
+                Seleccionar Dinámica
+              </label>
+              <select
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black text-slate-900 outline-none appearance-none cursor-pointer shadow-sm focus:ring-4 focus:ring-slate-100 transition-all uppercase"
+                value={selectedDrill}
+                onChange={(e) => setSelectedDrill(e.target.value)}
+              >
+                {filteredDrillsForSelect.map(d => (
+                  <option key={d} value={d}>{d.toUpperCase()}</option>
+                ))}
+              </select>
+              <i className="fa-solid fa-chevron-down absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[10px]"></i>
+            </div>
           </div>
         </div>
 
@@ -777,6 +837,201 @@ export default function DinamicasArea() {
         </div>
       </div>
 
+      {/* FICHA TÉCNICA DE LA DINÁMICA SELECCIONADA */}
+      {selectedDrill && selectedDrill !== 'TODAS' && matchedTarea && (
+        <div className="bg-white rounded-[48px] p-8 md:p-10 border border-slate-100 shadow-sm space-y-8 animate-in fade-in duration-300">
+          <div className="border-b border-slate-100 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.25em] mb-1">
+                Ficha Técnica del Ejercicio
+              </h3>
+              <h4 className="text-2xl font-black italic uppercase text-slate-900 flex items-center gap-3">
+                {matchedTarea.nombre}
+                {matchedTarea.tipo && (
+                  <span className={`text-[10px] not-italic font-black uppercase px-2.5 py-1 rounded-full border ${
+                    matchedTarea.tipo === 'abierta' 
+                      ? 'bg-blue-50 border-blue-200 text-blue-600' 
+                      : matchedTarea.tipo === 'cerrada'
+                      ? 'bg-amber-50 border-amber-200 text-amber-600'
+                      : 'bg-purple-50 border-purple-200 text-purple-600'
+                  }`}>
+                    {matchedTarea.tipo}
+                  </span>
+                )}
+              </h4>
+            </div>
+            {matchedTarea.updated_at && (
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                Actualizado: {new Date(matchedTarea.updated_at).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* LADO IZQUIERDO: DIAGRAMA / IMAGEN */}
+            <div className="lg:col-span-5 space-y-4">
+              {matchedTarea.link_foto ? (
+                <div className="rounded-[32px] overflow-hidden border border-slate-100 bg-slate-50 shadow-sm relative group aspect-[4/3] flex items-center justify-center">
+                  <img
+                    src={matchedTarea.link_foto}
+                    alt={matchedTarea.nombre}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full">
+                    <i className="fa-solid fa-camera mr-1.5 text-red-500"></i> Diagrama Táctico
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-[32px] border border-dashed border-slate-200 bg-slate-50/50 aspect-[4/3] flex flex-col items-center justify-center text-center p-6">
+                  <i className="fa-solid fa-image text-slate-300 text-4xl mb-3"></i>
+                  <p className="text-xs font-black uppercase tracking-wider text-slate-400">Sin diagrama disponible</p>
+                </div>
+              )}
+
+              {/* VIDEO INTEGRADO EN LA FICHA */}
+              {embedVideoUrl ? (
+                <div className="rounded-[32px] p-5 bg-slate-50 border border-slate-100 space-y-3">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 italic">
+                    <i className="fa-solid fa-circle-play text-red-600"></i>
+                    Animación de la Tarea:
+                  </p>
+                  <div className="relative aspect-video w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-950 shadow-md">
+                    <iframe
+                      src={embedVideoUrl}
+                      className="absolute top-0 left-0 w-full h-full border-0"
+                      allow="autoplay; encrypted-media; picture-in-picture"
+                      allowFullScreen
+                      title={`Video: ${matchedTarea.nombre}`}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-[32px] p-5 bg-slate-50/50 border border-dashed border-slate-200 text-center py-6">
+                  <i className="fa-solid fa-video-slash text-slate-300 text-base mb-1"></i>
+                  <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Sin video animado</p>
+                </div>
+              )}
+            </div>
+
+            {/* LADO DERECHO: DESCRIPCIÓN Y ASPECTOS TÉCNICOS */}
+            <div className="lg:col-span-7 space-y-6">
+              {matchedTarea.descripcion && (
+                <div className="space-y-2">
+                  <h5 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Descripción del Ejercicio</h5>
+                  <p className="text-sm font-medium text-slate-600 leading-relaxed bg-slate-50/80 p-5 rounded-3xl border border-slate-50">
+                    {matchedTarea.descripcion}
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Contenidos Ofensivos */}
+                <div className="space-y-2.5">
+                  <h5 className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                    Contenidos Ofensivos
+                  </h5>
+                  {matchedTarea.contenidos_ofensivos && matchedTarea.contenidos_ofensivos.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {matchedTarea.contenidos_ofensivos.map((item: string, idx: number) => (
+                        <li key={idx} className="text-xs font-bold text-slate-700 bg-blue-50/40 border border-blue-100/50 px-3.5 py-2 rounded-2xl flex items-start gap-2.5">
+                          <i className="fa-solid fa-angles-right text-blue-500 text-[10px] mt-0.5"></i>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[10px] italic text-slate-400">No especificados</p>
+                  )}
+                </div>
+
+                {/* Contenidos Defensivos */}
+                <div className="space-y-2.5">
+                  <h5 className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                    Contenidos Defensivos
+                  </h5>
+                  {matchedTarea.contenidos_defensivos && matchedTarea.contenidos_defensivos.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {matchedTarea.contenidos_defensivos.map((item: string, idx: number) => (
+                        <li key={idx} className="text-xs font-bold text-slate-700 bg-red-50/40 border border-red-100/50 px-3.5 py-2 rounded-2xl flex items-start gap-2.5">
+                          <i className="fa-solid fa-angles-left text-red-500 text-[10px] mt-0.5"></i>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[10px] italic text-slate-400">No especificados</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Consignas & Reglas de provocación */}
+              <div className="space-y-4 pt-2 border-t border-slate-100">
+                {matchedTarea.consignas && matchedTarea.consignas.length > 0 && (
+                  <div className="space-y-2.5">
+                    <h5 className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
+                      <i className="fa-solid fa-bullhorn text-amber-500 text-xs"></i>
+                      Consignas de los Entrenadores
+                    </h5>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {matchedTarea.consignas.map((item: string, idx: number) => (
+                        <div key={idx} className="text-xs font-bold text-slate-700 bg-amber-50/30 border border-amber-100/40 p-3 rounded-2xl flex items-start gap-3">
+                          <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[9px] font-black shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="leading-relaxed">{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Reglas de provocación */}
+                  {matchedTarea.reglas && matchedTarea.reglas.length > 0 && (
+                    <div className="space-y-2.5">
+                      <h5 className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
+                        <i className="fa-solid fa-scale-balanced text-purple-500 text-xs"></i>
+                        Reglas de Provocación
+                      </h5>
+                      <ul className="space-y-1.5">
+                        {matchedTarea.reglas.map((item: string, idx: number) => (
+                          <li key={idx} className="text-xs font-bold text-slate-700 bg-purple-50/30 border border-purple-100/40 px-3.5 py-2.5 rounded-2xl flex items-start gap-2.5">
+                            <i className="fa-solid fa-check text-purple-500 text-xs mt-0.5"></i>
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Variantes */}
+                  {matchedTarea.variantes && matchedTarea.variantes.length > 0 && (
+                    <div className="space-y-2.5">
+                      <h5 className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
+                        <i className="fa-solid fa-code-fork text-emerald-500 text-xs"></i>
+                        Variantes Progresivas
+                      </h5>
+                      <ul className="space-y-1.5">
+                        {matchedTarea.variantes.map((item: string, idx: number) => (
+                          <li key={idx} className="text-xs font-bold text-slate-700 bg-emerald-50/30 border border-emerald-100/40 px-3.5 py-2.5 rounded-2xl flex items-start gap-2.5">
+                            <i className="fa-solid fa-arrow-right-long text-emerald-500 text-xs mt-0.5"></i>
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SECCIÓN VACÍA CON SEEDER SI NO HAY DATOS */}
       {data.length === 0 && !loading && (
         <div className="bg-white rounded-[48px] p-12 text-center border border-slate-100 shadow-sm max-w-2xl mx-auto space-y-6">
@@ -809,116 +1064,93 @@ export default function DinamicasArea() {
         </div>
       )}
 
-      {/* DASHBOARD DE DISTRIBUCIÓN DE PERCENTILES */}
-      {filteredData.length > 0 && (
-        <div className="space-y-8">
-          <div className="border-b border-slate-100 pb-4">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.25em] mb-1">
-              Distribución Estadística
-            </h3>
-            <h4 className="text-xl font-black italic uppercase text-slate-900">
-              Distribución de Percentiles de la Dinámica: <span className="text-red-600 font-black">{selectedDrill === 'TODAS' ? 'TODAS LAS DINÁMICAS' : selectedDrill}</span>
-              {selectedPosition !== 'TODAS' && (
-                <span className="text-slate-500 font-black"> - POSICIÓN: <span className="text-blue-600">{selectedPosition.toUpperCase()}</span></span>
-              )}
-            </h4>
-          </div>
-
-          {/* Grilla con la Distribución de Percentiles */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
-            <BoxPlot
-              label="Intensidad de Carrera"
-              unit="m/min"
-              values={boxPlotData.intensity}
-              color="#CF1B2B"
-            />
-            <BoxPlot
-              label="Volumen / Distancia Total"
-              unit="m"
-              values={boxPlotData.volume}
-              color="#3b82f6"
-            />
-            <BoxPlot
-              label="Velocidad Máxima Registrada"
-              unit="km/h"
-              values={boxPlotData.maxVel}
-              color="#f59e0b"
-            />
-            <BoxPlot
-              label="Acciones de Alta Intensidad (ACC/DEC)"
-              unit="act."
-              values={boxPlotData.accel}
-              color="#10b981"
-            />
-            <BoxPlot
-              label="Cantidad de Sprints"
-              unit="spr."
-              values={boxPlotData.sprints}
-              color="#8b5cf6"
-            />
-            <BoxPlot
-              label="Distancia > 15 km/h"
-              unit="m"
-              values={boxPlotData.dist15}
-              color="#06b6d4"
-            />
-            <BoxPlot
-              label="Distancia > 20 km/h"
-              unit="m"
-              values={boxPlotData.dist20}
-              color="#ec4899"
-            />
-            <BoxPlot
-              label="Duración"
-              unit="min"
-              values={boxPlotData.duration}
-              color="#14b8a6"
-            />
-            <BoxPlot
-              label="Sprint en Metros"
-              unit="m"
-              values={boxPlotData.distSprintM}
-              color="#f43f5e"
-            />
-          </div>
-
-          {/* Video de la Tarea en Google Drive */}
-          {embedVideoUrl ? (
-            <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100 mt-8 space-y-4">
-              <div className="flex items-center gap-3 pb-2">
-                <div className="w-10 h-10 rounded-2xl bg-red-600 flex items-center justify-center text-white shadow-md shadow-red-600/10 animate-pulse">
-                  <i className="fa-solid fa-video text-xs"></i>
-                </div>
-                <div>
-                  <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">
-                    Video Animación de la Tarea / Dinámica
-                  </h5>
-                  <p className="text-sm font-black italic text-slate-900 uppercase tracking-tight">
-                    {matchedTarea?.nombre}
-                  </p>
-                </div>
-              </div>
-
-              <div className="relative aspect-video w-full max-w-4xl mx-auto rounded-3xl overflow-hidden border border-slate-200 bg-slate-950 shadow-2xl">
-                <iframe
-                  src={embedVideoUrl}
-                  className="absolute top-0 left-0 w-full h-full border-0"
-                  allow="autoplay; encrypted-media; picture-in-picture"
-                  allowFullScreen
-                  title={`Video de la Tarea: ${matchedTarea?.nombre}`}
-                />
-              </div>
+      {/* DASHBOARD DE DISTRIBUCIÓN DE PERCENTILES O MENSAJE SIN DATOS */}
+      {selectedDrill && (
+        filteredData.length > 0 ? (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="border-b border-slate-100 pb-4">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.25em] mb-1">
+                Distribución Estadística
+              </h3>
+              <h4 className="text-xl font-black italic uppercase text-slate-900">
+                Distribución de Percentiles de la Dinámica: <span className="text-red-600 font-black">{selectedDrill}</span>
+                {selectedPosition !== 'TODAS' && (
+                  <span className="text-slate-500 font-black"> - POSICIÓN: <span className="text-blue-600">{selectedPosition.toUpperCase()}</span></span>
+                )}
+              </h4>
             </div>
-          ) : selectedDrill !== 'TODAS' && (
-            <div className="bg-slate-50/50 p-6 rounded-[32px] border border-dashed border-slate-200 mt-8 flex flex-col items-center justify-center text-center py-8">
-              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
-                <i className="fa-solid fa-video-slash text-base"></i>
-              </div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-400">Sin video disponible</p>
-              <p className="text-[10px] font-medium text-slate-400 mt-1">No hay un enlace de Google Drive registrado en la biblioteca de tareas para la dinámica "{selectedDrill}".</p>
+
+            {/* Grilla con la Distribución de Percentiles */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
+              <BoxPlot
+                label="Intensidad de Carrera"
+                unit="m/min"
+                values={boxPlotData.intensity}
+                color="#CF1B2B"
+              />
+              <BoxPlot
+                label="Volumen / Distancia Total"
+                unit="m"
+                values={boxPlotData.volume}
+                color="#3b82f6"
+              />
+              <BoxPlot
+                label="Velocidad Máxima Registrada"
+                unit="km/h"
+                values={boxPlotData.maxVel}
+                color="#f59e0b"
+              />
+              <BoxPlot
+                label="Acciones de Alta Intensidad (ACC/DEC)"
+                unit="act."
+                values={boxPlotData.accel}
+                color="#10b981"
+              />
+              <BoxPlot
+                label="Cantidad de Sprints"
+                unit="spr."
+                values={boxPlotData.sprints}
+                color="#8b5cf6"
+              />
+              <BoxPlot
+                label="Distancia > 15 km/h"
+                unit="m"
+                values={boxPlotData.dist15}
+                color="#06b6d4"
+              />
+              <BoxPlot
+                label="Distancia > 20 km/h"
+                unit="m"
+                values={boxPlotData.dist20}
+                color="#ec4899"
+              />
+              <BoxPlot
+                label="Duración"
+                unit="min"
+                values={boxPlotData.duration}
+                color="#14b8a6"
+              />
+              <BoxPlot
+                label="Sprint en Metros"
+                unit="m"
+                values={boxPlotData.distSprintM}
+                color="#f43f5e"
+              />
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-[48px] p-12 text-center border border-slate-100 shadow-sm max-w-2xl mx-auto space-y-4 animate-in fade-in duration-500">
+            <div className="w-16 h-16 bg-slate-50 border border-slate-100 text-slate-300 rounded-full flex items-center justify-center mx-auto">
+              <i className="fa-solid fa-triangle-exclamation text-xl text-amber-500 animate-pulse"></i>
+            </div>
+            <div>
+              <h4 className="text-sm font-black uppercase text-slate-900 tracking-tight">Sin Datos GPS Asociados</h4>
+              <p className="text-slate-400 text-xs mt-1.5 leading-relaxed max-w-md mx-auto">
+                La dinámica seleccionada ("{selectedDrill}") no cuenta con registros de rendimiento GPS asociados en la base de datos{selectedPosition !== 'TODAS' ? ` para la demarcación "${selectedPosition}"` : ''}.
+              </p>
+            </div>
+          </div>
+        )
       )}
 
 

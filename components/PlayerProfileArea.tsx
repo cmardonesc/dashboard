@@ -10,6 +10,7 @@ import {
 import ClubBadge from './ClubBadge';
 import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS, MatchDB, CATEGORY_ID_MAP } from '../types';
 import { FALLBACK_CLUB_NAMES } from '../constants';
+import { AthleteHuella } from './SportsScienceArea';
 
 interface PlayerProfileAreaProps {
   userRole?: string;
@@ -18,9 +19,10 @@ interface PlayerProfileAreaProps {
   clubs?: any[];
   initialPlayerId?: number | null;
   players?: any[];
+  initialTab?: string;
 }
 
-const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClub, userClubId, clubs = [], initialPlayerId, players: initialPlayers }) => {
+const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClub, userClubId, clubs = [], initialPlayerId, players: initialPlayers, initialTab }) => {
   const safeMax = (arr: number[]) => {
     const valid = arr.filter(v => typeof v === 'number' && !isNaN(v) && isFinite(v));
     return valid.length > 0 ? Math.max(...valid) : 0;
@@ -42,8 +44,14 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const [players, setPlayers] = useState<any[]>(initialPlayers || []);
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<string>('evolucion'); 
+  const [activeTab, setActiveTab] = useState<string>(initialTab || 'evolucion'); 
   const [gpsChartMetric, setGpsChartMetric] = useState<'dist_total_m' | 'dist_mai_m_20_kmh' | 'm_por_min' | 'acc_decc_ai_n' | 'sprints_n' | 'dist_sprint_m_25_kmh'>('dist_total_m');
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   useEffect(() => {
     const handleSelect = (e: any) => {
@@ -95,6 +103,18 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     imtp: any[],
     speed: any[]
   }>({ anthro: [], vo2: [], imtp: [], speed: [] });
+
+  const [cmjRebound, setCmjRebound] = useState<any[]>([]);
+  const [test505, setTest505] = useState<any[]>([]);
+
+  // Global physical references
+  const [globalDataLoaded, setGlobalDataLoaded] = useState(false);
+  const [globalImtp, setGlobalImtp] = useState<any[]>([]);
+  const [globalSpeed, setGlobalSpeed] = useState<any[]>([]);
+  const [globalAntro, setGlobalAntro] = useState<any[]>([]);
+  const [globalVo2, setGlobalVo2] = useState<any[]>([]);
+  const [globalCmjRebound, setGlobalCmjRebound] = useState<any[]>([]);
+  const [globalTest505, setGlobalTest505] = useState<any[]>([]);
 
   const [medicalHistory, setMedicalHistory] = useState<{
     reports: any[];
@@ -209,12 +229,14 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       setGpsStats(gps || []);
 
       // 5. Physical Evaluations
-      const [anthro, vo2, imtpRes, cmjRes, speed] = await Promise.all([
+      const [anthro, vo2, imtpRes, cmjRes, speed, cmjReboundRes, test505Res] = await Promise.all([
         supabase.from('antropometria').select('*').eq('player_id', playerId).order('fecha_medicion', { ascending: true }),
         supabase.from('vo2max_tests').select('*').eq('player_id', playerId).order('fecha', { ascending: true }),
         supabase.from('evaluaciones_imtp').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true }),
         supabase.from('evaluaciones_cmj').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true }),
-        supabase.from('velocidad_tests').select('*').eq('player_id', playerId).order('fecha', { ascending: true })
+        supabase.from('velocidad_tests').select('*').eq('player_id', playerId).order('fecha', { ascending: true }),
+        supabase.from('evaluaciones_cmj_rebound').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true }),
+        supabase.from('test_505').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true })
       ]);
 
       // Combine IMTP and CMJ data by date
@@ -254,6 +276,9 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         imtp: combinedImtp,
         speed: speed.data || []
       });
+
+      setCmjRebound(cmjReboundRes.data || []);
+      setTest505(test505Res.data || []);
 
       // 6. Wellness Check-in data with fallback column name parsing
       let wellnessList: any[] = [];
@@ -347,6 +372,65 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       setLoading(false);
     }
   };
+
+  const fetchGlobalPhysicalData = async () => {
+    if (globalDataLoaded) return;
+    try {
+      console.log("Loading global reference data for Athlete Huella...");
+      const [imtpRes, speedRes, antroRes, vo2Res, cmjRes, cmjReboundRes, test505Res] = await Promise.all([
+        supabase.from('evaluaciones_imtp').select('*'),
+        supabase.from('velocidad_tests').select('*'),
+        supabase.from('antropometria').select('*'),
+        supabase.from('vo2max_tests').select('*'),
+        supabase.from('evaluaciones_cmj').select('*'),
+        supabase.from('evaluaciones_cmj_rebound').select('*'),
+        supabase.from('test_505').select('*')
+      ]);
+
+      // Combine IMTP and CMJ data by player_id and date
+      const mergedMap = new Map<string, any>();
+      const processedImtpData = (imtpRes.data || []).map((item: any) => {
+        const newItem = { ...item };
+        if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
+          newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
+        }
+        if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
+          newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
+        }
+        return newItem;
+      });
+      processedImtpData.forEach((item: any) => {
+        const key = `${item.player_id}_${item.fecha_test}`;
+        mergedMap.set(key, { ...item });
+      });
+      (cmjRes.data || []).forEach((item: any) => {
+        const key = `${item.player_id}_${item.fecha_test}`;
+        const existing = mergedMap.get(key);
+        if (existing) {
+          mergedMap.set(key, { ...existing, ...item });
+        } else {
+          mergedMap.set(key, { ...item });
+        }
+      });
+      const combinedImtp = Array.from(mergedMap.values());
+
+      setGlobalImtp(combinedImtp);
+      setGlobalSpeed(speedRes.data || []);
+      setGlobalAntro(antroRes.data || []);
+      setGlobalVo2(vo2Res.data || []);
+      setGlobalCmjRebound(cmjReboundRes.data || []);
+      setGlobalTest505(test505Res.data || []);
+      setGlobalDataLoaded(true);
+    } catch (err) {
+      console.error("Error loading global physical data:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'huella' && selectedPlayerId) {
+      fetchGlobalPhysicalData();
+    }
+  }, [activeTab, selectedPlayerId]);
 
   // Combine wellness and load data by date
   const combinedChartData = useMemo(() => {
@@ -1300,8 +1384,35 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
             {/* Right Column: charts & tables */}
             <div className="lg:col-span-3 space-y-8">
+              {/* Tab Selector for Player Profile Right Column */}
+              <div className="flex bg-slate-100/80 p-1.5 rounded-3xl items-center gap-1.5 self-start w-fit shadow-inner">
+                <button
+                  onClick={() => setActiveTab('evolucion')}
+                  className={`px-6 py-3 text-xs font-black uppercase tracking-wider rounded-2xl transition-all duration-300 flex items-center gap-2 ${
+                    activeTab === 'evolucion'
+                      ? 'bg-[#0b1220] text-white shadow-lg'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                  }`}
+                >
+                  <i className="fa-solid fa-clock-rotate-left"></i>
+                  Evolución y Cargas
+                </button>
+                <button
+                  onClick={() => setActiveTab('huella')}
+                  className={`px-6 py-3 text-xs font-black uppercase tracking-wider rounded-2xl transition-all duration-300 flex items-center gap-2 ${
+                    activeTab === 'huella'
+                      ? 'bg-[#0b1220] text-white shadow-lg'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                  }`}
+                >
+                  <i className="fa-solid fa-fingerprint"></i>
+                  Huella del Atleta
+                </button>
+              </div>
 
-              {/* GRÁFICO DUAL CHECK-IN vs CHECK-OUT CON FILTRO SLIDER */}
+              {activeTab === 'evolucion' ? (
+                <>
+                  {/* GRÁFICO DUAL CHECK-IN vs CHECK-OUT CON FILTRO SLIDER */}
               <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] mb-8 flex items-center gap-3">
                     <span className="w-2 h-6 bg-indigo-600 rounded-full"></span>
@@ -2116,6 +2227,31 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                       )}
                  </div>
               </div>
+                </>
+              ) : (
+                <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+                  <AthleteHuella
+                    player={profileData}
+                    imtp={physicalData.imtp}
+                    speed={physicalData.speed}
+                    antropometria={physicalData.anthro}
+                    vo2max={physicalData.vo2}
+                    test505={test505}
+                    medicalReports={medicalHistory.reports}
+                    internalLoads={wellnessData}
+                    gps={gpsStats}
+                    allImtp={globalImtp}
+                    allSpeed={globalSpeed}
+                    allAntro={globalAntro}
+                    allVo2={globalVo2}
+                    allTest505={globalTest505}
+                    allPlayers={players}
+                    clubs={clubs}
+                    cmjRebound={cmjRebound}
+                    allCmjRebound={globalCmjRebound}
+                  />
+                </div>
+              )}
 
             </div>
           </div>

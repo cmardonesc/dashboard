@@ -179,6 +179,236 @@ export default function CitacionesArea({
     signatureRole: 'Gerente de Selecciones Nacionales'
   });
 
+  // Club Specific Letter Configs State
+  const [clubLetterConfigs, setClubLetterConfigs] = useState<Record<string, any>>(() => {
+    try {
+      const stored = localStorage.getItem('lr-performance-club-specific-letter-configs');
+      return stored ? JSON.parse(stored) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const [editingClubConfigName, setEditingClubConfigName] = useState<string | null>(null);
+  const [tempClubConfig, setTempClubConfig] = useState<any>(null);
+
+  const getClubConfig = (clubName: string) => {
+    const clubOverride = clubLetterConfigs[clubName] || {};
+    return {
+      headerRef: clubOverride.headerRef ?? letterConfig.headerRef,
+      headerCity: clubOverride.headerCity ?? letterConfig.headerCity,
+      bodyPart1: clubOverride.bodyPart1 ?? letterConfig.bodyPart1,
+      bodyPart2: clubOverride.bodyPart2 ?? letterConfig.bodyPart2,
+      presentation: clubOverride.presentation ?? letterConfig.presentation,
+      presentationSuffix: clubOverride.presentationSuffix ?? letterConfig.presentationSuffix,
+      guidelines: clubOverride.guidelines ?? letterConfig.guidelines,
+      closing: clubOverride.closing ?? letterConfig.closing,
+      signatureName: clubOverride.signatureName ?? letterConfig.signatureName,
+      signatureRole: clubOverride.signatureRole ?? letterConfig.signatureRole
+    };
+  };
+
+  const handleOpenClubConfigModal = (clubName: string) => {
+    setEditingClubConfigName(clubName);
+    const currentOverride = clubLetterConfigs[clubName] || {};
+    setTempClubConfig({
+      headerRef: currentOverride.headerRef ?? letterConfig.headerRef,
+      headerCity: currentOverride.headerCity ?? letterConfig.headerCity,
+      bodyPart1: currentOverride.bodyPart1 ?? letterConfig.bodyPart1,
+      bodyPart2: currentOverride.bodyPart2 ?? letterConfig.bodyPart2,
+      presentation: currentOverride.presentation ?? letterConfig.presentation,
+      presentationSuffix: currentOverride.presentationSuffix ?? letterConfig.presentationSuffix,
+      guidelines: currentOverride.guidelines ?? letterConfig.guidelines,
+      closing: currentOverride.closing ?? letterConfig.closing,
+      signatureName: currentOverride.signatureName ?? letterConfig.signatureName,
+      signatureRole: currentOverride.signatureRole ?? letterConfig.signatureRole
+    });
+  };
+
+  const handleSaveClubConfig = () => {
+    if (!editingClubConfigName || !tempClubConfig) return;
+    const updated = {
+      ...clubLetterConfigs,
+      [editingClubConfigName]: tempClubConfig
+    };
+    setClubLetterConfigs(updated);
+    localStorage.setItem('lr-performance-club-specific-letter-configs', JSON.stringify(updated));
+    setEditingClubConfigName(null);
+    setTempClubConfig(null);
+    alert(`Texto específico guardado para ${editingClubConfigName}. Las cartas de este club usarán este contenido.`);
+  };
+
+  const handleResetClubConfig = () => {
+    if (!editingClubConfigName) return;
+    const updated = { ...clubLetterConfigs };
+    delete updated[editingClubConfigName];
+    setClubLetterConfigs(updated);
+    localStorage.setItem('lr-performance-club-specific-letter-configs', JSON.stringify(updated));
+    setEditingClubConfigName(null);
+    setTempClubConfig(null);
+    alert(`Se han restablecido los valores predeterminados para ${editingClubConfigName}.`);
+  };
+
+  const renderClubConfigModal = () => {
+    if (!editingClubConfigName || !tempClubConfig) return null;
+    return (
+      <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-[#0b1220]/80 backdrop-blur-md overflow-y-auto">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          className="bg-white w-full max-w-4xl rounded-[40px] shadow-2xl overflow-hidden my-8 border border-slate-100 text-left"
+        >
+          <div className="bg-white p-8 border-b border-slate-100 relative flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-red-900/10">
+                <i className="fa-solid fa-pen-fancy"></i>
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest italic">EDITOR DE CARTA ESPECÍFICA DE CONVOCATORIA</h3>
+                <p className="text-[10px] text-red-600 font-bold uppercase tracking-[0.3em] mt-1">PERSONALIZA EL CONTENIDO PARA EL CLUB: {editingClubConfigName.toUpperCase()}</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => { setEditingClubConfigName(null); setTempClubConfig(null); }} 
+              className="text-slate-400 hover:text-slate-900 transition-colors"
+            >
+              <i className="fa-solid fa-xmark text-xl"></i>
+            </button>
+          </div>
+
+          <div className="p-8 space-y-6 max-h-[calc(100vh-220px)] overflow-y-auto custom-scrollbar">
+            <div className="bg-red-50/50 p-6 rounded-2xl border border-red-100 flex items-start gap-4 text-slate-700 text-xs font-semibold">
+              <i className="fa-solid fa-circle-info text-red-600 text-sm mt-0.5"></i>
+              <div>
+                <p className="text-slate-900 font-black uppercase text-[10px] tracking-wider">Ajuste Exclusivo para Club</p>
+                <p className="mt-1 font-normal text-slate-500 leading-relaxed">Cualquier cambio realizado aquí se aplicará de forma exclusiva a las cartas de convocatoria generadas para el club <strong className="uppercase font-black text-slate-900">{editingClubConfigName}</strong>.</p>
+                <p className="mt-2 text-red-600 font-bold uppercase text-[9px] tracking-wider">Si desea restablecer los textos de este club a la configuración general, haga clic en "Restablecer Predeterminados".</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">REFERENCIA (ASUNTO)</label>
+                  <input 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                    value={tempClubConfig.headerRef}
+                    onChange={e => setTempClubConfig({...tempClubConfig, headerRef: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">CIUDAD EMISIÓN</label>
+                  <input 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                    value={tempClubConfig.headerCity}
+                    onChange={e => setTempClubConfig({...tempClubConfig, headerCity: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">INTRODUCCIÓN JUGADOR</label>
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all h-24 resize-none"
+                    value={tempClubConfig.bodyPart1}
+                    onChange={e => setTempClubConfig({...tempClubConfig, bodyPart1: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">CUERPO MICROCICLO (FECHAS)</label>
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all h-24 resize-none"
+                    value={tempClubConfig.bodyPart2}
+                    onChange={e => setTempClubConfig({...tempClubConfig, bodyPart2: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">PRESENTACIÓN (DIRECCIÓN)</label>
+                  <input 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                    value={tempClubConfig.presentation}
+                    onChange={e => setTempClubConfig({...tempClubConfig, presentation: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">SUFIJO DE PRESENTACIÓN (HORARIO)</label>
+                  <input 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                    value={tempClubConfig.presentationSuffix}
+                    onChange={e => setTempClubConfig({...tempClubConfig, presentationSuffix: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">LINEAMIENTOS DE PRESENTACIÓN (CONDUCTA)</label>
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all h-24 resize-none"
+                    value={tempClubConfig.guidelines}
+                    onChange={e => setTempClubConfig({...tempClubConfig, guidelines: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">CIERRE / DESPEDIDA</label>
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all h-24 resize-none"
+                    value={tempClubConfig.closing}
+                    onChange={e => setTempClubConfig({...tempClubConfig, closing: e.target.value})}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-slate-100">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">FIRMA NOMBRE</label>
+                <input 
+                  className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                  value={tempClubConfig.signatureName}
+                  onChange={e => setTempClubConfig({...tempClubConfig, signatureName: e.target.value})}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">FIRMA CARGO</label>
+                <input 
+                  className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                  value={tempClubConfig.signatureRole}
+                  onChange={e => setTempClubConfig({...tempClubConfig, signatureRole: e.target.value})}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-slate-100">
+              <button 
+                type="button"
+                onClick={handleResetClubConfig}
+                className="w-full sm:w-auto px-6 py-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all flex items-center justify-center gap-2"
+              >
+                <i className="fa-solid fa-rotate-left"></i> RESTABLECER PREDETERMINADOS
+              </button>
+              <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                <button 
+                  type="button"
+                  onClick={() => { setEditingClubConfigName(null); setTempClubConfig(null); }}
+                  className="w-full sm:w-auto px-6 py-4 bg-slate-100 text-slate-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
+                >
+                  CANCELAR
+                </button>
+                <button 
+                  type="button"
+                  onClick={handleSaveClubConfig}
+                  className="w-full sm:w-auto px-8 py-4 bg-red-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 shadow-lg shadow-red-900/10 transition-all flex items-center justify-center gap-2"
+                >
+                  <i className="fa-solid fa-floppy-disk"></i> GUARDAR CAMBIOS
+                </button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  };
+
   // Cargar datos estáticos e iniciales solo una vez al montar el componente
   useEffect(() => {
     fetchMicrocycles();
@@ -1117,7 +1347,8 @@ export default function CitacionesArea({
   };
 
   const getFormalLetterBlob = async (clubName: string, players: User[]): Promise<Blob> => {
-    console.log("📝 PDF Generation - Active letterConfig:", letterConfig);
+    const activeConfig = getClubConfig(clubName);
+    console.log(`📝 PDF Generation - Active config for ${clubName}:`, activeConfig);
     return new Promise((resolve) => {
       const doc = new jsPDF({
         orientation: 'portrait',
@@ -1307,7 +1538,7 @@ export default function CitacionesArea({
         
         doc.setFont("helvetica", "bold");
         const categoryName = formatCategoryLabel(selectedMicro?.category_id);
-        const refText = `${letterConfig.headerRef} ${categoryName}.`;
+        const refText = `${activeConfig.headerRef} ${categoryName}.`;
         doc.text(refText, 25, 105);
         const refWidth = doc.getTextWidth(refText);
         doc.setLineWidth(0.2);
@@ -1323,9 +1554,9 @@ export default function CitacionesArea({
         const monthName = months[startDate.getMonth()];
         const year = startDate.getFullYear();
 
-        const text1 = letterConfig.bodyPart1;
+        const text1 = activeConfig.bodyPart1;
         const playerNamesStr = players.map(p => p.name).join(', ');
-        const text2 = `${letterConfig.bodyPart2} ${startDay} al ${endDay} de ${monthName} del ${year}.`;
+        const text2 = `${activeConfig.bodyPart2} ${startDay} al ${endDay} de ${monthName} del ${year}.`;
         
         const marginX = 25;
         const textMaxWidth = 160;
@@ -1337,18 +1568,18 @@ export default function CitacionesArea({
         doc.text(lines1, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
         currentY += lines1.length * lineHeight + 8;
 
-        const text3 = `${letterConfig.presentation} ${startDay} de ${monthName} ${letterConfig.presentationSuffix}`;
+        const text3 = `${activeConfig.presentation} ${startDay} de ${monthName} ${activeConfig.presentationSuffix}`;
         const lines3 = doc.splitTextToSize(text3, textMaxWidth);
         doc.text(lines3, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
         currentY += lines3.length * lineHeight + 10;
 
         doc.setFontSize(10.5);
-        const text4 = letterConfig.guidelines;
+        const text4 = activeConfig.guidelines;
         const lines4 = doc.splitTextToSize(text4, textMaxWidth);
         doc.text(lines4, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
         currentY += lines4.length * lineHeight + 10;
 
-        const text5 = letterConfig.closing;
+        const text5 = activeConfig.closing;
         const lines5 = doc.splitTextToSize(text5, textMaxWidth);
         doc.text(lines5, marginX, currentY, { align: 'justify', maxWidth: textMaxWidth });
         currentY += lines5.length * lineHeight + 15;
@@ -1361,9 +1592,9 @@ export default function CitacionesArea({
 
         doc.setFont("helvetica", "bold");
         doc.setFontSize(10.5);
-        doc.text(letterConfig.signatureName, 105, 265, { align: 'center' });
+        doc.text(activeConfig.signatureName, 105, 265, { align: 'center' });
         doc.setFontSize(9.5);
-        doc.text(letterConfig.signatureRole, 105, 271, { align: 'center' });
+        doc.text(activeConfig.signatureRole, 105, 271, { align: 'center' });
 
         doc.setFontSize(7);
         doc.setTextColor(200, 200, 200);
@@ -1801,7 +2032,8 @@ export default function CitacionesArea({
 
   if (viewMode === 'clubs') {
     return (
-      <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+      <>
+        <div className="space-y-8 animate-in fade-in duration-500 pb-20">
         <div className="bg-[#0b1220] rounded-[40px] p-10 text-white shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-96 h-96 bg-red-600/10 rounded-full -mr-48 -mt-48 blur-3xl"></div>
           <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
@@ -1973,11 +2205,11 @@ export default function CitacionesArea({
                 </div>
                 <div className="flex gap-2">
                   <button 
-                    onClick={() => shareCitationWhatsApp(clubName, players)}
-                    className="w-10 h-10 bg-[#25D366]/10 border border-[#25D366]/20 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-xl flex items-center justify-center transition-all shadow-sm"
-                    title="Compartir por WhatsApp"
+                    onClick={() => handleOpenClubConfigModal(clubName)}
+                    className="w-10 h-10 bg-emerald-50 border border-emerald-100 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-sm"
+                    title="Editar texto específico para este club"
                   >
-                    <i className="fa-brands fa-whatsapp"></i>
+                    <i className="fa-solid fa-file-pen"></i>
                   </button>
                   <button 
                     onClick={() => generateFormalLetterPDF(clubName, players)}
@@ -2013,6 +2245,10 @@ export default function CitacionesArea({
           ))}
         </div>
       </div>
+      <AnimatePresence>
+        {renderClubConfigModal()}
+      </AnimatePresence>
+    </>
     );
   }
 
@@ -2307,6 +2543,8 @@ export default function CitacionesArea({
             </motion.div>
           </div>
         )}
+
+        {renderClubConfigModal()}
       </AnimatePresence>
     </div>
   )

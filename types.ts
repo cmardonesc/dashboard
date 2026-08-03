@@ -116,6 +116,7 @@ export type MenuId =
   | 'importar_datos'
   | 'perfil_jugador'
   | 'sports_science'
+  | 'huella_atleta'
   | 'telegram_notifications';
 
 export interface CitacionDB {

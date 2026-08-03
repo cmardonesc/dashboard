@@ -597,6 +597,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           {!isCollapsed && <span className="font-bold text-sm tracking-tight">Sports Science</span>}
         </button>
 
+
+
         {(userRole === 'admin' || userRole === 'staff') && (
           <button
             onClick={() => handleMenuClick('importar_datos')}
