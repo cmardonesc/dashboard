@@ -3994,7 +3994,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
               const gpsParameters = [
                 { name: 'Distancia Total Promedio (m)', value: reportData.gpsAvg?.dist ? `${reportData.gpsAvg.dist.toFixed(0)} m` : '—' },
-                { name: 'Distancia MAI Promedio (m)', value: reportData.gpsAvg?.ai ? `${reportData.gpsAvg.ai.toFixed(0)} m` : '—' },
+                { name: 'Distancia AI Promedio (m)', value: reportData.gpsAvg?.ai ? `${reportData.gpsAvg.ai.toFixed(0)} m` : '—' },
                 { name: 'Distancia HSR Promedio (m)', value: reportData.gpsAvg?.hsr ? `${reportData.gpsAvg.hsr.toFixed(0)} m` : '—' },
                 { name: 'Distancia Sprint Promedio (m)', value: reportData.gpsAvg?.sprint ? `${reportData.gpsAvg.sprint.toFixed(0)} m` : '—' },
                 { name: 'Acc/Decc AI Promedio', value: reportData.gpsAvg?.acc ? `${reportData.gpsAvg.acc.toFixed(1)}` : '—' },
@@ -4170,7 +4170,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
               const nextDayGpsParams = [
                 { id: 'dist_total_m', name: 'DISTANCIA TOTAL PROMEDIO OBJETIVO' },
-                { id: 'dist_ai_m_15_kmh', name: 'DISTANCIA MAI PROMEDIO OBJETIVO (>15 KM/H)' },
+                { id: 'dist_ai_m_15_kmh', name: 'DISTANCIA AI PROMEDIO OBJETIVO (>15 KM/H)' },
                 { id: 'dist_mai_m_20_kmh', name: 'DISTANCIA HSR PROMEDIO OBJETIVO (>20 KM/H)' },
                 { id: 'dist_sprint_m_25_kmh', name: 'DISTANCIA SPRINT PROMEDIO OBJETIVO (>25 KM/H)' },
                 { id: 'acc_decc_ai_n', name: 'ACC/DECC AI PROMEDIO OBJETIVO' },
@@ -5224,7 +5224,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                       unit: 'm'
                                     };
                                   }
-                                  if (paramName.includes('Distancia MAI')) {
+                                  if (paramName.includes('Distancia AI') || paramName.includes('Distancia MAI')) {
                                     return {
                                       metricId: 'dist_ai_m_15_kmh',
                                       realValue: reportData.gpsAvg?.ai || 0,

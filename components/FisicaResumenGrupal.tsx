@@ -143,6 +143,7 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [showOnlyLatest, setShowOnlyLatest] = useState<boolean>(true);
+  const [hideNoData, setHideNoData] = useState<boolean>(false);
   const hasInitializedDates = useRef(false);
 
   // Modal state for selecting evaluations to export
@@ -618,17 +619,29 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
       const matchesMicrocycle = citedPlayerIdsForSelectedMicrocycle === null || 
         citedPlayerIdsForSelectedMicrocycle.has(profile.player_id);
 
-      // Check if athlete has at least one test recorded in selected range
-      const hasEvaluations = 
-        profile.imtp_fuerza_n > 0 || profile.imtp_f_relativa_n_kg > 0 || profile.imtp_asimetria > 0 || profile.fuerza_cmj > 0 ||
-        profile.cmj_rsi_mod > 0 || profile.cmj_altura_salto_im > 0 || profile.cmj_peak_pot_relativa > 0 ||
-        profile.tiempo_total > 0 || profile.tiempo_10m > 0 || profile.vel_10m > 0 || profile.tiempo_10_20m > 0 || profile.tiempo_20_30m > 0 ||
-        profile.vo2_max > 0 || profile.vam > 0 || profile.fc_max > 0 || profile.mts > 0 || profile.vt2_fc > 0 ||
-        profile.t_cod_2m > 0 || profile.t_acel_2m > 0 || profile.t_desacel_2m > 0 || profile.t_reacel_1_2m > 0 || profile.z_score_acel > 0;
+      // Check if athlete has data for the active evaluation tab
+      let hasActiveTabData = false;
+      if (evaluationTab === 'imtp') {
+        hasActiveTabData = profile.imtp_fuerza_n > 0 || profile.imtp_f_relativa_n_kg > 0 || profile.imtp_asimetria > 0 || profile.fuerza_cmj > 0;
+      } else if (evaluationTab === 'cmj') {
+        hasActiveTabData = profile.cmj_rsi_mod > 0 || profile.cmj_altura_salto_im > 0 || profile.cmj_peak_pot_relativa > 0;
+      } else if (evaluationTab === 'rebound') {
+        hasActiveTabData = profile.rebound_rsi > 0 || profile.rebound_contact_time_ms > 0 || profile.rebound_flight_time_ms > 0;
+      } else if (evaluationTab === 'speed') {
+        hasActiveTabData = profile.tiempo_total > 0 || profile.tiempo_10m > 0 || profile.vel_10m > 0 || profile.tiempo_10_20m > 0 || profile.tiempo_20_30m > 0;
+      } else if (evaluationTab === 'vo2') {
+        hasActiveTabData = profile.vo2_max > 0 || profile.vam > 0 || profile.fc_max > 0 || profile.mts > 0 || profile.vt2_fc > 0;
+      } else if (evaluationTab === 'antropometria') {
+        hasActiveTabData = profile.masa_corporal_kg > 0 || profile.talla_cm > 0 || profile.masa_muscular_pct > 0 || profile.masa_adiposa_pct > 0;
+      } else if (evaluationTab === 'test505') {
+        hasActiveTabData = profile.t_cod_2m > 0 || profile.t_acel_2m > 0 || profile.t_desacel_2m > 0 || profile.t_reacel_1_2m > 0 || profile.z_score_acel > 0;
+      }
 
-      return matchesClub && matchesCategory && matchesPosition && matchesPlayer && matchesMicrocycle && hasEvaluations;
+      const matchesDataFilter = !hideNoData || hasActiveTabData;
+
+      return matchesClub && matchesCategory && matchesPosition && matchesPlayer && matchesMicrocycle && matchesDataFilter;
     });
-  }, [unifiedAthletesProfiles, selectedClubs, selectedCategories, selectedPositions, selectedPlayers, citedPlayerIdsForSelectedMicrocycle, userRole, userClub]);
+  }, [unifiedAthletesProfiles, selectedClubs, selectedCategories, selectedPositions, selectedPlayers, citedPlayerIdsForSelectedMicrocycle, userRole, userClub, hideNoData, evaluationTab]);
 
   // Populate players multi-select list dynamically
   const availablePlayers = useMemo(() => {
@@ -645,20 +658,34 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
         );
         const matchesMicrocycle = citedPlayerIdsForSelectedMicrocycle === null || 
           citedPlayerIdsForSelectedMicrocycle.has(profile.player_id);
-        const hasEvaluations = 
-          profile.imtp_fuerza_n > 0 || profile.imtp_f_relativa_n_kg > 0 || profile.imtp_asimetria > 0 || profile.fuerza_cmj > 0 ||
-          profile.cmj_rsi_mod > 0 || profile.cmj_altura_salto_im > 0 || profile.cmj_peak_pot_relativa > 0 ||
-          profile.tiempo_total > 0 || profile.tiempo_10m > 0 || profile.vel_10m > 0 || profile.tiempo_10_20m > 0 || profile.tiempo_20_30m > 0 ||
-          profile.vo2_max > 0 || profile.vam > 0 || profile.fc_max > 0 || profile.mts > 0 || profile.vt2_fc > 0 ||
-          profile.t_cod_2m > 0 || profile.t_acel_2m > 0 || profile.t_desacel_2m > 0 || profile.t_reacel_1_2m > 0 || profile.z_score_acel > 0;
-        return matchesClub && matchesCategory && matchesPosition && matchesMicrocycle && hasEvaluations;
+
+        let hasActiveTabData = false;
+        if (evaluationTab === 'imtp') {
+          hasActiveTabData = profile.imtp_fuerza_n > 0 || profile.imtp_f_relativa_n_kg > 0 || profile.imtp_asimetria > 0 || profile.fuerza_cmj > 0;
+        } else if (evaluationTab === 'cmj') {
+          hasActiveTabData = profile.cmj_rsi_mod > 0 || profile.cmj_altura_salto_im > 0 || profile.cmj_peak_pot_relativa > 0;
+        } else if (evaluationTab === 'rebound') {
+          hasActiveTabData = profile.rebound_rsi > 0 || profile.rebound_contact_time_ms > 0 || profile.rebound_flight_time_ms > 0;
+        } else if (evaluationTab === 'speed') {
+          hasActiveTabData = profile.tiempo_total > 0 || profile.tiempo_10m > 0 || profile.vel_10m > 0 || profile.tiempo_10_20m > 0 || profile.tiempo_20_30m > 0;
+        } else if (evaluationTab === 'vo2') {
+          hasActiveTabData = profile.vo2_max > 0 || profile.vam > 0 || profile.fc_max > 0 || profile.mts > 0 || profile.vt2_fc > 0;
+        } else if (evaluationTab === 'antropometria') {
+          hasActiveTabData = profile.masa_corporal_kg > 0 || profile.talla_cm > 0 || profile.masa_muscular_pct > 0 || profile.masa_adiposa_pct > 0;
+        } else if (evaluationTab === 'test505') {
+          hasActiveTabData = profile.t_cod_2m > 0 || profile.t_acel_2m > 0 || profile.t_desacel_2m > 0 || profile.t_reacel_1_2m > 0 || profile.z_score_acel > 0;
+        }
+
+        const matchesDataFilter = !hideNoData || hasActiveTabData;
+
+        return matchesClub && matchesCategory && matchesPosition && matchesMicrocycle && matchesDataFilter;
       })
       .map(p => {
         const isMyClub = userRole !== 'club' || (userClub && normalizeClub(p.club_name) === normalizeClub(userClub));
         return isMyClub ? p.player_name : `Jugador [${p.player_id}]`;
       });
     return Array.from(new Set(list)).sort();
-  }, [unifiedAthletesProfiles, selectedClubs, selectedCategories, selectedPositions, citedPlayerIdsForSelectedMicrocycle, userRole, userClub]);
+  }, [unifiedAthletesProfiles, selectedClubs, selectedCategories, selectedPositions, citedPlayerIdsForSelectedMicrocycle, userRole, userClub, hideNoData, evaluationTab]);
 
   const filteredPlayersBySearch = useMemo(() => {
     if (!playerQuery) return availablePlayers;
@@ -2544,7 +2571,7 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
       </div>
 
       {/* Control Filter Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         
         {/* Date From */}
         <div className="flex flex-col gap-1.5">
@@ -2989,6 +3016,24 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
               </div>
             </div>
           )}
+        </div>
+
+        {/* Exclude No Data Checkbox */}
+        <div className="flex flex-col gap-1.5 justify-center min-h-[38px]">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Filtro de Datos</label>
+          <label className="flex items-center gap-2 cursor-pointer select-none bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 hover:bg-slate-100/50 transition-all min-h-[38px]">
+            <input
+              type="checkbox"
+              id="hide-no-data-checkbox"
+              checked={hideNoData}
+              onChange={(e) => setHideNoData(e.target.checked)}
+              className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer accent-red-600"
+            />
+            <div className="flex flex-col leading-tight">
+              <span className="text-xs font-bold text-slate-700">Ocultar sin datos</span>
+              <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">En pestaña actual</span>
+            </div>
+          </label>
         </div>
 
       </div>

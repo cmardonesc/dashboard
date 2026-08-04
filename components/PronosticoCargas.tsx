@@ -32,7 +32,7 @@ const METRICS: MetricDef[] = [
   },
   {
     id: 'dist_ai_m_15_kmh',
-    label: 'MAI >15 km/h',
+    label: 'AI >15 km/h',
     unit: 'm',
     fallback: {
       Baja: [100, 200, 300],
@@ -656,7 +656,7 @@ export default function PronosticoCargas({
     doc.text("INTENSIDAD", margin + 26, tableYStart + 5.5);
     doc.text("DISTANCIA (M)", margin + 68, tableYStart + 5.5, { align: 'right' });
     doc.text("HSR (M)", margin + 93, tableYStart + 5.5, { align: 'right' });
-    doc.text("MAI (M)", margin + 118, tableYStart + 5.5, { align: 'right' });
+    doc.text("AI (M)", margin + 118, tableYStart + 5.5, { align: 'right' });
     doc.text("SPRINT (M)", margin + 143, tableYStart + 5.5, { align: 'right' });
     doc.text("ACC/DEC", margin + 165, tableYStart + 5.5, { align: 'right' });
     doc.text("PSE", margin + 180, tableYStart + 5.5, { align: 'right' });
@@ -738,7 +738,7 @@ export default function PronosticoCargas({
     // Modern brand color variants map for [Min, Max]
     const metricColorsMap: Record<string, { min: [number, number, number], max: [number, number, number] }> = {
       "dist_total_m": { min: [112, 163, 227], max: [2, 66, 140] },       // Dist Total (Blue)
-      "dist_ai_m_15_kmh": { min: [110, 231, 183], max: [16, 185, 129] },  // MAI >15 (Green/Verde)
+      "dist_ai_m_15_kmh": { min: [110, 231, 183], max: [16, 185, 129] },  // AI >15 (Green/Verde)
       "dist_mai_m_20_kmh": { min: [254, 215, 170], max: [245, 158, 11] }, // HSR >20 (Orange/Naranjo)
       "dist_sprint_m_25_kmh": { min: [255, 143, 138], max: [226, 35, 26] },// Sprint >25 (Red/Rojo)
       "acc_decc_ai_n": { min: [192, 132, 252], max: [139, 92, 246] },     // Acc/Dec (Purple)
@@ -924,7 +924,7 @@ export default function PronosticoCargas({
 
     // Row 1
     drawSmallChart(margin, chartYStart, chartW, chartH, "Distancia Total", "dist_total_m", "km");
-    drawSmallChart(col2X, chartYStart, chartW, chartH, "MAI >15 km/h", "dist_ai_m_15_kmh", "m");
+    drawSmallChart(col2X, chartYStart, chartW, chartH, "AI >15 km/h", "dist_ai_m_15_kmh", "m");
 
     // Row 2
     drawSmallChart(margin, chartYStart + 40, chartW, chartH, "HSR >20 km/h", "dist_mai_m_20_kmh", "m");
@@ -1367,7 +1367,7 @@ export default function PronosticoCargas({
                     }}
                   />
                   <Bar dataKey="dist_total_m" name="Distancia Total" fill="#02428C" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="dist_ai_m_15_kmh" name="MAI >15 km/h" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dist_ai_m_15_kmh" name="AI >15 km/h" fill="#F59E0B" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="dist_mai_m_20_kmh" name="HSR >20 km/h" fill="#E2231A" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="dist_sprint_m_25_kmh" name="Sprint >25 km/h" fill="#10B981" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="acc_decc_ai_n" name="Acc / Dec" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
@@ -1385,7 +1385,7 @@ export default function PronosticoCargas({
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded bg-[#F59E0B] inline-block"></span>
-                  <span className="text-slate-900 font-black">{"MAI >15 km/h"}</span>
+                  <span className="text-slate-900 font-black">{"AI >15 km/h"}</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded bg-[#E2231A] inline-block"></span>

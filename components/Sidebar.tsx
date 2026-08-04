@@ -110,7 +110,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
 
   const filteredMenuItems = menuItems.filter(item => {
     if (userRole === 'club') {
-      return item.id === 'inicio' || item.id === 'perfil_jugador';
+      return item.id === 'inicio' || item.id === 'perfil_jugador' || item.id === 'dinamicas';
     }
     if (userRole === 'player') {
       return item.id === 'inicio' || item.id === 'perfil_jugador';

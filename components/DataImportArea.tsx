@@ -5,7 +5,7 @@ import { User } from '../types';
 
 import { fetchCatapultActivities, fetchCatapultActivityStats, fetchCatapultActivityDetail, testCatapultConnection } from '../services/catapultService';
 
-type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'cmj' | 'cmj_rebound' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api' | 'encoder_1rm';
+type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'cmj' | 'cmj_rebound' | 'slj' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api' | 'encoder_1rm';
 
 interface ImportConfig {
   label: string;
@@ -314,6 +314,46 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'rfd_n_s', label: 'RFD (N/s)', required: false, type: 'number' },
       { key: 'trabajo_kcal', label: '|Trabajo| (KCal)', required: false, type: 'number' },
       { key: 'impulso_n_s', label: 'Impulso (N*s)', required: false, type: 'number' },
+    ]
+  },
+  slj: {
+    label: 'Single Leg Jump',
+    table: 'evaluaciones_slj',
+    icon: 'fa-solid fa-arrows-up-down-left-right',
+    description: 'Single Leg Jump - Test de saltos monopódicos y asimetrías.',
+    conflictColumns: ['player_id', 'fecha_test'],
+    fields: [
+      { key: 'jugador', label: 'NOMBRE JUGADOR', required: true, type: 'string' },
+      { key: 'player_id', label: 'ID JUGADOR', required: true, type: 'number' },
+      { key: 'fecha_test', label: 'FECHA TEST', required: true, type: 'date' },
+      { key: 'bw_kg', label: 'BW [KG]', required: false, type: 'number' },
+      { key: 'reps_l', label: 'Reps (L)', required: false, type: 'number' },
+      { key: 'reps_r', label: 'Reps (R)', required: false, type: 'number' },
+      { key: 'peak_power_w', label: 'Peak Power [W] ', required: false, type: 'number' },
+      { key: 'peak_power_l_w', label: 'Peak Power [W] (L)', required: false, type: 'number' },
+      { key: 'peak_power_r_w', label: 'Peak Power [W] (R)', required: false, type: 'number' },
+      { key: 'peak_power_asym_pct', label: 'Peak Power [W] (Asym)(%)', required: false, type: 'string' },
+      { key: 'peak_power_bm_w_kg', label: 'Peak Power / BM [W/kg] ', required: false, type: 'number' },
+      { key: 'peak_power_bm_l_w_kg', label: 'Peak Power / BM [W/kg] (L)', required: false, type: 'number' },
+      { key: 'peak_power_bm_r_w_kg', label: 'Peak Power / BM [W/kg] (R)', required: false, type: 'number' },
+      { key: 'peak_power_bm_asym_pct', label: 'Peak Power / BM [W/kg] (Asym)(%)', required: false, type: 'string' },
+      { key: 'concentric_peak_force_n', label: 'Concentric Peak Force [N] ', required: false, type: 'number' },
+      { key: 'concentric_peak_force_l_n', label: 'Concentric Peak Force [N] (L)', required: false, type: 'number' },
+      { key: 'concentric_peak_force_r_n', label: 'Concentric Peak Force [N] (R)', required: false, type: 'number' },
+      { key: 'concentric_peak_force_asym_pct', label: 'Concentric Peak Force [N] (Asym)(%)', required: false, type: 'string' },
+      { key: 'rsi_modified_m_s', label: 'RSI-modified [m/s] ', required: false, type: 'number' },
+      { key: 'rsi_modified_l_m_s', label: 'RSI-modified [m/s] (L)', required: false, type: 'number' },
+      { key: 'rsi_modified_r_m_s', label: 'RSI-modified [m/s] (R)', required: false, type: 'number' },
+      { key: 'rsi_modified_asym_pct', label: 'RSI-modified [m/s] (Asym)(%)', required: false, type: 'string' },
+      { key: 'takeoff_peak_force_n', label: 'Takeoff Peak Force [N] ', required: false, type: 'number' },
+      { key: 'takeoff_peak_force_l_n', label: 'Takeoff Peak Force [N] (L)', required: false, type: 'number' },
+      { key: 'takeoff_peak_force_r_n', label: 'Takeoff Peak Force [N] (R)', required: false, type: 'number' },
+      { key: 'takeoff_peak_force_asym_pct', label: 'Takeoff Peak Force [N] (Asym)(%)', required: false, type: 'string' },
+      { key: 'jump_height_cm', label: 'Jump Height (Imp-Mom) [cm] ', required: false, type: 'number' },
+      { key: 'jump_height_l_cm', label: 'Jump Height (Imp-Mom) [cm] (L)', required: false, type: 'number' },
+      { key: 'jump_height_r_cm', label: 'Jump Height (Imp-Mom) [cm] (R)', required: false, type: 'number' },
+      { key: 'jump_height_asym_pct', label: 'Jump Height (Imp-Mom) [cm] (Asym)(%)', required: false, type: 'string' },
+      { key: 'observaciones', label: 'OBSERVACIONES', required: false, type: 'string' },
     ]
   }
 };
@@ -687,7 +727,7 @@ export default function DataImportArea() {
                     });
                   }
                 } else {
-                  const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'cmj', 'cmj_rebound', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
+                  const needsNameMatching = ['gps_totales', 'gps_tareas', 'imtp', 'cmj', 'cmj_rebound', 'slj', 'velocidad', 'aceleracion', 'vo2max'].includes(selectedType);
                   if (needsNameMatching && detectedNameHeader) {
                     const seenNames = new Set<string>();
                     filteredFileRows.forEach((rowObj: any, localIdx) => {
@@ -1193,7 +1233,7 @@ export default function DataImportArea() {
         dataToInsert = Array.from(uniqueMap.values());
       }
 
-      if (selectedType === 'imtp' || selectedType === 'cmj' || selectedType === 'cmj_rebound') {
+      if (selectedType === 'imtp' || selectedType === 'cmj' || selectedType === 'cmj_rebound' || selectedType === 'slj') {
         const uniqueMap = new Map<string, any>();
         dataToInsert.forEach(item => {
           const key = `${item.player_id}-${item.fecha_test}`;
@@ -1322,6 +1362,9 @@ export default function DataImportArea() {
           delete cleanItem['Force (Net of BW) at 200ms [N]'];
         }
         if (config.table === 'evaluaciones_cmj') {
+          delete cleanItem.jugador;
+        }
+        if (config.table === 'evaluaciones_slj') {
           delete cleanItem.jugador;
         }
         if (config.table === 'vo2max_tests') {
@@ -2890,6 +2933,73 @@ WITH CHECK (true);`;
                           </button>
                         </div>
                       </div>
+
+                      {/* Solución de Single Leg Jump (SLJ) */}
+                      <div className="p-4 bg-white rounded-2xl border border-slate-100 space-y-3 shadow-sm">
+                        <div className="flex items-center gap-2 text-rose-600">
+                          <i className="fa-solid fa-arrows-up-down-left-right"></i>
+                          <h5 className="text-[10px] font-black uppercase tracking-wider">Solución para Single Leg Jump (SLJ)</h5>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-normal font-medium">Crea la tabla <code className="bg-slate-100 px-1 py-0.5 rounded font-bold">evaluaciones_slj</code> para habilitar la carga monopódica.</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => {
+                              const sql = `-- Crear tabla de evaluaciones para Single Leg Jump (SLJ)
+CREATE TABLE IF NOT EXISTS public.evaluaciones_slj (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+  player_id int4 NOT NULL REFERENCES public.players(player_id) ON DELETE CASCADE,
+  jugador text,
+  fecha_test date NOT NULL,
+  bw_kg numeric,
+  reps_l int4,
+  reps_r int4,
+  peak_power_w numeric,
+  peak_power_l_w numeric,
+  peak_power_r_w numeric,
+  peak_power_asym_pct text,
+  peak_power_bm_w_kg numeric,
+  peak_power_bm_l_w_kg numeric,
+  peak_power_bm_r_w_kg numeric,
+  peak_power_bm_asym_pct text,
+  concentric_peak_force_n numeric,
+  concentric_peak_force_l_n numeric,
+  concentric_peak_force_r_n numeric,
+  concentric_peak_force_asym_pct text,
+  rsi_modified_m_s numeric,
+  rsi_modified_l_m_s numeric,
+  rsi_modified_r_m_s numeric,
+  rsi_modified_asym_pct text,
+  takeoff_peak_force_n numeric,
+  takeoff_peak_force_l_n numeric,
+  takeoff_peak_force_r_n numeric,
+  takeoff_peak_force_asym_pct text,
+  jump_height_cm numeric,
+  jump_height_l_cm numeric,
+  jump_height_r_cm numeric,
+  jump_height_asym_pct text,
+  observaciones text,
+  UNIQUE(player_id, fecha_test)
+);
+
+ALTER TABLE public.evaluaciones_slj ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable all access for evaluaciones_slj" ON public.evaluaciones_slj;
+CREATE POLICY "Enable all access for evaluaciones_slj" 
+ON public.evaluaciones_slj 
+FOR ALL 
+USING (true) 
+WITH CHECK (true);`;
+                              navigator.clipboard.writeText(sql);
+                              setCopiedScript('slj');
+                              setTimeout(() => setCopiedScript(null), 3000);
+                            }}
+                            className={`${copiedScript === 'slj' ? 'bg-emerald-600' : 'bg-slate-900 hover:bg-slate-800'} text-white text-[9px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer`}
+                          >
+                            <i className={`fa-solid ${copiedScript === 'slj' ? 'fa-circle-check' : 'fa-copy'} mr-1`}></i>
+                            {copiedScript === 'slj' ? '¡SQL SLJ Copiado!' : 'Copiar SQL SLJ'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -2920,6 +3030,13 @@ WITH CHECK (true);`;
                         className="bg-[#CF1B2B] text-white hover:bg-red-700 text-[10px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all flex items-center gap-2 shadow-sm"
                       >
                         <i className="fa-solid fa-download"></i> Descargar Script CMJ Rebound
+                      </a>
+                      <a 
+                        href="/create_slj_table.sql" 
+                        download="create_slj_table.sql"
+                        className="bg-[#CF1B2B] text-white hover:bg-red-700 text-[10px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all flex items-center gap-2 shadow-sm"
+                      >
+                        <i className="fa-solid fa-download"></i> Descargar Script SLJ
                       </a>
                     </div>
                   </div>

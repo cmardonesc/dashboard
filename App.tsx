@@ -747,8 +747,26 @@ export default function App() {
             setSessionUser(session.user)
             let userData = await fetchUserData(session.user.id, session.user.email)
             
-            // RECOVERY: Si el perfil no tiene ID pero el metadata sí
-            if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
+            // RECOVERY: Si el perfil completo no existe pero el metadata sí (sesión activa)
+            if (!userData.role && session.user.user_metadata?.role) {
+              console.log("Recuperando perfil completo desde metadata de sesión activa...");
+              userData = {
+                role: session.user.user_metadata.role,
+                player_id: session.user.user_metadata.player_id ? Number(session.user.user_metadata.player_id) : null,
+                club_name: session.user.user_metadata.club_name || null,
+                email: session.user.email || null
+              };
+              try {
+                await supabase.from('profiles').upsert({
+                  id: session.user.id,
+                  role: userData.role,
+                  player_id: userData.player_id,
+                  club_name: userData.club_name
+                });
+              } catch (e) {
+                console.error("Error creando perfil desde metadata en initialize:", e);
+              }
+            } else if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
               const recoveredId = Number(session.user.user_metadata.player_id);
               console.log("Recuperando player_id desde metadata:", recoveredId);
               await supabase.from('profiles').upsert({
@@ -845,7 +863,39 @@ export default function App() {
           return;
         }
 
-        const userData = await fetchUserData(session.user.id, session.user.email)
+        let userData = await fetchUserData(session.user.id, session.user.email)
+        
+        // RECOVERY: Si el perfil completo no existe pero el metadata sí (sesión activa)
+        if (!userData.role && session.user.user_metadata?.role) {
+          console.log("onAuthStateChange: Recuperando perfil completo desde metadata de sesión activa...");
+          userData = {
+            role: session.user.user_metadata.role,
+            player_id: session.user.user_metadata.player_id ? Number(session.user.user_metadata.player_id) : null,
+            club_name: session.user.user_metadata.club_name || null,
+            email: session.user.email || null
+          };
+          try {
+            await supabase.from('profiles').upsert({
+              id: session.user.id,
+              role: userData.role,
+              player_id: userData.player_id,
+              club_name: userData.club_name
+            });
+          } catch (e) {
+            console.error("onAuthStateChange: Error creando perfil desde metadata:", e);
+          }
+        } else if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
+          const recoveredId = Number(session.user.user_metadata.player_id);
+          console.log("onAuthStateChange: Recuperando player_id desde metadata:", recoveredId);
+          await supabase.from('profiles').upsert({
+            id: session.user.id,
+            player_id: recoveredId,
+            role: 'player',
+            club_name: userData.club_name
+          });
+          userData.player_id = recoveredId;
+        }
+
         if (isMounted) {
           setRole(userData.role)
           setUserClub(userData.club_name)
@@ -989,7 +1039,7 @@ export default function App() {
         }
       }
 
-      // RECOVERY / MOCK HANDLING: Si el perfil no tiene rol
+      // RECOVERY / MOCK HANDLING: Si el perfil no tiene rol (sesión activa)
       if (!userData.role && session.user.user_metadata?.role) {
         console.log("Usando rol desde metadata:", session.user.user_metadata.role);
         userData = {
@@ -998,10 +1048,17 @@ export default function App() {
           club_name: session.user.user_metadata.club_name || null,
           email: session.user.email || null
         };
-      }
-      
-      // RECOVERY: Si el perfil no tiene ID pero el metadata sí
-      if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
+        try {
+          await supabase.from('profiles').upsert({
+            id: session.user.id,
+            role: userData.role,
+            player_id: userData.player_id,
+            club_name: userData.club_name
+          });
+        } catch (e) {
+          console.error("Error creando perfil desde metadata en handleLoginSuccess:", e);
+        }
+      } else if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
         const recoveredId = Number(session.user.user_metadata.player_id);
         console.log("Recuperando player_id desde metadata en login:", recoveredId);
         await supabase.from('profiles').upsert({
@@ -1679,29 +1736,26 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
            setMsg(error.message); 
         }
       } else { 
-        // Intentar crear perfil si tenemos el user id
-        if (data?.user) {
-          try {
-            await supabase.from('profiles').upsert({
-              id: data.user.id,
-              role: signupRole,
-              player_id: verifiedPlayerId,
-              club_name: signupRole === 'club' ? selectedClub : null
-            });
-          } catch (e) {
-            console.error("Error creando perfil:", e);
+        if (data?.session === null || data?.session === undefined) {
+          // El email no ha sido confirmado aún (no hay sesión activa)
+          setMsg(`Te enviamos un correo a ${email}. Haz clic en el enlace para activar tu cuenta.`);
+        } else {
+          // El usuario ya tiene sesión activa (confirmado o en desarrollo)
+          if (data?.user) {
+            try {
+              await supabase.from('profiles').upsert({
+                id: data.user.id,
+                role: signupRole,
+                player_id: verifiedPlayerId,
+                club_name: signupRole === 'club' ? selectedClub : null
+              });
+            } catch (e) {
+              console.error("Error creando perfil:", e);
+            }
+            
+            setMsg('¡REGISTRO COMPLETO! Iniciando sesión automáticamente...');
+            onLoginSuccess(data.session);
           }
-          
-          // Dejar entrar inmediatamente simulando/generando la sesión si Supabase no la retorna automáticamente por email unconfirmed
-          const finalSession = data.session || {
-            user: data.user,
-            access_token: 'local_bypass_token',
-            refresh_token: 'local_bypass_refresh',
-            expires_in: 3600,
-            token_type: 'bearer'
-          };
-          setMsg('¡REGISTRO COMPLETO! Iniciando sesión automáticamente...');
-          onLoginSuccess(finalSession);
         }
       }
     } catch (err: any) { 
