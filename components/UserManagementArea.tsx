@@ -16,9 +16,15 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
   const [pendingClubs, setPendingClubs] = useState<any[]>([]);
   const [dbClubs, setDbClubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'users' | 'clubs'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'clubs' | 'staff'>('users');
   const [msg, setMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   const [sanitizing, setSanitizing] = useState(false);
+
+  // Staff States
+  const [staffList, setStaffList] = useState<any[]>([]);
+  const [editingStaff, setEditingStaff] = useState<any | null>(null);
+  const [isSavingStaff, setIsSavingStaff] = useState(false);
+  const [staffError, setStaffError] = useState<string | null>(null);
 
   const [editingProfile, setEditingProfile] = useState<any>(null);
 
@@ -47,6 +53,22 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
       
       if (pErr) throw pErr;
       if (cErr) throw cErr;
+
+      // Intentar traer los registros de staff
+      try {
+        const { data: sData, error: sErr } = await supabase.from('staff').select('*');
+        if (sErr) {
+          console.warn("Error al cargar la tabla de staff:", sErr.message);
+          setStaffError(sErr.message);
+          setStaffList([]);
+        } else {
+          setStaffList(sData || []);
+          setStaffError(null);
+        }
+      } catch (err: any) {
+        setStaffError(err.message);
+        setStaffList([]);
+      }
 
       let finalClubs = clubs || [];
       if (finalClubs.length === 0) {
@@ -241,6 +263,113 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
     }
   };
 
+  const STAFF_MENU_OPTIONS = [
+    { id: 'inicio', name: 'Inicio (Escritorio)' },
+    { id: 'planning', name: 'Planificación' },
+    { id: 'diario', name: 'Diario (Wellness/RPE)' },
+    { id: 'fisica', name: 'Área Física' },
+    { id: 'medica', name: 'Área Médica' },
+    { id: 'nutricion', name: 'Nutrición' },
+    { id: 'competencia', name: 'Competencia' },
+    { id: 'tecnica', name: 'Área Técnica' },
+    { id: 'logistica', name: 'Logística' },
+    { id: 'sports_science', name: 'Sports Science' },
+    { id: 'importar_datos', name: 'Importar Datos' },
+    { id: 'telegram_notifications', name: 'Alertas Telegram' },
+    { id: 'logs', name: 'Log de Actividad' }
+  ];
+
+  const handleSaveStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStaff) return;
+    setIsSavingStaff(true);
+
+    try {
+      const emailLower = editingStaff.email?.trim().toLowerCase();
+      if (!emailLower) throw new Error("El correo electrónico es obligatorio");
+
+      // Buscar si ya existe un perfil con ese correo para enlazar el profile_id
+      const matchedProfile = profiles.find(p => p.email?.trim().toLowerCase() === emailLower);
+      const profileIdToUse = matchedProfile ? matchedProfile.id : (editingStaff.profile_id || null);
+
+      const staffPayload = {
+        email: emailLower,
+        first_name: editingStaff.first_name || '',
+        last_name: editingStaff.last_name || '',
+        job_title: editingStaff.job_title || '',
+        allowed_menus: editingStaff.allowed_menus || '',
+        id_club: editingStaff.id_club ? Number(editingStaff.id_club) : null,
+        display_name: `${editingStaff.first_name || ''} ${editingStaff.last_name || ''}`.trim(),
+        profile_id: profileIdToUse
+      };
+
+      let saveError;
+      if (editingStaff.id) {
+        // Update
+        const { error } = await supabase
+          .from('staff')
+          .update(staffPayload)
+          .eq('id', editingStaff.id);
+        saveError = error;
+      } else {
+        // Insert
+        const { error } = await supabase
+          .from('staff')
+          .insert(staffPayload);
+        saveError = error;
+      }
+
+      if (saveError) throw saveError;
+
+      // Si encontramos un perfil con este correo, nos aseguramos de que su rol en profiles sea 'staff' o 'admin'
+      if (matchedProfile && matchedProfile.role !== 'staff' && matchedProfile.role !== 'admin') {
+        const { error: roleUpdateError } = await supabase
+          .from('profiles')
+          .update({ role: 'staff' })
+          .eq('id', matchedProfile.id);
+        if (roleUpdateError) console.error("Error al actualizar rol del perfil a staff:", roleUpdateError.message);
+      }
+
+      setMsg({ text: 'Miembro del Staff guardado correctamente.', type: 'success' });
+      setEditingStaff(null);
+      fetchData();
+    } catch (err: any) {
+      setMsg({ text: `Error al guardar staff: ${err.message}`, type: 'error' });
+    } finally {
+      setIsSavingStaff(false);
+    }
+  };
+
+  const handleDeleteStaff = async (id: number) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este miembro del staff? Esto revocará sus accesos personalizados.')) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('staff')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      setMsg({ text: 'Miembro del staff eliminado correctamente.', type: 'success' });
+      fetchData();
+    } catch (err: any) {
+      setMsg({ text: `Error al eliminar staff: ${err.message}`, type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectAllMenus = () => {
+    if (!editingStaff) return;
+    const allIds = STAFF_MENU_OPTIONS.map(opt => opt.id).join(',');
+    setEditingStaff({ ...editingStaff, allowed_menus: allIds });
+  };
+
+  const handleClearAllMenus = () => {
+    if (!editingStaff) return;
+    setEditingStaff({ ...editingStaff, allowed_menus: '' });
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex justify-between items-end">
@@ -270,6 +399,15 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                 </span>
               )}
             </button>
+            <button 
+              onClick={() => setActiveTab('staff')}
+              className={`px-6 py-2 rounded-full text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                activeTab === 'staff' ? 'bg-[#0b1220] text-white shadow-lg' : 'bg-white text-slate-400 hover:bg-slate-50'
+              }`}
+            >
+              <i className="fa-solid fa-users-gear text-[10px]"></i>
+              Control de Staff / Accesos
+            </button>
           </div>
         </div>
         <div className="flex gap-4 mb-1">
@@ -297,9 +435,8 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
         </div>
       )}
 
-      {activeTab === 'users' ? (
+      {activeTab === 'users' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* ... existing user management UI ... */}
         <div className="lg:col-span-2 bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-8 border-b border-slate-50 bg-slate-50/50">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Lista de Perfiles</h3>
@@ -438,7 +575,9 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
           )}
         </div>
       </div>
-      ) : (
+      )}
+
+      {activeTab === 'clubs' && (
         <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
           <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
             <div className="p-8 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
@@ -508,6 +647,335 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'staff' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
+          {staffError ? (
+            <div className="lg:col-span-3 bg-amber-50 border border-amber-200 rounded-[40px] p-12 text-center space-y-6">
+              <div className="w-20 h-20 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto shadow-sm">
+                <i className="fa-solid fa-database text-3xl"></i>
+              </div>
+              <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest">Base de Datos no Inicializada</h4>
+              <p className="text-slate-500 text-xs max-w-lg mx-auto leading-relaxed">
+                Para poder gestionar accesos personalizados del staff, es necesario ejecutar el script SQL de configuración en tu consola de Supabase.
+              </p>
+              <div className="bg-slate-900 text-slate-300 p-4 rounded-2xl text-left font-mono text-[10px] max-w-xl mx-auto overflow-x-auto whitespace-pre">
+                {`CREATE TABLE IF NOT EXISTS public.staff (
+  id bigint generated by default as identity primary key,
+  email text not null unique,
+  first_name text,
+  last_name text,
+  job_title text,
+  allowed_menus text default 'inicio',
+  id_club int8 references public.clubes(id_club),
+  display_name text,
+  profile_id uuid references public.profiles(id)
+);`}
+              </div>
+              <div className="pt-2">
+                <button
+                  onClick={fetchData}
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-[#0b1220] hover:bg-slate-800 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+                >
+                  <i className="fa-solid fa-rotate"></i>
+                  Reintentar Cargar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="lg:col-span-2 bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+                <div className="p-8 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Personal del Club / Federación</h3>
+                    <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">Configuración de accesos y permisos por correo</p>
+                  </div>
+                  <button
+                    onClick={() => setEditingStaff({
+                      email: '',
+                      first_name: '',
+                      last_name: '',
+                      job_title: '',
+                      allowed_menus: 'inicio',
+                      id_club: null
+                    })}
+                    className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-100 transition-all flex items-center gap-2"
+                  >
+                    <i className="fa-solid fa-plus"></i>
+                    Agregar Miembro
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/50">
+                        <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Staff / Cargo</th>
+                        <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Asociación</th>
+                        <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Menús Permitidos</th>
+                        <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {staffList.map((st) => {
+                        const isLinked = profiles.some(p => p.email?.trim().toLowerCase() === st.email?.trim().toLowerCase());
+                        const allowedList = st.allowed_menus ? st.allowed_menus.split(',') : [];
+                        const hasFullAccess = allowedList.length >= STAFF_MENU_OPTIONS.length;
+
+                        return (
+                          <tr key={st.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-8 py-4">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-xs font-black text-slate-900 uppercase italic">
+                                    {st.first_name || st.last_name ? `${st.first_name} ${st.last_name}` : 'Sin Nombre'}
+                                  </p>
+                                  {isLinked ? (
+                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[7px] font-black uppercase tracking-widest rounded-full flex items-center gap-1">
+                                      <i className="fa-solid fa-circle-check text-[6px]"></i> Activo
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-slate-50 text-slate-400 text-[7px] font-black uppercase tracking-widest rounded-full">
+                                      Pendiente Registro
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-500 font-mono leading-none">{st.email}</p>
+                                <p className="text-[8px] font-black text-blue-500 uppercase tracking-widest">{st.job_title || 'Sin Cargo'}</p>
+                              </div>
+                            </td>
+                            <td className="px-8 py-4">
+                              {st.id_club ? (
+                                <ClubBadge 
+                                  clubName={dbClubs.find(c => c.id_club === st.id_club)?.nombre || 'Club'} 
+                                  idClub={st.id_club} 
+                                  clubs={dbClubs} 
+                                  logoSize="w-4 h-4" 
+                                  className="text-[9px] font-black text-slate-700 uppercase" 
+                                />
+                              ) : (
+                                <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[8px] font-black uppercase tracking-widest">
+                                  Nacional / Fed
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-8 py-4">
+                              {hasFullAccess ? (
+                                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[8px] font-black uppercase tracking-widest">
+                                  Acceso Total
+                                </span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1 max-w-xs">
+                                  {allowedList.map(menuId => {
+                                    const mOpt = STAFF_MENU_OPTIONS.find(o => o.id === menuId);
+                                    return mOpt ? (
+                                      <span key={menuId} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[8px] font-bold rounded-md uppercase">
+                                        {mOpt.name.split(' (')[0]}
+                                      </span>
+                                    ) : null;
+                                  })}
+                                  {allowedList.length === 0 && (
+                                    <span className="text-[8px] font-bold text-red-500 uppercase tracking-widest">
+                                      Sin Accesos (Bloqueado)
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-8 py-4 text-right flex justify-end gap-2 items-center h-full pt-6">
+                              <button 
+                                onClick={() => setEditingStaff(st)} 
+                                className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors flex items-center justify-center border border-slate-100 shadow-sm"
+                              >
+                                <i className="fa-solid fa-pen-to-square text-xs"></i>
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteStaff(st.id)} 
+                                className="w-8 h-8 rounded-xl bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors flex items-center justify-center border border-red-100/30 shadow-sm"
+                              >
+                                <i className="fa-solid fa-trash-can text-xs"></i>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {staffList.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-8 py-16 text-center space-y-3">
+                            <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                              <i className="fa-solid fa-users text-lg"></i>
+                            </div>
+                            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">No hay miembros del staff registrados</p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm p-8 h-fit">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-8">
+                  {editingStaff ? (editingStaff.id ? 'Editar Staff' : 'Nuevo Staff') : 'Información de Accesos'}
+                </h3>
+
+                {editingStaff ? (
+                  <form onSubmit={handleSaveStaff} className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Correo Electrónico (Asociado a Auth)</label>
+                      <input 
+                        type="email"
+                        required
+                        placeholder="ejemplo@staff.com"
+                        value={editingStaff.email || ''}
+                        onChange={e => setEditingStaff({ ...editingStaff, email: e.target.value })}
+                        className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre</label>
+                        <input 
+                          type="text"
+                          placeholder="Juan"
+                          value={editingStaff.first_name || ''}
+                          onChange={e => setEditingStaff({ ...editingStaff, first_name: e.target.value })}
+                          className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Apellido</label>
+                        <input 
+                          type="text"
+                          placeholder="Pérez"
+                          value={editingStaff.last_name || ''}
+                          onChange={e => setEditingStaff({ ...editingStaff, last_name: e.target.value })}
+                          className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Cargo / Función</label>
+                      <input 
+                        type="text"
+                        placeholder="DT / Preparador Físico / Médico"
+                        value={editingStaff.job_title || ''}
+                        onChange={e => setEditingStaff({ ...editingStaff, job_title: e.target.value })}
+                        className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Club de Trabajo</label>
+                      <select 
+                        value={editingStaff.id_club || ''} 
+                        onChange={e => setEditingStaff({ ...editingStaff, id_club: e.target.value ? Number(e.target.value) : null })}
+                        className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500 font-black uppercase"
+                      >
+                        <option value="">TODOS (FEDERACIÓN / SELECCIÓN)</option>
+                        {Object.entries(groupedClubs).map(([country, items]) => (
+                          <optgroup key={country} label={country}>
+                            {items.map(c => (
+                              <option key={c.id_club} value={c.id_club}>{c.nombre}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      <p className="text-[8px] font-medium text-slate-400 ml-4 italic">Si pertenece a la federación, déjalo vacío para ver todos los clubes.</p>
+                    </div>
+
+                    <div className="space-y-3 pt-2">
+                      <div className="flex justify-between items-center ml-4">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Accesos a Pestañas / Menús</label>
+                        <div className="flex gap-2">
+                          <button 
+                            type="button" 
+                            onClick={handleSelectAllMenus}
+                            className="text-[8px] font-black text-blue-500 hover:text-blue-700 uppercase tracking-widest"
+                          >
+                            Todo
+                          </button>
+                          <span className="text-slate-300 text-[8px] font-bold">|</span>
+                          <button 
+                            type="button" 
+                            onClick={handleClearAllMenus}
+                            className="text-[8px] font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest"
+                          >
+                            Ninguno
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 max-h-64 overflow-y-auto space-y-3 shadow-inner">
+                        {STAFF_MENU_OPTIONS.map(opt => {
+                          const isChecked = (() => {
+                            const current = editingStaff.allowed_menus || '';
+                            if (current === '*') return true;
+                            const list = current.split(',').map((s: string) => s.trim());
+                            return list.includes(opt.id);
+                          })();
+                          const handleToggle = () => {
+                            const current = editingStaff.allowed_menus || '';
+                            let list = current ? current.split(',').map((s: string) => s.trim()) : [];
+                            if (list.includes(opt.id)) {
+                              list = list.filter((id: string) => id !== opt.id);
+                            } else {
+                              list.push(opt.id);
+                            }
+                            setEditingStaff({ ...editingStaff, allowed_menus: list.join(',') });
+                          };
+                          return (
+                            <label key={opt.id} className="flex items-start gap-3 cursor-pointer group">
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={handleToggle}
+                                className="mt-1 rounded border-slate-300 text-[#0b1220] focus:ring-[#0b1220] w-4 h-4 cursor-pointer"
+                              />
+                              <div className="leading-tight">
+                                <p className="text-[10px] font-black text-slate-700 uppercase tracking-tighter group-hover:text-[#0b1220] transition-colors">{opt.name}</p>
+                                <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-widest">ID: {opt.id}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-4 border-t border-slate-50">
+                      <button 
+                        type="submit" 
+                        disabled={isSavingStaff}
+                        className="flex-1 py-4 bg-[#0b1220] hover:bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:bg-slate-100 disabled:text-slate-400 transition-all shadow-md"
+                      >
+                        {isSavingStaff ? <i className="fa-solid fa-circle-notch animate-spin mr-2"></i> : null}
+                        Guardar Miembro
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setEditingStaff(null)} 
+                        className="px-6 py-4 bg-slate-100 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="text-center py-16 space-y-6">
+                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200 shadow-inner">
+                      <i className="fa-solid fa-user-lock text-3xl"></i>
+                    </div>
+                    <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest leading-relaxed max-w-xs mx-auto">
+                      Crea un nuevo miembro de staff o selecciona uno de la lista para modificar sus permisos de acceso y el club al que pertenece.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

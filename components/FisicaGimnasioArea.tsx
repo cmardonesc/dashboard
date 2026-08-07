@@ -555,6 +555,140 @@ export default function FisicaGimnasioArea({
   const [savingToDb, setSavingToDb] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
+  // Exercises Library States & Helpers
+  const [exercisesLibrary, setExercisesLibrary] = useState<GymExerciseTemplate[]>(() => {
+    const stored = localStorage.getItem('custom_gym_exercises');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        console.error("Error parsing custom gym exercises from localStorage, using default:", e);
+      }
+    }
+    return GYM_EXERCISES_DATA;
+  });
+
+  const [isExerciseLibraryOpen, setIsExerciseLibraryOpen] = useState(false);
+  const [librarySearchTerm, setLibrarySearchTerm] = useState('');
+  const [libraryTargetGroupFilter, setLibraryTargetGroupFilter] = useState('TODOS');
+  const [libraryMuscleGroupFilter, setLibraryMuscleGroupFilter] = useState('TODOS');
+  
+  const [isEditingInLibrary, setIsEditingInLibrary] = useState(false);
+  const [editingLibraryExerciseId, setEditingLibraryExerciseId] = useState<number | null>(null);
+  const [libraryForm, setLibraryForm] = useState({
+    grupo_muscular: '',
+    ejercicio: '',
+    equipamiento: '',
+    tecnica_ejecucion: '',
+    target_group: 'TODOS'
+  });
+
+  const updateExercisesLibrary = (newList: GymExerciseTemplate[]) => {
+    setExercisesLibrary(newList);
+    localStorage.setItem('custom_gym_exercises', JSON.stringify(newList));
+  };
+
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+
+  const filteredLibraryExercises = useMemo(() => {
+    return exercisesLibrary.filter(ex => {
+      const matchesSearch = !librarySearchTerm || 
+        ex.ejercicio.toLowerCase().includes(librarySearchTerm.toLowerCase()) ||
+        ex.grupo_muscular.toLowerCase().includes(librarySearchTerm.toLowerCase()) ||
+        (ex.equipamiento && ex.equipamiento.toLowerCase().includes(librarySearchTerm.toLowerCase())) ||
+        (ex.tecnica_ejecucion && ex.tecnica_ejecucion.toLowerCase().includes(librarySearchTerm.toLowerCase()));
+
+      const matchesTarget = libraryTargetGroupFilter === 'TODOS' || ex.target_group === libraryTargetGroupFilter;
+      const matchesMuscle = libraryMuscleGroupFilter === 'TODOS' || ex.grupo_muscular === libraryMuscleGroupFilter;
+
+      return matchesSearch && matchesTarget && matchesMuscle;
+    });
+  }, [exercisesLibrary, librarySearchTerm, libraryTargetGroupFilter, libraryMuscleGroupFilter]);
+
+  const libraryMuscleGroups = useMemo(() => {
+    const groups = exercisesLibrary.map(ex => ex.grupo_muscular).filter(Boolean);
+    return Array.from(new Set(groups)).sort();
+  }, [exercisesLibrary]);
+
+  const handleSaveLibraryExercise = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLibraryError(null);
+
+    if (!libraryForm.ejercicio.trim() || !libraryForm.grupo_muscular.trim()) {
+      setLibraryError("El nombre del ejercicio y el grupo muscular son obligatorios.");
+      return;
+    }
+
+    let newList: GymExerciseTemplate[] = [];
+    if (editingLibraryExerciseId !== null) {
+      // Edit mode
+      newList = exercisesLibrary.map(ex => {
+        if (ex.id === editingLibraryExerciseId) {
+          return {
+            ...ex,
+            grupo_muscular: libraryForm.grupo_muscular.trim(),
+            ejercicio: libraryForm.ejercicio.trim(),
+            equipamiento: libraryForm.equipamiento.trim() || 'Ninguno',
+            tecnica_ejecucion: libraryForm.tecnica_ejecucion.trim() || '',
+            target_group: libraryForm.target_group
+          };
+        }
+        return ex;
+      });
+    } else {
+      // Create mode
+      const newExercise: GymExerciseTemplate = {
+        id: Date.now(),
+        grupo_muscular: libraryForm.grupo_muscular.trim(),
+        ejercicio: libraryForm.ejercicio.trim(),
+        equipamiento: libraryForm.equipamiento.trim() || 'Ninguno',
+        tecnica_ejecucion: libraryForm.tecnica_ejecucion.trim() || '',
+        target_group: libraryForm.target_group || 'TODOS'
+      };
+      newList = [newExercise, ...exercisesLibrary];
+    }
+
+    updateExercisesLibrary(newList);
+    handleResetLibraryForm();
+  };
+
+  const handleResetLibraryForm = () => {
+    setLibraryForm({
+      grupo_muscular: '',
+      ejercicio: '',
+      equipamiento: '',
+      tecnica_ejecucion: '',
+      target_group: 'TODOS'
+    });
+    setIsEditingInLibrary(false);
+    setEditingLibraryExerciseId(null);
+    setLibraryError(null);
+  };
+
+  const handleEditLibraryExercise = (ex: GymExerciseTemplate) => {
+    setLibraryForm({
+      grupo_muscular: ex.grupo_muscular,
+      ejercicio: ex.ejercicio,
+      equipamiento: ex.equipamiento || '',
+      tecnica_ejecucion: ex.tecnica_ejecucion || '',
+      target_group: ex.target_group || 'TODOS'
+    });
+    setIsEditingInLibrary(true);
+    setEditingLibraryExerciseId(ex.id || null);
+    setLibraryError(null);
+    setDeleteConfirmId(null);
+  };
+
+  const handleDeleteLibraryExercise = (id: number) => {
+    const newList = exercisesLibrary.filter(ex => ex.id !== id);
+    updateExercisesLibrary(newList);
+    setDeleteConfirmId(null);
+    if (editingLibraryExerciseId === id) {
+      handleResetLibraryForm();
+    }
+  };
+
   // Modals
   const [showSessionModal, setShowSessionModal] = useState(false)
   const [editingSession, setEditingSession] = useState<GymSession | null>(null)
@@ -604,7 +738,7 @@ export default function FisicaGimnasioArea({
   const [showQuickAddDropdown, setShowQuickAddDropdown] = useState(false)
 
   const filteredQuickAddTemplates = useMemo(() => {
-    let baseList = GYM_EXERCISES_DATA;
+    let baseList = exercisesLibrary;
     if (quickAddTargetGroup && quickAddTargetGroup !== 'TODOS') {
       baseList = baseList.filter(ex => ex.target_group === quickAddTargetGroup);
     }
@@ -613,7 +747,7 @@ export default function FisicaGimnasioArea({
       ex.ejercicio.toLowerCase().includes(quickAddSearchTerm.toLowerCase()) ||
       ex.grupo_muscular.toLowerCase().includes(quickAddSearchTerm.toLowerCase())
     )
-  }, [quickAddSearchTerm, quickAddTargetGroup])
+  }, [quickAddSearchTerm, quickAddTargetGroup, exercisesLibrary])
 
   const handleSelectQuickAddTemplate = (template: GymExerciseTemplate) => {
     setQuickAddSearchTerm(template.ejercicio)
@@ -655,18 +789,18 @@ export default function FisicaGimnasioArea({
 
   const uniqueMuscleGroupsForCurrentTarget = useMemo(() => {
     if (!manageGroupTarget) return [];
-    const baseList = GYM_EXERCISES_DATA.filter(ex => ex.target_group === manageGroupTarget);
+    const baseList = exercisesLibrary.filter(ex => ex.target_group === manageGroupTarget);
     const groups = baseList.map(ex => ex.grupo_muscular).filter(Boolean);
     return Array.from(new Set(groups)).sort();
-  }, [manageGroupTarget]);
+  }, [manageGroupTarget, exercisesLibrary]);
 
   const exercisesForSelectedMuscleGroup = useMemo(() => {
     if (!manageGroupTarget || !selectedManageGroupMuscle) return [];
-    return GYM_EXERCISES_DATA.filter(ex => 
+    return exercisesLibrary.filter(ex => 
       ex.target_group === manageGroupTarget && 
       ex.grupo_muscular === selectedManageGroupMuscle
     ).sort((a, b) => a.ejercicio.localeCompare(b.ejercicio));
-  }, [manageGroupTarget, selectedManageGroupMuscle]);
+  }, [manageGroupTarget, selectedManageGroupMuscle, exercisesLibrary]);
 
   const handleManageGroupMuscleChange = (muscle: string) => {
     setSelectedManageGroupMuscle(muscle);
@@ -704,7 +838,7 @@ export default function FisicaGimnasioArea({
   };
 
   const filteredManageGroupTemplates = useMemo(() => {
-    let baseList = GYM_EXERCISES_DATA;
+    let baseList = exercisesLibrary;
     if (manageGroupTarget && manageGroupTarget !== 'TODOS') {
       baseList = baseList.filter(ex => ex.target_group === manageGroupTarget);
     }
@@ -713,7 +847,7 @@ export default function FisicaGimnasioArea({
       ex.ejercicio.toLowerCase().includes(manageGroupSearchTerm.toLowerCase()) ||
       ex.grupo_muscular.toLowerCase().includes(manageGroupSearchTerm.toLowerCase())
     )
-  }, [manageGroupSearchTerm, manageGroupTarget])
+  }, [manageGroupSearchTerm, manageGroupTarget, exercisesLibrary])
 
   const activeDaySessions = sessions.filter(s => s.dia_semana === selectedDia)
 
@@ -2419,7 +2553,7 @@ export default function FisicaGimnasioArea({
 
   // Filtered exercise suggestion
   const filteredExerciseTemplates = useMemo(() => {
-    let baseList = GYM_EXERCISES_DATA;
+    let baseList = exercisesLibrary;
     const currentTarget = exerciseInput.target_group || 'TODOS';
     if (currentTarget !== 'TODOS') {
       baseList = baseList.filter(ex => ex.target_group === currentTarget);
@@ -2429,7 +2563,7 @@ export default function FisicaGimnasioArea({
       ex.ejercicio.toLowerCase().includes(exerciseSearchTerm.toLowerCase()) ||
       ex.grupo_muscular.toLowerCase().includes(exerciseSearchTerm.toLowerCase())
     )
-  }, [exerciseSearchTerm, exerciseInput.target_group])
+  }, [exerciseSearchTerm, exerciseInput.target_group, exercisesLibrary])
 
   // Handle select exercise suggestion
   const handleSelectTemplate = (template: GymExerciseTemplate) => {
@@ -3018,19 +3152,21 @@ export default function FisicaGimnasioArea({
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setIsExerciseLibraryOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl transition-all flex items-center gap-2 transform active:scale-95 cursor-pointer"
+            title="Ver, editar, borrar o agregar ejercicios de la biblioteca general"
+          >
+            <i className="fa-solid fa-book-open"></i> BIBLIOTECA DE EJERCICIOS
+          </button>
           <button
             onClick={() => selectedMicro && fetchSessionsForMicro(selectedMicro.id)}
             className="bg-white text-slate-900 px-6 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2 border border-slate-100"
           >
             <i className={`fa-solid fa-rotate-right ${loadingSessions ? 'fa-spin' : ''}`}></i> Actualizar
           </button>
-          <button
-            onClick={handleOpenCreateModal}
-            className="bg-[#CF1B2B] text-white px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700 transition-all flex items-center gap-2 transform active:scale-95"
-          >
-            <i className="fa-solid fa-plus"></i> NUEVA SESIÓN
-          </button>
+
         </div>
       </div>
 
@@ -3317,166 +3453,7 @@ export default function FisicaGimnasioArea({
             </div>
           </div>
 
-          {/* SECTION: TRABAJOS ESPECÍFICOS */}
-          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-6 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-50 pb-4">
-              <div className="flex items-center gap-2.5 text-left">
-                <div className="w-8 h-8 bg-slate-50 text-slate-800 rounded-lg flex items-center justify-center border border-slate-100/50">
-                  <i className="fa-solid fa-list-check text-sm text-[#CF1B2B]"></i>
-                </div>
-                <div>
-                  <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">TRABAJOS ESPECÍFICOS</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Focos de trabajo neuromusculares y asignaciones contabilizadas</p>
-                </div>
-              </div>
-              {nominatedPlayers.length > 0 && (
-                <button
-                  onClick={handleAutoAssignAllActiveFocusGroups}
-                  className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white border border-indigo-100 hover:border-indigo-600 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer text-[9px] font-black uppercase tracking-wider shadow-sm"
-                  title="Auto-asignar un máximo de 2 ejercicios predefinidos para todos los focos activos con jugadores asignados"
-                >
-                  <i className="fa-solid fa-wand-magic-sparkles text-[10px]"></i>
-                  <span>Auto-Asignar Todos los Focos</span>
-                </button>
-              )}
-            </div>
-
-            {nominatedPlayers.length === 0 ? (
-              <p className="text-slate-400 text-xs font-semibold py-4 text-center">No hay jugadores convocados con evaluaciones en este microciclo.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-50 text-slate-400 text-[8px] font-black uppercase tracking-widest pb-3">
-                      <th className="pb-3 pr-4 w-12 text-center">Inc.</th>
-                      <th className="pb-3 pr-4">Foco de Trabajo (Perfil)</th>
-                      <th className="pb-3 pr-4 text-center">Ejercicios Asignados</th>
-                      <th className="pb-3 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 text-[11px] text-slate-700 font-semibold">
-                    {TARGET_GROUPS_CONFIG.filter(g => !['GENERALES_SUPERIOR', 'CORE_ZONA_MEDIA', 'GENERALES_INFERIOR'].includes(g.id)).map((g) => {
-                      const primaryPlayers = nominatedPlayers.filter(p => p.recommendation?.group === g.id);
-                      const secondaryPlayers = nominatedPlayers.filter(p => p.recommendation?.secondaryGroup === g.id);
-                      const totalCount = primaryPlayers.length + secondaryPlayers.length;
-
-                      if (g.id !== 'TODOS' && totalCount === 0) return null;
-                      if (g.id === 'TODOS' && nominatedPlayers.length === 0) return null;
-
-                      const dayExercises = activeDaySessions.flatMap(s => s.ejercicios || []);
-                      const exercisesForGroup = dayExercises.filter(ex => ex.target_group === g.id);
-                      const exercisesCount = exercisesForGroup.length;
-
-                      return (
-                        <tr key={g.id} className="hover:bg-slate-50/40 transition-colors">
-                          <td className="py-3 pr-4 text-center">
-                            <input
-                              type="checkbox"
-                              checked={exercisesCount > 0}
-                              onChange={() => handleToggleFocusGroup(g.id, exercisesCount > 0)}
-                              className="w-4 h-4 rounded border-slate-300 text-[#CF1B2B] focus:ring-[#CF1B2B] cursor-pointer"
-                              title={exercisesCount > 0 ? "Quitar foco de la sesión" : "Incorporar foco en la sesión"}
-                            />
-                          </td>
-                          <td className="py-3 pr-4">
-                            <div className="flex items-center gap-2">
-                              <span 
-                                className="shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black bg-[#0b1220] text-white border border-slate-800/10 flex items-center gap-1 shadow-sm"
-                                title={`${g.id === 'TODOS' ? nominatedPlayers.length : totalCount} jugadores asignados a este foco`}
-                              >
-                                <i className="fa-solid fa-users text-[8px] text-[#CF1B2B]"></i>
-                                <span>{g.id === 'TODOS' ? nominatedPlayers.length : totalCount} { (g.id === 'TODOS' ? nominatedPlayers.length : totalCount) === 1 ? 'JUGADOR' : 'JUGADORES' }</span>
-                              </span>
-                              <span className={`px-2.5 py-1 rounded text-[8px] font-black uppercase text-white ${g.colorClass} inline-block`}>
-                                {g.label}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 pr-4 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* Minus Button */}
-                              <button
-                                onClick={() => handleRemoveLastExerciseOfGroup(g.id)}
-                                disabled={exercisesCount === 0}
-                                className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold transition-all border ${
-                                  exercisesCount > 0
-                                    ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100 hover:border-red-300 cursor-pointer'
-                                    : 'bg-slate-50 text-slate-300 border-slate-100 opacity-40 cursor-not-allowed'
-                                }`}
-                                title="Quitar un ejercicio de este foco"
-                              >
-                                <i className="fa-solid fa-minus text-[9px]"></i>
-                              </button>
-
-                              {/* Exercises Count / Details Pill with Tooltip */}
-                              <div className="relative inline-block group">
-                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border inline-block select-none ${
-                                  exercisesCount > 0
-                                    ? 'bg-indigo-50 border-indigo-100 text-indigo-600'
-                                    : 'bg-slate-50 border-slate-100 text-slate-400 opacity-60'
-                                }`}>
-                                  {exercisesCount}
-                                </span>
-                                {exercisesCount > 0 && (
-                                  <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 bg-[#0b1220] text-white rounded-xl shadow-xl p-3 text-left border border-slate-800 transition-all">
-                                    <div className="text-[9px] font-black uppercase tracking-widest text-[#CF1B2B] mb-2 border-b border-slate-800 pb-1.5 flex items-center gap-1.5">
-                                      <i className="fa-solid fa-dumbbell text-[10px]"></i>
-                                      <span>Ejercicios Foco: {g.shortLabel}</span>
-                                    </div>
-                                    <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar font-medium">
-                                      {exercisesForGroup.map((ex, idx) => (
-                                        <div key={ex.id || idx} className="text-[10px] leading-relaxed border-b border-slate-800/40 last:border-0 pb-1.5 last:pb-0">
-                                          <div className="font-bold text-slate-100 flex justify-between gap-2">
-                                            <span>{idx + 1}. {ex.ejercicio}</span>
-                                            <span className="text-[#CF1B2B] font-black text-[9px] shrink-0 bg-[#CF1B2B]/10 px-1 rounded">{ex.series}x{ex.repeticiones}</span>
-                                          </div>
-                                          {ex.equipamiento && ex.equipamiento !== 'Ninguno' && (
-                                            <div className="text-[8.5px] text-slate-400 font-bold mt-0.5 uppercase tracking-wider flex items-center gap-1">
-                                              <i className="fa-solid fa-toolbox text-[8px]"></i>
-                                              <span>{ex.equipamiento}</span>
-                                            </div>
-                                          )}
-                                          {ex.tecnica_ejecucion && (
-                                            <div className="text-[8.5px] text-slate-400 italic mt-0.5 line-clamp-1">{ex.tecnica_ejecucion}</div>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-2 h-2 bg-[#0b1220] rotate-45 border-r border-b border-slate-800"></div>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Plus Button */}
-                              <button
-                                onClick={() => handleAddNextExerciseOfGroup(g.id)}
-                                className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 hover:border-emerald-300 flex items-center justify-center text-xs font-bold transition-all cursor-pointer"
-                                title="Agregar un ejercicio predefinido"
-                              >
-                                <i className="fa-solid fa-plus text-[9px]"></i>
-                              </button>
-                            </div>
-                          </td>
-                          <td className="py-3 text-right flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenManageGroupModal(g.id)}
-                              className="px-2.5 py-1.5 bg-[#CF1B2B]/10 hover:bg-[#CF1B2B] text-[#CF1B2B] hover:text-white rounded-xl flex items-center gap-1.5 transition-all cursor-pointer text-[9px] font-black uppercase tracking-wider"
-                              title={`Gestionar tareas asignadas de ${g.shortLabel}`}
-                            >
-                              <i className="fa-solid fa-pen-to-square text-[10px]"></i>
-                              <span>Editar Tareas</span>
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* SECTION: TRABAJOS GENERALES */}
+          {/* SECTION: TRABAJOS GENERALES Y DE GRUPO */}
           <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-50 pb-4">
               <div className="flex items-center gap-2.5 text-left">
@@ -3484,8 +3461,8 @@ export default function FisicaGimnasioArea({
                   <i className="fa-solid fa-layer-group text-sm text-[#CF1B2B]"></i>
                 </div>
                 <div>
-                  <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">TRABAJOS GENERALES</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Focos de trabajo generales de base y acondicionamiento</p>
+                  <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">TRABAJOS GENERALES Y DE GRUPO</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Focos de trabajo generales de base, de grupo y acondicionamiento general</p>
                 </div>
               </div>
               {nominatedPlayers.length > 0 && (
@@ -3514,12 +3491,13 @@ export default function FisicaGimnasioArea({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 text-[11px] text-slate-700 font-semibold">
-                    {TARGET_GROUPS_CONFIG.filter(g => ['GENERALES_SUPERIOR', 'CORE_ZONA_MEDIA', 'GENERALES_INFERIOR'].includes(g.id)).map((g) => {
+                    {TARGET_GROUPS_CONFIG.filter(g => ['TODOS', 'GENERALES_SUPERIOR', 'CORE_ZONA_MEDIA', 'GENERALES_INFERIOR'].includes(g.id)).map((g) => {
                       const dayExercises = activeDaySessions.flatMap(s => s.ejercicios || []);
                       const exercisesForGroup = dayExercises.filter(ex => ex.target_group === g.id);
                       const exercisesCount = exercisesForGroup.length;
 
                       let displayLabel = g.label;
+                      if (g.id === 'TODOS') displayLabel = 'TODOS / GENERAL';
                       if (g.id === 'GENERALES_SUPERIOR') displayLabel = 'TREN SUPERIOR';
                       if (g.id === 'CORE_ZONA_MEDIA') displayLabel = 'CORE Y ZONA MEDIA';
                       if (g.id === 'GENERALES_INFERIOR') displayLabel = 'TREN INFERIOR';
@@ -3990,6 +3968,164 @@ export default function FisicaGimnasioArea({
             </div>
           </div>
 
+          {/* SECTION: TRABAJOS ESPECÍFICOS POR PERFIL NEUROMUSCULAR (SESIÓN DEL DÍA) */}
+          <div className="bg-slate-50 p-6 rounded-[24px] border border-slate-100/60 space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200/50 pb-4">
+              <div className="flex items-center gap-2.5 text-left">
+                <div className="w-8 h-8 bg-white text-slate-800 rounded-lg flex items-center justify-center border border-slate-100">
+                  <i className="fa-solid fa-list-check text-sm text-[#CF1B2B]"></i>
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">TRABAJOS ESPECÍFICOS POR PERFIL NEUROMUSCULAR (SESIÓN DEL DÍA)</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Focos de trabajo neuromusculares individuales y asignaciones del día por grupo de perfil</p>
+                </div>
+              </div>
+              {nominatedPlayers.length > 0 && (
+                <button
+                  onClick={handleAutoAssignAllActiveFocusGroups}
+                  className="px-3.5 py-1.5 bg-indigo-50 hover:bg-[#CF1B2B] text-indigo-600 hover:text-white border border-indigo-100 hover:border-[#CF1B2B] rounded-xl flex items-center gap-1.5 transition-all cursor-pointer text-[9px] font-black uppercase tracking-wider shadow-sm"
+                  title="Auto-asignar un máximo de 2 ejercicios predefinidos para todos los focos activos con jugadores asignados"
+                >
+                  <i className="fa-solid fa-wand-magic-sparkles text-[10px]"></i>
+                  <span>Auto-Asignar Todos los Focos Específicos</span>
+                </button>
+              )}
+            </div>
+
+            {nominatedPlayers.length === 0 ? (
+              <p className="text-slate-400 text-xs font-semibold py-4 text-center">No hay jugadores convocados con evaluaciones en este microciclo.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
+                  <thead>
+                    <tr className="border-b border-slate-50 text-slate-400 text-[8px] font-black uppercase tracking-widest bg-slate-50/50">
+                      <th className="py-3 px-4 w-12 text-center">Inc.</th>
+                      <th className="py-3 px-4">Foco de Trabajo (Perfil)</th>
+                      <th className="py-3 px-4 text-center">Ejercicios Asignados</th>
+                      <th className="py-3 px-4 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 text-[11px] text-slate-700 font-semibold">
+                    {TARGET_GROUPS_CONFIG.filter(g => !['TODOS', 'GENERALES_SUPERIOR', 'CORE_ZONA_MEDIA', 'GENERALES_INFERIOR'].includes(g.id)).map((g) => {
+                      const primaryPlayers = nominatedPlayers.filter(p => p.recommendation?.group === g.id);
+                      const secondaryPlayers = nominatedPlayers.filter(p => p.recommendation?.secondaryGroup === g.id);
+                      const totalCount = primaryPlayers.length + secondaryPlayers.length;
+
+                      if (totalCount === 0) return null;
+
+                      const dayExercises = activeDaySessions.flatMap(s => s.ejercicios || []);
+                      const exercisesForGroup = dayExercises.filter(ex => ex.target_group === g.id);
+                      const exercisesCount = exercisesForGroup.length;
+
+                      return (
+                        <tr key={g.id} className="hover:bg-slate-50/40 transition-colors">
+                          <td className="py-3 px-4 text-center">
+                            <input
+                              type="checkbox"
+                              checked={exercisesCount > 0}
+                              onChange={() => handleToggleFocusGroup(g.id, exercisesCount > 0)}
+                              className="w-4 h-4 rounded border-slate-300 text-[#CF1B2B] focus:ring-[#CF1B2B] cursor-pointer"
+                              title={exercisesCount > 0 ? "Quitar foco de la sesión" : "Incorporar foco en la sesión"}
+                            />
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <span 
+                                className="shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black bg-[#0b1220] text-white border border-slate-800/10 flex items-center gap-1 shadow-sm"
+                                title={`${totalCount} jugadores asignados a este foco`}
+                              >
+                                <i className="fa-solid fa-users text-[8px] text-[#CF1B2B]"></i>
+                                <span>{totalCount} { totalCount === 1 ? 'JUGADOR' : 'JUGADORES' }</span>
+                              </span>
+                              <span className={`px-2.5 py-1 rounded text-[8px] font-black uppercase text-white ${g.colorClass} inline-block`}>
+                                {g.label}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* Minus Button */}
+                              <button
+                                onClick={() => handleRemoveLastExerciseOfGroup(g.id)}
+                                disabled={exercisesCount === 0}
+                                className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold transition-all border ${
+                                  exercisesCount > 0
+                                    ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100 hover:border-red-300 cursor-pointer'
+                                    : 'bg-slate-50 text-slate-300 border-slate-100 opacity-40 cursor-not-allowed'
+                                }`}
+                                title="Quitar un ejercicio de este foco"
+                              >
+                                <i className="fa-solid fa-minus text-[9px]"></i>
+                              </button>
+
+                              {/* Exercises Count / Details Pill with Tooltip */}
+                              <div className="relative inline-block group">
+                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border inline-block select-none ${
+                                  exercisesCount > 0
+                                    ? 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                                    : 'bg-slate-50 border-slate-100 text-slate-400 opacity-60'
+                                }`}>
+                                  {exercisesCount}
+                                </span>
+                                {exercisesCount > 0 && (
+                                  <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 bg-[#0b1220] text-white rounded-xl shadow-xl p-3 text-left border border-slate-800 transition-all">
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-[#CF1B2B] mb-2 border-b border-slate-800 pb-1.5 flex items-center gap-1.5">
+                                      <i className="fa-solid fa-dumbbell text-[10px]"></i>
+                                      <span>Ejercicios Foco: {g.shortLabel}</span>
+                                    </div>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar font-medium">
+                                      {exercisesForGroup.map((ex, idx) => (
+                                        <div key={ex.id || idx} className="text-[10px] leading-relaxed border-b border-slate-800/40 last:border-0 pb-1.5 last:pb-0">
+                                          <div className="font-bold text-slate-100 flex justify-between gap-2">
+                                            <span>{idx + 1}. {ex.ejercicio}</span>
+                                            <span className="text-[#CF1B2B] font-black text-[9px] shrink-0 bg-[#CF1B2B]/10 px-1 rounded">{ex.series}x{ex.repeticiones}</span>
+                                          </div>
+                                          {ex.equipamiento && ex.equipamiento !== 'Ninguno' && (
+                                            <div className="text-[8.5px] text-slate-400 font-bold mt-0.5 uppercase tracking-wider flex items-center gap-1">
+                                              <i className="fa-solid fa-toolbox text-[8px]"></i>
+                                              <span>{ex.equipamiento}</span>
+                                            </div>
+                                          )}
+                                          {ex.tecnica_ejecucion && (
+                                            <div className="text-[8.5px] text-slate-400 italic mt-0.5 line-clamp-1">{ex.tecnica_ejecucion}</div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-2 h-2 bg-[#0b1220] rotate-45 border-r border-b border-slate-800"></div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Plus Button */}
+                              <button
+                                onClick={() => handleAddNextExerciseOfGroup(g.id)}
+                                className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 hover:border-emerald-300 flex items-center justify-center text-xs font-bold transition-all cursor-pointer"
+                                title="Agregar un ejercicio predefinido"
+                              >
+                                <i className="fa-solid fa-plus text-[9px]"></i>
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => handleOpenManageGroupModal(g.id)}
+                              className="px-2.5 py-1.5 bg-[#CF1B2B]/10 hover:bg-[#CF1B2B] text-[#CF1B2B] hover:text-white rounded-xl flex items-center gap-1.5 transition-all cursor-pointer text-[9px] font-black uppercase tracking-wider inline-flex"
+                              title={`Gestionar tareas asignadas de ${g.shortLabel}`}
+                            >
+                              <i className="fa-solid fa-pen-to-square text-[10px]"></i>
+                              <span>Editar Tareas</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Left side: Players list */}
             <div className="lg:col-span-4 space-y-4">
@@ -4262,7 +4398,7 @@ export default function FisicaGimnasioArea({
                                   id="pauta-grupo-muscular"
                                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none"
                                 >
-                                  {Array.from(new Set(GYM_EXERCISES_DATA.map(e => e.grupo_muscular))).sort().map(g => (
+                                  {Array.from(new Set(exercisesLibrary.map(e => e.grupo_muscular))).sort().map(g => (
                                     <option key={g} value={g}>{g.toUpperCase()}</option>
                                   ))}
                                 </select>
@@ -4274,7 +4410,7 @@ export default function FisicaGimnasioArea({
                                   id="pauta-ejercicio-select"
                                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none"
                                 >
-                                  {GYM_EXERCISES_DATA.map((e, idx) => (
+                                  {exercisesLibrary.map((e, idx) => (
                                     <option key={idx} value={e.ejercicio}>{e.ejercicio.toUpperCase()}</option>
                                   ))}
                                 </select>
@@ -4332,7 +4468,7 @@ export default function FisicaGimnasioArea({
                                 const weightInput = document.getElementById('pauta-carga') as HTMLInputElement;
                                 const rpeSelect = document.getElementById('pauta-rpe') as HTMLSelectElement;
 
-                                const template = GYM_EXERCISES_DATA.find(e => e.ejercicio === ejSelect.value);
+                                const template = exercisesLibrary.find(e => e.ejercicio === ejSelect.value);
 
                                 const newEx: GymExercise = {
                                   grupo_muscular: gmSelect.value,
@@ -5162,6 +5298,281 @@ export default function FisicaGimnasioArea({
                 >
                   Asignar Ejercicio
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* EXERCISE LIBRARY MODAL */}
+      <AnimatePresence>
+        {isExerciseLibraryOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-[40px] w-full max-w-6xl h-[85vh] overflow-hidden shadow-2xl flex flex-col text-left font-sans"
+            >
+              {/* Modal Header */}
+              <div className="bg-[#0b1220] text-white px-8 py-6 flex items-center justify-between border-b border-white/5 shrink-0">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/20">
+                    <i className="fa-solid fa-book-open text-white text-sm"></i>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider">Biblioteca General de Ejercicios</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                      Gestiona el catálogo global de pautas y ejercicios del club
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsExerciseLibraryOpen(false);
+                    handleResetLibraryForm();
+                  }}
+                  className="w-10 h-10 rounded-2xl bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all cursor-pointer"
+                  title="Cerrar Biblioteca"
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+
+              {/* Modal Content - Split layout */}
+              <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-0 bg-slate-50">
+                
+                {/* LEFT SIDE: List of Exercises & Filters */}
+                <div className="flex-1 flex flex-col p-6 min-h-0 border-r border-slate-100">
+                  {/* Filters bar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 shrink-0">
+                    {/* Search */}
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Buscar por nombre, técnica..."
+                        value={librarySearchTerm}
+                        onChange={(e) => setLibrarySearchTerm(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500"
+                      />
+                      <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                    </div>
+
+                    {/* Target Group Filter */}
+                    <div>
+                      <select
+                        value={libraryTargetGroupFilter}
+                        onChange={(e) => setLibraryTargetGroupFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none"
+                      >
+                        <option value="TODOS">TODOS LOS FOCOS</option>
+                        {TARGET_GROUPS_CONFIG.filter(g => g.id !== 'TODOS').map(g => (
+                          <option key={g.id} value={g.id}>{g.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Muscle Group Filter */}
+                    <div>
+                      <select
+                        value={libraryMuscleGroupFilter}
+                        onChange={(e) => setLibraryMuscleGroupFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none"
+                      >
+                        <option value="TODOS">TODOS LOS MÚSCULOS</option>
+                        {libraryMuscleGroups.map(muscle => (
+                          <option key={muscle} value={muscle}>{muscle.toUpperCase()}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Exercises Table / List */}
+                  <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-100 bg-white rounded-2xl min-h-0 shadow-inner">
+                    {filteredLibraryExercises.length === 0 ? (
+                      <div className="py-12 text-center text-slate-400">
+                        <i className="fa-solid fa-folder-open text-2xl mb-2 text-slate-300"></i>
+                        <p className="text-xs font-bold uppercase tracking-wider">No se encontraron ejercicios</p>
+                        <p className="text-[10px] mt-1">Prueba con otros filtros o añade un ejercicio en el panel lateral</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {filteredLibraryExercises.map((item, index) => {
+                          const tgConfig = TARGET_GROUPS_CONFIG.find(g => g.id === item.target_group);
+                          return (
+                            <div key={item.id || index} className="p-4 hover:bg-slate-50/50 transition-colors flex items-start gap-4">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                  <span className="text-xs font-bold text-slate-900">{item.ejercicio}</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-slate-100 text-slate-600">
+                                    {item.grupo_muscular}
+                                  </span>
+                                  {tgConfig && (
+                                    <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase text-white ${tgConfig.colorClass}`}>
+                                      {tgConfig.shortLabel}
+                                    </span>
+                                  )}
+                                </div>
+                                {item.equipamiento && item.equipamiento !== 'Ninguno' && (
+                                  <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                    <i className="fa-solid fa-toolbox text-[8px]"></i>
+                                    <span>Equipamiento: {item.equipamiento}</span>
+                                  </div>
+                                )}
+                                {item.tecnica_ejecucion && (
+                                  <p className="text-[10px] text-slate-500 font-medium mt-1 leading-relaxed italic">
+                                    {item.tecnica_ejecucion}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0 self-center">
+                                <button
+                                  onClick={() => handleEditLibraryExercise(item)}
+                                  className="w-7 h-7 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-lg flex items-center justify-center transition-all cursor-pointer"
+                                  title="Editar"
+                                >
+                                  <i className="fa-solid fa-pen text-[9px]"></i>
+                                </button>
+                                {deleteConfirmId === item.id ? (
+                                  <div className="flex items-center gap-1 bg-red-50 p-1 rounded-lg border border-red-100">
+                                    <button
+                                      onClick={() => item.id && handleDeleteLibraryExercise(item.id)}
+                                      className="px-2 py-1 bg-[#CF1B2B] hover:bg-red-700 text-white rounded text-[8px] font-black uppercase transition-all cursor-pointer"
+                                    >
+                                      Sí, borrar
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteConfirmId(null)}
+                                      className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-500 rounded text-[8px] font-black uppercase transition-all cursor-pointer border border-slate-200"
+                                    >
+                                      No
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setDeleteConfirmId(item.id || null)}
+                                    className="w-7 h-7 bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 rounded-lg flex items-center justify-center transition-all cursor-pointer"
+                                    title="Eliminar"
+                                  >
+                                    <i className="fa-solid fa-trash-can text-[9px]"></i>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* RIGHT SIDE: Add / Edit form */}
+                <div className="w-full lg:w-80 shrink-0 bg-white p-6 flex flex-col justify-between overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-100">
+                  <form onSubmit={handleSaveLibraryExercise} className="space-y-4">
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-1">
+                        {isEditingInLibrary ? '📝 Editar Ejercicio' : '➕ Nuevo Ejercicio'}
+                      </h4>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                        {isEditingInLibrary ? 'Modifica los datos del ejercicio seleccionado' : 'Añade un nuevo ejercicio al catálogo general'}
+                      </p>
+                    </div>
+
+                    {libraryError && (
+                      <div className="bg-red-50 border border-red-100 text-red-700 p-3 rounded-xl text-[10px] font-bold">
+                        <i className="fa-solid fa-triangle-exclamation mr-1"></i>
+                        {libraryError}
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Nombre del Ejercicio *</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Peso muerto rumano"
+                        value={libraryForm.ejercicio}
+                        onChange={(e) => setLibraryForm(prev => ({ ...prev, ejercicio: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Grupo Muscular / Región *</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Glúteos, Isquios, Hombros..."
+                        value={libraryForm.grupo_muscular}
+                        onChange={(e) => setLibraryForm(prev => ({ ...prev, grupo_muscular: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500"
+                        list="library-muscle-suggestions"
+                      />
+                      <datalist id="library-muscle-suggestions">
+                        {libraryMuscleGroups.map(m => (
+                          <option key={m} value={m} />
+                        ))}
+                      </datalist>
+                    </div>
+
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Foco de Trabajo (Target Group) *</label>
+                      <select
+                        value={libraryForm.target_group}
+                        onChange={(e) => setLibraryForm(prev => ({ ...prev, target_group: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500"
+                      >
+                        {TARGET_GROUPS_CONFIG.map(g => (
+                          <option key={g.id} value={g.id}>{g.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Equipamiento</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Barra, Mancuernas, Ninguno"
+                        value={libraryForm.equipamiento}
+                        onChange={(e) => setLibraryForm(prev => ({ ...prev, equipamiento: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Técnica de Ejecución / Descripción</label>
+                      <textarea
+                        rows={3}
+                        placeholder="Instrucciones específicas del movimiento..."
+                        value={libraryForm.tecnica_ejecucion}
+                        onChange={(e) => setLibraryForm(prev => ({ ...prev, tecnica_ejecucion: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-500 resize-none"
+                      />
+                    </div>
+
+                    <div className="pt-2 flex flex-col gap-2">
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md cursor-pointer"
+                      >
+                        {isEditingInLibrary ? 'Actualizar Ejercicio' : 'Crear Ejercicio'}
+                      </button>
+                      
+                      {(isEditingInLibrary || libraryForm.ejercicio || libraryForm.grupo_muscular) && (
+                        <button
+                          type="button"
+                          onClick={handleResetLibraryForm}
+                          className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer"
+                        >
+                          Limpiar / Nuevo
+                        </button>
+                      )}
+                    </div>
+                  </form>
+
+                  <div className="pt-6 border-t border-slate-100 text-[10px] text-slate-400 font-semibold leading-relaxed">
+                    * Los ejercicios agregados o modificados se guardan localmente y estarán disponibles inmediatamente para su prescripción en el microciclo actual.
+                  </div>
+                </div>
+
               </div>
             </motion.div>
           </div>

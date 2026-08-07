@@ -149,8 +149,39 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
   // Estados de Contexto
   const [activeMicrocycle, setActiveMicrocycle] = useState<any>(null);
   const [citedPlayerIds, setCitedPlayerIds] = useState<number[]>([]);
+  const [desconvocadosIds, setDesconvocadosIds] = useState<number[]>([]);
+  const [desconvocatoriaTrigger, setDesconvocatoriaTrigger] = useState(0);
   const [playerCitedCategoryMap, setPlayerCitedCategoryMap] = useState<Record<number, Category>>({});
   const [loadingContext, setLoadingContext] = useState(false);
+
+  // Escuchar actualizaciones locales de desconvocatorias
+  useEffect(() => {
+    const handleDesconvocatoriasUpdate = () => {
+      setDesconvocatoriaTrigger(prev => prev + 1);
+    };
+    window.addEventListener('desconvocatorias-updated', handleDesconvocatoriasUpdate);
+    return () => {
+      window.removeEventListener('desconvocatorias-updated', handleDesconvocatoriasUpdate);
+    };
+  }, []);
+
+  // Escuchar actualizaciones de desconvocatorias de Supabase en tiempo real
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime_desconvocatorias_physics')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'desconvocatorias' },
+        () => {
+          setDesconvocatoriaTrigger(prev => prev + 1);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Filtros específicos del Reporte Diario
   const [selectedPlayersReport, setSelectedPlayersReport] = useState<Set<number>>(new Set());
@@ -735,11 +766,13 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       if (active) {
         setActiveMicrocycle(null);
         setCitedPlayerIds([]);
+        setDesconvocadosIds([]);
         setPlayerCitedCategoryMap({});
       }
 
       try {
         const allCitedIds = new Set<number>();
+        const allDesconvocadosIds = new Set<number>();
         const citedCatMap: Record<number, Category> = {};
         let primaryMicro = null;
 
@@ -771,6 +804,39 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                 citedCatMap[c.player_id] = cat as Category;
               });
             }
+
+            // Fetch desconvocatorias online
+            const { data: desconvocatoriasData } = await supabase
+              .from('desconvocatorias')
+              .select('athlete_id')
+              .eq('microciclo_id', String(mc.id));
+
+            if (!active) return;
+
+            if (desconvocatoriasData) {
+              desconvocatoriasData.forEach((d: any) => {
+                if (d.athlete_id) {
+                  allDesconvocadosIds.add(Number(d.athlete_id));
+                }
+              });
+            }
+
+            // Fetch desconvocatorias from localStorage
+            try {
+              const localData = localStorage.getItem('local_desconvocatorias');
+              if (localData) {
+                const parsed = JSON.parse(localData);
+                if (Array.isArray(parsed)) {
+                  parsed.forEach((d: any) => {
+                    if (String(d.microciclo_id) === String(mc.id) && d.athlete_id) {
+                      allDesconvocadosIds.add(Number(d.athlete_id));
+                    }
+                  });
+                }
+              }
+            } catch (e) {
+              console.error("Error leyendo desconvocatorias locales:", e);
+            }
           }
         }
 
@@ -779,6 +845,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         if (primaryMicro) {
           setActiveMicrocycle(primaryMicro);
           setCitedPlayerIds(Array.from(allCitedIds));
+          setDesconvocadosIds(Array.from(allDesconvocadosIds));
           setPlayerCitedCategoryMap(citedCatMap);
           setSelectedPlayersReport(allCitedIds);
         } else {
@@ -830,7 +897,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     return () => {
       active = false;
     };
-  }, [selectedDate, selectedCategories, performanceRecords]);
+  }, [selectedDate, selectedCategories, performanceRecords, desconvocatoriaTrigger]);
 
   // Efecto: Cargar Tareas GPS para Reporte
   useEffect(() => {
@@ -1277,11 +1344,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           combined.push(p);
         }
       });
-      return combined;
+      return combined.filter(r => !r.player.player_id || !desconvocadosIds.includes(r.player.player_id));
     }
 
-    return cited;
-  }, [performanceRecords, citedPlayerIds, userRole, userClub, selectedCategories, userClubId]);
+    return cited.filter(r => !r.player.player_id || !desconvocadosIds.includes(r.player.player_id));
+  }, [performanceRecords, citedPlayerIds, desconvocadosIds, userRole, userClub, selectedCategories, userClubId]);
 
   const currentCitadosPlayers = useMemo(() => {
     // Verificar si algún jugador reportó más de una sesión en el día seleccionado
@@ -1325,10 +1392,29 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       data: r.wellness.find(x => x.date === selectedDate)
     }));
 
-    const loadList = filteredRecords.map(r => ({
-      player: r.player,
-      sessions: r.loads.filter(l => l.date === selectedDate)
-    }));
+    const loadList = filteredRecords.map(r => {
+      // Buscar si el jugador tiene datos GPS importados para esta fecha
+      const playerGpsRows = anonymizedGpsImport.filter(
+        g => Number(g.player_id) === Number(r.player.player_id) && g.fecha === selectedDate
+      );
+      const gpsMinutes = playerGpsRows.reduce((sum, g) => sum + (Number(g.minutos) || 0), 0);
+
+      const rawSessions = r.loads.filter(l => l.date === selectedDate);
+      const updatedSessions = rawSessions.map(l => {
+        // La columna de duracion debe ser la columna de minutos de carga externa
+        const finalDuration = Math.round(gpsMinutes > 0 ? gpsMinutes : (l.duration || 90));
+        return {
+          ...l,
+          duration: finalDuration,
+          load: Math.round((Number(l.rpe) || 0) * finalDuration)
+        };
+      });
+
+      return {
+        player: r.player,
+        sessions: updatedSessions
+      };
+    });
 
     const gpsList = filteredRecords.map(r => ({
       player: r.player,
@@ -1575,15 +1661,28 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       const matchesSearch = record.player.name.toLowerCase().includes(athleteSearch.toLowerCase());
       if (!matchesSearch) return;
 
+      // Buscar si el jugador tiene datos GPS importados para esta fecha
+      const playerGpsRows = anonymizedGpsImport.filter(
+        g => Number(g.player_id) === Number(record.player.player_id) && g.fecha === selectedDate
+      );
+      const gpsMinutes = playerGpsRows.reduce((sum, g) => sum + (Number(g.minutos) || 0), 0);
+
       if (unifySessions) {
         // Modo Unificado: cada jugador se muestra exactamente una vez
         if (dayLoads.length > 0) {
           // Tomar la primera sesión o la que tenga datos. Si hay doble jornada, tomamos la primera de hoy.
           const matchingLoad = dayLoads[0];
+          const finalDuration = Math.round(gpsMinutes > 0 ? gpsMinutes : (matchingLoad.duration || 90));
+          const finalLoad = {
+            ...matchingLoad,
+            duration: finalDuration,
+            load: Math.round(gpsMinutes > 0 ? finalDuration * (Number(matchingLoad.rpe) || 0) : (matchingLoad.load || (Number(matchingLoad.rpe) || 0) * finalDuration))
+          };
+
           const item = { 
             player: record.player, 
             wellness: dayWellness, 
-            load: matchingLoad, 
+            load: finalLoad, 
             sessionIndex: matchingLoad.session_index || 1, 
             sessionCount: dayLoads.length,
             allSessionIndexes: dayLoads.map(l => l.session_index || 1),
@@ -1612,10 +1711,17 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         availableSessionIndexes.forEach(sIdx => {
           const matchingLoad = dayLoads.find(l => (l.session_index || 1) === sIdx);
           if (matchingLoad) {
+            const finalDuration = Math.round(gpsMinutes > 0 ? gpsMinutes : (matchingLoad.duration || 90));
+            const finalLoad = {
+              ...matchingLoad,
+              duration: finalDuration,
+              load: Math.round(gpsMinutes > 0 ? finalDuration * (Number(matchingLoad.rpe) || 0) : (matchingLoad.load || (Number(matchingLoad.rpe) || 0) * finalDuration))
+            };
+
             const item = { 
               player: record.player, 
               wellness: dayWellness, 
-              load: matchingLoad, 
+              load: finalLoad, 
               sessionIndex: sIdx, 
               hasReported: true 
             };
@@ -1725,7 +1831,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     }
 
     return { reported: reportedList, pending: pendingList, unifiedList: sortedFullList };
-  }, [currentCitadosPlayers, selectedDate, athleteSearch, sortField, sortDirection, availableSessionIndexes, selectedSessionFilter, unifySessions]);
+  }, [currentCitadosPlayers, selectedDate, athleteSearch, sortField, sortDirection, availableSessionIndexes, selectedSessionFilter, unifySessions, anonymizedGpsImport]);
 
   const gpsRows = useMemo(() => {
     const rows: any[] = [];
@@ -2037,9 +2143,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       const formatRow = (r: any) => {
         if (view === 'pse') {
           const isPending = !r.load;
-          const duration = r.load?.duration ? String(r.load.duration) : '-';
           const rpe = r.load?.rpe !== undefined && r.load?.rpe !== null ? String(r.load.rpe) : '-';
-          const loadVal = r.load?.load !== undefined && r.load?.load !== null ? String(r.load.load) : '-';
           
           let painText = 'Sin Dolor';
           if (r.load?.molestias) {
@@ -2052,9 +2156,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           const painAndHealth = isPending ? '-' : `${painText} | ${healthText}`;
           return [
             `${r.player?.name || ''}\n${r.player?.club_name || r.player?.club || 'SIN CLUB'}`,
-            duration,
             rpe,
-            loadVal,
             painAndHealth.toUpperCase(),
             isPending ? 'PENDIENTE' : 'OK'
           ];
@@ -2112,7 +2214,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         data.cell.styles.lineWidth = 0.1;
 
         if (view === 'pse') {
-          const isRowPending = data.row.cells[5].text[0] === 'PENDIENTE';
+          const isRowPending = data.row.cells[3].text[0] === 'PENDIENTE';
           if (isRowPending) {
             data.cell.styles.textColor = [180, 180, 180];
           }
@@ -2121,7 +2223,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           if (data.column.index === 0) {
             data.cell.styles.halign = 'left';
             data.cell.styles.fontStyle = 'bold';
-          } else if (data.column.index === 4) {
+          } else if (data.column.index === 2) {
             data.cell.styles.halign = 'left'; // dolores / sintomas
             const text = (data.cell.text && data.cell.text[0]) || '';
             if (text && text !== '-' && text !== 'SIN DOLOR | SANO') {
@@ -2133,8 +2235,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             data.cell.styles.halign = 'center';
           }
 
-          // Colorear RPE (col 2)
-          if (data.column.index === 2) {
+          // Colorear RPE (col 1)
+          if (data.column.index === 1) {
             const val = parseFloat(data.cell.text[0]);
             if (!isNaN(val)) {
               data.cell.styles.fontStyle = 'bold';
@@ -2149,24 +2251,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
             }
           }
 
-          // Colorear Carga (col 3)
+          // Colorear status (col 3)
           if (data.column.index === 3) {
-            const val = parseFloat(data.cell.text[0]);
-            if (!isNaN(val)) {
-              data.cell.styles.fontStyle = 'bold';
-              data.cell.styles.textColor = [0, 0, 0]; // Black text
-              if (val >= 600) {
-                data.cell.styles.fillColor = [254, 226, 226]; // Light red
-              } else if (val >= 300) {
-                data.cell.styles.fillColor = [254, 243, 199]; // Light amber
-              } else {
-                data.cell.styles.fillColor = [220, 252, 231]; // Light green
-              }
-            }
-          }
-
-          // Colorear status
-          if (data.column.index === 5) {
             data.cell.styles.fontStyle = 'bold';
             if (data.cell.text[0] === 'PENDIENTE') {
               data.cell.styles.textColor = [230, 126, 34];
@@ -2242,11 +2328,9 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
       const columnsToUse = view === 'pse' ? [
         { header: 'ATLETA', dataKey: 0 },
-        { header: 'DUR', dataKey: 1 },
-        { header: 'RPE', dataKey: 2 },
-        { header: 'CARGA', dataKey: 3 },
-        { header: 'MOLESTIA / ENFERMEDAD', dataKey: 4 },
-        { header: 'ESTADO', dataKey: 5 }
+        { header: 'RPE', dataKey: 1 },
+        { header: 'MOLESTIA / ENFERMEDAD', dataKey: 2 },
+        { header: 'ESTADO', dataKey: 3 }
       ] : [
         { header: 'ATLETA', dataKey: 0 },
         { header: 'FAT', dataKey: 1 },
@@ -2261,11 +2345,9 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
       const columnStylesToUse: any = view === 'pse' ? {
         0: { cellWidth: 32 },
-        1: { cellWidth: 10 },
-        2: { cellWidth: 10 },
-        3: { cellWidth: 14 },
-        4: { cellWidth: 'auto' },
-        5: { cellWidth: 16 }
+        1: { cellWidth: 16 },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 16 }
       } : {
         0: { cellWidth: 25 },
         1: { cellWidth: 7 },
@@ -2845,7 +2927,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   )}
                   {(view === 'pse' || view === 'report') && (
                     <>
-                      <th className="px-1 py-3 md:py-5 hidden sm:table-cell">Dur</th>
+                      {view === 'report' && <th className="px-1 py-3 md:py-5 hidden sm:table-cell">Dur</th>}
                       <th className="px-1 py-3 md:py-5 group cursor-pointer" onClick={() => { setSortField('rpe'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                         <div className="flex flex-col items-center gap-1">
                           RPE
@@ -2855,15 +2937,17 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           </div>
                         </div>
                       </th>
-                      <th className="px-1 py-3 md:py-5 group cursor-pointer" onClick={() => { setSortField('load'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
-                        <div className="flex flex-col items-center gap-1">
-                          Carga
-                          <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
-                            <i className={`fa-solid fa-caret-up ${sortField === 'load' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
-                            <i className={`fa-solid fa-caret-down ${sortField === 'load' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                      {view === 'report' && (
+                        <th className="px-1 py-3 md:py-5 group cursor-pointer" onClick={() => { setSortField('load'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
+                          <div className="flex flex-col items-center gap-1">
+                            Carga
+                            <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
+                              <i className={`fa-solid fa-caret-up ${sortField === 'load' && sortDirection === 'asc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                              <i className={`fa-solid fa-caret-down ${sortField === 'load' && sortDirection === 'desc' ? 'text-red-500 opacity-100' : ''}`}></i>
+                            </div>
                           </div>
-                        </div>
-                      </th>
+                        </th>
+                      )}
                       <th className="px-1 py-3 md:py-5 hidden lg:table-cell group cursor-pointer" onClick={() => { setSortField('pse_molestias'); setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc'); }}>
                         <div className="flex flex-col items-center gap-1">
                           Molestias
@@ -2972,7 +3056,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
                       {(view === 'pse' || view === 'report') && (
                         <>
-                          <td className="px-1 py-3 md:py-5 hidden sm:table-cell">{row.load?.duration || '-'}</td>
+                          {view === 'report' && <td className="px-1 py-3 md:py-5 hidden sm:table-cell">{row.load?.duration || '-'}</td>}
                           <td className="px-1 py-3 md:py-5 text-center text-sm md:text-lg">
                             {row.load?.rpe ? (
                               <span 
@@ -2983,16 +3067,18 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                               </span>
                             ) : '-'}
                           </td>
-                          <td className="px-1 py-3 md:py-5 text-center">
-                            {row.load?.load ? (
-                              <span 
-                                className="inline-flex items-center justify-center px-2 py-1 min-w-[54px] rounded-lg shadow-sm text-[10px] md:text-xs text-white font-black"
-                                style={getCargaStyle(row.load.load)}
-                              >
-                                {row.load.load}
-                              </span>
-                            ) : '-'}
-                          </td>
+                          {view === 'report' && (
+                            <td className="px-1 py-3 md:py-5 text-center">
+                              {row.load?.load ? (
+                                <span 
+                                  className="inline-flex items-center justify-center px-2 py-1 min-w-[54px] rounded-lg shadow-sm text-[10px] md:text-xs text-white font-black"
+                                  style={getCargaStyle(row.load.load)}
+                                >
+                                  {row.load.load}
+                                </span>
+                              ) : '-'}
+                            </td>
+                          )}
                           <td className="px-1 py-3 md:py-5 hidden lg:table-cell">
                             {row.load?.molestias ? (
                               <span className="bg-red-100 text-red-600 px-2 py-1 rounded-lg text-[10px] font-black uppercase max-w-[100px] truncate block mx-auto" title={row.load.molestias}>
@@ -3295,9 +3381,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       {view === 'pse' ? (
                         <tr className="border-b border-slate-100 text-[8px] text-slate-400 font-black uppercase tracking-wider">
                           <th className="pb-2">ATLETA</th>
-                          <th className="pb-2 text-center">DUR</th>
                           <th className="pb-2 text-center">RPE</th>
-                          <th className="pb-2 text-center">CARGA</th>
                           <th className="pb-2 pl-2 text-left">MOLESTIA / ENFERMEDAD</th>
                           <th className="pb-2 text-center">CHECK</th>
                         </tr>
@@ -3332,9 +3416,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             </td>
                             {view === 'pse' ? (
                               <>
-                                <td className="py-2.5 text-center font-black">
-                                  {row.load?.duration ? `${row.load.duration}` : '-'}
-                                </td>
                                 <td className="py-2.5 text-center">
                                   {row.load?.rpe ? (
                                     <span 
@@ -3342,16 +3423,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                       style={getRpeStyle(row.load.rpe)}
                                     >
                                       {row.load.rpe}
-                                    </span>
-                                  ) : '-'}
-                                </td>
-                                <td className="py-2.5 text-center">
-                                  {row.load?.load ? (
-                                    <span 
-                                      className="inline-flex items-center justify-center px-1.5 py-0.5 min-w-[36px] rounded text-[8.5px] text-black font-black"
-                                      style={getCargaStyle(row.load.load)}
-                                    >
-                                      {row.load.load}
                                     </span>
                                   ) : '-'}
                                 </td>
@@ -3431,9 +3502,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       {view === 'pse' ? (
                         <tr className="border-b border-slate-100 text-[8px] text-slate-400 font-black uppercase tracking-wider">
                           <th className="pb-2">ATLETA</th>
-                          <th className="pb-2 text-center">DUR</th>
                           <th className="pb-2 text-center">RPE</th>
-                          <th className="pb-2 text-center">CARGA</th>
                           <th className="pb-2 pl-2 text-left">MOLESTIA / ENFERMEDAD</th>
                           <th className="pb-2 text-center">CHECK</th>
                         </tr>
@@ -3468,9 +3537,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                             </td>
                             {view === 'pse' ? (
                               <>
-                                <td className="py-2.5 text-center font-black">
-                                  {row.load?.duration ? `${row.load.duration}` : '-'}
-                                </td>
                                 <td className="py-2.5 text-center">
                                   {row.load?.rpe ? (
                                     <span 
@@ -3478,16 +3544,6 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                                       style={getRpeStyle(row.load.rpe)}
                                     >
                                       {row.load.rpe}
-                                    </span>
-                                  ) : '-'}
-                                </td>
-                                <td className="py-2.5 text-center">
-                                  {row.load?.load ? (
-                                    <span 
-                                      className="inline-flex items-center justify-center px-1.5 py-0.5 min-w-[36px] rounded text-[8.5px] text-black font-black"
-                                      style={getCargaStyle(row.load.load)}
-                                    >
-                                      {row.load.load}
                                     </span>
                                   ) : '-'}
                                 </td>

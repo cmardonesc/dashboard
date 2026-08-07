@@ -212,7 +212,19 @@ export default function GymSessionDesigner({
         dbTemplates.forEach(t => {
           mergedTemplatesMap[t.ejercicio.toLowerCase()] = t;
         });
-        GYM_EXERCISES_DATA.forEach((t, index) => {
+        
+        // Load custom gym exercises from localStorage with fallback to default GYM_EXERCISES_DATA
+        let localExercises = GYM_EXERCISES_DATA;
+        const stored = localStorage.getItem('custom_gym_exercises');
+        if (stored) {
+          try {
+            localExercises = JSON.parse(stored);
+          } catch (e) {
+            console.error("Error parsing custom gym exercises in designer:", e);
+          }
+        }
+
+        localExercises.forEach((t, index) => {
           const key = t.ejercicio.toLowerCase();
           if (!mergedTemplatesMap[key]) {
             mergedTemplatesMap[key] = {

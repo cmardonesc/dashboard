@@ -44,6 +44,7 @@ export default function App() {
   const [sessionUser, setSessionUser] = useState<any>(null)
   const [activeMenu, setActiveMenu] = useState<MenuId>('inicio')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [allowedMenus, setAllowedMenus] = useState<string[]>(['*'])
 
   useEffect(() => {
     const handleGlobalNavigation = (e: any) => {
@@ -570,6 +571,61 @@ export default function App() {
       return { role: null, player_id: null, club_name: null, email: email || null }
     }
   }
+
+  const fetchStaffPermissions = useCallback(async (emailLower: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('staff')
+        .select('allowed_menus, id_club')
+        .eq('email', emailLower.trim().toLowerCase())
+        .maybeSingle();
+
+      if (error) {
+        console.warn("No se pudo consultar permisos de staff de la base de datos:", error.message);
+        setAllowedMenus(['*']);
+        return null;
+      }
+
+      if (data) {
+        const menusStr = data.allowed_menus || 'inicio';
+        const list = menusStr.split(',').map((s: string) => s.trim()).filter(Boolean);
+        setAllowedMenus(list);
+        if (data.id_club) {
+          const clubIdNum = Number(data.id_club);
+          setUserClubId(clubIdNum);
+          // Buscar el nombre del club en dbClubs para setear userClub
+          const match = dbClubs.find(c => c.id_club === clubIdNum);
+          if (match) {
+            setUserClub(match.nombre);
+          } else {
+            // Consulta directa de respaldo
+            supabase.from('clubes').select('nombre').eq('id_club', clubIdNum).maybeSingle()
+              .then(({ data: cData }) => {
+                if (cData) setUserClub(cData.nombre);
+              });
+          }
+        } else {
+          setUserClubId(null);
+          setUserClub(null);
+        }
+        return data;
+      } else {
+        setAllowedMenus(['*']);
+        return null;
+      }
+    } catch (err) {
+      setAllowedMenus(['*']);
+      return null;
+    }
+  }, [dbClubs]);
+
+  useEffect(() => {
+    if (role === 'staff' && sessionUser?.email) {
+      fetchStaffPermissions(sessionUser.email);
+    } else {
+      setAllowedMenus(['*']);
+    }
+  }, [role, sessionUser?.email, fetchStaffPermissions]);
 
   useEffect(() => {
     // Suscribirse a cambios en tiempo real en múltiples tablas
@@ -1370,6 +1426,7 @@ export default function App() {
             userEmail={sessionUser?.email}
             userClub={userClub}
             clubs={dbClubs}
+            allowedMenus={allowedMenus}
           />
         </div>
 

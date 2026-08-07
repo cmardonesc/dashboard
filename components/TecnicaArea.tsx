@@ -199,6 +199,14 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     descripcion: ''
   });
 
+  const handleTaskClick = (taskNombre: string) => {
+    localStorage.setItem('selected_drill_name', taskNombre);
+    window.dispatchEvent(new CustomEvent('selected_drill_changed', { detail: { name: taskNombre } }));
+    if (onMenuChange) {
+      onMenuChange('dinamicas');
+    }
+  };
+
   useEffect(() => {
     fetchMicrocycles();
     fetchBiblioteca();
@@ -2385,10 +2393,18 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                   </div>
                   <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
                     {tasks.map(task => (
-                      <div key={task.id} className={`${getDinamicaStyle(task.tipoDinamica)} p-3 rounded-2xl group/item relative shadow-sm`}>
+                      <div 
+                        key={task.id} 
+                        onClick={() => handleTaskClick(task.nombre)}
+                        title="Ver detalles de la dinámica"
+                        className={`${getDinamicaStyle(task.tipoDinamica)} p-3 rounded-2xl group/item relative shadow-sm cursor-pointer hover:scale-[1.03] active:scale-[0.98] transition-all duration-200 border-2 border-transparent hover:border-slate-300/40`}
+                      >
                         <p className="text-[10px] font-black uppercase italic tracking-tight leading-tight mb-1">{task.nombre}</p>
                         <p className="text-[8px] font-bold opacity-70 uppercase tracking-widest">{task.tipoDinamica}</p>
-                        <button onClick={() => removeFieldTask(dateKey, task.id)} className="absolute -top-1 -right-1 w-5 h-5 bg-white border border-slate-100 rounded-full text-slate-300 hover:text-red-500 hover:border-red-500 flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-all shadow-sm">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); removeFieldTask(dateKey, task.id); }} 
+                          className="absolute -top-1 -right-1 w-5 h-5 bg-white border border-slate-100 rounded-full text-slate-300 hover:text-red-500 hover:border-red-500 flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-all shadow-sm"
+                        >
                           <i className="fa-solid fa-xmark text-[10px]"></i>
                         </button>
                       </div>

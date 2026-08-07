@@ -104,9 +104,7 @@ const FisicaResumenGrupal: React.FC<FisicaResumenGrupalProps> = ({ userRole, use
   const [test505Metric, setTest505Metric] = useState<string>('t_cod_2m');
 
   // Filter States
-  const [selectedClubs, setSelectedClubs] = useState<string[]>(
-    userRole === 'club' && userClub ? [userClub] : []
-  );
+  const [selectedClubs, setSelectedClubs] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
@@ -914,7 +912,6 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
 
   // Multi-select toggle helpers
   const handleToggleClub = (clubName: string) => {
-    if (userRole === 'club' && userClub) return;
     setSelectedClubs(prev => prev.includes(clubName) ? prev.filter(c => c !== clubName) : [...prev, clubName]);
   };
 
@@ -2600,7 +2597,6 @@ Integrar sesiones enfocadas de fuerza y potencia neuromuscular para optimizar la
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Clubes</label>
           <button
             onClick={() => setIsClubDropdownOpen(!isClubDropdownOpen)}
-            disabled={userRole === 'club'}
             className="w-full flex items-center justify-between bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-3 py-2.5 hover:bg-slate-100/50 transition-all text-left min-h-[38px]"
           >
             <div className="flex items-center gap-1.5 truncate max-w-[90%]">

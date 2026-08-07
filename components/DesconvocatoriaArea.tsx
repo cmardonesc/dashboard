@@ -646,6 +646,13 @@ export default function DesconvocatoriaArea({
 
       setBajaReason(bajaReasonInput); // Update for PDF report if needed
       
+      // Dispatch custom event to notify other components (like FisicaArea)
+      try {
+        window.dispatchEvent(new CustomEvent('desconvocatorias-updated'));
+      } catch (e) {
+        console.error("Error dispatching desconvocatorias-updated event:", e);
+      }
+
       if (savedLocally) {
         alert(`Baja de ${processingBajaAtleta.name} guardada localmente (Supabase RLS activo). ¡El sistema seguirá funcionando con normalidad!`);
       } else {
@@ -671,6 +678,11 @@ export default function DesconvocatoriaArea({
           [processingBajaAtleta.player_id!]: bajaReasonInput
         }));
         setBajaReason(bajaReasonInput);
+        try {
+          window.dispatchEvent(new CustomEvent('desconvocatorias-updated'));
+        } catch (e) {
+          console.error(e);
+        }
         alert(`Baja de ${processingBajaAtleta.name} guardada localmente (Bypass de seguridad activado).`);
         setShowBajaModal(false);
         fetchCitedPlayers(selectedMicro.id);
@@ -736,6 +748,12 @@ export default function DesconvocatoriaArea({
         }
       }
 
+      try {
+        window.dispatchEvent(new CustomEvent('desconvocatorias-updated'));
+      } catch (e) {
+        console.error(e);
+      }
+
       if (savedLocally) {
         alert(`Baja grupal de ${club.name} (${club.players.length} jugadores) guardada localmente (Supabase RLS activo).`);
       } else {
@@ -758,6 +776,11 @@ export default function DesconvocatoriaArea({
               'Desconvocatoria Grupal'
             );
           }
+        }
+        try {
+          window.dispatchEvent(new CustomEvent('desconvocatorias-updated'));
+        } catch (e) {
+          console.error(e);
         }
         alert(`Baja grupal de ${club.name} guardada localmente (Bypass de seguridad activado).`);
         setViewMode('details');
@@ -1953,6 +1976,7 @@ export default function DesconvocatoriaArea({
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {citedPlayers.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => {
                     const isDesconvocado = !!bajaReasonsMap[p.player_id!];
+                    const hasMedicalText = !!(p.player_id && medicalTexts[p.player_id]?.trim());
                     return (
                       <div key={p.id} className="p-6 bg-slate-50 rounded-[32px] border border-transparent hover:border-red-500 hover:bg-white transition-all group flex items-center justify-between shadow-sm">
                         <div>
@@ -1974,7 +1998,11 @@ export default function DesconvocatoriaArea({
                           <button 
                             onClick={() => handleOpenMedicalTextModal(p)} 
                             title="Texto Médico"
-                            className="w-9 h-9 shrink-0 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl flex items-center justify-center shadow-sm hover:bg-rose-600 hover:text-white transition-all active:scale-95 transform text-sm"
+                            className={`w-9 h-9 shrink-0 border rounded-xl flex items-center justify-center shadow-sm transition-all active:scale-95 transform text-sm ${
+                              hasMedicalText 
+                                ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-600 hover:text-white' 
+                                : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'
+                            }`}
                           >
                             🏥
                           </button>

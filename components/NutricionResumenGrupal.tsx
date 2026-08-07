@@ -25,9 +25,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
     const localDate = new Date(d.getTime() - (offset * 60 * 1000));
     return localDate.toISOString().split('T')[0];
   });
-  const [selectedClubs, setSelectedClubs] = useState<string[]>(
-    userRole === 'club' && userClub ? [userClub] : []
-  );
+  const [selectedClubs, setSelectedClubs] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [selectedObjectives, setSelectedObjectives] = useState<string[]>([]);
@@ -44,7 +42,8 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   const [playerQuery, setPlayerQuery] = useState('');
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showOnlyLatest, setShowOnlyLatest] = useState<boolean>(false);
+  const [showOnlyLatest, setShowOnlyLatest] = useState<boolean>(true);
+  const [hideNoData, setHideNoData] = useState<boolean>(false);
   const hasInitializedDates = useRef(false);
 
   // Microcycle Filter States
@@ -153,7 +152,6 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   };
 
   const handleToggleClub = (clubName: string) => {
-    if (userRole === 'club' && userClub) return;
     setSelectedClubs(prev => {
       if (prev.includes(clubName)) {
         return prev.filter(c => c !== clubName);
@@ -212,7 +210,7 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
           const dateObj = new Date(latestDateStr);
           if (!isNaN(dateObj.getTime())) {
             const formattedDate = dateObj.toISOString().split('T')[0];
-            setStartDate(formattedDate);
+            setStartDate('2020-01-01');
             setEndDate(formattedDate);
             hasInitializedDates.current = true;
           }
@@ -440,67 +438,91 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
 
   const allFilteredData = useMemo(() => {
     return performanceRecords.flatMap(record => {
-      if (!record.nutrition) return [];
-      return record.nutrition
-        .filter(n => {
-          const date = new Date(n.fecha_medicion);
-          const start = new Date(startDate);
-          const end = new Date(endDate);
-          const matchesDate = date >= start && date <= end;
-          
-          // If user is a club, we show ALL players for comparison (anonymized later)
-          // If user is admin, we respect the selectedClubs filter (multi-select)
-          const matchesClub = selectedClubs.length === 0 || selectedClubs.some(sc => 
-            (record.player.club && normalizeClub(record.player.club) === normalizeClub(sc)) ||
-            (record.player.club_name && normalizeClub(record.player.club_name) === normalizeClub(sc))
-          );
-          
-          const matchesCategory = selectedCategories.length === 0 || selectedCategories.some(sc =>
-            record.player.anio?.toString() === sc
-          );
-
-          const matchesPosition = selectedPositions.length === 0 || selectedPositions.some(sp =>
-            record.player.position?.toString() === sp
-          );
-
-          const matchesObjective = selectedObjectives.length === 0 || selectedObjectives.some(so => {
-            const need = getNutritionalNeed(n.masa_muscular_pct || 0, n.masa_adiposa_pct || 0, record.player.anio || 0);
-            return need.label === so;
-          });
-
-          const isMyClub = userRole !== 'club' || (userClub && normalizeClub(record.player.club || '') === normalizeClub(userClub));
-          const displayName = isMyClub ? record.player.name : `Jugador [${record.player.player_id || record.player.id || 'Anon'}]`;
-          const matchesPlayer = selectedPlayers.length === 0 || selectedPlayers.includes(displayName);
-
-          const matchesMicrocycle = citedPlayerIdsForSelectedMicrocycle === null || 
-            (record.player.player_id && citedPlayerIdsForSelectedMicrocycle.has(Number(record.player.player_id))) ||
-            (record.player.id && citedPlayerIdsForSelectedMicrocycle.has(Number(record.player.id)));
-
-          return matchesDate && matchesClub && matchesCategory && matchesPosition && matchesObjective && matchesPlayer && matchesMicrocycle;
-        })
-        .map(n => ({
-          player: record.player,
-          data: n
-        }));
-    });
-  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives, selectedPlayers, userRole, userClub, citedPlayerIdsForSelectedMicrocycle]);
-
-  const filteredData = useMemo(() => {
-    if (!showOnlyLatest) return allFilteredData;
-
-    const latestMap = new Map<string, typeof allFilteredData[0]>();
-    
-    allFilteredData.forEach(item => {
-      const playerKey = String(item.player.id || item.player.player_id || item.player.name || '');
-      const existing = latestMap.get(playerKey);
+      // First check core player filters
+      const matchesClub = selectedClubs.length === 0 || selectedClubs.some(sc => 
+        (record.player.club && normalizeClub(record.player.club) === normalizeClub(sc)) ||
+        (record.player.club_name && normalizeClub(record.player.club_name) === normalizeClub(sc))
+      );
       
-      if (!existing || new Date(item.data.fecha_medicion) > new Date(existing.data.fecha_medicion)) {
-        latestMap.set(playerKey, item);
+      const matchesCategory = selectedCategories.length === 0 || selectedCategories.some(sc =>
+        record.player.anio?.toString() === sc
+      );
+
+      const matchesPosition = selectedPositions.length === 0 || selectedPositions.some(sp =>
+        record.player.position?.toString() === sp
+      );
+
+      const isMyClub = userRole !== 'club' || (userClub && normalizeClub(record.player.club || '') === normalizeClub(userClub));
+      const displayName = isMyClub ? record.player.name : `Jugador [${record.player.player_id || record.player.id || 'Anon'}]`;
+      const matchesPlayer = selectedPlayers.length === 0 || selectedPlayers.includes(displayName);
+
+      const matchesMicrocycle = citedPlayerIdsForSelectedMicrocycle === null || 
+        (record.player.player_id && citedPlayerIdsForSelectedMicrocycle.has(Number(record.player.player_id))) ||
+        (record.player.id && citedPlayerIdsForSelectedMicrocycle.has(Number(record.player.id)));
+
+      if (!(matchesClub && matchesCategory && matchesPosition && matchesPlayer && matchesMicrocycle)) {
+        return [];
+      }
+
+      const playerNutrition = record.nutrition || [];
+      const filteredNutrition = playerNutrition.filter(n => {
+        // Date filter
+        const date = new Date(n.fecha_medicion);
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const matchesDate = date >= start && date <= end;
+
+        // Objective filter
+        const matchesObjective = selectedObjectives.length === 0 || selectedObjectives.some(so => {
+          const need = getNutritionalNeed(n.masa_muscular_pct || 0, n.masa_adiposa_pct || 0, record.player.anio || 0);
+          return need.label === so;
+        });
+
+        return matchesDate && matchesObjective;
+      });
+
+      if (showOnlyLatest) {
+        const sortedNut = [...filteredNutrition].sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime());
+        const latestNut = sortedNut[0];
+
+        if (latestNut) {
+          return [{
+            player: record.player,
+            data: latestNut
+          }];
+        } else {
+          const hasObjectiveFilter = selectedObjectives.length > 0;
+          if (hideNoData || hasObjectiveFilter) {
+            return [];
+          }
+          return [{
+            player: record.player,
+            data: undefined
+          }];
+        }
+      } else {
+        if (filteredNutrition.length > 0) {
+          return filteredNutrition.map(n => ({
+            player: record.player,
+            data: n
+          }));
+        } else {
+          const hasObjectiveFilter = selectedObjectives.length > 0;
+          if (hideNoData || hasObjectiveFilter) {
+            return [];
+          }
+          return [{
+            player: record.player,
+            data: undefined
+          }];
+        }
       }
     });
+  }, [performanceRecords, startDate, endDate, selectedClubs, selectedCategories, selectedPositions, selectedObjectives, selectedPlayers, userRole, userClub, citedPlayerIdsForSelectedMicrocycle, showOnlyLatest, hideNoData]);
 
-    return Array.from(latestMap.values());
-  }, [allFilteredData, showOnlyLatest]);
+  const filteredData = useMemo(() => {
+    return allFilteredData;
+  }, [allFilteredData]);
 
   const hasDuplicatePlayers = useMemo(() => {
     const seen = new Set<string>();
@@ -532,38 +554,38 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
           bVal = b.player.position || '';
           break;
         case 'fecha':
-          aVal = a.data.fecha_medicion || '';
-          bVal = b.data.fecha_medicion || '';
+          aVal = a.data?.fecha_medicion || '';
+          bVal = b.data?.fecha_medicion || '';
           break;
         case 'muscular':
-          aVal = a.data.masa_muscular_pct || 0;
-          bVal = b.data.masa_muscular_pct || 0;
+          aVal = a.data?.masa_muscular_pct || 0;
+          bVal = b.data?.masa_muscular_pct || 0;
           break;
         case 'adiposa':
-          aVal = a.data.masa_adiposa_pct || 0;
-          bVal = b.data.masa_adiposa_pct || 0;
+          aVal = a.data?.masa_adiposa_pct || 0;
+          bVal = b.data?.masa_adiposa_pct || 0;
           break;
         case 'imo':
-          const aImo = (a.data.indice_imo && Number(a.data.indice_imo) > 0)
+          const aImo = (a.data?.indice_imo && Number(a.data.indice_imo) > 0)
             ? Number(a.data.indice_imo)
-            : (a.data.masa_muscular_kg && a.data.masa_osea_kg && Number(a.data.masa_osea_kg) > 0)
+            : (a.data?.masa_muscular_kg && a.data?.masa_osea_kg && Number(a.data.masa_osea_kg) > 0)
               ? (Number(a.data.masa_muscular_kg) / Number(a.data.masa_osea_kg))
               : 0;
-          const bImo = (b.data.indice_imo && Number(b.data.indice_imo) > 0)
+          const bImo = (b.data?.indice_imo && Number(b.data.indice_imo) > 0)
             ? Number(b.data.indice_imo)
-            : (b.data.masa_muscular_kg && b.data.masa_osea_kg && Number(b.data.masa_osea_kg) > 0)
+            : (b.data?.masa_muscular_kg && b.data?.masa_osea_kg && Number(b.data.masa_osea_kg) > 0)
               ? (Number(b.data.masa_muscular_kg) / Number(b.data.masa_osea_kg))
               : 0;
           aVal = aImo;
           bVal = bImo;
           break;
         case 'pliegues':
-          aVal = a.data.sum_pliegues_6_mm || 0;
-          bVal = b.data.sum_pliegues_6_mm || 0;
+          aVal = a.data?.sum_pliegues_6_mm || 0;
+          bVal = b.data?.sum_pliegues_6_mm || 0;
           break;
         case 'objetivo':
-          aVal = getNutritionalNeed(a.data.masa_muscular_pct || 0, a.data.masa_adiposa_pct || 0, a.player.anio || 0).label;
-          bVal = getNutritionalNeed(b.data.masa_muscular_pct || 0, b.data.masa_adiposa_pct || 0, b.player.anio || 0).label;
+          aVal = a.data ? getNutritionalNeed(a.data.masa_muscular_pct || 0, a.data.masa_adiposa_pct || 0, a.player.anio || 0).label : 'S/D';
+          bVal = b.data ? getNutritionalNeed(b.data.masa_muscular_pct || 0, b.data.masa_adiposa_pct || 0, b.player.anio || 0).label : 'S/D';
           break;
         default:
           return 0;
@@ -578,13 +600,15 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   }, [filteredData, sortConfig]);
 
   const chartData = useMemo(() => {
-    if (filteredData.length === 0) return null;
+    const validData = filteredData.filter(d => d.data);
+    if (validData.length === 0) return null;
 
     const muscle = { Green: 0, Amber: 0, Red: 0 };
     const fat = { Green: 0, Amber: 0, Red: 0 };
     const folds = { Green: 0, Amber: 0, Red: 0 };
 
-    filteredData.forEach(d => {
+    validData.forEach(d => {
+      if (!d.data) return;
       const birthYear = d.player.anio || 0;
       const mColor = getCellColor(d.data.masa_muscular_pct || 0, 'muscular', birthYear);
       const fColor = getCellColor(d.data.masa_adiposa_pct || 0, 'adiposa', birthYear);
@@ -619,15 +643,19 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
   }, [filteredData]);
 
   const generateAiSummary = async () => {
-    if (filteredData.length === 0) return;
+    const validData = filteredData.filter(d => d.data);
+    if (validData.length === 0) {
+      setAiSummary('No hay evaluaciones registradas para los jugadores seleccionados en este rango.');
+      return;
+    }
     setIsGenerating(true);
     try {
       const prompt = `Actúa como un Nutricionista Deportivo de Élite. Analiza los siguientes datos grupales de un equipo de fútbol y redacta un resumen ejecutivo breve (máximo 150 palabras). 
             Datos:
-            - Total de jugadores evaluados: ${filteredData.length}
-            - Promedio Masa Muscular %: ${(filteredData.reduce((acc, curr) => acc + (curr.data.masa_muscular_pct || 0), 0) / filteredData.length).toFixed(1)}%
-            - Promedio Masa Grasa %: ${(filteredData.reduce((acc, curr) => acc + (curr.data.masa_adiposa_pct || 0), 0) / filteredData.length).toFixed(1)}%
-            - Promedio Sumatoria 6 Pliegues: ${(filteredData.reduce((acc, curr) => acc + (curr.data.sum_pliegues_6_mm || 0), 0) / filteredData.length).toFixed(1)}mm
+            - Total de jugadores evaluados: ${validData.length}
+            - Promedio Masa Muscular %: ${(validData.reduce((acc, curr) => acc + (curr.data!.masa_muscular_pct || 0), 0) / validData.length).toFixed(1)}%
+            - Promedio Masa Grasa %: ${(validData.reduce((acc, curr) => acc + (curr.data!.masa_adiposa_pct || 0), 0) / validData.length).toFixed(1)}%
+            - Promedio Sumatoria 6 Pliegues: ${(validData.reduce((acc, curr) => acc + (curr.data!.sum_pliegues_6_mm || 0), 0) / validData.length).toFixed(1)}mm
             
             Enfócate en el estado general del grupo y recomendaciones rápidas basándote en que:
             - Masa Muscular: >54% es excelente, <50% es bajo.
@@ -648,16 +676,16 @@ const NutricionResumenGrupal: React.FC<NutricionResumenGrupalProps> = ({ perform
       setAiSummary(resData.text || 'No se pudo generar el resumen.');
     } catch (error) {
       console.warn("AI Nutrition Summary Error (fallback triggered):", error);
-      const muscleAvg = (filteredData.reduce((acc, curr) => acc + (curr.data.masa_muscular_pct || 0), 0) / filteredData.length);
-      const fatAvg = (filteredData.reduce((acc, curr) => acc + (curr.data.masa_adiposa_pct || 0), 0) / filteredData.length);
-      const foldsAvg = (filteredData.reduce((acc, curr) => acc + (curr.data.sum_pliegues_6_mm || 0), 0) / filteredData.length);
+      const muscleAvg = (validData.reduce((acc, curr) => acc + (curr.data!.masa_muscular_pct || 0), 0) / validData.length);
+      const fatAvg = (validData.reduce((acc, curr) => acc + (curr.data!.masa_adiposa_pct || 0), 0) / validData.length);
+      const foldsAvg = (validData.reduce((acc, curr) => acc + (curr.data!.sum_pliegues_6_mm || 0), 0) / validData.length);
       
       const muscleEval = muscleAvg >= 54 ? "Excelente" : (muscleAvg >= 50 ? "Normal" : "Bajo");
       const fatEval = fatAvg <= 16 ? "Excelente" : (fatAvg <= 20 ? "Normal" : "Elevado");
       const foldsEval = foldsAvg <= 35 ? "Excelente" : (foldsAvg <= 50 ? "Normal" : "Elevado");
 
       setAiSummary(`### Resumen Ejecutivo Antropométrico (Modo Respaldo)
-Se evaluó un plantel de **${filteredData.length} deportistas**. El promedio de **Masa Muscular** se sitúa en **${muscleAvg.toFixed(1)}%** (${muscleEval}), la **Masa Grasa** promedia **${fatAvg.toFixed(1)}%** (${fatEval}) y la **Sumatoria de 6 Pliegues** es de **${foldsAvg.toFixed(1)} mm** (${foldsEval}). 
+Se evaluó un plantel de **${validData.length} deportistas**. El promedio de **Masa Muscular** se sitúa en **${muscleAvg.toFixed(1)}%** (${muscleEval}), la **Masa Grasa** promedia **${fatAvg.toFixed(1)}%** (${fatEval}) y la **Sumatoria de 6 Pliegues** es de **${foldsAvg.toFixed(1)} mm** (${foldsEval}). 
 
 La composición tisular grupal cumple robustamente con los estándares internacionales exigidos de cara a la competencia de alto nivel. Recomiendo focalizar planes de nutrición hiperproteica post-sesión de esfuerzo para fortalecer el tejido magro, y regular los aportes lipídicos en casos con sumatorias de pliegues superiores a la normalidad.`);
     } finally {
@@ -771,15 +799,16 @@ La composición tisular grupal cumple robustamente con los estándares internaci
       doc.setLineWidth(0.5);
       doc.line(margin, 38, pageWidth - margin, 38);
 
-      const totalCount = sortedFilteredData.length;
-      const avgMuscular = totalCount > 0 ? (sortedFilteredData.reduce((acc, curr) => acc + (curr.data.masa_muscular_pct || 0), 0) / totalCount) : 0;
-      const avgAdiposa = totalCount > 0 ? (sortedFilteredData.reduce((acc, curr) => acc + (curr.data.masa_adiposa_pct || 0), 0) / totalCount) : 0;
-      const avgPliegues = totalCount > 0 ? (sortedFilteredData.reduce((acc, curr) => acc + (curr.data.sum_pliegues_6_mm || 0), 0) / totalCount) : 0;
-      const avgImo = totalCount > 0 ? (sortedFilteredData.reduce((acc, curr) => {
-        const imoVal = (curr.data.indice_imo && Number(curr.data.indice_imo) > 0)
-          ? Number(curr.data.indice_imo)
-          : (curr.data.masa_muscular_kg && curr.data.masa_osea_kg && Number(curr.data.masa_osea_kg) > 0)
-            ? (Number(curr.data.masa_muscular_kg) / Number(curr.data.masa_osea_kg))
+      const playersWithData = sortedFilteredData.filter(d => d.data);
+      const totalCount = playersWithData.length;
+      const avgMuscular = totalCount > 0 ? (playersWithData.reduce((acc, curr) => acc + (curr.data!.masa_muscular_pct || 0), 0) / totalCount) : 0;
+      const avgAdiposa = totalCount > 0 ? (playersWithData.reduce((acc, curr) => acc + (curr.data!.masa_adiposa_pct || 0), 0) / totalCount) : 0;
+      const avgPliegues = totalCount > 0 ? (playersWithData.reduce((acc, curr) => acc + (curr.data!.sum_pliegues_6_mm || 0), 0) / totalCount) : 0;
+      const avgImo = totalCount > 0 ? (playersWithData.reduce((acc, curr) => {
+        const imoVal = (curr.data!.indice_imo && Number(curr.data!.indice_imo) > 0)
+          ? Number(curr.data!.indice_imo)
+          : (curr.data!.masa_muscular_kg && curr.data!.masa_osea_kg && Number(curr.data!.masa_osea_kg) > 0)
+            ? (Number(curr.data!.masa_muscular_kg) / Number(curr.data!.masa_osea_kg))
             : 0;
         return acc + imoVal;
       }, 0) / totalCount) : 0;
@@ -1024,19 +1053,21 @@ La composición tisular grupal cumple robustamente con los estándares internaci
         const displayName = isMyClub ? item.player.name : `Jugador Anónimo [ID: ${item.player.player_id || item.player.id || 'Anon'}]`;
         const displayClub = isMyClub ? (item.player.club || 'S/C') : 'OTRO CLUB';
         const position = item.player.position || 'N/A';
-        const fecha = new Date(item.data.fecha_medicion).toLocaleDateString('es-CL');
-        const mPct = `${item.data.masa_muscular_pct?.toFixed(1)}%`;
-        const fPct = `${item.data.masa_adiposa_pct?.toFixed(1)}%`;
+        const fecha = item.data ? new Date(item.data.fecha_medicion).toLocaleDateString('es-CL') : 'SIN DATOS';
+        const mPct = item.data ? `${item.data.masa_muscular_pct?.toFixed(1)}%` : 'N/A';
+        const fPct = item.data ? `${item.data.masa_adiposa_pct?.toFixed(1)}%` : 'N/A';
         
-        const imoVal = (item.data.indice_imo && Number(item.data.indice_imo) > 0)
-          ? Number(item.data.indice_imo)
-          : (item.data.masa_muscular_kg && item.data.masa_osea_kg && Number(item.data.masa_osea_kg) > 0)
-            ? (Number(item.data.masa_muscular_kg) / Number(item.data.masa_osea_kg))
-            : 0;
+        const imoVal = item.data
+          ? ((item.data.indice_imo && Number(item.data.indice_imo) > 0)
+            ? Number(item.data.indice_imo)
+            : (item.data.masa_muscular_kg && item.data.masa_osea_kg && Number(item.data.masa_osea_kg) > 0)
+              ? (Number(item.data.masa_muscular_kg) / Number(item.data.masa_osea_kg))
+              : 0)
+          : 0;
         const imoStr = imoVal > 0 ? imoVal.toFixed(2) : 'N/A';
         
-        const pliegues = `${item.data.sum_pliegues_6_mm?.toFixed(1)}mm`;
-        const need = getNutritionalNeed(item.data.masa_muscular_pct || 0, item.data.masa_adiposa_pct || 0, item.player.anio || 0);
+        const pliegues = item.data ? `${item.data.sum_pliegues_6_mm?.toFixed(1)}mm` : 'N/A';
+        const need = item.data ? getNutritionalNeed(item.data.masa_muscular_pct || 0, item.data.masa_adiposa_pct || 0, item.player.anio || 0) : { label: 'S/D' };
 
         return [
           displayName.toUpperCase(),
@@ -1101,7 +1132,7 @@ La composición tisular grupal cumple robustamente con los estándares internaci
             const rowIndex = data.row.index;
             const colIndex = data.column.index;
             const item = sortedFilteredData[rowIndex];
-            if (!item) return;
+            if (!item || !item.data) return;
 
             const birthYear = item.player.anio || 0;
 
@@ -1387,84 +1418,65 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                   <div className="origin-top-right absolute right-0 mt-2 w-full min-w-[280px] rounded-3xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20 p-5 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
                       <span className="text-[9px] font-black uppercase text-[#0b1220] tracking-widest">Listado de Clubes</span>
-                      {userRole !== 'club' && (
-                        <div className="flex gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedClubs(availableClubs)}
-                            className="px-2.5 py-1 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
-                          >
-                            Todos
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedClubs([])}
-                            className="px-2.5 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
-                          >
-                            Limpiar
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedClubs(availableClubs)}
+                          className="px-2.5 py-1 bg-slate-50 hover:bg-[#0b1220] hover:text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Todos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedClubs([])}
+                          className="px-2.5 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
                     </div>
 
-                    {userRole === 'club' && userClub ? (
-                      <div className="space-y-1">
-                        <label className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-xl text-[10px] font-bold text-slate-700 select-none">
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={true}
-                              readOnly
-                              className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-not-allowed"
-                            />
-                            <span className="uppercase tracking-wider font-extrabold">{userClub}</span>
-                          </div>
-                          <span className="text-[7.5px] font-black tracking-widest uppercase bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded-full">LOCK</span>
-                        </label>
-                      </div>
-                    ) : (
-                      <>
-                        {availableClubs.length > 5 && (
-                          <div className="relative mb-3">
-                            <input
-                              type="text"
-                              placeholder="Buscar club..."
-                              className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-red-500/20 outline-none"
-                              onChange={(e) => setClubQuery(e.target.value)}
-                              value={clubQuery}
-                            />
-                            <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
-                          </div>
-                        )}
-
-                        <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
-                          {filteredClubsBySearch.map(club => {
-                            const isChecked = selectedClubs.includes(club);
-                            return (
-                              <label
-                                key={club}
-                                className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-all rounded-xl hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
-                                  isChecked ? 'bg-red-50/30 text-red-900 font-extrabold' : ''
-                                }`}
-                              >
-                                <div className="flex items-center gap-2.5">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => handleToggleClub(club)}
-                                    className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
-                                  />
-                                  <span className="uppercase tracking-wider">{club}</span>
-                                </div>
-                              </label>
-                            );
-                          })}
-                          {filteredClubsBySearch.length === 0 && (
-                            <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron clubes</p>
-                          )}
+                    <>
+                      {availableClubs.length > 5 && (
+                        <div className="relative mb-3">
+                          <input
+                            type="text"
+                            placeholder="Buscar club..."
+                            className="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-red-500/20 outline-none"
+                            onChange={(e) => setClubQuery(e.target.value)}
+                            value={clubQuery}
+                          />
+                          <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
                         </div>
-                      </>
-                    )}
+                      )}
+
+                      <div className="max-h-48 overflow-y-auto divide-y divide-slate-50 custom-scrollbar pr-1">
+                        {filteredClubsBySearch.map(club => {
+                          const isChecked = selectedClubs.includes(club);
+                          return (
+                            <label
+                              key={club}
+                              className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-all rounded-xl hover:bg-slate-50 text-[10px] font-bold text-slate-700 select-none ${
+                                isChecked ? 'bg-red-50/30 text-red-900 font-extrabold' : ''
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleClub(club)}
+                                  className="w-3.5 h-3.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer"
+                                />
+                                <span className="uppercase tracking-wider">{club}</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                        {filteredClubsBySearch.length === 0 && (
+                          <p className="text-[9px] text-slate-400 font-extrabold italic uppercase text-center py-4">No se encontraron clubes</p>
+                        )}
+                      </div>
+                    </>
                   </div>
                 </>
               )}
@@ -1834,38 +1846,60 @@ La composición tisular grupal cumple robustamente con los estándares internaci
           </div>
         </div>
 
-        {/* Check to show only latest evaluation */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-slate-100">
-          <label className="relative flex items-start sm:items-center gap-3 cursor-pointer group select-none">
-            <input
-              type="checkbox"
-              id="show-latest-evaluation-checkbox"
-              checked={showOnlyLatest}
-              onChange={(e) => setShowOnlyLatest(e.target.checked)}
-              className="w-4 h-4 mt-0.5 sm:mt-0 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer accent-red-600"
-            />
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-slate-800 group-hover:text-red-600 transition-colors">
-                Mostrar solo la última evaluación de cada jugador
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium">
-                Si un jugador tiene múltiples mediciones en el rango de fechas, conserva solo la más reciente.
-              </span>
-            </div>
-          </label>
+        {/* Check to show only latest evaluation and exclude no data */}
+        <div className="flex flex-col gap-6 pt-6 border-t border-slate-100">
+          <div className="flex flex-col md:flex-row justify-between gap-6">
+            <label className="relative flex items-start gap-3 cursor-pointer group select-none flex-1">
+              <input
+                type="checkbox"
+                id="show-latest-evaluation-checkbox"
+                checked={showOnlyLatest}
+                onChange={(e) => setShowOnlyLatest(e.target.checked)}
+                className="w-4 h-4 mt-0.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer accent-red-600"
+              />
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-slate-800 group-hover:text-red-600 transition-colors">
+                  Mostrar solo la última evaluación de cada jugador
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  Si un jugador tiene múltiples mediciones en el rango de fechas, conserva solo la más reciente.
+                </span>
+              </div>
+            </label>
+
+            <label className="relative flex items-start gap-3 cursor-pointer group select-none flex-1">
+              <input
+                type="checkbox"
+                id="hide-no-data-checkbox"
+                checked={hideNoData}
+                onChange={(e) => setHideNoData(e.target.checked)}
+                className="w-4 h-4 mt-0.5 text-red-600 border-slate-300 rounded focus:ring-red-500 cursor-pointer accent-red-600"
+              />
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-slate-800 group-hover:text-red-600 transition-colors">
+                  Ocultar sin datos
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  Saca de la lista a los jugadores que no tienen evaluaciones registradas en las fechas / filtros seleccionados.
+                </span>
+              </div>
+            </label>
+          </div>
           
-          {hasDuplicatePlayers && !showOnlyLatest && (
-            <span className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-1.5 rounded-2xl text-[10px] font-bold animate-pulse">
-              <i className="fa-solid fa-circle-exclamation text-xs"></i>
-              Hay jugadores con evaluaciones repetidas
-            </span>
-          )}
-          {showOnlyLatest && (
-            <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-2xl text-[10px] font-bold">
-              <i className="fa-solid fa-check-double text-xs"></i>
-              Única evaluación más reciente por jugador
-            </span>
-          )}
+          <div className="flex items-center justify-between gap-4">
+            {hasDuplicatePlayers && !showOnlyLatest && (
+              <span className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-1.5 rounded-2xl text-[10px] font-bold animate-pulse">
+                <i className="fa-solid fa-circle-exclamation text-xs"></i>
+                Hay jugadores con evaluaciones repetidas
+              </span>
+            )}
+            {showOnlyLatest && (
+              <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-2xl text-[10px] font-bold">
+                <i className="fa-solid fa-check-double text-xs"></i>
+                Única evaluación más reciente por jugador
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1973,20 +2007,30 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                         <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{item.player.position || 'N/A'}</p>
                       </td>
                       <td className="px-8 py-4">
-                        <span className="text-[10px] font-bold text-slate-500">{new Date(item.data.fecha_medicion).toLocaleDateString('es-CL')}</span>
-                      </td>
-                      <td className="px-8 py-4 text-center">
-                        <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_muscular_pct || 0, 'muscular', item.player.anio || 0)}`}>
-                          {item.data.masa_muscular_pct?.toFixed(1)}%
+                        <span className="text-[10px] font-bold text-slate-500">
+                          {item.data ? new Date(item.data.fecha_medicion).toLocaleDateString('es-CL') : 'SIN DATOS'}
                         </span>
                       </td>
                       <td className="px-8 py-4 text-center">
-                        <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_adiposa_pct || 0, 'adiposa', item.player.anio || 0)}`}>
-                          {item.data.masa_adiposa_pct?.toFixed(1)}%
-                        </span>
+                        {item.data ? (
+                          <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_muscular_pct || 0, 'muscular', item.player.anio || 0)}`}>
+                            {item.data.masa_muscular_pct?.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-bold text-[10px]">—</span>
+                        )}
                       </td>
                       <td className="px-8 py-4 text-center">
-                        {(() => {
+                        {item.data ? (
+                          <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.masa_adiposa_pct || 0, 'adiposa', item.player.anio || 0)}`}>
+                            {item.data.masa_adiposa_pct?.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-bold text-[10px]">—</span>
+                        )}
+                      </td>
+                      <td className="px-8 py-4 text-center">
+                        {item.data ? (() => {
                           const imoVal = (item.data.indice_imo && Number(item.data.indice_imo) > 0)
                             ? Number(item.data.indice_imo)
                             : (item.data.masa_muscular_kg && item.data.masa_osea_kg && Number(item.data.masa_osea_kg) > 0)
@@ -1997,15 +2041,21 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                               {imoVal > 0 ? imoVal.toFixed(2) : 'N/A'}
                             </span>
                           );
-                        })()}
+                        })() : (
+                          <span className="text-slate-400 font-bold text-[10px]">—</span>
+                        )}
                       </td>
                       <td className="px-8 py-4 text-center">
-                        <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.sum_pliegues_6_mm || 0, 'pliegues', item.player.anio || 0)}`}>
-                          {item.data.sum_pliegues_6_mm?.toFixed(1)}mm
-                        </span>
+                        {item.data ? (
+                          <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black italic ${getCellColor(item.data.sum_pliegues_6_mm || 0, 'pliegues', item.player.anio || 0)}`}>
+                            {item.data.sum_pliegues_6_mm?.toFixed(1)}mm
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-bold text-[10px]">—</span>
+                        )}
                       </td>
                       <td className="px-8 py-4 text-center">
-                        {(() => {
+                        {item.data ? (() => {
                           const need = getNutritionalNeed(item.data.masa_muscular_pct || 0, item.data.masa_adiposa_pct || 0, item.player.anio || 0);
                           return (
                             <div className="flex flex-col items-center justify-center">
@@ -2015,7 +2065,11 @@ La composición tisular grupal cumple robustamente con los estándares internaci
                               <span className="text-[8px] text-slate-400 font-bold uppercase mt-0.5 tracking-wider">{need.sublabel}</span>
                             </div>
                           );
-                        })()}
+                        })() : (
+                          <span className="inline-block px-2.5 py-1 rounded-full text-[9px] font-black uppercase bg-slate-50 text-slate-400 border border-slate-200">
+                            S/D
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

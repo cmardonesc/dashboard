@@ -97,16 +97,6 @@ const TrainingLoadForm: React.FC<TrainingLoadFormProps> = ({ onSubmit, onClose, 
             ))}
           </div>
         </div>
-
-        <div>
-          <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-4">Duración (Minutos)</label>
-          <input 
-            type="number"
-            value={formData.duration}
-            onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value) || 0 })}
-            className="w-full bg-slate-50 border-none rounded-[24px] px-8 py-5 text-lg font-black text-slate-900 outline-none focus:ring-2 focus:ring-red-500"
-          />
-        </div>
       </div>
 
       <button 

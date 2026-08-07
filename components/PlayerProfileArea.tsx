@@ -9,8 +9,10 @@ import {
 } from 'recharts';
 import ClubBadge from './ClubBadge';
 import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS, MatchDB, CATEGORY_ID_MAP } from '../types';
-import { FALLBACK_CLUB_NAMES } from '../constants';
+import { FALLBACK_CLUB_NAMES, FEDERATION_LOGO } from '../constants';
 import { AthleteHuella } from './SportsScienceArea';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface PlayerProfileAreaProps {
   userRole?: string;
@@ -44,6 +46,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const [players, setPlayers] = useState<any[]>(initialPlayers || []);
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState<any>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(initialTab || 'evolucion'); 
   const [gpsChartMetric, setGpsChartMetric] = useState<'dist_total_m' | 'dist_mai_m_20_kmh' | 'm_por_min' | 'acc_decc_ai_n' | 'sprints_n' | 'dist_sprint_m_25_kmh'>('dist_total_m');
 
@@ -370,6 +373,923 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       console.error("Error fetching full profile:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!profileData) return;
+    setGeneratingPdf(true);
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const primaryColor: [number, number, number] = [11, 45, 106]; // #0b2d6a (Deep Blue Theme)
+      const accentColor: [number, number, number] = [207, 27, 43]; // #CF1B2B
+      const textColor: [number, number, number] = [51, 65, 85]; // slate-700
+      const margin = 14;
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const contentWidth = pageWidth - (margin * 2);
+
+      // Dynamic percentile calculator for physical benchmarks in PDF
+      const getPDFPercentile = (val: number, list: any[], key: string, lowerIsBetter = false) => {
+        const validVals = list
+          .map(item => Number(item[key]))
+          .filter(v => !isNaN(v) && v > 0);
+        if (validVals.length === 0) {
+          if (key === 'vo2_max') return val > 55 ? 92 : (val > 50 ? 78 : (val > 45 ? 50 : 25));
+          if (key === 'imtp_f_relativa_n_kg') return val > 40 ? 92 : (val > 35 ? 78 : (val > 30 ? 50 : 25));
+          if (key === 'tiempo_total') return val < 4.1 ? 92 : (val < 4.3 ? 78 : (val < 4.5 ? 50 : 25));
+          if (key === 'masa_muscular_pct') return val > 50 ? 92 : (val > 47 ? 78 : (val > 44 ? 50 : 25));
+          return 50;
+        }
+        const sorted = [...validVals].sort((a, b) => a - b);
+        let count = 0;
+        for (const v of sorted) {
+          if (lowerIsBetter ? v > val : v < val) count++;
+        }
+        return (count / sorted.length) * 100;
+      };
+
+      const getPDFLevelInfo = (pct: number) => {
+        if (pct >= 90) return { label: 'Élite', color: [147, 51, 234], textColor: [255, 255, 255] }; // Purple
+        if (pct >= 75) return { label: 'Sobresaliente', color: [16, 185, 129], textColor: [255, 255, 255] }; // Emerald Green
+        if (pct >= 45) return { label: 'Promedio', color: [59, 130, 246], textColor: [255, 255, 255] }; // Blue
+        if (pct >= 20) return { label: 'Por Mejorar', color: [249, 115, 22], textColor: [255, 255, 255] }; // Orange
+        return { label: 'Alerta', color: [239, 68, 68], textColor: [255, 255, 255] }; // Red
+      };
+
+      // Helper function to draw header on every page
+      const drawHeader = (pageNum: number, titleText: string) => {
+        // Draw Navy Blue Header Band
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(0, 0, pageWidth, 28, 'F');
+
+        // Draw Accent Highlight Bar at the bottom of the band
+        doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+        doc.rect(0, 26, pageWidth, 2, 'F');
+
+        // Logo
+        const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+        try {
+          doc.addImage(logoUrl, 'PNG', margin, 4, 18, 18);
+        } catch (e) {
+          console.error("Error loading logo for PDF:", e);
+        }
+
+        // Title
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.setTextColor(255, 255, 255);
+        doc.text('LA ROJA PERFORMANCE', margin + 22, 12);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(200, 200, 200);
+        doc.text('HOJA DE VIDA DEPORTIVA E HISTORIAL INTEGRAL', margin + 22, 18);
+
+        // Section Title (Right Aligned)
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(255, 255, 255);
+        doc.text(titleText.toUpperCase(), pageWidth - margin, 15, { align: 'right' });
+      };
+
+      // Helper function to draw footer on every page
+      const drawFooter = (pageNum: number, totalPages: number) => {
+        doc.setFillColor(248, 250, 252); // slate-50
+        doc.rect(0, pageHeight - 16, pageWidth, 16, 'F');
+
+        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.setLineWidth(0.3);
+        doc.line(0, pageHeight - 16, pageWidth, pageHeight - 16);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184); // slate-400
+        
+        const timestamp = new Date().toLocaleString('es-CL');
+        doc.text(`Generado el: ${timestamp}`, margin, pageHeight - 8);
+        doc.text(`La Roja Performance Hub — Confidencial`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+        doc.text(`Página ${pageNum} de ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: 'right' });
+      };
+
+      // Define some coordinates to place the content
+      let yPos = 38;
+
+      // ==========================================
+      // PAGE 1: RESUMEN BIOGRÁFICO Y ESTADÍSTICO
+      // ==========================================
+      drawHeader(1, 'Expediente del Atleta');
+
+      // Athlete Bio Box
+      doc.setFillColor(248, 250, 252); // slate-50
+      doc.roundedRect(margin, yPos, contentWidth, 54, 4, 4, 'F');
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(0.5);
+      doc.roundedRect(margin, yPos, contentWidth, 54, 4, 4, 'S');
+
+      // Left bar in Chile red
+      doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+      doc.rect(margin, yPos, 4, 54, 'F');
+
+      // Name & Position
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text(`${profileData.nombre} ${profileData.apellido1} ${profileData.apellido2 || ''}`.toUpperCase(), margin + 10, yPos + 10);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+      doc.text(profileData.posicion ? profileData.posicion.toUpperCase() : 'S/D', margin + 10, yPos + 16);
+
+      // Bio detail grid
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139); // slate-500
+
+      // Column 1
+      doc.text('Club de Origen:', margin + 10, yPos + 26);
+      doc.text('Clase (Año):', margin + 10, yPos + 32);
+      doc.text('Categoría Inferred:', margin + 10, yPos + 38);
+      doc.text('ID Único de Atleta:', margin + 10, yPos + 44);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(51, 65, 85); // slate-700
+      doc.text(profileData.club || 'S/D', margin + 45, yPos + 26);
+      doc.text(String(profileData.anio || 'N/A'), margin + 45, yPos + 32);
+      doc.text((inferredCategory || 'S/D').toUpperCase().replace('_', ' '), margin + 45, yPos + 38);
+      doc.text(String(profileData.player_id), margin + 45, yPos + 44);
+
+      // Column 2
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.text('F. Nacimiento:', margin + 100, yPos + 26);
+      doc.text('Perfil de Pierna:', margin + 100, yPos + 32);
+      doc.text('Estado de Salud:', margin + 100, yPos + 38);
+      doc.text('Última Actualización:', margin + 100, yPos + 44);
+
+      // Health status calculation
+      const activeInjuries = medicalHistory.injuries.filter(i => (i.estado && i.estado.toLowerCase().includes('activo')) || i.estado === 'Vigente');
+      const isLesionado = activeInjuries.length > 0;
+      const healthStatus = isLesionado ? 'LESIONADO' : 'APTO / DISPONIBLE';
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(isLesionado ? accentColor[0] : 16, 185, 129); // red or green
+      doc.text(healthStatus, margin + 138, yPos + 38);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(51, 65, 85); // slate-700
+      doc.text(profileData.fecha_nacimiento || 'S/D', margin + 138, yPos + 26);
+      doc.text(profileData.perfil_pierna || 'S/D', margin + 138, yPos + 32);
+      doc.text(new Date().toLocaleDateString('es-CL'), margin + 138, yPos + 44);
+
+      yPos += 66;
+
+      // Title Section: Resumen del Rendimiento
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('RESUMEN ESTADÍSTICO DE RENDIMIENTO', margin, yPos);
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(0.8);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      // Stat Cards Grid
+      const statsRows = [
+        [
+          { content: 'CONVOCATORIA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+          { content: `${stats.citaciones} Citaciones`, styles: { fontStyle: 'bold' } },
+          { content: 'HISTORIAL FÍSICO (GPS)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+          { content: `${stats.entrenamientos} Entrenamientos`, styles: { fontStyle: 'bold' } }
+        ],
+        [
+          { content: 'COMPETENCIA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+          { content: `${stats.partidos} Partidos Jugados`, styles: { fontStyle: 'bold' } },
+          { content: 'VOLUMEN TOTAL GPS', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+          { content: `${(stats.distanciaGps / 1000).toFixed(2)} km Recorridos`, styles: { fontStyle: 'bold' } }
+        ],
+        [
+          { content: 'VELOCIDAD MÁXIMA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+          { content: `${stats.velocidadMax.toFixed(1)} km/h`, styles: { fontStyle: 'bold', textColor: accentColor } },
+          { content: 'INTENSIDAD (HSR)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+          { content: `${stats.hsr.toLocaleString('es-CL')} metros (>20 km/h)`, styles: { fontStyle: 'bold' } }
+        ],
+        [
+          { content: 'CANTIDAD SPRINTS', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+          { content: `${stats.sprints} Sprints registrados`, styles: { fontStyle: 'bold' } },
+          { content: 'TIEMPO TOTAL EN CANCHA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+          { content: `${stats.minutosGps} Minutos registrados`, styles: { fontStyle: 'bold' } }
+        ]
+      ];
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        body: statsRows as any,
+        theme: 'grid',
+        styles: {
+          fontSize: 8.5,
+          cellPadding: 4,
+          valign: 'middle',
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 40 },
+          1: { cellWidth: 51 },
+          2: { cellWidth: 40 },
+          3: { cellWidth: 51 }
+        }
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 12;
+
+      // Latest Physical Benchmarks Section
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('HUELLAS Y UMBRALES DE EVALUACIÓN FÍSICA', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      const latestAnthroRow = latestAnthro ? `${latestAnthro.masa_muscular_pct}% Muscular / ${latestAnthro.masa_adiposa_pct}% Adiposa` : 'No registrado';
+      const latestVo2Row = latestVo2 ? `${latestVo2.vo2_max} ml/kg/min` : 'No registrado';
+      const latestImtpRow = latestImtp ? `${latestImtp.imtp_fuerza_n} N (${latestImtp.imtp_f_relativa_n_kg} N/kg)` : 'No registrado';
+      const latestSpeedRow = latestSpeed ? `${latestSpeed.tiempo_total} s (en ${latestSpeed.distancia_m}m)` : 'No registrado';
+
+      // Calculate cohort levels for physical benchmarks
+      const pctAnthro = latestAnthro ? getPDFPercentile(Number(latestAnthro.masa_muscular_pct), globalAntro, 'masa_muscular_pct') : 50;
+      const lvlAnthro = getPDFLevelInfo(pctAnthro);
+
+      const pctVo2 = latestVo2 ? getPDFPercentile(Number(latestVo2.vo2_max), globalVo2, 'vo2_max') : 50;
+      const lvlVo2 = getPDFLevelInfo(pctVo2);
+
+      const pctImtp = latestImtp ? getPDFPercentile(Number(latestImtp.imtp_f_relativa_n_kg), globalImtp, 'imtp_f_relativa_n_kg') : 50;
+      const lvlImtp = getPDFLevelInfo(pctImtp);
+
+      const pctSpeed = latestSpeed ? getPDFPercentile(Number(latestSpeed.tiempo_total), globalSpeed, 'tiempo_total', true) : 50;
+      const lvlSpeed = getPDFLevelInfo(pctSpeed);
+
+      const physicalBenchmarksBody = [
+        ['EVALUACIÓN', 'MÉTRICA / VALOR', 'FECHA DE MEDICIÓN', 'NIVEL DE COHORTE'],
+        [
+          'Antropometría (Masa Corporal)', 
+          latestAnthroRow, 
+          latestAnthro?.fecha_medicion || 'N/A', 
+          latestAnthro ? { content: lvlAnthro.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: lvlAnthro.color, textColor: lvlAnthro.textColor, halign: 'center' } } : 'S/D'
+        ],
+        [
+          'Capacidad Aeróbica (VO2 Máx)', 
+          latestVo2Row, 
+          latestVo2?.fecha || 'N/A', 
+          latestVo2 ? { content: lvlVo2.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: lvlVo2.color, textColor: lvlVo2.textColor, halign: 'center' } } : 'S/D'
+        ],
+        [
+          'Fuerza Isométrica (IMTP)', 
+          latestImtpRow, 
+          latestImtp?.fecha_test || 'N/A', 
+          latestImtp ? { content: lvlImtp.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: lvlImtp.color, textColor: lvlImtp.textColor, halign: 'center' } } : 'S/D'
+        ],
+        [
+          'Velocidad Lineal (Sprint)', 
+          latestSpeedRow, 
+          latestSpeed?.fecha || 'N/A', 
+          latestSpeed ? { content: lvlSpeed.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: lvlSpeed.color, textColor: lvlSpeed.textColor, halign: 'center' } } : 'S/D'
+        ]
+      ];
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        head: [physicalBenchmarksBody[0]],
+        body: physicalBenchmarksBody.slice(1),
+        theme: 'striped',
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 8.5,
+          fontStyle: 'bold'
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 4,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', cellWidth: 50 },
+          1: { cellWidth: 55 },
+          2: { cellWidth: 40 },
+          3: { cellWidth: 37 }
+        }
+      });
+
+      drawFooter(1, 6);
+
+      // ==========================================
+      // PAGE 2: CITACIONES Y MICROCICLOS
+      // ==========================================
+      doc.addPage();
+      yPos = 38;
+      drawHeader(2, 'Citaciones y Convocatorias');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('CONVOCATORIAS Y PARTICIPACIÓN DEL ATLETA', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      const citationRows = citations.map(c => [
+        c.fecha_citacion || 'S/D',
+        c.microcycles ? `Microciclo #${c.microcycles.micro_number} - ${c.microcycles.type || 'S/T'}` : 'S/D',
+        c.microcycles?.category_id ? (REVERSE_CATEGORY_ID_MAP[c.microcycles.category_id] || `CAT ${c.microcycles.category_id}`).toUpperCase().replace('_', ' ') : 'S/D',
+        c.microcycles ? `${c.microcycles.start_date || ''} al ${c.microcycles.end_date || ''}` : 'S/D',
+        c.microcycles?.city || 'S/D',
+        c.observacion || 'Sin observaciones'
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        head: [['FECHA CITACIÓN', 'MICROCICLO', 'CATEGORÍA', 'PERIODO', 'CIUDAD / SEDE', 'OBSERVACIÓN']],
+        body: citationRows.length > 0 ? citationRows : [['-', 'No se registran convocatorias para este atleta', '-', '-', '-', '-']],
+        theme: 'striped',
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 8.5,
+          fontStyle: 'bold'
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 4,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 26 },
+          1: { cellWidth: 38 },
+          2: { cellWidth: 24 },
+          3: { cellWidth: 34 },
+          4: { cellWidth: 24 },
+          5: { cellWidth: 36 }
+        }
+      });
+
+      drawFooter(2, 6);
+
+      // ==========================================
+      // PAGE 3: RENDIMIENTO FÍSICO Y GPS
+      // ==========================================
+      doc.addPage();
+      yPos = 38;
+      drawHeader(3, 'Física y Datos GPS');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('MÁXIMOS HISTÓRICOS Y PUNTAS DE GPS', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      const maxDist = safeMax(gpsStats.map(g => Number(g.dist_total_m) || 0));
+      const maxVelGPS = safeMax(gpsStats.map(g => Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0));
+      const maxMMin = safeMax(gpsStats.map(g => Number(g.m_por_min) || (Number(g.minutos) > 0 ? (Number(g.dist_total_m) / Number(g.minutos)) : 0)));
+      const maxHsr = safeMax(gpsStats.map(g => Number(g.dist_mai_m_20_kmh) || 0));
+      const maxSprintDist = safeMax(gpsStats.map(g => Number(g.dist_sprint_m_25_kmh) || 0));
+      const maxSprints = safeMax(gpsStats.map(g => Number(g.sprints_n) || 0));
+      const maxAccDec = safeMax(gpsStats.map(g => Number(g.acc_decc_ai_n) || 0));
+
+      const gpsMaxRows = [
+        ['DISTANCIA MÁXIMA EN SESIÓN', `${maxDist.toLocaleString('es-CL')} metros`, 'VELOCIDAD MÁXIMA (VEL. PUNTA)', `${maxVelGPS.toFixed(1)} km/h`],
+        ['DENSIDAD MÁXIMA (M/MIN)', `${maxMMin.toFixed(1)} m/min`, 'HSR MÁXIMO (>20 KM/H)', `${maxHsr.toLocaleString('es-CL')} metros`],
+        ['DIST. SPRINT MÁX (>25 KM/H)', `${maxSprintDist.toLocaleString('es-CL')} metros`, 'CANTIDAD DE SPRINTS SESIÓN', `${maxSprints} sprints`],
+        ['ACEL/DECEL ALTA INTENSIDAD', `${maxAccDec} eventos`, 'ESTADO GENERAL DEL PERFIL', 'Mapeo completo de GPS']
+      ];
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        body: gpsMaxRows,
+        theme: 'grid',
+        styles: {
+          fontSize: 8.5,
+          cellPadding: 4,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', fillColor: [248, 250, 252], cellWidth: 46 },
+          1: { cellWidth: 45 },
+          2: { fontStyle: 'bold', fillColor: [248, 250, 252], cellWidth: 46 },
+          3: { cellWidth: 45 }
+        }
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 10;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('HISTORIAL DE REGISTROS DE SESIONES GPS', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      const gpsLogRows = gpsStats.slice(0, 15).map(g => [
+        g.fecha || 'N/A',
+        g.tipo_sesion || g.tipo || 'ENTRENAMIENTO',
+        g.minutos ? `${g.minutos} min` : 'S/D',
+        g.dist_total_m ? `${Number(g.dist_total_m).toLocaleString('es-CL')} m` : '-',
+        g.m_por_min ? `${Number(g.m_por_min).toFixed(1)}` : (g.minutos && g.dist_total_m ? (Number(g.dist_total_m)/Number(g.minutos)).toFixed(1) : '-'),
+        g.vel_max_kmh || g.velocidad_max ? `${(Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0).toFixed(1)}` : '-',
+        g.dist_mai_m_20_kmh ? `${Number(g.dist_mai_m_20_kmh).toLocaleString('es-CL')} m` : '-',
+        g.sprints_n !== undefined ? String(g.sprints_n) : '-'
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        head: [['FECHA', 'TIPO', 'MINS', 'DISTANCIA', 'M/MIN', 'VEL MAX', 'HSR (>20)', 'SPRINTS']],
+        body: gpsLogRows.length > 0 ? gpsLogRows : [['-', 'No se registran datos GPS en base para este jugador', '-', '-', '-', '-', '-', '-']],
+        theme: 'striped',
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 8.5,
+          fontStyle: 'bold'
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 4,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 22 },
+          1: { cellWidth: 32 },
+          2: { cellWidth: 15 },
+          3: { cellWidth: 23 },
+          4: { cellWidth: 20 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 25 },
+          7: { cellWidth: 25 }
+        }
+      });
+
+      drawFooter(3, 6);
+
+      // ==========================================
+      // PAGE 4: CONTROL DIARIO, BIENESTAR Y CARGA
+      // ==========================================
+      // PAGE 4: CONTROL DIARIO, BIENESTAR Y CARGA
+      // ==========================================
+      doc.addPage();
+      yPos = 38;
+      drawHeader(4, 'Bienestar y Cargas');
+
+      // Draw beautiful dynamic vector chart of Check-In vs Check-Out
+      const last8Entries = [...combinedChartData]
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(-8); // take the latest 8 chronological days
+
+      if (last8Entries.length > 0) {
+        const chartHeight = 44;
+        const chartWidth = contentWidth;
+        
+        // Background card
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(margin, yPos, chartWidth, chartHeight, 3, 3, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(margin, yPos, chartWidth, chartHeight, 3, 3, 'S');
+
+        // Title & Legend in header of the card
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(51, 65, 85);
+        doc.text('TENDENCIA DIARIA (ÚLTIMOS 8 REGISTROS)', margin + 6, yPos + 6);
+
+        // Legend
+        // Check-In (Blue)
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.circle(margin + 94, yPos + 5, 1.5, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text('CHECK-IN (BIENESTAR)', margin + 97, yPos + 6);
+
+        // Check-Out (Red)
+        doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+        doc.rect(margin + 138, yPos + 3.8, 3, 3, 'F');
+        doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+        doc.text('CHECK-OUT (RPE)', margin + 143, yPos + 6);
+
+        // Draw Plot Area
+        const px = margin + 12;
+        const py = yPos + 11;
+        const pw = chartWidth - 20;
+        const ph = chartHeight - 20;
+
+        // Draw Gridlines and Y-axis labels
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(148, 163, 184); // slate-400
+        
+        const gridLevels = [2, 4, 6, 8, 10];
+        gridLevels.forEach(lvl => {
+          const gy = py + ph - ((lvl / 10) * ph);
+          // Gridline
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.15);
+          doc.line(px, gy, px + pw, gy);
+          // Label
+          doc.text(String(lvl), px - 4, gy + 1.5, { align: 'right' });
+        });
+
+        // Plot data lines
+        const pointsCheckIn: {x: number, y: number, val: number}[] = [];
+        const pointsCheckOut: {x: number, y: number, val: number}[] = [];
+        const stepX = pw / (last8Entries.length - 1 || 1);
+
+        last8Entries.forEach((entry, idx) => {
+          const cx = px + (idx * stepX);
+          
+          // Check-In point
+          const valIn = entry.checkIn || 0;
+          const cyIn = py + ph - ((valIn / 10) * ph);
+          if (valIn > 0) {
+            pointsCheckIn.push({ x: cx, y: cyIn, val: valIn });
+          }
+
+          // Check-Out point
+          const valOut = entry.checkOutRPE || 0;
+          const cyOut = py + ph - ((valOut / 10) * ph);
+          if (valOut > 0) {
+            pointsCheckOut.push({ x: cx, y: cyOut, val: valOut });
+          }
+
+          // Draw X-axis Date label (e.g. "05/08")
+          const dateStr = entry.date ? entry.date.split('-').slice(1, 3).reverse().join('/') : '';
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text(dateStr, cx, py + ph + 6, { align: 'center' });
+        });
+
+        // Draw Check-In line
+        if (pointsCheckIn.length > 1) {
+          doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+          doc.setLineWidth(0.8);
+          for (let i = 0; i < pointsCheckIn.length - 1; i++) {
+            doc.line(pointsCheckIn[i].x, pointsCheckIn[i].y, pointsCheckIn[i + 1].x, pointsCheckIn[i + 1].y);
+          }
+        }
+        // Draw Check-In dots
+        pointsCheckIn.forEach(pt => {
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+          doc.setLineWidth(1);
+          doc.circle(pt.x, pt.y, 2, 'FD'); // filled circle with white center
+          
+          // Draw small value above dot
+          doc.setFont('helvetica', 'black');
+          doc.setFontSize(5.5);
+          doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+          doc.text(pt.val.toFixed(1), pt.x, pt.y - 3, { align: 'center' });
+        });
+
+        // Draw Check-Out line
+        if (pointsCheckOut.length > 1) {
+          doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2]);
+          doc.setLineWidth(0.8);
+          for (let i = 0; i < pointsCheckOut.length - 1; i++) {
+            doc.line(pointsCheckOut[i].x, pointsCheckOut[i].y, pointsCheckOut[i + 1].x, pointsCheckOut[i + 1].y);
+          }
+        }
+        // Draw Check-Out dots
+        pointsCheckOut.forEach(pt => {
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2]);
+          doc.setLineWidth(1);
+          doc.rect(pt.x - 1.5, pt.y - 1.5, 3, 3, 'FD');
+          
+          // Draw small value below dot
+          doc.setFont('helvetica', 'black');
+          doc.setFontSize(5.5);
+          doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+          doc.text(String(pt.val), pt.x, pt.y + 4.5, { align: 'center' });
+        });
+
+        yPos += chartHeight + 10;
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('DETALLE DE BIENESTAR DIARIO (CHECK-IN)', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      const wellnessRows = wellnessData.slice(0, 5).map(w => {
+        const score = [w.fatiga, w.sueno, w.dolor, w.estres, w.animo].filter(v => v > 0);
+        const avg = score.length > 0 ? (score.reduce((sum, v) => sum + v, 0) / score.length).toFixed(1) : '-';
+        return [
+          w.date || 'S/D',
+          avg,
+          w.fatiga ? `${w.fatiga}/10` : '-',
+          w.sueno ? `${w.sueno}/10` : '-',
+          w.dolor ? `${w.dolor}/10` : '-',
+          w.estres ? `${w.estres}/10` : '-',
+          w.animo ? `${w.animo}/10` : '-'
+        ];
+      });
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        head: [['FECHA', 'PROM. BIENESTAR', 'FATIGA', 'SUEÑO', 'DOLOR MUSCULAR', 'ESTRÉS', 'ÁNIMO']],
+        body: wellnessRows.length > 0 ? wellnessRows : [['-', 'No se registran datos de Bienestar para este jugador', '-', '-', '-', '-', '-']],
+        theme: 'striped',
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 8.5,
+          fontStyle: 'bold'
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 3.5,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 26 },
+          1: { cellWidth: 32, fontStyle: 'bold' },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 30 },
+          5: { cellWidth: 22 },
+          6: { cellWidth: 22 }
+        }
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 8;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('DETALLE DE ESFUERZO PERCIBIDO (CHECK-OUT)', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      const combinedLoads = [...trainingData, ...matchData]
+        .sort((a, b) => (b.session_date || '').localeCompare(a.session_date || ''))
+        .slice(0, 5);
+
+      const loadRows = combinedLoads.map(l => [
+        l.session_date || 'S/D',
+        l.type === 'MATCH' ? 'PARTIDO' : 'ENTRENAMIENTO',
+        l.duration_min ? `${l.duration_min} min` : 'S/D',
+        l.rpe ? `${l.rpe}/10` : '-',
+        l.srpe ? `${l.srpe} u.a.` : (l.rpe && l.duration_min ? `${Number(l.rpe) * Number(l.duration_min)} u.a.` : '-')
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        head: [['FECHA', 'TIPO DE SESIÓN', 'DURACIÓN', 'RPE', 'CARGA INTERNA (sRPE)']],
+        body: loadRows.length > 0 ? loadRows : [['-', 'No se registran datos de Carga Interna para este jugador', '-', '-', '-']],
+        theme: 'striped',
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 8.5,
+          fontStyle: 'bold'
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 3.5,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 35 },
+          1: { cellWidth: 40 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 52, fontStyle: 'bold' }
+        }
+      });
+
+      drawFooter(4, 6);
+
+      // ==========================================
+      // PAGE 5: COMPETENCIA Y PARTIDOS
+      // ==========================================
+      doc.addPage();
+      yPos = 38;
+      drawHeader(5, 'Partidos y Minutos');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('PARTIDOS JUGADOS Y MINUTOS DE COMPETENCIA', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      const competitorRows = matchReports.slice(0, 15).map(mr => {
+        const rival = mr.rival || 'Rival no especificado';
+        const matchTitle = mr.categoria_rival ? `${rival} (${mr.categoria_rival})` : rival;
+        return [
+          mr.fecha || mr.date || 'S/D',
+          matchTitle,
+          mr.minutos_jugados !== undefined ? `${mr.minutos_jugados} min` : 'S/D',
+          mr.titular === true ? 'TITULAR' : (mr.titular === false ? 'SUPLENTE' : 'S/D'),
+          mr.goles !== undefined ? String(mr.goles) : '0',
+          mr.asistencias !== undefined ? String(mr.asistencias) : '0',
+          mr.calificacion_rendimiento ? `${mr.calificacion_rendimiento}/10` : '-'
+        ];
+      });
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        head: [['FECHA', 'PARTIDO / ENCUENTRO', 'MINS JUGADOS', 'ESTADO', 'GOLES', 'ASISTENCIAS', 'NOTA']],
+        body: competitorRows.length > 0 ? competitorRows : [['-', 'No se registran informes de partido para este jugador', '-', '-', '-', '-', '-']],
+        theme: 'striped',
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 8.5,
+          fontStyle: 'bold'
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 4,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 24 },
+          1: { cellWidth: 55 },
+          2: { cellWidth: 26 },
+          3: { cellWidth: 24 },
+          4: { cellWidth: 16 },
+          5: { cellWidth: 22 },
+          6: { cellWidth: 15 }
+        }
+      });
+
+      drawFooter(5, 6);
+
+      // ==========================================
+      // PAGE 6: HISTORIAL MÉDICO, LESIONES Y SALUD
+      // ==========================================
+      doc.addPage();
+      yPos = 38;
+      drawHeader(6, 'Historial Médico y Lesiones');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('HISTORIAL DE LESIONES REGISTRADAS', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      const injuryLogRows = medicalHistory.injuries.map(i => [
+        i.fecha_inicio || 'S/D',
+        i.tipo_lesion || i.diagnostico_clinico || 'Lesión',
+        i.localizacion || 'General',
+        i.lado ? String(i.lado).toUpperCase() : '-',
+        i.gravedad ? String(i.gravedad).toUpperCase() : '-',
+        i.estado ? String(i.estado).toUpperCase() : 'FINALIZADO',
+        i.fecha_alta || '-'
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        head: [['FECHA INICIO', 'DIAGNÓSTICO CLINICO', 'LOCALIZACIÓN', 'LADO', 'GRAVEDAD', 'ESTADO', 'FECHA ALTA']],
+        body: injuryLogRows.length > 0 ? injuryLogRows : [['-', 'No se registran lesiones para este atleta', '-', '-', '-', '-', '-']],
+        theme: 'striped',
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 8.5,
+          fontStyle: 'bold'
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 4,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 24 },
+          1: { cellWidth: 44 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 16 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 22 },
+          6: { cellWidth: 24 }
+        }
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 10;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('ATENCIONES MÉDICAS, DIAGNÓSTICOS Y TRATAMIENTOS', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      // Combine daily medical reports and treatments
+      const medicalEvents: any[] = [];
+      medicalHistory.reports.forEach(r => {
+        medicalEvents.push({
+          date: r.report_date || '',
+          type: 'Parte Médico',
+          desc: r.diagnostico_medico || 'Evaluación médica',
+          obs: r.observation || r.observacion || '-',
+          sev: r.severity ? r.severity.toUpperCase() : 'LOW'
+        });
+      });
+      medicalHistory.treatments.forEach(t => {
+        medicalEvents.push({
+          date: t.treatment_date || '',
+          type: 'Kinesiología',
+          desc: 'Tratamiento kinésico aplicado',
+          obs: t.description || '-',
+          sev: '-'
+        });
+      });
+
+      // Sort by date descending
+      medicalEvents.sort((a, b) => b.date.localeCompare(a.date));
+
+      const eventRows = medicalEvents.slice(0, 12).map(e => [
+        e.date || 'S/D',
+        e.type,
+        e.desc,
+        e.obs,
+        e.sev
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        head: [['FECHA', 'TIPO DE EVENTO', 'DESCRIPCIÓN / EVALUACIÓN', 'OBSERVACIÓN / DETALLE', 'SEVERIDAD']],
+        body: eventRows.length > 0 ? eventRows : [['-', 'No se registran eventos médicos para este jugador', '-', '-', '-']],
+        theme: 'striped',
+        headStyles: {
+          fillColor: primaryColor,
+          textColor: [255, 255, 255],
+          fontSize: 8.5,
+          fontStyle: 'bold'
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 4,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 24 },
+          1: { cellWidth: 32 },
+          2: { cellWidth: 50 },
+          3: { cellWidth: 60 },
+          4: { cellWidth: 16 }
+        }
+      });
+
+      drawFooter(6, 6);
+
+      // Save document
+      const cleanName = `${profileData.nombre}-${profileData.apellido1}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      doc.save(`Ficha-Deportiva-${cleanName}.pdf`);
+    } catch (e) {
+      console.error("Error generating PDF report:", e);
+      alert("Hubo un error al generar el PDF. Por favor reintenta.");
+    } finally {
+      setGeneratingPdf(false);
     }
   };
 
@@ -1076,7 +1996,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
             {/* Left Column: Bio & Stats */}
             <div className="lg:col-span-1 space-y-8">
               {/* Bio Card */}
-              <div className="bg-[#0b1220] rounded-[40px] p-8 text-white relative overflow-hidden shadow-2xl">
+              <div className="bg-[#0b2d6a] rounded-[40px] p-8 text-white relative overflow-hidden shadow-2xl">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
                 <div className="relative z-10 text-center">
                   <div className="w-32 h-32 bg-slate-800 rounded-[32px] mx-auto mb-6 flex items-center justify-center border-4 border-white/5 relative shadow-2xl overflow-hidden">
@@ -1384,29 +2304,50 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
             {/* Right Column: charts & tables */}
             <div className="lg:col-span-3 space-y-8">
-              {/* Tab Selector for Player Profile Right Column */}
-              <div className="flex bg-slate-100/80 p-1.5 rounded-3xl items-center gap-1.5 self-start w-fit shadow-inner">
+              {/* Tab Selector & PDF Button for Player Profile Right Column */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex bg-slate-100/80 p-1.5 rounded-3xl items-center gap-1.5 shadow-inner">
+                  <button
+                    onClick={() => setActiveTab('evolucion')}
+                    className={`px-6 py-3 text-xs font-black uppercase tracking-wider rounded-2xl transition-all duration-300 flex items-center gap-2 ${
+                      activeTab === 'evolucion'
+                        ? 'bg-[#0b2d6a] text-white shadow-lg'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                    }`}
+                  >
+                    <i className="fa-solid fa-clock-rotate-left"></i>
+                    Evolución y Cargas
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('huella')}
+                    className={`px-6 py-3 text-xs font-black uppercase tracking-wider rounded-2xl transition-all duration-300 flex items-center gap-2 ${
+                      activeTab === 'huella'
+                        ? 'bg-[#0b2d6a] text-white shadow-lg'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                    }`}
+                  >
+                    <i className="fa-solid fa-fingerprint"></i>
+                    Huella del Atleta
+                  </button>
+                </div>
+
                 <button
-                  onClick={() => setActiveTab('evolucion')}
-                  className={`px-6 py-3 text-xs font-black uppercase tracking-wider rounded-2xl transition-all duration-300 flex items-center gap-2 ${
-                    activeTab === 'evolucion'
-                      ? 'bg-[#0b1220] text-white shadow-lg'
-                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
-                  }`}
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  disabled={generatingPdf}
+                  className="bg-red-600 hover:bg-red-700 disabled:bg-slate-400 text-white px-5 py-3 text-xs font-black uppercase tracking-wider rounded-2xl transition-all duration-300 flex items-center gap-2 shadow-lg shadow-red-600/15 active:scale-95 shrink-0"
                 >
-                  <i className="fa-solid fa-clock-rotate-left"></i>
-                  Evolución y Cargas
-                </button>
-                <button
-                  onClick={() => setActiveTab('huella')}
-                  className={`px-6 py-3 text-xs font-black uppercase tracking-wider rounded-2xl transition-all duration-300 flex items-center gap-2 ${
-                    activeTab === 'huella'
-                      ? 'bg-[#0b1220] text-white shadow-lg'
-                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
-                  }`}
-                >
-                  <i className="fa-solid fa-fingerprint"></i>
-                  Huella del Atleta
+                  {generatingPdf ? (
+                    <>
+                      <i className="fa-solid fa-circle-notch animate-spin"></i>
+                      Generando PDF...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-file-pdf text-sm"></i>
+                      Descargar Ficha PDF
+                    </>
+                  )}
                 </button>
               </div>
 

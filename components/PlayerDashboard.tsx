@@ -956,13 +956,28 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         .gte('end_date', today)
         .maybeSingle();
 
+      // Consultar la duración (minutos) desde gps_import para este jugador y fecha
+      const { data: gpsRows } = await supabase
+        .from('gps_import')
+        .select('minutos')
+        .eq('player_id', player.player_id)
+        .eq('fecha', today);
+
+      let gpsMinutes = 90; // Fallback por defecto si no hay datos GPS
+      if (gpsRows && gpsRows.length > 0) {
+        const totalGpsMin = gpsRows.reduce((acc: number, row: any) => acc + (Number(row.minutos) || 0), 0);
+        if (totalGpsMin > 0) {
+          gpsMinutes = totalGpsMin;
+        }
+      }
+
       const payloadWithoutIndex: any = {
         player_id: player.player_id,
         microcycle_id: activeMC?.id || null,
         session_date: today,
         rpe: data.rpe,
-        duration_min: data.duration,
-        srpe: Number(data.rpe) * Number(data.duration),
+        duration_min: gpsMinutes,
+        srpe: Number(data.rpe) * gpsMinutes,
         molestias: data.sorenessAreas.join(', '),
         enfermedad: data.illnessSymptoms.join(', '),
         created_by: user?.id
@@ -1027,7 +1042,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             const rpe1 = existingLoad.rpe || 0;
             const dur1 = existingLoad.duration_min || 0;
             const rpe2 = data.rpe || 0;
-            const dur2 = data.duration || 0;
+            const dur2 = gpsMinutes;
 
             const totalDuration = dur1 + dur2;
             const totalSRPE = (rpe1 * dur1) + (rpe2 * dur2);
@@ -1154,7 +1169,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       // Disparar notificación push
       triggerPushNotification({
         title: `Check-out (RPE): ${player.nombre} ${player.apellido1}`,
-        body: `Esfuerzo: ${data.rpe}, Duración: ${data.duration} min.`,
+        body: `Esfuerzo: ${data.rpe}, Duración: ${gpsMinutes} min.`,
         url: '/fisica_pse'
       }).catch(err => console.error("Error disparando notificación:", err));
 
@@ -1466,7 +1481,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                       <button 
                         onClick={handleLinkAccount}
                         disabled={isLinking || !linkingId}
-                        className="px-6 py-3 bg-[#0b1220] text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-black transition-all disabled:opacity-50"
+                        className="px-6 py-3 bg-[#0b2d6a] text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-800 transition-all disabled:opacity-50"
                       >
                         {isLinking ? <i className="fa-solid fa-spinner fa-spin"></i> : 'Vincular Ahora'}
                       </button>
@@ -1477,7 +1492,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6">
-              <div className="md:col-span-12 bg-[#0b1220] rounded-[28px] md:rounded-[40px] p-5 md:p-10 flex items-center justify-between shadow-2xl relative overflow-hidden group">
+              <div className="md:col-span-12 bg-[#0b2d6a] rounded-[28px] md:rounded-[40px] p-5 md:p-10 flex items-center justify-between shadow-2xl relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full -mr-16 -mt-16 group-hover:bg-red-600/20 transition-all duration-700"></div>
                 <div className="relative z-10 flex flex-col gap-1">
                   <h2 className="text-white text-lg md:text-4xl font-black italic uppercase tracking-tighter leading-none">{player?.name || 'ATLETA DEMO'}</h2>
@@ -1789,7 +1804,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       case 'nutricion_recomendaciones':
         return (
           <div className="w-full max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <div className="bg-[#0b1220] rounded-[40px] p-10 text-white shadow-2xl relative overflow-hidden">
+            <div className="bg-[#0b2d6a] rounded-[40px] p-10 text-white shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
               <div className="relative z-10">
                 <h2 className="text-3xl font-black italic uppercase tracking-tighter mb-2">Pautas de Rendimiento</h2>
@@ -1909,7 +1924,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         return (
           <div className="w-full max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
             <div className="bg-white rounded-[32px] md:rounded-[40px] shadow-sm border border-slate-100 overflow-hidden">
-              <div className="bg-[#0b1220] p-6 md:p-10 text-white">
+              <div className="bg-[#0b2d6a] p-6 md:p-10 text-white">
                 <h3 className="text-xl md:text-2xl font-black uppercase italic tracking-tighter leading-none">Mi Perfil Técnico</h3>
                 <p className="text-[9px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">Gestiona tus datos personales y deportivos</p>
               </div>
@@ -2053,7 +2068,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden w-10 h-10 flex items-center justify-center text-white bg-[#0b1220] rounded-xl transition-all shadow-lg active:scale-95"
+              className="lg:hidden w-10 h-10 flex items-center justify-center text-white bg-[#0b2d6a] rounded-xl transition-all shadow-lg active:scale-95"
             >
               <i className="fa-solid fa-bars"></i>
             </button>
@@ -2072,7 +2087,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                 onClick={onRefresh}
                 disabled={refreshing}
                 title="Sincronizar datos"
-                className={`w-10 h-10 flex lg:hidden items-center justify-center rounded-xl transition-all ${refreshing ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 text-[#CF1B2B] hover:bg-[#0b1220] hover:text-white shadow-sm'}`}
+                className={`w-10 h-10 flex lg:hidden items-center justify-center rounded-xl transition-all ${refreshing ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 text-[#CF1B2B] hover:bg-[#0b2d6a] hover:text-white shadow-sm'}`}
               >
                 <i className={`fa-solid fa-arrows-rotate ${refreshing ? 'animate-spin' : ''}`}></i>
               </button>
@@ -2100,7 +2115,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       {/* Success Modal */}
       {successModalConfig.show && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0b1220]/90 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0b2d6a]/90 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-[40px] p-10 text-center shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl shadow-inner">
               <i className="fa-solid fa-check"></i>
@@ -2112,7 +2127,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
                 setSuccessModalConfig(prev => ({ ...prev, show: false }));
                 setActiveMenu('inicio');
               }}
-              className="w-full py-5 bg-[#0b1220] text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95"
+              className="w-full py-5 bg-[#0b2d6a] text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95"
             >
               Volver al Inicio
             </button>

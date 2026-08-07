@@ -435,6 +435,29 @@ export default function DinamicasArea() {
     return Array.from(new Set(drills)).sort((a, b) => a.localeCompare(b));
   }, [tareas]);
 
+  // Sincronizar la dinámica seleccionada desde el Área Técnica
+  useEffect(() => {
+    const handleDrillChange = (e: any) => {
+      const name = e.detail?.name;
+      if (name) {
+        setSelectedType('TODOS');
+        setSelectedDrill(name);
+      }
+    };
+
+    const stored = localStorage.getItem('selected_drill_name');
+    if (stored) {
+      setSelectedType('TODOS');
+      setSelectedDrill(stored);
+      localStorage.removeItem('selected_drill_name');
+    }
+
+    window.addEventListener('selected_drill_changed', handleDrillChange);
+    return () => {
+      window.removeEventListener('selected_drill_changed', handleDrillChange);
+    };
+  }, [uniqueDrills]);
+
   // Lista de tipos de tareas únicas para el nuevo filtro de categoría
   const uniqueTypes = useMemo(() => {
     const types = tareas.map(t => t.tipo).filter(Boolean);
@@ -628,21 +651,84 @@ export default function DinamicasArea() {
     return tareas.find(t => t.nombre === selectedDrill) || null;
   }, [selectedDrill, tareas]);
 
-  const embedVideoUrl = useMemo(() => {
+  const videoDetails = useMemo(() => {
     if (!matchedTarea || !matchedTarea.link_video) return null;
-    const url = matchedTarea.link_video;
-    // Si es un link de Google Drive, lo convertimos a /preview para poder incrustarlo en iframe
+    const url = matchedTarea.link_video.trim();
+    
+    // Check for Google Drive
     if (url.includes('drive.google.com')) {
-      let cleanUrl = url.replace(/\/view\?usp=drive_link$/, '/preview')
-                       .replace(/\/view$/, '/preview')
-                       .replace(/\/view\?.*$/, '/preview');
-      if (!cleanUrl.endsWith('/preview')) {
-        cleanUrl = cleanUrl.replace('/view', '/preview');
+      const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || 
+                    url.match(/id=([a-zA-Z0-9_-]+)/) ||
+                    url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      const id = match ? match[1] : null;
+      if (id) {
+        return {
+          originalUrl: url,
+          embedUrl: `https://drive.google.com/file/d/${id}/preview`,
+          directUrl: `https://docs.google.com/uc?export=download&id=${id}`,
+          type: 'drive' as const,
+          id
+        };
       }
-      return cleanUrl;
+      return { originalUrl: url, embedUrl: url, type: 'drive' as const };
     }
-    return url;
+    
+    // Check for YouTube
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      let id: string | null = null;
+      if (url.includes('youtu.be/')) {
+        id = url.split('youtu.be/')[1]?.split(/[?#]/)[0] || null;
+      } else if (url.includes('embed/')) {
+        id = url.split('embed/')[1]?.split(/[?#]/)[0] || null;
+      } else {
+        const match = url.match(/[?&]v=([^&#]+)/);
+        id = match ? match[1] : null;
+      }
+      if (id) {
+        return {
+          originalUrl: url,
+          embedUrl: `https://www.youtube.com/embed/${id}`,
+          type: 'youtube' as const,
+          id
+        };
+      }
+    }
+
+    // Check for Vimeo
+    if (url.includes('vimeo.com')) {
+      const match = url.match(/vimeo\.com\/(?:channels\/[^\/]+\/|groups\/[^\/]+\/|album\/[^\/]+\/video\/|showcase\/[^\/]+\/|video\/)?([0-9]+)/);
+      const id = match ? match[1] : null;
+      if (id) {
+        return {
+          originalUrl: url,
+          embedUrl: `https://player.vimeo.com/video/${id}`,
+          type: 'vimeo' as const,
+          id
+        };
+      }
+    }
+
+    // Check for direct video extension
+    const lower = url.toLowerCase();
+    if (lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.ogg') || lower.endsWith('.mov') || lower.endsWith('.m4v') || url.includes('uc?export=download')) {
+      return {
+        originalUrl: url,
+        embedUrl: url,
+        directUrl: url,
+        type: 'direct' as const
+      };
+    }
+
+    return {
+      originalUrl: url,
+      embedUrl: url,
+      type: 'other' as const
+    };
   }, [matchedTarea]);
+
+  const embedVideoUrl = useMemo(() => {
+    return videoDetails?.embedUrl || null;
+  }, [videoDetails]);
 
   // Estadísticas globales de resumen
   const stats = useMemo(() => {
@@ -890,20 +976,55 @@ export default function DinamicasArea() {
               )}
 
               {/* VIDEO INTEGRADO EN LA FICHA */}
-              {embedVideoUrl ? (
+              {videoDetails ? (
                 <div className="rounded-[32px] p-5 bg-slate-50 border border-slate-100 space-y-3">
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 italic">
                     <i className="fa-solid fa-circle-play text-red-600"></i>
                     Animación de la Tarea:
                   </p>
                   <div className="relative aspect-video w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-950 shadow-md">
-                    <iframe
-                      src={embedVideoUrl}
-                      className="absolute top-0 left-0 w-full h-full border-0"
-                      allow="autoplay; encrypted-media; picture-in-picture"
-                      allowFullScreen
-                      title={`Video: ${matchedTarea.nombre}`}
-                    />
+                    {videoDetails.type === 'direct' ? (
+                      <video
+                        src={videoDetails.directUrl}
+                        controls
+                        className="absolute top-0 left-0 w-full h-full border-0"
+                        preload="metadata"
+                      />
+                    ) : (
+                      <iframe
+                        src={videoDetails.embedUrl}
+                        className="absolute top-0 left-0 w-full h-full border-0"
+                        allow="autoplay; encrypted-media; picture-in-picture"
+                        allowFullScreen
+                        title={`Video: ${matchedTarea.nombre}`}
+                      />
+                    )}
+                  </div>
+                  
+                  {/* Floating Action/Info Bar below the video to make it fully bulletproof */}
+                  <div className="flex flex-col gap-2 pt-1 bg-slate-50 rounded-2xl">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                        <i className="fa-solid fa-info-circle text-slate-400"></i>
+                        {videoDetails.type === 'drive' ? 'Video en Google Drive' :
+                         videoDetails.type === 'youtube' ? 'Video en YouTube' :
+                         videoDetails.type === 'vimeo' ? 'Video en Vimeo' : 'Video del ejercicio'}
+                      </p>
+                      <a
+                        href={videoDetails.originalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-wider transition-all duration-200 shadow-sm"
+                      >
+                        <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                        Ver video original
+                      </a>
+                    </div>
+                    {videoDetails.type === 'drive' && (
+                      <p className="text-[9px] text-slate-400 leading-normal">
+                        Nota: Si tu navegador bloquea las cookies de Google Drive dentro del panel de la aplicación, el reproductor puede aparecer en blanco. Haz clic en <strong>Ver video original</strong> para reproducirlo en una pestaña nueva sin restricciones.
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : (
