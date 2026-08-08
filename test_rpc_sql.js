@@ -1,22 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 
-let supabaseUrl = '';
-let supabaseKey = '';
+let supabaseUrl = (process.env.VITE_SUPABASE_URL || '').trim().replace(/\/(rest|auth)\/v1\/?$/, "");
+let supabaseKey = (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 try {
-  const envContent = fs.readFileSync('.env', 'utf8');
-  const lines = envContent.split('\n');
-  for (const line of lines) {
-    const parts = line.split('=');
-    if (parts.length >= 2) {
-      const key = parts[0].trim();
-      const val = parts.slice(1).join('=').trim().replace(/['"]/g, '');
-      if (key === 'VITE_SUPABASE_URL') {
-        supabaseUrl = val;
-      }
-      if (key === 'VITE_SUPABASE_ANON_KEY') {
-        supabaseKey = val;
+  if (fs.existsSync('.env')) {
+    const envContent = fs.readFileSync('.env', 'utf8');
+    const lines = envContent.split('\n');
+    for (const line of lines) {
+      const parts = line.split('=');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const val = parts.slice(1).join('=').trim().replace(/['"]/g, '');
+        if (key === 'VITE_SUPABASE_URL') {
+          supabaseUrl = val;
+        }
+        if (key === 'VITE_SUPABASE_ANON_KEY') {
+          supabaseKey = val;
+        }
       }
     }
   }

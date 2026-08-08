@@ -120,10 +120,18 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: false, // Desactivado permanentemente para evitar conflictos de bloqueo (Navigator LockManager)
-    autoRefreshToken: false,
+    persistSession: true,
+    autoRefreshToken: true,
     detectSessionInUrl: false,
-    storageKey: 'lr-performance-auth-v1'
+    storageKey: 'lr-performance-auth-v1',
+    lock: async (name, acquireTimeout, fn) => {
+      try {
+        return await fn();
+      } catch (e) {
+        console.error("Lock error bypassed:", e);
+        return await fn();
+      }
+    }
   },
   global: {
     fetch: customFetch

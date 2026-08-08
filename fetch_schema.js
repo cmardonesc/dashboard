@@ -1,22 +1,24 @@
 import axios from 'axios';
 import fs from 'fs';
 
-let url = '';
-let anonKey = '';
+let url = 'https://nqdbqqmjyygopjnpqyvm.supabase.co';
+let anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xZGJxcW1qeXlnb3BqbnBxeXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzMjU1MzMsImV4cCI6MjA4NTkwMTUzM30.5aYRn3fz6kc0BQSeeBKE5AAiGZNfMWQfcQPwEkNLQjk';
 
 try {
-  const envContent = fs.readFileSync('.env', 'utf8');
-  const lines = envContent.split('\n');
-  for (const line of lines) {
-    const parts = line.split('=');
-    if (parts.length >= 2) {
-      const key = parts[0].trim();
-      const val = parts.slice(1).join('=').trim().replace(/['"]/g, '');
-      if (key === 'VITE_SUPABASE_URL') {
-        url = val;
-      }
-      if (key === 'VITE_SUPABASE_ANON_KEY') {
-        anonKey = val;
+  if (fs.existsSync('.env')) {
+    const envContent = fs.readFileSync('.env', 'utf8');
+    const lines = envContent.split('\n');
+    for (const line of lines) {
+      const parts = line.split('=');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const val = parts.slice(1).join('=').trim().replace(/['"]/g, '');
+        if (key === 'VITE_SUPABASE_URL') {
+          url = val;
+        }
+        if (key === 'VITE_SUPABASE_ANON_KEY') {
+          anonKey = val;
+        }
       }
     }
   }

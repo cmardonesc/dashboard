@@ -735,14 +735,30 @@ export default function App() {
   useEffect(() => {
     if (sessionUser && role) {
       try {
-        const customSession = {
-          sessionUser,
-          role,
-          userClub,
-          userClubId,
-          linkedPlayerId
-        };
-        localStorage.setItem('lr-performance-auth-session', JSON.stringify(customSession));
+        supabase.auth.getSession().then(({ data }) => {
+          const customSession = {
+            sessionUser,
+            role,
+            userClub,
+            userClubId,
+            linkedPlayerId,
+            supabaseSession: data?.session ? {
+              access_token: data.session.access_token,
+              refresh_token: data.session.refresh_token
+            } : null
+          };
+          localStorage.setItem('lr-performance-auth-session', JSON.stringify(customSession));
+        }).catch(err => {
+          console.error("Error obteniendo sesión de Supabase para sincronizar:", err);
+          const customSession = {
+            sessionUser,
+            role,
+            userClub,
+            userClubId,
+            linkedPlayerId
+          };
+          localStorage.setItem('lr-performance-auth-session', JSON.stringify(customSession));
+        });
       } catch (e) {
         console.error("Error guardando sesión en localStorage:", e);
       }
@@ -778,6 +794,20 @@ export default function App() {
               setLinkedPlayerId(parsed.linkedPlayerId);
               hasRestored = true;
               console.log("Sesión restaurada desde localStorage con rol:", parsed.role);
+              
+              // Restaurar sesión activa de Supabase si está disponible
+              if (parsed.supabaseSession?.access_token && parsed.supabaseSession?.refresh_token) {
+                console.log("Restaurando sesión de autenticación de Supabase...");
+                try {
+                  await supabase.auth.setSession({
+                    access_token: parsed.supabaseSession.access_token,
+                    refresh_token: parsed.supabaseSession.refresh_token
+                  });
+                  console.log("✅ Sesión de autenticación de Supabase restaurada exitosamente.");
+                } catch (sessErr) {
+                  console.error("Error al establecer la sesión restaurada de Supabase:", sessErr);
+                }
+              }
               
               // Cargar de inmediato los datos correspondientes en segundo plano
               fetchPerformanceData(parsed.role, parsed.linkedPlayerId).catch(e => console.error("Error cargando datos de rendimiento restaurados:", e));
