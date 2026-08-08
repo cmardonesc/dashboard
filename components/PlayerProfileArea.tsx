@@ -1753,7 +1753,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   }, [clubPlayers]);
 
   const filteredPlayers = useMemo(() => {
-    return clubPlayers.filter(p => {
+    const filtered = clubPlayers.filter(p => {
       const playerYear = p.anio || p.year;
       const playerPos = p.posicion || p.position;
       const playerClubId = p.id_club || p.club_id;
@@ -1763,6 +1763,12 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       const matchClub = filterClubId.length === 0 || filterClubId.includes(String(playerClubId));
       
       return matchYear && matchPosition && matchClub;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const nameA = `${a.apellido1 || ''} ${a.apellido2 || ''}, ${a.nombre || ''}`.trim().toLowerCase();
+      const nameB = `${b.apellido1 || ''} ${b.apellido2 || ''}, ${b.nombre || ''}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
     });
   }, [clubPlayers, filterYear, filterPosition, filterClubId]);
 
