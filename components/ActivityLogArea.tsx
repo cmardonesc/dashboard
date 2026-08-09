@@ -30,10 +30,45 @@ export const ActivityLogArea: React.FC = () => {
         .order('created_at', { ascending: false })
         .limit(200);
 
-      if (error) throw error;
-      setLogs(data || []);
+      // Fetch local storage fallback logs
+      let localLogs: ActivityLog[] = [];
+      try {
+        const localLogsRaw = localStorage.getItem('local_activity_logs');
+        if (localLogsRaw) {
+          localLogs = JSON.parse(localLogsRaw);
+        }
+      } catch (e) {
+        // silent catch
+      }
+
+      let combined: ActivityLog[] = [];
+      if (data) {
+        combined = [...data];
+      }
+      
+      // Merge and prevent duplicates
+      const existingIds = new Set(combined.map(l => l.id));
+      localLogs.forEach(log => {
+        if (!existingIds.has(log.id)) {
+          combined.push(log);
+        }
+      });
+
+      // Sort by created_at descending
+      combined.sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+      setLogs(combined);
     } catch (err) {
-      console.error('Error fetching logs:', err);
+      console.warn('Error fetching logs from Supabase, using local fallback:', err);
+      // Fallback entirely to local
+      try {
+        const localLogsRaw = localStorage.getItem('local_activity_logs');
+        if (localLogsRaw) {
+          setLogs(JSON.parse(localLogsRaw));
+        }
+      } catch (e) {
+        // silent catch
+      }
     } finally {
       setLoading(false);
     }

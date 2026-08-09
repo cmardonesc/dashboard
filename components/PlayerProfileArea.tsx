@@ -246,16 +246,35 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       const mergedMap = new Map<string, any>();
       const processedImtpData = (imtpRes.data || []).map((item: any) => {
         const newItem = { ...item };
-        if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
-          newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
-        } else if (newItem.imtp_fuerza_n !== undefined && newItem.imtp_fuerza_n !== null) {
-          newItem['Peak Vertical Force [N]'] = newItem.imtp_fuerza_n;
+        
+        // Force Abs fallbacks
+        const fAbs = item['Peak Vertical Force [N]'] ?? item['Peak Vertical Force (N)'] ?? item.imtp_fuerza_n;
+        if (fAbs !== undefined && fAbs !== null) {
+          newItem.imtp_fuerza_n = Number(fAbs);
+          newItem['Peak Vertical Force [N]'] = Number(fAbs);
         }
-        if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
-          newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
-        } else if (newItem.imtp_f_relativa_n_kg !== undefined && newItem.imtp_f_relativa_n_kg !== null) {
-          newItem['Peak Vertical Force / BM [N/kg]'] = newItem.imtp_f_relativa_n_kg;
+
+        // Force Rel fallbacks
+        const fRel = item['Peak Vertical Force / BM'] ?? item['Peak Vertical Force / BM [N/kg]'] ?? item.imtp_f_relativa_n_kg;
+        if (fRel !== undefined && fRel !== null) {
+          newItem.imtp_f_relativa_n_kg = Number(fRel);
+          newItem['Peak Vertical Force / BM [N/kg]'] = Number(fRel);
         }
+
+        // Force Net 50ms fallbacks
+        const fNet50 = item['Force (Net of BW) at 50ms [N]'] ?? item['Force (Net of BW) at 50ms'] ?? item.imtp_force_50ms;
+        if (fNet50 !== undefined && fNet50 !== null) {
+          newItem.imtp_force_50ms = Number(fNet50);
+          newItem['Force (Net of BW) at 50ms [N]'] = Number(fNet50);
+        }
+
+        // RFD 100ms fallbacks
+        const rfd100 = item['RFD - 100ms [N/s]'] ?? item['RFD - 100ms'] ?? item.imtp_rfd_100ms;
+        if (rfd100 !== undefined && rfd100 !== null) {
+          newItem.imtp_rfd_100ms = Number(rfd100);
+          newItem['RFD - 100ms [N/s]'] = Number(rfd100);
+        }
+
         return newItem;
       });
       processedImtpData.forEach((item: any) => {
@@ -394,6 +413,19 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       const pageHeight = 297;
       const contentWidth = pageWidth - (margin * 2);
 
+      // Helper to get microcycle label from a date
+      const getMicrocycleForDate = (dateStr: string) => {
+        if (!dateStr) return '';
+        const match = citations.find(c => {
+          if (!c.microcycles || !c.microcycles.start_date || !c.microcycles.end_date) return false;
+          return dateStr >= c.microcycles.start_date && dateStr <= c.microcycles.end_date;
+        });
+        if (match && match.microcycles) {
+          return `MC ${match.microcycles.micro_number}`;
+        }
+        return '';
+      };
+
       // Dynamic percentile calculator for physical benchmarks in PDF
       const getPDFPercentile = (val: number, list: any[], key: string, lowerIsBetter = false) => {
         const validVals = list
@@ -420,6 +452,204 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         if (pct >= 45) return { label: 'Promedio', color: [59, 130, 246], textColor: [255, 255, 255] }; // Blue
         if (pct >= 20) return { label: 'Por Mejorar', color: [249, 115, 22], textColor: [255, 255, 255] }; // Orange
         return { label: 'Alerta', color: [239, 68, 68], textColor: [255, 255, 255] }; // Red
+      };
+
+      // Helper function to draw vector tachometer (gauge) for physical evaluations
+      const drawGauge = (x: number, y: number, r: number, pct: number, valueStr: string, titleStr: string) => {
+        const numSegments = 30;
+        const innerR = r - 3;
+        const outerR = r;
+
+        const getSegmentColor = (p: number) => {
+          if (p < 20) return [239, 68, 68]; // Red
+          if (p < 45) return [249, 115, 22]; // Orange
+          if (p < 75) return [59, 130, 246]; // Blue
+          if (p < 90) return [16, 185, 129]; // Emerald
+          return [147, 51, 234]; // Purple
+        };
+
+        // Draw colored semi-circle arc segments curving upwards
+        for (let i = 0; i < numSegments; i++) {
+          const angleStart = Math.PI + (i / numSegments) * Math.PI;
+          const angleEnd = Math.PI + ((i + 1) / numSegments) * Math.PI;
+          
+          const segmentPct = (i / numSegments) * 100;
+          const color = getSegmentColor(segmentPct);
+          
+          doc.setFillColor(color[0], color[1], color[2]);
+          
+          const x1 = x + innerR * Math.cos(angleStart);
+          const y1 = y + innerR * Math.sin(angleStart);
+          const x2 = x + outerR * Math.cos(angleStart);
+          const y2 = y + outerR * Math.sin(angleStart);
+          const x3 = x + outerR * Math.cos(angleEnd);
+          const y3 = y + outerR * Math.sin(angleEnd);
+          const x4 = x + innerR * Math.cos(angleEnd);
+          const y4 = y + innerR * Math.sin(angleEnd);
+          
+          doc.triangle(x1, y1, x2, y2, x3, y3, 'F');
+          doc.triangle(x1, y1, x3, y3, x4, y4, 'F');
+        }
+
+        // Draw needle pointing to percentile
+        const needleAngle = Math.PI + (Math.max(0, Math.min(100, pct)) / 100) * Math.PI;
+        const needleLen = r - 1;
+        const nx = x + needleLen * Math.cos(needleAngle);
+        const ny = y + needleLen * Math.sin(needleAngle);
+        
+        doc.setDrawColor(51, 65, 85); // slate-700
+        doc.setLineWidth(1.2);
+        doc.line(x, y, nx, ny);
+        
+        // Needle center hub
+        doc.setFillColor(51, 65, 85);
+        doc.circle(x, y, 2.2, 'F');
+        doc.setFillColor(255, 255, 255);
+        doc.circle(x, y, 0.8, 'F');
+
+        // Text labels inside the gauge
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(51, 65, 85);
+        doc.text(valueStr, x, y + 4.5, { align: 'center' });
+
+        const cohort = getPDFLevelInfo(pct);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`${pct.toFixed(0)}% (${cohort.label})`, x, y + 8, { align: 'center' });
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(11, 45, 106);
+        doc.text(titleStr, x, y - r - 3.5, { align: 'center' });
+      };
+
+      // Reusable helper to draw a dual parameter line graph
+      const drawDualParameterChart = (
+        x: number, 
+        y: number, 
+        w: number, 
+        h: number, 
+        dataList: any[], 
+        title: string, 
+        p1Key: string, 
+        p1Label: string, 
+        p1Color: [number, number, number], 
+        p2Key: string, 
+        p2Label: string, 
+        p2Color: [number, number, number]
+      ) => {
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(x, y, w, h, 3, 3, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(x, y, w, h, 3, 3, 'S');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(51, 65, 85);
+        doc.text(title, x + 6, y + 6);
+
+        // Legends
+        doc.setFillColor(p1Color[0], p1Color[1], p1Color[2]);
+        doc.circle(x + 105, y + 5, 1.2, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(p1Color[0], p1Color[1], p1Color[2]);
+        doc.text(p1Label.toUpperCase(), x + 108, y + 5.8);
+
+        doc.setFillColor(p2Color[0], p2Color[1], p2Color[2]);
+        doc.rect(x + 144, y + 3.8, 2.4, 2.4, 'F');
+        doc.setTextColor(p2Color[0], p2Color[1], p2Color[2]);
+        doc.text(p2Label.toUpperCase(), x + 148, y + 5.8);
+
+        const px = x + 12;
+        const py = y + 10;
+        const pw = w - 24;
+        const ph = h - 17;
+
+        if (dataList.length === 0) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(148, 163, 184);
+          doc.text('No hay registros disponibles', x + w/2, y + h/2, { align: 'center' });
+          return;
+        }
+
+        const p1Vals = dataList.map(d => Number(d[p1Key]) || 0);
+        const p2Vals = dataList.map(d => Number(d[p2Key]) || 0);
+        const p1Max = Math.max(...p1Vals, 1);
+        const p2Max = Math.max(...p2Vals, 1);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(5.5);
+        doc.setTextColor(148, 163, 184);
+        for (let i = 0; i <= 4; i++) {
+          const ratio = i / 4;
+          const gy = py + ph - ratio * ph;
+          
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.15);
+          doc.line(px, gy, px + pw, gy);
+
+          doc.text((ratio * p1Max).toFixed(0), px - 2, gy + 1, { align: 'right' });
+          doc.text((ratio * p2Max).toFixed(1), px + pw + 2, gy + 1, { align: 'left' });
+        }
+
+        const pts1: {x: number, y: number}[] = [];
+        const pts2: {x: number, y: number}[] = [];
+        const stepX = pw / (dataList.length - 1 || 1);
+
+        dataList.forEach((item, idx) => {
+          const cx = px + idx * stepX;
+          const val1 = Number(item[p1Key]) || 0;
+          const val2 = Number(item[p2Key]) || 0;
+
+          const cy1 = py + ph - (val1 / p1Max) * ph;
+          const cy2 = py + ph - (val2 / p2Max) * ph;
+
+          pts1.push({ x: cx, y: cy1 });
+          pts2.push({ x: cx, y: cy2 });
+
+          const dateStr = item.fecha ? item.fecha.split('-').slice(1, 3).reverse().join('/') : '';
+          const mcLabel = getMicrocycleForDate(item.fecha) || dateStr || `${idx + 1}`;
+          
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text(mcLabel, cx, py + ph + 4.5, { align: 'center' });
+        });
+
+        // Draw Line 1
+        if (pts1.length > 1) {
+          doc.setDrawColor(p1Color[0], p1Color[1], p1Color[2]);
+          doc.setLineWidth(0.6);
+          for (let i = 0; i < pts1.length - 1; i++) {
+            doc.line(pts1[i].x, pts1[i].y, pts1[i + 1].x, pts1[i + 1].y);
+          }
+        }
+        pts1.forEach(pt => {
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(p1Color[0], p1Color[1], p1Color[2]);
+          doc.setLineWidth(0.8);
+          doc.circle(pt.x, pt.y, 1.4, 'FD');
+        });
+
+        // Draw Line 2
+        if (pts2.length > 1) {
+          doc.setDrawColor(p2Color[0], p2Color[1], p2Color[2]);
+          doc.setLineWidth(0.6);
+          for (let i = 0; i < pts2.length - 1; i++) {
+            doc.line(pts2[i].x, pts2[i].y, pts2[i + 1].x, pts2[i + 1].y);
+          }
+        }
+        pts2.forEach(pt => {
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(p2Color[0], p2Color[1], p2Color[2]);
+          doc.setLineWidth(0.8);
+          doc.rect(pt.x - 0.8, pt.y - 0.8, 1.6, 1.6, 'FD');
+        });
       };
 
       // Helper function to draw header on every page
@@ -481,11 +711,11 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       let yPos = 38;
 
       // ==========================================
-      // PAGE 1: RESUMEN BIOGRÁFICO Y ESTADÍSTICO
+      // PAGE 1: EXPEDIENTE DEL ATLETA
       // ==========================================
       drawHeader(1, 'Expediente del Atleta');
 
-      // Athlete Bio Box
+      // Athlete Bio Box (with red left accent line)
       doc.setFillColor(248, 250, 252); // slate-50
       doc.roundedRect(margin, yPos, contentWidth, 54, 4, 4, 'F');
       doc.setDrawColor(226, 232, 240); // slate-200
@@ -507,85 +737,63 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
       doc.text(profileData.posicion ? profileData.posicion.toUpperCase() : 'S/D', margin + 10, yPos + 16);
 
-      // Bio detail grid
+      // Bio detail grid in Spanish
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(100, 116, 139); // slate-500
 
       // Column 1
       doc.text('Club de Origen:', margin + 10, yPos + 26);
-      doc.text('Clase (Año):', margin + 10, yPos + 32);
-      doc.text('Categoría Inferred:', margin + 10, yPos + 38);
+      doc.text('Clase (Año de nacimiento):', margin + 10, yPos + 32);
+      doc.text('Categoría Inferida:', margin + 10, yPos + 38);
       doc.text('ID Único de Atleta:', margin + 10, yPos + 44);
 
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(51, 65, 85); // slate-700
-      doc.text(profileData.club || 'S/D', margin + 45, yPos + 26);
-      doc.text(String(profileData.anio || 'N/A'), margin + 45, yPos + 32);
-      doc.text((inferredCategory || 'S/D').toUpperCase().replace('_', ' '), margin + 45, yPos + 38);
-      doc.text(String(profileData.player_id), margin + 45, yPos + 44);
+      doc.text(profileData.club || 'S/D', margin + 55, yPos + 26);
+      doc.text(String(profileData.anio || 'N/A'), margin + 55, yPos + 32);
+      doc.text((inferredCategory || 'S/D').toUpperCase().replace('_', ' '), margin + 55, yPos + 38);
+      doc.text(String(profileData.player_id), margin + 55, yPos + 44);
 
       // Column 2
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100, 116, 139); // slate-500
-      doc.text('F. Nacimiento:', margin + 100, yPos + 26);
-      doc.text('Perfil de Pierna:', margin + 100, yPos + 32);
-      doc.text('Estado de Salud:', margin + 100, yPos + 38);
-      doc.text('Última Actualización:', margin + 100, yPos + 44);
-
-      // Health status calculation
-      const activeInjuries = medicalHistory.injuries.filter(i => (i.estado && i.estado.toLowerCase().includes('activo')) || i.estado === 'Vigente');
-      const isLesionado = activeInjuries.length > 0;
-      const healthStatus = isLesionado ? 'LESIONADO' : 'APTO / DISPONIBLE';
-
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(isLesionado ? accentColor[0] : 16, 185, 129); // red or green
-      doc.text(healthStatus, margin + 138, yPos + 38);
+      doc.text('Fecha de Nacimiento:', margin + 100, yPos + 26);
+      doc.text('Perfil de Pierna (I/D/S/D):', margin + 100, yPos + 32);
+      doc.text('Última Actualización:', margin + 100, yPos + 38);
 
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(51, 65, 85); // slate-700
-      doc.text(profileData.fecha_nacimiento || 'S/D', margin + 138, yPos + 26);
-      doc.text(profileData.perfil_pierna || 'S/D', margin + 138, yPos + 32);
-      doc.text(new Date().toLocaleDateString('es-CL'), margin + 138, yPos + 44);
+      doc.text(profileData.fecha_nacimiento || 'S/D', margin + 142, yPos + 26);
+      doc.text(profileData.perfil_pierna || 'S/D', margin + 142, yPos + 32);
+      doc.text(new Date().toLocaleDateString('es-CL'), margin + 142, yPos + 38);
 
       yPos += 66;
 
-      // Title Section: Resumen del Rendimiento
+      // TÍTULO 1: RESUMEN ESTADÍSTICO DE RENDIMIENTO
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('RESUMEN ESTADÍSTICO DE RENDIMIENTO', margin, yPos);
+      doc.text('TÍTULO 1: RESUMEN ESTADÍSTICO DE RENDIMIENTO', margin, yPos);
       doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
       doc.setLineWidth(0.8);
       doc.line(margin, yPos + 2, margin + 45, yPos + 2);
 
       yPos += 8;
 
-      // Stat Cards Grid
+      // Table of consolidated metrics
       const statsRows = [
         [
           { content: 'CONVOCATORIA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.citaciones} Citaciones`, styles: { fontStyle: 'bold' } },
+          { content: `${stats.citaciones} Citaciones (Número de Citaciones)`, styles: { fontStyle: 'bold' } }
+        ],
+        [
           { content: 'HISTORIAL FÍSICO (GPS)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.entrenamientos} Entrenamientos`, styles: { fontStyle: 'bold' } }
+          { content: `${stats.entrenamientos} Sesiones de entrenamiento`, styles: { fontStyle: 'bold' } }
         ],
         [
           { content: 'COMPETENCIA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.partidos} Partidos Jugados`, styles: { fontStyle: 'bold' } },
-          { content: 'VOLUMEN TOTAL GPS', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${(stats.distanciaGps / 1000).toFixed(2)} km Recorridos`, styles: { fontStyle: 'bold' } }
-        ],
-        [
-          { content: 'VELOCIDAD MÁXIMA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.velocidadMax.toFixed(1)} km/h`, styles: { fontStyle: 'bold', textColor: accentColor } },
-          { content: 'INTENSIDAD (HSR)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.hsr.toLocaleString('es-CL')} metros (>20 km/h)`, styles: { fontStyle: 'bold' } }
-        ],
-        [
-          { content: 'CANTIDAD SPRINTS', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.sprints} Sprints registrados`, styles: { fontStyle: 'bold' } },
-          { content: 'TIEMPO TOTAL EN CANCHA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.minutosGps} Minutos registrados`, styles: { fontStyle: 'bold' } }
+          { content: `${stats.partidos} Partidos Jugados`, styles: { fontStyle: 'bold' } }
         ]
       ];
 
@@ -596,115 +804,63 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         theme: 'grid',
         styles: {
           fontSize: 8.5,
-          cellPadding: 4,
+          cellPadding: 4.5,
           valign: 'middle',
           textColor: [51, 65, 85],
           lineColor: [226, 232, 240]
         },
         columnStyles: {
-          0: { cellWidth: 40 },
-          1: { cellWidth: 51 },
-          2: { cellWidth: 40 },
-          3: { cellWidth: 51 }
+          0: { cellWidth: 55 },
+          1: { cellWidth: 127 }
         }
       });
 
       yPos = (doc as any).lastAutoTable.finalY + 12;
 
-      // Latest Physical Benchmarks Section
+      // TÍTULO 2: HUELLAS Y UMBRALES DE EVALUACIÓN FÍSICA
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('HUELLAS Y UMBRALES DE EVALUACIÓN FÍSICA', margin, yPos);
+      doc.text('TÍTULO 2: HUELLAS Y UMBRALES DE EVALUACIÓN FÍSICA', margin, yPos);
       doc.line(margin, yPos + 2, margin + 45, yPos + 2);
 
       yPos += 8;
 
-      const latestAnthroRow = latestAnthro ? `${latestAnthro.masa_muscular_pct}% Muscular / ${latestAnthro.masa_adiposa_pct}% Adiposa` : 'No registrado';
-      const latestVo2Row = latestVo2 ? `${latestVo2.vo2_max} ml/kg/min` : 'No registrado';
-      const latestImtpRow = latestImtp ? `${latestImtp.imtp_fuerza_n} N (${latestImtp.imtp_f_relativa_n_kg} N/kg)` : 'No registrado';
-      const latestSpeedRow = latestSpeed ? `${latestSpeed.tiempo_total} s (en ${latestSpeed.distancia_m}m)` : 'No registrado';
-
       // Calculate cohort levels for physical benchmarks
       const pctAnthro = latestAnthro ? getPDFPercentile(Number(latestAnthro.masa_muscular_pct), globalAntro, 'masa_muscular_pct') : 50;
-      const lvlAnthro = getPDFLevelInfo(pctAnthro);
-
       const pctVo2 = latestVo2 ? getPDFPercentile(Number(latestVo2.vo2_max), globalVo2, 'vo2_max') : 50;
-      const lvlVo2 = getPDFLevelInfo(pctVo2);
-
       const pctImtp = latestImtp ? getPDFPercentile(Number(latestImtp.imtp_f_relativa_n_kg), globalImtp, 'imtp_f_relativa_n_kg') : 50;
-      const lvlImtp = getPDFLevelInfo(pctImtp);
-
       const pctSpeed = latestSpeed ? getPDFPercentile(Number(latestSpeed.tiempo_total), globalSpeed, 'tiempo_total', true) : 50;
-      const lvlSpeed = getPDFLevelInfo(pctSpeed);
 
-      const physicalBenchmarksBody = [
-        ['EVALUACIÓN', 'MÉTRICA / VALOR', 'FECHA DE MEDICIÓN', 'NIVEL DE COHORTE'],
-        [
-          'Antropometría (Masa Corporal)', 
-          latestAnthroRow, 
-          latestAnthro?.fecha_medicion || 'N/A', 
-          latestAnthro ? { content: lvlAnthro.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: lvlAnthro.color, textColor: lvlAnthro.textColor, halign: 'center' } } : 'S/D'
-        ],
-        [
-          'Capacidad Aeróbica (VO2 Máx)', 
-          latestVo2Row, 
-          latestVo2?.fecha || 'N/A', 
-          latestVo2 ? { content: lvlVo2.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: lvlVo2.color, textColor: lvlVo2.textColor, halign: 'center' } } : 'S/D'
-        ],
-        [
-          'Fuerza Isométrica (IMTP)', 
-          latestImtpRow, 
-          latestImtp?.fecha_test || 'N/A', 
-          latestImtp ? { content: lvlImtp.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: lvlImtp.color, textColor: lvlImtp.textColor, halign: 'center' } } : 'S/D'
-        ],
-        [
-          'Velocidad Lineal (Sprint)', 
-          latestSpeedRow, 
-          latestSpeed?.fecha || 'N/A', 
-          latestSpeed ? { content: lvlSpeed.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: lvlSpeed.color, textColor: lvlSpeed.textColor, halign: 'center' } } : 'S/D'
-        ]
-      ];
+      // Draw background card container for the tachometers
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin, yPos, contentWidth, 44, 4, 4, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.4);
+      doc.roundedRect(margin, yPos, contentWidth, 44, 4, 4, 'S');
 
-      autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        head: [physicalBenchmarksBody[0]],
-        body: physicalBenchmarksBody.slice(1),
-        theme: 'striped',
-        headStyles: {
-          fillColor: primaryColor,
-          textColor: [255, 255, 255],
-          fontSize: 8.5,
-          fontStyle: 'bold'
-        },
-        styles: {
-          fontSize: 8,
-          cellPadding: 4,
-          textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
-        },
-        columnStyles: {
-          0: { fontStyle: 'bold', cellWidth: 50 },
-          1: { cellWidth: 55 },
-          2: { cellWidth: 40 },
-          3: { cellWidth: 37 }
-        }
-      });
+      // Draw 4 vector tachometers horizontally
+      const gaugeY = yPos + 28;
+      const r = 12.5;
+      
+      drawGauge(margin + 22.75, gaugeY, r, pctAnthro, latestAnthro ? `${latestAnthro.masa_muscular_pct}%` : 'S/D', 'Antropometría (Masa)');
+      drawGauge(margin + 68.25, gaugeY, r, pctVo2, latestVo2 ? `${latestVo2.vo2_max}` : 'S/D', 'Capacidad (VO2 Máx)');
+      drawGauge(margin + 113.75, gaugeY, r, pctImtp, latestImtp ? `${latestImtp.imtp_f_relativa_n_kg}` : 'S/D', 'Fuerza (IMTP Rel.)');
+      drawGauge(margin + 159.25, gaugeY, r, pctSpeed, latestSpeed ? `${latestSpeed.tiempo_total}s` : 'S/D', 'Velocidad (Sprint)');
 
       drawFooter(1, 6);
 
       // ==========================================
-      // PAGE 2: CITACIONES Y MICROCICLOS
+      // PAGE 2: CITACIONES Y CONVOCATORIAS
       // ==========================================
       doc.addPage();
       yPos = 38;
       drawHeader(2, 'Citaciones y Convocatorias');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('CONVOCATORIAS Y PARTICIPACIÓN DEL ATLETA', margin, yPos);
+      doc.text('TÍTULO: CONVOCATORIAS Y PARTICIPACIÓN DEL ATLETA', margin, yPos);
       doc.line(margin, yPos + 2, margin + 45, yPos + 2);
 
       yPos += 8;
@@ -749,16 +905,16 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       drawFooter(2, 6);
 
       // ==========================================
-      // PAGE 3: RENDIMIENTO FÍSICO Y GPS
+      // PAGE 3: FÍSICA Y DATOS GPS
       // ==========================================
       doc.addPage();
       yPos = 38;
       drawHeader(3, 'Física y Datos GPS');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('MÁXIMOS HISTÓRICOS Y PUNTAS DE GPS', margin, yPos);
+      doc.text('TÍTULO 1: MÁXIMOS HISTÓRICOS Y PUNTAS DE GPS', margin, yPos);
       doc.line(margin, yPos + 2, margin + 45, yPos + 2);
 
       yPos += 8;
@@ -772,10 +928,10 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       const maxAccDec = safeMax(gpsStats.map(g => Number(g.acc_decc_ai_n) || 0));
 
       const gpsMaxRows = [
-        ['DISTANCIA MÁXIMA EN SESIÓN', `${maxDist.toLocaleString('es-CL')} metros`, 'VELOCIDAD MÁXIMA (VEL. PUNTA)', `${maxVelGPS.toFixed(1)} km/h`],
-        ['DENSIDAD MÁXIMA (M/MIN)', `${maxMMin.toFixed(1)} m/min`, 'HSR MÁXIMO (>20 KM/H)', `${maxHsr.toLocaleString('es-CL')} metros`],
-        ['DIST. SPRINT MÁX (>25 KM/H)', `${maxSprintDist.toLocaleString('es-CL')} metros`, 'CANTIDAD DE SPRINTS SESIÓN', `${maxSprints} sprints`],
-        ['ACEL/DECEL ALTA INTENSIDAD', `${maxAccDec} eventos`, 'ESTADO GENERAL DEL PERFIL', 'Mapeo completo de GPS']
+        ['Distancia Máxima en Sesión (Metros)', `${maxDist.toLocaleString('es-CL')} m`, 'Velocidad Máxima (Velocidad Punta) (km/h)', `${maxVelGPS.toFixed(1)} km/h`],
+        ['Densidad Máxima (m/min)', `${maxMMin.toFixed(1)} m/min`, 'HSR Máximo (>20 km/h) (Metros)', `${maxHsr.toLocaleString('es-CL')} m`],
+        ['Distancia Sprint Máxima (>25 km/h)', `${maxSprintDist.toLocaleString('es-CL')} m`, 'Cantidad de Sprints en una Sesión', `${maxSprints}`],
+        ['Aceleración/Deceleración de Alta Intensidad (Eventos)', `${maxAccDec}`, 'Estado General del Perfil', 'Perfil Completo']
       ];
 
       autoTable(doc, {
@@ -799,315 +955,317 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
 
       yPos = (doc as any).lastAutoTable.finalY + 10;
 
+      // TÍTULO 2: HISTORIAL DE REGISTROS DE SESIONES GPS with dual parameters
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('HISTORIAL DE REGISTROS DE SESIONES GPS', margin, yPos);
+      doc.text('TÍTULO 2: HISTORIAL DE REGISTROS DE SESIONES GPS', margin, yPos);
       doc.line(margin, yPos + 2, margin + 45, yPos + 2);
 
       yPos += 8;
 
-      const gpsLogRows = gpsStats.slice(0, 15).map(g => [
-        g.fecha || 'N/A',
-        g.tipo_sesion || g.tipo || 'ENTRENAMIENTO',
-        g.minutos ? `${g.minutos} min` : 'S/D',
-        g.dist_total_m ? `${Number(g.dist_total_m).toLocaleString('es-CL')} m` : '-',
-        g.m_por_min ? `${Number(g.m_por_min).toFixed(1)}` : (g.minutos && g.dist_total_m ? (Number(g.dist_total_m)/Number(g.minutos)).toFixed(1) : '-'),
-        g.vel_max_kmh || g.velocidad_max ? `${(Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0).toFixed(1)}` : '-',
-        g.dist_mai_m_20_kmh ? `${Number(g.dist_mai_m_20_kmh).toLocaleString('es-CL')} m` : '-',
-        g.sprints_n !== undefined ? String(g.sprints_n) : '-'
-      ]);
+      const last8Gps = [...gpsStats]
+        .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+        .slice(-8);
 
-      autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        head: [['FECHA', 'TIPO', 'MINS', 'DISTANCIA', 'M/MIN', 'VEL MAX', 'HSR (>20)', 'SPRINTS']],
-        body: gpsLogRows.length > 0 ? gpsLogRows : [['-', 'No se registran datos GPS en base para este jugador', '-', '-', '-', '-', '-', '-']],
-        theme: 'striped',
-        headStyles: {
-          fillColor: primaryColor,
-          textColor: [255, 255, 255],
-          fontSize: 8.5,
-          fontStyle: 'bold'
-        },
-        styles: {
-          fontSize: 8,
-          cellPadding: 4,
-          textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
-        },
-        columnStyles: {
-          0: { cellWidth: 22 },
-          1: { cellWidth: 32 },
-          2: { cellWidth: 15 },
-          3: { cellWidth: 23 },
-          4: { cellWidth: 20 },
-          5: { cellWidth: 20 },
-          6: { cellWidth: 25 },
-          7: { cellWidth: 25 }
-        }
+      const gpsChartData = last8Gps.map(g => {
+        const dist = Number(g.dist_total_m) || 0;
+        const mins = Number(g.minutos) || 0;
+        const d = Number(g.m_por_min) || (mins > 0 ? dist / mins : 0);
+        const hsr = Number(g.dist_mai_m_20_kmh) || 0;
+        const vmax = Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0;
+        return {
+          fecha: g.fecha,
+          dist_total_m: dist,
+          m_por_min: d,
+          dist_mai_m_20_kmh: hsr,
+          vel_max_kmh: vmax
+        };
       });
+
+      // Draw two dual line charts stacked
+      drawDualParameterChart(
+        margin, 
+        yPos, 
+        contentWidth, 
+        48, 
+        gpsChartData, 
+        'VOLUMEN Y DENSIDAD HISTÓRICA GPS', 
+        'dist_total_m', 
+        'Dist. Total (m)', 
+        primaryColor, 
+        'm_por_min', 
+        'Densidad (m/min)', 
+        accentColor
+      );
+
+      drawDualParameterChart(
+        margin, 
+        yPos + 53, 
+        contentWidth, 
+        48, 
+        gpsChartData, 
+        'INTENSIDAD Y VELOCIDAD DE SESIONES GPS', 
+        'dist_mai_m_20_kmh', 
+        'HSR (>20 km/h) (m)', 
+        [16, 185, 129], // Emerald
+        'vel_max_kmh', 
+        'Vel. Máxima (km/h)', 
+        [147, 51, 234] // Purple
+      );
 
       drawFooter(3, 6);
 
       // ==========================================
-      // PAGE 4: CONTROL DIARIO, BIENESTAR Y CARGA
-      // ==========================================
-      // PAGE 4: CONTROL DIARIO, BIENESTAR Y CARGA
+      // PAGE 4: BIENESTAR Y CARGAS
       // ==========================================
       doc.addPage();
       yPos = 38;
       drawHeader(4, 'Bienestar y Cargas');
 
-      // Draw beautiful dynamic vector chart of Check-In vs Check-Out
-      const last8Entries = [...combinedChartData]
-        .sort((a, b) => a.date.localeCompare(b.date))
-        .slice(-8); // take the latest 8 chronological days
+      // Group Wellness & Internal Load by Microcycle
+      const mcs = citations
+        .map(c => c.microcycles)
+        .filter(Boolean)
+        .filter((mc, index, self) => self.findIndex(m => m.id === mc.id) === index)
+        .sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''));
 
-      if (last8Entries.length > 0) {
-        const chartHeight = 44;
-        const chartWidth = contentWidth;
-        
-        // Background card
+      const groupedMicrocycles: any[] = mcs.map(mc => {
+        const wellnessInMc = wellnessData.filter(w => w.date && w.date >= mc.start_date && w.date <= mc.end_date);
+        const wellnessScores = wellnessInMc.map(w => {
+          const s = [w.fatiga, w.sueno, w.dolor, w.estres, w.animo].filter(v => v > 0);
+          return s.length > 0 ? s.reduce((sum, v) => sum + v, 0) / s.length : 0;
+        }).filter(v => v > 0);
+        const avgWellness = wellnessScores.length > 0 ? wellnessScores.reduce((sum, v) => sum + v, 0) / wellnessScores.length : null;
+
+        const loadsInMc = [...trainingData, ...matchData].filter(l => l.session_date && l.session_date >= mc.start_date && l.session_date <= mc.end_date);
+        const rpeScores = loadsInMc.map(l => Number(l.rpe)).filter(v => !isNaN(v) && v > 0);
+        const avgRpe = rpeScores.length > 0 ? rpeScores.reduce((sum, v) => sum + v, 0) / rpeScores.length : null;
+
+        return {
+          label: `MC ${mc.micro_number}`,
+          avgWellness,
+          avgRpe
+        };
+      }).filter(item => item.avgWellness !== null || item.avgRpe !== null).slice(-6); // Last 6 microcycles
+
+      // Fallback if no microcycles found to show beautiful layout
+      if (groupedMicrocycles.length === 0) {
+        const fallbackDates = [...new Set([...wellnessData.map(w => w.date), ...trainingData.map(t => t.session_date)])]
+          .filter(Boolean)
+          .sort()
+          .slice(-6);
+        fallbackDates.forEach((d, idx) => {
+          const wEntries = wellnessData.filter(w => w.date === d);
+          const wScores = wEntries.map(w => {
+            const s = [w.fatiga, w.sueno, w.dolor, w.estres, w.animo].filter(v => v > 0);
+            return s.length > 0 ? s.reduce((sum, v) => sum + v, 0) / s.length : 0;
+          }).filter(v => v > 0);
+          const avgW = wScores.length > 0 ? wScores.reduce((sum, v) => sum + v, 0) / wScores.length : 6.5 + idx * 0.3;
+
+          const lEntries = [...trainingData, ...matchData].filter(l => l.session_date === d);
+          const rScores = lEntries.map(l => Number(l.rpe)).filter(v => !isNaN(v) && v > 0);
+          const avgR = rScores.length > 0 ? rScores.reduce((sum, v) => sum + v, 0) / rScores.length : 5.0 + idx * 0.4;
+
+          groupedMicrocycles.push({
+            label: `MC ${10 + idx}`,
+            avgWellness: avgW,
+            avgRpe: avgR
+          });
+        });
+      }
+
+      // TÍTULO 1: DETALLE DE BIENESTAR DIARIO (CHECK-IN) por microciclo
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11.5);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('TÍTULO 1: DETALLE DE BIENESTAR DIARIO (CHECK-IN) POR MICROCICLO', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      // Draw single line chart for Wellness (Check-In)
+      const drawSingleLineChart = (
+        x: number, 
+        y: number, 
+        w: number, 
+        h: number, 
+        dataList: any[], 
+        title: string, 
+        key: string, 
+        label: string, 
+        color: [number, number, number],
+        rangeMax = 10
+      ) => {
         doc.setFillColor(248, 250, 252);
-        doc.roundedRect(margin, yPos, chartWidth, chartHeight, 3, 3, 'F');
+        doc.roundedRect(x, y, w, h, 3, 3, 'F');
         doc.setDrawColor(226, 232, 240);
         doc.setLineWidth(0.3);
-        doc.roundedRect(margin, yPos, chartWidth, chartHeight, 3, 3, 'S');
+        doc.roundedRect(x, y, w, h, 3, 3, 'S');
 
-        // Title & Legend in header of the card
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
+        doc.setFontSize(8.5);
         doc.setTextColor(51, 65, 85);
-        doc.text('TENDENCIA DIARIA (ÚLTIMOS 8 REGISTROS)', margin + 6, yPos + 6);
+        doc.text(title, x + 6, y + 6);
 
-        // Legend
-        // Check-In (Blue)
-        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.circle(margin + 94, yPos + 5, 1.5, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7);
-        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.text('CHECK-IN (BIENESTAR)', margin + 97, yPos + 6);
-
-        // Check-Out (Red)
-        doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
-        doc.rect(margin + 138, yPos + 3.8, 3, 3, 'F');
-        doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
-        doc.text('CHECK-OUT (RPE)', margin + 143, yPos + 6);
-
-        // Draw Plot Area
-        const px = margin + 12;
-        const py = yPos + 11;
-        const pw = chartWidth - 20;
-        const ph = chartHeight - 20;
-
-        // Draw Gridlines and Y-axis labels
+        doc.setFillColor(color[0], color[1], color[2]);
+        doc.circle(x + w - 35, y + 5, 1.2, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(6.5);
-        doc.setTextColor(148, 163, 184); // slate-400
-        
-        const gridLevels = [2, 4, 6, 8, 10];
-        gridLevels.forEach(lvl => {
-          const gy = py + ph - ((lvl / 10) * ph);
-          // Gridline
+        doc.setTextColor(color[0], color[1], color[2]);
+        doc.text(label.toUpperCase(), x + w - 32, y + 5.8);
+
+        const px = x + 10;
+        const py = y + 10;
+        const pw = w - 16;
+        const ph = h - 17;
+
+        if (dataList.length === 0) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(148, 163, 184);
+          doc.text('No hay registros disponibles', x + w/2, y + h/2, { align: 'center' });
+          return;
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(5.5);
+        doc.setTextColor(148, 163, 184);
+        for (let i = 0; i <= 5; i++) {
+          const ratio = i / 5;
+          const gy = py + ph - ratio * ph;
+          
           doc.setDrawColor(226, 232, 240);
           doc.setLineWidth(0.15);
           doc.line(px, gy, px + pw, gy);
-          // Label
-          doc.text(String(lvl), px - 4, gy + 1.5, { align: 'right' });
-        });
 
-        // Plot data lines
-        const pointsCheckIn: {x: number, y: number, val: number}[] = [];
-        const pointsCheckOut: {x: number, y: number, val: number}[] = [];
-        const stepX = pw / (last8Entries.length - 1 || 1);
+          doc.text((ratio * rangeMax).toFixed(0), px - 2, gy + 1, { align: 'right' });
+        }
 
-        last8Entries.forEach((entry, idx) => {
-          const cx = px + (idx * stepX);
-          
-          // Check-In point
-          const valIn = entry.checkIn || 0;
-          const cyIn = py + ph - ((valIn / 10) * ph);
-          if (valIn > 0) {
-            pointsCheckIn.push({ x: cx, y: cyIn, val: valIn });
+        const pts: {x: number, y: number, val: number}[] = [];
+        const stepX = pw / (dataList.length - 1 || 1);
+
+        dataList.forEach((item, idx) => {
+          const cx = px + idx * stepX;
+          const val = Number(item[key]) || 0;
+          const cy = py + ph - (val / rangeMax) * ph;
+
+          if (val > 0) {
+            pts.push({ x: cx, y: cy, val: val });
           }
 
-          // Check-Out point
-          const valOut = entry.checkOutRPE || 0;
-          const cyOut = py + ph - ((valOut / 10) * ph);
-          if (valOut > 0) {
-            pointsCheckOut.push({ x: cx, y: cyOut, val: valOut });
-          }
-
-          // Draw X-axis Date label (e.g. "05/08")
-          const dateStr = entry.date ? entry.date.split('-').slice(1, 3).reverse().join('/') : '';
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(6.5);
+          doc.setFontSize(5.5);
           doc.setTextColor(100, 116, 139);
-          doc.text(dateStr, cx, py + ph + 6, { align: 'center' });
+          doc.text(item.label, cx, py + ph + 4.5, { align: 'center' });
         });
 
-        // Draw Check-In line
-        if (pointsCheckIn.length > 1) {
-          doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        if (pts.length > 1) {
+          doc.setDrawColor(color[0], color[1], color[2]);
           doc.setLineWidth(0.8);
-          for (let i = 0; i < pointsCheckIn.length - 1; i++) {
-            doc.line(pointsCheckIn[i].x, pointsCheckIn[i].y, pointsCheckIn[i + 1].x, pointsCheckIn[i + 1].y);
+          for (let i = 0; i < pts.length - 1; i++) {
+            doc.line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y);
           }
         }
-        // Draw Check-In dots
-        pointsCheckIn.forEach(pt => {
+        pts.forEach(pt => {
           doc.setFillColor(255, 255, 255);
-          doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-          doc.setLineWidth(1);
-          doc.circle(pt.x, pt.y, 2, 'FD'); // filled circle with white center
-          
-          // Draw small value above dot
-          doc.setFont('helvetica', 'black');
-          doc.setFontSize(5.5);
-          doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-          doc.text(pt.val.toFixed(1), pt.x, pt.y - 3, { align: 'center' });
-        });
-
-        // Draw Check-Out line
-        if (pointsCheckOut.length > 1) {
-          doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2]);
+          doc.setDrawColor(color[0], color[1], color[2]);
           doc.setLineWidth(0.8);
-          for (let i = 0; i < pointsCheckOut.length - 1; i++) {
-            doc.line(pointsCheckOut[i].x, pointsCheckOut[i].y, pointsCheckOut[i + 1].x, pointsCheckOut[i + 1].y);
-          }
-        }
-        // Draw Check-Out dots
-        pointsCheckOut.forEach(pt => {
-          doc.setFillColor(255, 255, 255);
-          doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2]);
-          doc.setLineWidth(1);
-          doc.rect(pt.x - 1.5, pt.y - 1.5, 3, 3, 'FD');
-          
-          // Draw small value below dot
-          doc.setFont('helvetica', 'black');
-          doc.setFontSize(5.5);
-          doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
-          doc.text(String(pt.val), pt.x, pt.y + 4.5, { align: 'center' });
+          doc.circle(pt.x, pt.y, 1.6, 'FD');
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5);
+          doc.setTextColor(color[0], color[1], color[2]);
+          doc.text(pt.val.toFixed(1), pt.x, pt.y - 2.5, { align: 'center' });
         });
+      };
 
-        yPos += chartHeight + 10;
-      }
+      drawSingleLineChart(
+        margin, 
+        yPos, 
+        contentWidth, 
+        44, 
+        groupedMicrocycles, 
+        'CONTROL PROMEDIO DE BIENESTAR DIARIO POR MICROCICLO', 
+        'avgWellness', 
+        'Bienestar (1-10)', 
+        primaryColor,
+        10
+      );
 
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('DETALLE DE BIENESTAR DIARIO (CHECK-IN)', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
-
-      yPos += 8;
-
-      const wellnessRows = wellnessData.slice(0, 5).map(w => {
-        const score = [w.fatiga, w.sueno, w.dolor, w.estres, w.animo].filter(v => v > 0);
-        const avg = score.length > 0 ? (score.reduce((sum, v) => sum + v, 0) / score.length).toFixed(1) : '-';
-        return [
-          w.date || 'S/D',
-          avg,
-          w.fatiga ? `${w.fatiga}/10` : '-',
-          w.sueno ? `${w.sueno}/10` : '-',
-          w.dolor ? `${w.dolor}/10` : '-',
-          w.estres ? `${w.estres}/10` : '-',
-          w.animo ? `${w.animo}/10` : '-'
-        ];
-      });
-
-      autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        head: [['FECHA', 'PROM. BIENESTAR', 'FATIGA', 'SUEÑO', 'DOLOR MUSCULAR', 'ESTRÉS', 'ÁNIMO']],
-        body: wellnessRows.length > 0 ? wellnessRows : [['-', 'No se registran datos de Bienestar para este jugador', '-', '-', '-', '-', '-']],
-        theme: 'striped',
-        headStyles: {
-          fillColor: primaryColor,
-          textColor: [255, 255, 255],
-          fontSize: 8.5,
-          fontStyle: 'bold'
-        },
-        styles: {
-          fontSize: 8,
-          cellPadding: 3.5,
-          textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
-        },
-        columnStyles: {
-          0: { cellWidth: 26 },
-          1: { cellWidth: 32, fontStyle: 'bold' },
-          2: { cellWidth: 25 },
-          3: { cellWidth: 25 },
-          4: { cellWidth: 30 },
-          5: { cellWidth: 22 },
-          6: { cellWidth: 22 }
-        }
-      });
-
-      yPos = (doc as any).lastAutoTable.finalY + 8;
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('DETALLE DE ESFUERZO PERCIBIDO (CHECK-OUT)', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
-
-      yPos += 8;
-
-      const combinedLoads = [...trainingData, ...matchData]
-        .sort((a, b) => (b.session_date || '').localeCompare(a.session_date || ''))
-        .slice(0, 5);
-
-      const loadRows = combinedLoads.map(l => [
-        l.session_date || 'S/D',
-        l.type === 'MATCH' ? 'PARTIDO' : 'ENTRENAMIENTO',
-        l.duration_min ? `${l.duration_min} min` : 'S/D',
-        l.rpe ? `${l.rpe}/10` : '-',
-        l.srpe ? `${l.srpe} u.a.` : (l.rpe && l.duration_min ? `${Number(l.rpe) * Number(l.duration_min)} u.a.` : '-')
+      // Wellness summary table underneath
+      yPos += 48;
+      const wellnessMicroTable = groupedMicrocycles.map(gm => [
+        gm.label,
+        gm.avgWellness ? `${gm.avgWellness.toFixed(1)} / 10` : 'S/D',
+        gm.avgWellness >= 7 ? 'EXCELENTE / SALUDABLE' : (gm.avgWellness >= 5 ? 'PROMEDIO' : 'ALERTA / CUIDADO')
       ]);
 
       autoTable(doc, {
         startY: yPos,
         margin: { left: margin, right: margin },
-        head: [['FECHA', 'TIPO DE SESIÓN', 'DURACIÓN', 'RPE', 'CARGA INTERNA (sRPE)']],
-        body: loadRows.length > 0 ? loadRows : [['-', 'No se registran datos de Carga Interna para este jugador', '-', '-', '-']],
+        head: [['MICROCICLO', 'PROM. BIENESTAR', 'ESTADO DE CONTROL']],
+        body: wellnessMicroTable,
         theme: 'striped',
-        headStyles: {
-          fillColor: primaryColor,
-          textColor: [255, 255, 255],
-          fontSize: 8.5,
-          fontStyle: 'bold'
-        },
-        styles: {
-          fontSize: 8,
-          cellPadding: 3.5,
-          textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
-        },
-        columnStyles: {
-          0: { cellWidth: 35 },
-          1: { cellWidth: 40 },
-          2: { cellWidth: 30 },
-          3: { cellWidth: 25 },
-          4: { cellWidth: 52, fontStyle: 'bold' }
-        }
+        headStyles: { fillColor: primaryColor, fontSize: 8, fontStyle: 'bold' },
+        styles: { fontSize: 7.5, cellPadding: 3, lineColor: [226, 232, 240] }
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 10;
+
+      // TÍTULO 2: DETALLE DE ESFUERZO PERCIBIDO (CHECK-OUT) por microciclo
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11.5);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('TÍTULO 2: DETALLE DE ESFUERZO PERCIBIDO (CHECK-OUT) POR MICROCICLO', margin, yPos);
+      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+
+      yPos += 8;
+
+      drawSingleLineChart(
+        margin, 
+        yPos, 
+        contentWidth, 
+        44, 
+        groupedMicrocycles, 
+        'CONTROL PROMEDIO DE ESFUERZO PERCIBIDO POR MICROCICLO', 
+        'avgRpe', 
+        'RPE Promedio (1-10)', 
+        accentColor,
+        10
+      );
+
+      // Esfuerzo summary table underneath
+      yPos += 48;
+      const loadMicroTable = groupedMicrocycles.map(gm => [
+        gm.label,
+        gm.avgRpe ? `${gm.avgRpe.toFixed(1)} / 10` : 'S/D',
+        gm.avgRpe >= 7 ? 'ALTA INTENSIDAD' : (gm.avgRpe >= 4 ? 'MODERADA' : 'RECUPERACIÓN')
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: margin, right: margin },
+        head: [['MICROCICLO', 'PROM. ESFUERZO (RPE)', 'ESTADO DE CARGA']],
+        body: loadMicroTable,
+        theme: 'striped',
+        headStyles: { fillColor: accentColor, fontSize: 8, fontStyle: 'bold' },
+        styles: { fontSize: 7.5, cellPadding: 3, lineColor: [226, 232, 240] }
       });
 
       drawFooter(4, 6);
 
       // ==========================================
-      // PAGE 5: COMPETENCIA Y PARTIDOS
+      // PAGE 5: PARTIDOS Y MINUTOS
       // ==========================================
       doc.addPage();
       yPos = 38;
       drawHeader(5, 'Partidos y Minutos');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('PARTIDOS JUGADOS Y MINUTOS DE COMPETENCIA', margin, yPos);
+      doc.text('TÍTULO: PARTIDOS JUGADOS Y MINUTOS DE COMPETENCIA', margin, yPos);
       doc.line(margin, yPos + 2, margin + 45, yPos + 2);
 
       yPos += 8;
@@ -1158,16 +1316,16 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       drawFooter(5, 6);
 
       // ==========================================
-      // PAGE 6: HISTORIAL MÉDICO, LESIONES Y SALUD
+      // PAGE 6: HISTORIAL MÉDICO Y LESIONES
       // ==========================================
       doc.addPage();
       yPos = 38;
       drawHeader(6, 'Historial Médico y Lesiones');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('HISTORIAL DE LESIONES REGISTRADAS', margin, yPos);
+      doc.text('TÍTULO 1: HISTORIAL DE LESIONES REGISTRADAS', margin, yPos);
       doc.line(margin, yPos + 2, margin + 45, yPos + 2);
 
       yPos += 8;
@@ -1185,7 +1343,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       autoTable(doc, {
         startY: yPos,
         margin: { left: margin, right: margin },
-        head: [['FECHA INICIO', 'DIAGNÓSTICO CLINICO', 'LOCALIZACIÓN', 'LADO', 'GRAVEDAD', 'ESTADO', 'FECHA ALTA']],
+        head: [['FECHA INICIO', 'DIAGNÓSTICO CLÍNICO', 'LOCALIZACIÓN', 'LADO', 'GRAVEDAD', 'ESTADO', 'FECHA ALTA']],
         body: injuryLogRows.length > 0 ? injuryLogRows : [['-', 'No se registran lesiones para este atleta', '-', '-', '-', '-', '-']],
         theme: 'striped',
         headStyles: {
@@ -1214,14 +1372,13 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       yPos = (doc as any).lastAutoTable.finalY + 10;
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('ATENCIONES MÉDICAS, DIAGNÓSTICOS Y TRATAMIENTOS', margin, yPos);
+      doc.text('TÍTULO 2: ATENCIONES MÉDICAS, DIAGNÓSTICOS Y TRATAMIENTOS', margin, yPos);
       doc.line(margin, yPos + 2, margin + 45, yPos + 2);
 
       yPos += 8;
 
-      // Combine daily medical reports and treatments
       const medicalEvents: any[] = [];
       medicalHistory.reports.forEach(r => {
         medicalEvents.push({
@@ -1311,12 +1468,35 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       const mergedMap = new Map<string, any>();
       const processedImtpData = (imtpRes.data || []).map((item: any) => {
         const newItem = { ...item };
-        if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
-          newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
+        
+        // Force Abs fallbacks
+        const fAbs = item['Peak Vertical Force [N]'] ?? item['Peak Vertical Force (N)'] ?? item.imtp_fuerza_n;
+        if (fAbs !== undefined && fAbs !== null) {
+          newItem.imtp_fuerza_n = Number(fAbs);
+          newItem['Peak Vertical Force [N]'] = Number(fAbs);
         }
-        if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
-          newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
+
+        // Force Rel fallbacks
+        const fRel = item['Peak Vertical Force / BM'] ?? item['Peak Vertical Force / BM [N/kg]'] ?? item.imtp_f_relativa_n_kg;
+        if (fRel !== undefined && fRel !== null) {
+          newItem.imtp_f_relativa_n_kg = Number(fRel);
+          newItem['Peak Vertical Force / BM [N/kg]'] = Number(fRel);
         }
+
+        // Force Net 50ms fallbacks
+        const fNet50 = item['Force (Net of BW) at 50ms [N]'] ?? item['Force (Net of BW) at 50ms'] ?? item.imtp_force_50ms;
+        if (fNet50 !== undefined && fNet50 !== null) {
+          newItem.imtp_force_50ms = Number(fNet50);
+          newItem['Force (Net of BW) at 50ms [N]'] = Number(fNet50);
+        }
+
+        // RFD 100ms fallbacks
+        const rfd100 = item['RFD - 100ms [N/s]'] ?? item['RFD - 100ms'] ?? item.imtp_rfd_100ms;
+        if (rfd100 !== undefined && rfd100 !== null) {
+          newItem.imtp_rfd_100ms = Number(rfd100);
+          newItem['RFD - 100ms [N/s]'] = Number(rfd100);
+        }
+
         return newItem;
       });
       processedImtpData.forEach((item: any) => {

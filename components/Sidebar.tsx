@@ -119,6 +119,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
     }
     // Para staff, verificar permisos de menú personalizados si están configurados
     if (userRole === 'staff' && allowedMenus) {
+      if (allowedMenus.includes('*')) return true;
       return allowedMenus.includes(menuId);
     }
     return true; // Acceso total para staff por defecto si no está restringido
