@@ -202,7 +202,8 @@ export default function PronosticoCargas({
   // Per-day user planning data
   const [dayIntensities, setDayIntensities] = useState<{ [dayIdx: number]: Intensity }>({});
   // Key format: "dayIdx_metricId" => value
-  const [plannedValues, setPlannedValues] = useState<{ [key: string]: number }>({});
+  const [plannedValues, setPlannedValues] = useState<{ [key: string]: any }>({});
+  const [lockedDays, setLockedDays] = useState<{ [dayIdx: number]: boolean }>({});
 
   // 1. Fetch historical GPS records & Microcycles on load
   useEffect(() => {
@@ -532,41 +533,54 @@ export default function PronosticoCargas({
     if (!selectedMicrocycle) return [];
     return Array.from({ length: daysCount }).map((_, dIdx) => {
       const dayInfo = getDayDetails(dIdx);
+      const isLocked = !!lockedDays[dIdx];
       const row: any = {
         name: `Día ${dIdx + 1}`,
         fullLabel: dayInfo.label,
+        dIdx,
       };
       
       METRICS.forEach(metric => {
         const rec = getRecommendation(dIdx, metric.id);
-        const currentVal = plannedValues[`${dIdx}_${metric.id}`] !== undefined 
+        let currentVal = plannedValues[`${dIdx}_${metric.id}`] !== undefined 
           ? plannedValues[`${dIdx}_${metric.id}`] 
           : rec.p50;
         
-        const classified = clasificarGPS(metric.id, currentVal, selectedCategory);
+        if (isLocked) {
+          currentVal = 0;
+        }
+        
+        const classified = isLocked ? 'BAJO' : clasificarGPS(metric.id, currentVal, selectedCategory);
         let currentIntensity: Intensity = 'Media';
         if (classified === 'BAJO') currentIntensity = 'Baja';
         else if (classified === 'ALTO') currentIntensity = 'Alta';
 
-        const range = getRangeForMetric(metric.id, currentVal, 1, currentIntensity);
-        const pct = rec.p50 > 0 ? Math.round(((currentVal - rec.p50) / rec.p50) * 100) : 0;
+        let range = getRangeForMetric(metric.id, currentVal, 1, currentIntensity);
+        if (isLocked) {
+          range = { min: 0, max: 0, p50: 0 };
+        }
+        
+        const pct = isLocked ? 0 : (rec.p50 > 0 ? Math.round(((currentVal - rec.p50) / rec.p50) * 100) : 0);
 
         row[metric.id] = currentVal;
         row[`${metric.id}_min`] = range.min;
         row[`${metric.id}_max`] = range.max;
         row[`${metric.id}_pct`] = pct;
-        row[`${metric.id}_rel`] = rec.p50 > 0 ? Math.round((currentVal / rec.p50) * 100) : 100;
-        row[`${metric.id}_rec`] = rec.p50;
+        row[`${metric.id}_rel`] = isLocked ? 0 : (rec.p50 > 0 ? Math.round((currentVal / rec.p50) * 100) : 100);
+        row[`${metric.id}_rec`] = isLocked ? 0 : rec.p50;
       });
       
       return row;
     });
-  }, [daysCount, selectedMicrocycle, plannedValues, dayIntensities, referencesByIntensity, confidenceState, selectedCategory]);
+  }, [daysCount, selectedMicrocycle, plannedValues, dayIntensities, referencesByIntensity, confidenceState, selectedCategory, lockedDays]);
 
   // Función para descargar PDF de Planificación y Pronóstico
   const handleDownloadPDF = () => {
     if (!selectedMicrocycle) return;
     
+    // Filter out locked days from the PDF rendering
+    const pdfChartData = chartData.filter(row => !lockedDays[row.dIdx]);
+
     const doc = new jsPDF('p', 'mm', 'a4');
     const width = doc.internal.pageSize.getWidth();
     const height = doc.internal.pageSize.getHeight();
@@ -663,7 +677,7 @@ export default function PronosticoCargas({
     
     let currentY = tableYStart + 8;
     
-    chartData.forEach((row, idx) => {
+    pdfChartData.forEach((row, idx) => {
       if (idx % 2 === 1) {
         doc.setFillColor(248, 250, 252);
         doc.rect(margin, currentY, width - (margin * 2), 7.5, 'F');
@@ -675,7 +689,7 @@ export default function PronosticoCargas({
       doc.setTextColor(15, 23, 42);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
-      const dayInfo = getDayDetails(idx);
+      const dayInfo = getDayDetails(row.dIdx);
       const compactLabel = dayInfo.label
          .replace('Domingo', 'Dom')
          .replace('Lunes', 'Lun')
@@ -686,7 +700,7 @@ export default function PronosticoCargas({
          .replace('Sábado', 'Sáb');
       doc.text(compactLabel, margin + 3, currentY + 5);
       
-      const intensity = dayIntensities[idx] || 'Media';
+      const intensity = dayIntensities[row.dIdx] || 'Media';
       doc.setFont("helvetica", "normal");
       
       if (intensity === 'Alta') {
@@ -797,7 +811,7 @@ export default function PronosticoCargas({
       const cH = h - 17;
 
       // Find max value in both min and max to auto-scale the chart correctly
-      const maxVals = chartData.map(r => r[`${metricId}_max`] as number || r[metricId] as number || 0);
+      const maxVals = pdfChartData.map(r => r[`${metricId}_max`] as number || r[metricId] as number || 0);
       const maxVal = Math.max(...maxVals, 1);
       const scaleMax = Math.ceil(maxVal * 1.30); // 30% headroom for text labels above bars
 
@@ -819,12 +833,12 @@ export default function PronosticoCargas({
       }
 
       // Draw dual bars and top labels for each day
-      const totalDays = chartData.length;
+      const totalDays = pdfChartData.length || 1;
       const daySpacing = cW / totalDays;
       const groupW = daySpacing * 0.72; // width of the dual-bar group
       const barW = (groupW - 0.8) / 2;  // width of each individual bar
 
-      chartData.forEach((row, idx) => {
+      pdfChartData.forEach((row, idx) => {
         const valMin = row[`${metricId}_min`] as number || 0;
         const valMax = row[`${metricId}_max`] as number || 0;
 
@@ -870,9 +884,9 @@ export default function PronosticoCargas({
         doc.setTextColor(148, 163, 184);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(5.5);
-        const dayInfo = getDayDetails(idx);
+        const dayInfo = getDayDetails(row.dIdx);
         const parts = dayInfo.label.split(' ');
-        const compactLabel = parts[1] && parts[2] ? `${parts[1]} ${parts[2]}` : `D${idx + 1}`; // e.g. "20 Jul"
+        const compactLabel = parts[1] && parts[2] ? `${parts[1]} ${parts[2]}` : `D${row.dIdx + 1}`; // e.g. "20 Jul"
         doc.text(compactLabel, dayCenter, cY + cH + 4.2, { align: 'center' });
       });
     };
@@ -962,6 +976,7 @@ export default function PronosticoCargas({
     if (!selectedMicrocycle) {
       setPlannedValues({});
       setDayIntensities({});
+      setLockedDays({});
       return;
     }
 
@@ -970,7 +985,7 @@ export default function PronosticoCargas({
       const valuesKey = `gps_planning_mc_values_${selectedMicrocycle.id}`;
       const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
       
-      let localValues = {};
+      let localValues: any = {};
       let localIntensities = {};
 
       const storedValues = localStorage.getItem(valuesKey);
@@ -993,6 +1008,7 @@ export default function PronosticoCargas({
 
       setPlannedValues(localValues);
       setDayIntensities(localIntensities);
+      setLockedDays(localValues.lockedDays || {});
 
       // Try fetching from Supabase for sync
       try {
@@ -1008,6 +1024,7 @@ export default function PronosticoCargas({
           const ints = data.intensities_data || {};
           setPlannedValues(vals);
           setDayIntensities(ints);
+          setLockedDays(vals.lockedDays || {});
           localStorage.setItem(valuesKey, JSON.stringify(vals));
           localStorage.setItem(intensitiesKey, JSON.stringify(ints));
         }
@@ -1029,14 +1046,71 @@ export default function PronosticoCargas({
     // Left empty or bypassed intentionally as metric intensity is now auto-determined based on the slider value
   };
 
+  // Handle individual day locking/unlocking
+  const toggleLockDay = (dayIdx: number) => {
+    if (!selectedMicrocycle) return;
+    const isLocked = !lockedDays[dayIdx];
+    
+    setLockedDays(prev => {
+      const nextLocked = { ...prev, [dayIdx]: isLocked };
+      
+      setPlannedValues(prevValues => {
+        const nextValues = { ...prevValues };
+        
+        if (isLocked) {
+          // If locking, force all values of this day to 0
+          METRICS.forEach(metric => {
+            nextValues[`${dayIdx}_${metric.id}`] = 0;
+          });
+        } else {
+          // If unlocking, restore to recommended P50
+          METRICS.forEach(metric => {
+            nextValues[`${dayIdx}_${metric.id}`] = getRecommendation(dayIdx, metric.id).p50;
+          });
+        }
+        
+        nextValues.lockedDays = nextLocked;
+        
+        const valuesKey = `gps_planning_mc_values_${selectedMicrocycle.id}`;
+        localStorage.setItem(valuesKey, JSON.stringify(nextValues));
+        return nextValues;
+      });
+
+      setDayIntensities(prevInts => {
+        const nextInts = { ...prevInts };
+        
+        if (isLocked) {
+          METRICS.forEach(metric => {
+            nextInts[`${dayIdx}_${metric.id}`] = 'Baja';
+          });
+          nextInts[dayIdx] = 'Baja';
+        } else {
+          METRICS.forEach(metric => {
+            nextInts[`${dayIdx}_${metric.id}`] = 'Media';
+          });
+          nextInts[dayIdx] = 'Media';
+        }
+        
+        const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
+        localStorage.setItem(intensitiesKey, JSON.stringify(nextInts));
+        return nextInts;
+      });
+
+      return nextLocked;
+    });
+  };
+
   // Handle plan inputs safely (now slider values represent direct absolute values)
   const handlePlanChange = (dayIndex: number, metricId: string, value: string) => {
     if (!selectedMicrocycle) return;
+    if (lockedDays[dayIndex]) return; // Bypassed if locked
+    
     const num = parseFloat(value) || 0;
     const key = `${dayIndex}_${metricId}`;
     
     setPlannedValues(prev => {
       const updatedValues = { ...prev, [key]: num };
+      updatedValues.lockedDays = lockedDays; // Keep lockedDays metadata synced
       const valuesKey = `gps_planning_mc_values_${selectedMicrocycle.id}`;
       localStorage.setItem(valuesKey, JSON.stringify(updatedValues));
       
@@ -1101,10 +1175,12 @@ export default function PronosticoCargas({
     setSaving(true);
     setMessage(null);
 
+    const valuesWithLock = { ...plannedValues, lockedDays };
+
     // Save locally
     const valuesKey = `gps_planning_mc_values_${selectedMicrocycle.id}`;
     const intensitiesKey = `gps_planning_mc_intensities_${selectedMicrocycle.id}`;
-    localStorage.setItem(valuesKey, JSON.stringify(plannedValues));
+    localStorage.setItem(valuesKey, JSON.stringify(valuesWithLock));
     localStorage.setItem(intensitiesKey, JSON.stringify(dayIntensities));
 
     // Despachar evento personalizado para notificar a otros componentes (como el Reporte de Sesión) que la planificación fue actualizada
@@ -1115,7 +1191,7 @@ export default function PronosticoCargas({
       const payload = {
         microcycle_id: selectedMicrocycle.id,
         days_count: daysCount,
-        planned_data: plannedValues,
+        planned_data: valuesWithLock,
         intensities_data: dayIntensities,
         n_micros: nMicros,
         updated_at: new Date().toISOString()
@@ -1444,13 +1520,37 @@ export default function PronosticoCargas({
                       </div>
                     </div>
 
-                    {/* Granular day configuration (Day intensity indicator & total planned distance percentage) */}
+                    {/* Granular day configuration (Day intensity indicator, block checkbox & total planned distance percentage) */}
                     <div className="flex flex-wrap items-center gap-6">
+                      {/* Bloquear / Desbloquear Día (User-requested check button) */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Exclusión (PDF)</label>
+                        <button
+                          type="button"
+                          onClick={() => toggleLockDay(dIdx)}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all h-[38px] ${
+                            lockedDays[dIdx]
+                              ? 'bg-red-600/20 text-red-400 border-red-500/30 hover:bg-red-600/30'
+                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!lockedDays[dIdx]}
+                            onChange={() => {}} // handled by button onClick
+                            className="w-3.5 h-3.5 rounded border-slate-600 text-red-600 focus:ring-red-500/50 bg-slate-900 cursor-pointer"
+                          />
+                          <span>{lockedDays[dIdx] ? 'BLOQUEADO' : 'INCLUIDO'}</span>
+                        </button>
+                      </div>
+
                       {/* Day intensity indicator (non-clickable badge) */}
                       <div className="flex flex-col gap-1">
                         <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Intensidad Objetivo</label>
                         <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border text-center min-w-[90px] h-[38px] flex items-center justify-center ${
-                          dayClassified === 'BAJO'
+                          lockedDays[dIdx]
+                            ? 'bg-red-600/10 text-red-400 border-red-500/20'
+                            : dayClassified === 'BAJO'
                             ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                             : dayClassified === 'MEDIO'
                             ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
@@ -1458,16 +1558,16 @@ export default function PronosticoCargas({
                             ? 'bg-red-600 text-white shadow-md shadow-red-950/30 border-red-600 font-black'
                             : 'bg-slate-800 text-slate-400 border-slate-700'
                         }`}>
-                          {dayClassified === 'SIN_DATO' ? 'SIN DATO' : dayClassified}
+                          {lockedDays[dIdx] ? 'BLOQUEADO' : (dayClassified === 'SIN_DATO' ? 'SIN DATO' : dayClassified)}
                         </span>
                       </div>
 
                       <div className="flex items-center gap-4">
                         <div className="text-right">
                           <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Ajuste Distancia</span>
-                          <span className="text-sm font-black text-white">{distAdj > 0 ? `+${distAdj}` : distAdj}%</span>
+                          <span className="text-sm font-black text-white">{lockedDays[dIdx] ? '0%' : `${distAdj > 0 ? `+${distAdj}` : distAdj}%`}</span>
                         </div>
-                        {distAdj !== 0 && (
+                        {!lockedDays[dIdx] && distAdj !== 0 && (
                           <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border whitespace-nowrap ${
                             distAdj > 0 ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/10' : 'border-amber-500/20 text-amber-400 bg-amber-500/10'
                           }`}>
@@ -1532,7 +1632,7 @@ export default function PronosticoCargas({
                           const threeVals = METRIC_THREE_VALS[metric.id] || [0, 0, 0];
 
                           return (
-                            <tr key={metric.id} className="hover:bg-slate-50/50 transition-colors">
+                            <tr key={metric.id} className={`hover:bg-slate-50/50 transition-colors ${lockedDays[dIdx] ? 'bg-slate-50/60 opacity-50' : ''}`}>
                               {/* Metric Name */}
                               <td className="px-8 py-5">
                                 <div className="font-black text-slate-900 text-sm uppercase tracking-tight">{metric.label}</div>
@@ -1542,7 +1642,9 @@ export default function PronosticoCargas({
                                 <div className="mt-3 flex flex-col gap-1 w-[120px]">
                                   <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Carga Calculada</span>
                                   <span className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border text-center ${
-                                    classified === 'BAJO'
+                                    lockedDays[dIdx]
+                                      ? 'bg-red-500/10 text-red-500 border-red-500/20 font-black'
+                                      : classified === 'BAJO'
                                       ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
                                       : classified === 'MEDIO'
                                       ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
@@ -1550,7 +1652,7 @@ export default function PronosticoCargas({
                                       ? 'bg-red-500/10 text-red-500 border-red-500/20 font-black'
                                       : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
                                   }`}>
-                                    {classified}
+                                    {lockedDays[dIdx] ? 'BLOQUEADO' : classified}
                                   </span>
                                 </div>
                               </td>
@@ -1563,7 +1665,7 @@ export default function PronosticoCargas({
                                     <div className="flex flex-col">
                                       <div className="flex items-baseline gap-1.5">
                                         <span className="text-xs text-slate-400 font-black uppercase tracking-wider">Rango sugerido:</span>
-                                        <span className="text-xl font-black text-[#0b1220]">{adjP25.toLocaleString()} a {adjP75.toLocaleString()}</span>
+                                        <span className="text-xl font-black text-[#0b1220]">{lockedDays[dIdx] ? '0' : adjP25.toLocaleString()} a {lockedDays[dIdx] ? '0' : adjP75.toLocaleString()}</span>
                                         <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider ml-1">{metric.unit}</span>
                                       </div>
                                       
@@ -1571,20 +1673,22 @@ export default function PronosticoCargas({
                                       <div className="flex items-center gap-4 mt-1.5 text-[10px] font-bold text-slate-400">
                                         <span className="uppercase text-[9px] font-black tracking-wider">Ventanas de Referencia:</span>
                                         <div className="flex items-center gap-3">
-                                          <span className="text-amber-600 font-black">Bajo: <strong className="font-mono text-xs">{threeVals[0].toLocaleString()} {metric.unit}</strong></span>
-                                          <span className="text-emerald-600 font-black">Medio: <strong className="font-mono text-xs">{threeVals[1].toLocaleString()} {metric.unit}</strong></span>
-                                          <span className="text-red-600 font-black">Alto: <strong className="font-mono text-xs">{threeVals[2].toLocaleString()} {metric.unit}</strong></span>
+                                          <span className="text-amber-600 font-black">Bajo: <strong className="font-mono text-xs">{lockedDays[dIdx] ? '0' : threeVals[0].toLocaleString()} {metric.unit}</strong></span>
+                                          <span className="text-emerald-600 font-black">Medio: <strong className="font-mono text-xs">{lockedDays[dIdx] ? '0' : threeVals[1].toLocaleString()} {metric.unit}</strong></span>
+                                          <span className="text-red-600 font-black">Alto: <strong className="font-mono text-xs">{lockedDays[dIdx] ? '0' : threeVals[2].toLocaleString()} {metric.unit}</strong></span>
                                         </div>
                                       </div>
                                     </div>
                                     <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider ${
-                                      pct > 0 
+                                      lockedDays[dIdx]
+                                        ? 'bg-red-50 text-red-700 border border-red-100'
+                                        : pct > 0 
                                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
                                         : pct < 0 
                                         ? 'bg-amber-50 text-amber-700 border border-amber-100' 
                                         : 'bg-slate-50 text-slate-600 border border-slate-100'
                                     }`}>
-                                      {pct === 0 ? 'Sin Ajustar' : `${pct > 0 ? '+' : ''}${pct}%`}
+                                      {lockedDays[dIdx] ? 'BLOQUEADO' : (pct === 0 ? 'Sin Ajustar' : `${pct > 0 ? '+' : ''}${pct}%`)}
                                     </span>
                                   </div>
 
@@ -1597,8 +1701,9 @@ export default function PronosticoCargas({
                                       max={maxVal}
                                       step={stepVal}
                                       value={currentVal}
+                                      disabled={!!lockedDays[dIdx]}
                                       onChange={(e) => handlePlanChange(dIdx, metric.id, e.target.value)}
-                                      className="flex-1 accent-red-600 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer"
+                                      className="flex-1 accent-red-600 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                     <span className="text-[10px] font-bold text-slate-400 w-20 text-right">{maxVal.toLocaleString()} {metric.unit}</span>
                                   </div>
