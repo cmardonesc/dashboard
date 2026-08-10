@@ -1341,6 +1341,8 @@ const MedicaArea: React.FC<MedicaAreaProps> = ({ performanceRecords, players, on
 
   const fetchInjuredPlayers = async () => {
     const possibleSchemas = [
+      '*, players!fk_lesionados_players(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))',
+      '*, players!lesionados_player_fk(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))',
       '*, players!lesionados_player_id_fkey(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))',
       '*, players(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))',
       '*, players!lesionados_id_del_jugador_fkey(nombre, apellido1, apellido2, posicion, id_club, clubes!fk_players_clubes(nombre))'

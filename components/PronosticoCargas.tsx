@@ -669,8 +669,8 @@ export default function PronosticoCargas({
     doc.text("FECHA", margin + 3, tableYStart + 5.5);
     doc.text("INTENSIDAD", margin + 26, tableYStart + 5.5);
     doc.text("DISTANCIA (M)", margin + 68, tableYStart + 5.5, { align: 'right' });
-    doc.text("HSR (M)", margin + 93, tableYStart + 5.5, { align: 'right' });
-    doc.text("AI (M)", margin + 118, tableYStart + 5.5, { align: 'right' });
+    doc.text("AI (M)", margin + 93, tableYStart + 5.5, { align: 'right' });
+    doc.text("HSR (M)", margin + 118, tableYStart + 5.5, { align: 'right' });
     doc.text("SPRINT (M)", margin + 143, tableYStart + 5.5, { align: 'right' });
     doc.text("ACC/DEC", margin + 165, tableYStart + 5.5, { align: 'right' });
     doc.text("PSE", margin + 180, tableYStart + 5.5, { align: 'right' });
@@ -737,8 +737,8 @@ export default function PronosticoCargas({
       const pseText = `${pseMin} - ${pseMax}`;
       
       doc.text(distText, margin + 68, currentY + 5, { align: 'right' });
-      doc.text(hsrText, margin + 93, currentY + 5, { align: 'right' });
-      doc.text(maiText, margin + 118, currentY + 5, { align: 'right' });
+      doc.text(maiText, margin + 93, currentY + 5, { align: 'right' });
+      doc.text(hsrText, margin + 118, currentY + 5, { align: 'right' });
       doc.text(sprintText, margin + 143, currentY + 5, { align: 'right' });
       doc.text(accText, margin + 165, currentY + 5, { align: 'right' });
       doc.text(pseText, margin + 180, currentY + 5, { align: 'right' });
