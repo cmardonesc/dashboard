@@ -239,7 +239,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         supabase.from('evaluaciones_cmj').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true }),
         supabase.from('velocidad_tests').select('*').eq('player_id', playerId).order('fecha', { ascending: true }),
         supabase.from('evaluaciones_cmj_rebound').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true }),
-        supabase.from('test_505').select('*').eq('player_id', playerId).order('fecha_test', { ascending: true })
+        supabase.from('test_505').select('*').eq('player_id', playerId).order('fecha', { ascending: true })
       ]);
 
       // Combine IMTP and CMJ data by date

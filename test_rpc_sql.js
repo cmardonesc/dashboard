@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 
-let supabaseUrl = (process.env.VITE_SUPABASE_URL || '').trim().replace(/\/(rest|auth)\/v1\/?$/, "");
-let supabaseKey = (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+let supabaseUrl = 'https://nqdbqqmjyygopjnpqyvm.supabase.co';
+let supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xZGJxcW1qeXlnb3BqbnBxeXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzMjU1MzMsImV4cCI6MjA4NTkwMTUzM30.5aYRn3fz6kc0BQSeeBKE5AAiGZNfMWQfcQPwEkNLQjk';
 
 try {
   if (fs.existsSync('.env')) {

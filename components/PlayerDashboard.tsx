@@ -967,7 +967,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
       if (gpsRows && gpsRows.length > 0) {
         const totalGpsMin = gpsRows.reduce((acc: number, row: any) => acc + (Number(row.minutos) || 0), 0);
         if (totalGpsMin > 0) {
-          gpsMinutes = totalGpsMin;
+          gpsMinutes = Math.round(totalGpsMin);
         }
       }
 
@@ -1209,8 +1209,8 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       // Si minutos o RPE son 0 o menores, los guardamos como 1 en la base de datos
       // para evitar violar la restricción CHECK de 'internal_load' que tiene un disparador (trigger) en Supabase
-      const dbMinutes = Math.max(1, Number(matchMinutesValue) || 0);
-      const dbRpe = Math.max(1, Number(data.rpe) || 0);
+      const dbMinutes = Math.max(1, Math.round(Number(matchMinutesValue) || 0));
+      const dbRpe = Math.max(1, Math.round(Number(data.rpe) || 0));
 
       const payload = {
         player_id: player.player_id,

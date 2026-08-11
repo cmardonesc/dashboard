@@ -187,10 +187,11 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     table: 'test_505',
     icon: 'fa-solid fa-gauge-high',
     description: 'Test 505 de agilidad, aceleración y COD.',
-    conflictColumns: ['player_id', 'fecha'],
+    conflictColumns: ['player_id', 'fecha', 'perfil'],
     fields: [
       { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
+      { key: 'perfil', label: 'Perfil', required: true, type: 'string' },
       { key: 't_acel_2m', label: 'T ACEL 2m (s)', required: true, type: 'number' },
       { key: 'vel_acel_kmh', label: 'VEL ACEL (km/h)', required: false, type: 'number' },
       { key: 't_desacel_2m', label: 'T DESACEL 2m (s)', required: false, type: 'number' },
@@ -201,6 +202,8 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
       { key: 'vel_reacel_1_kmh', label: 'VEL REACEL 1 (km/h)', required: false, type: 'number' },
       { key: 't_reacel_2_2m', label: 'T REACEL 2 2m (s)', required: false, type: 'number' },
       { key: 'vel_reacel_2_kmh', label: 'VEL REACEL 2 (km/h)', required: false, type: 'number' },
+      { key: 't_total_2m', label: 'T TOTAL 2m (s)', required: false, type: 'number' },
+      { key: 'vel_total_kmh', label: 'VEL TOTAL (km/h)', required: false, type: 'number' },
       { key: 'z_score_acel', label: 'Z-SCORE ACEL', required: false, type: 'number' },
     ]
   },
@@ -853,6 +856,21 @@ export default function DataImportArea() {
                 });
               }
 
+              if (!match && selectedType === 'aceleracion') {
+                match = headersList.find(h => {
+                  const hn = normalizeForMatch(h);
+                  if (field.key === 'perfil' && hn === 'perfil') return true;
+                  if (field.key === 't_acel_2m' && (hn === 'tacel' || hn === 'tacels' || hn === 'tacel2m' || hn === 'tiempodeaceleracion' || hn === 'tiempoaceleracion' || hn === 'tacel(s)')) return true;
+                  if (field.key === 't_desacel_2m' && (hn === 'tdesacel' || hn === 'tdesacels' || hn === 'tdesacel2m' || hn === 'tiempodedesaceleracion' || hn === 'tiempodesaceleracion' || hn === 'tdesacel(s)')) return true;
+                  if (field.key === 't_cod_2m' && (hn === 'tcod' || hn === 'tcods' || hn === 'tcod2m' || hn === 'tiempodecod' || hn === 'tiempocod' || hn === 'tcod(s)')) return true;
+                  if (field.key === 't_reacel_1_2m' && (hn === 'treacel1' || hn === 'treacel1s' || hn === 'treacel12m' || hn === 'tiempodereaceleracion1' || hn === 'tiemporeaceleracion1' || hn === 'treacel12ms' || hn === 'treacel1(s)')) return true;
+                  if (field.key === 't_reacel_2_2m' && (hn === 'treacel2' || hn === 'treacel2s' || hn === 'treacel22m' || hn === 'tiempodereaceleracion2' || hn === 'tiemporeaceleracion2' || hn === 'treacel22ms' || hn === 'treacel2(s)')) return true;
+                  if (field.key === 't_total_2m' && (hn === 'ttotal' || hn === 'ttotals' || hn === 'ttotal2m' || hn === 'ttotal(s)')) return true;
+                  if (field.key === 'vel_total_kmh' && (hn === 'veltotal' || hn === 'veltotalkmh' || hn === 'veltotal(km/h)')) return true;
+                  return false;
+                });
+              }
+
               if (!match && selectedType === 'encoder_1rm') {
                 match = headersList.find(h => {
                   const hn = normalizeForMatch(h);
@@ -1146,6 +1164,9 @@ export default function DataImportArea() {
                     val = manualDate;
                   }
                 }
+              }
+              if (field.key === 'perfil' && typeof val === 'string') {
+                val = val.trim().toLowerCase();
               }
               item[field.key] = val;
             }

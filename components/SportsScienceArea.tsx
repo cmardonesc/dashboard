@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeClub, sortClubsByChileFirst } from '../lib/utils';
 import { getChartSummary } from '../services/geminiService';
@@ -3534,6 +3534,323 @@ export const AthleteHuella = ({
   );
 };
 
+interface MetricConfig {
+  key: string;
+  label: string;
+  unit: string;
+}
+
+interface GraphConfig {
+  title: string;
+  desc: string;
+  m1: string;
+  m2?: string;
+  m1Label: string;
+  m2Label?: string;
+  color1: string;
+  color2?: string;
+  reversedY1?: boolean;
+  reversedY2?: boolean;
+}
+
+interface EvaluationConfig {
+  id: string;
+  label: string;
+  table: string;
+  dateKey: string;
+  description: string;
+  metrics: MetricConfig[];
+  graphs: GraphConfig[];
+}
+
+const EVALUATION_PROTOCOLS: EvaluationConfig[] = [
+  {
+    id: 'imtp',
+    label: 'Fuerza (IMTP)',
+    table: 'imtp',
+    dateKey: 'fecha_test',
+    description: 'Análisis de picos de fuerza estructural y tasa de desarrollo de fuerza (RFD).',
+    metrics: [
+      { key: 'imtp_fuerza_n', label: 'Fuerza Pico (N)', unit: 'N' },
+      { key: 'imtp_f_relativa_n_kg', label: 'Fuerza Relativa (N/kg)', unit: 'N/kg' },
+      { key: 'imtp_force_50ms', label: 'Fuerza 50ms (N)', unit: 'N' },
+      { key: 'imtp_force_100ms', label: 'Fuerza 100ms (N)', unit: 'N' },
+      { key: 'imtp_force_150ms', label: 'Fuerza 150ms (N)', unit: 'N' },
+      { key: 'imtp_force_200ms', label: 'Fuerza 200ms (N)', unit: 'N' }
+    ],
+    graphs: [
+      {
+        title: 'Fuerza Máxima vs Relativa',
+        desc: 'Relación entre fuerza bruta y eficiencia respecto al peso corporal.',
+        m1: 'imtp_fuerza_n',
+        m2: 'imtp_f_relativa_n_kg',
+        m1Label: 'Fuerza Pico (N)',
+        m2Label: 'Fuerza Relativa (N/kg)',
+        color1: '#ef4444',
+        color2: '#3b82f6'
+      },
+      {
+        title: 'Fuerza Inicial (50ms - 100ms)',
+        desc: 'Capacidad de reclutamiento rápido de unidades motoras.',
+        m1: 'imtp_force_50ms',
+        m2: 'imtp_force_100ms',
+        m1Label: 'Fuerza 50ms (N)',
+        m2Label: 'Fuerza 100ms (N)',
+        color1: '#f59e0b',
+        color2: '#10b981'
+      },
+      {
+        title: 'Fuerza Tardía (150ms - 200ms)',
+        desc: 'Sostenimiento del desarrollo de fuerza en contracción continua.',
+        m1: 'imtp_force_150ms',
+        m2: 'imtp_force_200ms',
+        m1Label: 'Fuerza 150ms (N)',
+        m2Label: 'Fuerza 200ms (N)',
+        color1: '#8b5cf6',
+        color2: '#ec4899'
+      }
+    ]
+  },
+  {
+    id: 'cmj',
+    label: 'Salto (CMJ)',
+    table: 'imtp',
+    dateKey: 'fecha_test',
+    description: 'Propiedades elástico-explosivas del tren inferior en plataforma de fuerza.',
+    metrics: [
+      { key: 'cmj_altura_salto_im', label: 'Altura (cm)', unit: 'cm' },
+      { key: 'cmj_rsi_mod', label: 'RSI Modificado', unit: '' },
+      { key: 'cmj_peak_pot_relativa', label: 'Potencia Relativa (W/kg)', unit: 'W/kg' },
+      { key: 'concentric_peak_force_n', label: 'Fuerza Pico Conc (N)', unit: 'N' },
+      { key: 'countermovement_depth_cm', label: 'Profundidad Flexión (cm)', unit: 'cm' },
+      { key: 'concentric_duration_ms', label: 'Duración Conc (ms)', unit: 'ms' }
+    ],
+    graphs: [
+      {
+        title: 'Altura de Vuelo vs Reactividad (RSI)',
+        desc: 'Relación de altura y reactividad elástica modificado.',
+        m1: 'cmj_altura_salto_im',
+        m2: 'cmj_rsi_mod',
+        m1Label: 'Altura Salto (cm)',
+        m2Label: 'RSI Modificado',
+        color1: '#3b82f6',
+        color2: '#10b981'
+      },
+      {
+        title: 'Potencia Relativa vs Fuerza Pico',
+        desc: 'Perfil concéntrico de producción de potencia por kilo.',
+        m1: 'cmj_peak_pot_relativa',
+        m2: 'concentric_peak_force_n',
+        m1Label: 'Pot. Rel (W/kg)',
+        m2Label: 'Fuerza Pico (N)',
+        color1: '#ef4444',
+        color2: '#f59e0b'
+      },
+      {
+        title: 'Estrategia de Impulso',
+        desc: 'Rango de flexión y velocidad concéntrica del movimiento.',
+        m1: 'countermovement_depth_cm',
+        m2: 'concentric_duration_ms',
+        m1Label: 'Profundidad (cm)',
+        m2Label: 'Duración Conc (ms)',
+        color1: '#ec4899',
+        color2: '#8b5cf6'
+      }
+    ]
+  },
+  {
+    id: 'speed',
+    label: 'Velocidad (Sprint)',
+    table: 'speed',
+    dateKey: 'fecha',
+    description: 'Monitoreo de aceleración lineal en 10m y velocidad máxima.',
+    metrics: [
+      { key: 'tiempo_10m', label: 'Sprint 10m (s)', unit: 's' },
+      { key: 'vel_10m', label: 'Velocidad 10m (km/h)', unit: 'km/h' },
+      { key: 'tiempo_10_20m', label: 'Sprint 10-20m (s)', unit: 's' },
+      { key: 'vel_10_20m', label: 'Velocidad 10-20m (km/h)', unit: 'km/h' },
+      { key: 'tiempo_20_30m', label: 'Sprint 20-30m (s)', unit: 's' },
+      { key: 'tiempo_total', label: 'Tiempo Total (s)', unit: 's' }
+    ],
+    graphs: [
+      {
+        title: 'Fase Inicial de Aceleración',
+        desc: 'Tiempo y velocidad media en los primeros 10 metros.',
+        m1: 'tiempo_10m',
+        m2: 'vel_10m',
+        m1Label: 'Tiempo 10m (s)',
+        m2Label: 'Velocidad 10m (km/h)',
+        color1: '#f59e0b',
+        color2: '#3b82f6',
+        reversedY1: true
+      },
+      {
+        title: 'Fase Transición (10m - 20m)',
+        desc: 'Tiempos y velocidad de transición en tramos medios.',
+        m1: 'tiempo_10_20m',
+        m2: 'vel_10_20m',
+        m1Label: 'Tiempo 10-20m (s)',
+        m2Label: 'Velocidad (km/h)',
+        color1: '#8b5cf6',
+        color2: '#10b981',
+        reversedY1: true
+      },
+      {
+        title: 'Tiempo Total vs Sprint 20-30m',
+        desc: 'Desempeño cronométrico global en la distancia.',
+        m1: 'tiempo_total',
+        m2: 'tiempo_20_30m',
+        m1Label: 'Tiempo Total (s)',
+        m2Label: 'Tiempo 20-30m (s)',
+        color1: '#ef4444',
+        color2: '#ec4899',
+        reversedY1: true,
+        reversedY2: true
+      }
+    ]
+  },
+  {
+    id: 'agility',
+    label: 'Agilidad (COD 505)',
+    table: 'test505',
+    dateKey: 'fecha',
+    description: 'Tiempos de giro, desaceleración excéntrica y aceleración reactiva.',
+    metrics: [
+      { key: 't_cod_2m', label: 'Tiempo COD 2m (s)', unit: 's' },
+      { key: 'vel_cod_kmh', label: 'Velocidad COD (km/h)', unit: 'km/h' },
+      { key: 't_acel_2m', label: 'Tiempo Acel 2m (s)', unit: 's' },
+      { key: 'vel_acel_kmh', label: 'Velocidad Acel (km/h)', unit: 'km/h' },
+      { key: 't_desacel_2m', label: 'Tiempo Desacel 2m (s)', unit: 's' },
+      { key: 'vel_desacel_kmh', label: 'Velocidad Desacel (km/h)', unit: 'km/h' }
+    ],
+    graphs: [
+      {
+        title: 'Cambio de Dirección (COD)',
+        desc: 'Tiempo y velocidad en la zona de viraje de 2 metros.',
+        m1: 't_cod_2m',
+        m2: 'vel_cod_kmh',
+        m1Label: 'Tiempo COD (s)',
+        m2Label: 'Vel COD (km/h)',
+        color1: '#ef4444',
+        color2: '#3b82f6',
+        reversedY1: true
+      },
+      {
+        title: 'Fase de Aceleración Reactiva',
+        desc: 'Tiempos y velocidad de salida tras el cambio de dirección.',
+        m1: 't_acel_2m',
+        m2: 'vel_acel_kmh',
+        m1Label: 'Tiempo Acel (s)',
+        m2Label: 'Vel Acel (km/h)',
+        color1: '#10b981',
+        color2: '#f59e0b',
+        reversedY1: true
+      },
+      {
+        title: 'Desaceleración/Freno Excéntrico',
+        desc: 'Tiempos y velocidad de aproximación previo al giro.',
+        m1: 't_desacel_2m',
+        m2: 'vel_desacel_kmh',
+        m1Label: 'Tiempo Desacel (s)',
+        m2Label: 'Vel Desacel (km/h)',
+        color1: '#8b5cf6',
+        color2: '#ec4899',
+        reversedY1: true
+      }
+    ]
+  },
+  {
+    id: 'vo2max',
+    label: 'Resistencia (VO2 Max)',
+    table: 'vo2max',
+    dateKey: 'fecha',
+    description: 'Consumo máximo de oxígeno y velocidad aeróbica máxima (VMA).',
+    metrics: [
+      { key: 'vo2_max', label: 'VO2 Max (ml/kg/min)', unit: 'ml/kg/min' },
+      { key: 'vam', label: 'VMA (km/h)', unit: 'km/h' }
+    ],
+    graphs: [
+      {
+        title: 'Consumo Máximo de Oxígeno & VMA',
+        desc: 'Rendimiento cardiovascular e índice de velocidad aeróbica máxima.',
+        m1: 'vo2_max',
+        m2: 'vam',
+        m1Label: 'VO2 Max (ml)',
+        m2Label: 'VMA (km/h)',
+        color1: '#10b981',
+        color2: '#3b82f6'
+      }
+    ]
+  },
+  {
+    id: 'rebound',
+    label: 'Reactividad (RSI)',
+    table: 'rebound',
+    dateKey: 'fecha_test',
+    description: 'Capacidad reactiva elástica y reactividad del tobillo.',
+    metrics: [
+      { key: 'rebound_rsi', label: 'Rebound RSI', unit: '' },
+      { key: 'rebound_contact_time_ms', label: 'Tiempo Contacto (ms)', unit: 'ms' },
+      { key: 'rebound_flight_time_ms', label: 'Tiempo Vuelo (ms)', unit: 'ms' }
+    ],
+    graphs: [
+      {
+        title: 'Reactividad Elástica (RSI)',
+        desc: 'Eficiencia de ciclo estiramiento-acortamiento.',
+        m1: 'rebound_rsi',
+        m1Label: 'Rebound RSI',
+        color1: '#ec4899'
+      },
+      {
+        title: 'Tiempos de Contacto vs Vuelo',
+        desc: 'Mapeo temporal de la amortiguación e impulso elástico.',
+        m1: 'rebound_contact_time_ms',
+        m2: 'rebound_flight_time_ms',
+        m1Label: 'T. Contacto (ms)',
+        m2Label: 'T. Vuelo (ms)',
+        color1: '#ef4444',
+        color2: '#3b82f6',
+        reversedY1: true
+      }
+    ]
+  },
+  {
+    id: 'antropometria',
+    label: 'Antropometría',
+    table: 'antropometria',
+    dateKey: 'fecha_medicion',
+    description: 'Composición corporal, peso y proporciones musculares.',
+    metrics: [
+      { key: 'peso_kg', label: 'Peso Corporal (kg)', unit: 'kg' },
+      { key: 'estatura_cm', label: 'Estatura (cm)', unit: 'cm' },
+      { key: 'masa_adiposa_pct', label: 'Grasa Corporal (%)', unit: '%' },
+      { key: 'masa_muscular_pct', label: 'Masa Muscular (%)', unit: '%' }
+    ],
+    graphs: [
+      {
+        title: 'Masa Corporal Total',
+        desc: 'Evolución de peso corporal y estatura registrada.',
+        m1: 'peso_kg',
+        m2: 'estatura_cm',
+        m1Label: 'Peso (kg)',
+        m2Label: 'Estatura (cm)',
+        color1: '#3b82f6',
+        color2: '#10b981'
+      },
+      {
+        title: 'Composición Corporal (%)',
+        desc: 'Distribución porcentual de grasa corporal frente a masa muscular.',
+        m1: 'masa_adiposa_pct',
+        m2: 'masa_muscular_pct',
+        m1Label: 'Grasa (%)',
+        m2Label: 'Músculo (%)',
+        color1: '#ef4444',
+        color2: '#10b981'
+      }
+    ]
+  }
+];
+
 const IndividualDashboard = ({ 
   player, imtp, speed, antropometria, vo2max, test505 = [], cmjRebound = [], clubs,
   allPlayers = [], allImtp = [], allSpeed = [], allVo2 = [], allTest505 = [], allCmjRebound = []
@@ -3553,47 +3870,12 @@ const IndividualDashboard = ({
   allTest505?: any[],
   allCmjRebound?: any[]
 }) => {
-  const [selectedMetrics, setSelectedMetrics] = useState<string[]>([
-    'imtp_fuerza_n',
-    'imtp_f_relativa_n_kg',
-    'cmj_rsi_mod',
-    'fuerza_cmj'
-  ]);
+  const [activeEvalType, setActiveEvalType] = useState<string>('imtp');
 
-  const [selectedSpeedMetrics, setSelectedSpeedMetrics] = useState<string[]>([
-    'tiempo_total',
-    'vel_10m',
-    'tiempo_10m',
-    'tiempo_20_30m'
-  ]);
-
-  const [selectedVO2Metrics, setSelectedVO2Metrics] = useState<string[]>([
-    'vo2_max',
-    'vam',
-    'fc_max',
-    'mts'
-  ]);
-
-  const [selectedAntroMetrics, setSelectedAntroMetrics] = useState<string[]>([
-    'masa_adiposa_pct',
-    'masa_muscular_pct',
-    'sum_pliegues_6_mm',
-    'masa_corporal_kg'
-  ]);
-
-  const [selectedAgilityMetrics, setSelectedAgilityMetrics] = useState<string[]>([
-    't_cod_2m',
-    'vel_cod_kmh',
-    't_acel_2m',
-    't_desacel_2m'
-  ]);
-
-  const [selectedReboundMetrics, setSelectedReboundMetrics] = useState<string[]>([
-    'rebound_rsi',
-    'rebound_contact_time_ms',
-    'rebound_flight_time_ms',
-    'take_off_momentum_kg_m_s'
-  ]);
+  // State for smart evaluations table
+  const [selectedTableArea, setSelectedTableArea] = useState<string>('Todos');
+  const [tableSearch, setTableSearch] = useState<string>('');
+  const [selectedRow, setSelectedRow] = useState<any | null>(null);
 
   const imtpMetrics = METRICS_OPTIONS.filter(m => m.table === 'imtp');
   const speedMetrics = METRICS_OPTIONS.filter(m => m.table === 'speed');
@@ -3608,10 +3890,16 @@ const IndividualDashboard = ({
     return sorted[0].imtp_fuerza_n || null;
   }, [imtp]);
 
+  const latestImtpFuerzaRel = useMemo(() => {
+    if (!imtp || imtp.length === 0) return null;
+    const sorted = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime());
+    return sorted[0].imtp_f_relativa_n_kg || null;
+  }, [imtp]);
+
   const latestCmjAltura = useMemo(() => {
     if (!imtp || imtp.length === 0) return null;
     const sorted = [...imtp].sort((a, b) => new Date(b.fecha_test).getTime() - new Date(a.fecha_test).getTime());
-    return sorted[0].cmj_altura_salto_im || null;
+    return sorted[0].cmj_altura_salto_im || sorted[0].jump_height_impmom_cm || null;
   }, [imtp]);
 
   const latestSpeedTotal = useMemo(() => {
@@ -3684,49 +3972,13 @@ const IndividualDashboard = ({
       .map(d => {
         const val = resolveMetricValue(d, metricKey);
         return {
-          date: new Date(d[dateKey]).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+          date: d[dateKey] ? new Date(d[dateKey]).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : '',
           value: val !== undefined && val !== null && val !== '' ? Number(val) : NaN,
-          fullDate: new Date(d[dateKey]).getTime()
+          fullDate: d[dateKey] ? new Date(d[dateKey]).getTime() : 0
         };
       })
       .filter(d => !isNaN(d.value) && d.fullDate > 0)
       .sort((a, b) => a.fullDate - b.fullDate);
-  };
-
-  const updateMetric = (index: number, newKey: string) => {
-    const newMetrics = [...selectedMetrics];
-    newMetrics[index] = newKey;
-    setSelectedMetrics(newMetrics);
-  };
-
-  const updateSpeedMetric = (index: number, newKey: string) => {
-    const newMetrics = [...selectedSpeedMetrics];
-    newMetrics[index] = newKey;
-    setSelectedSpeedMetrics(newMetrics);
-  };
-
-  const updateVO2Metric = (index: number, newKey: string) => {
-    const newMetrics = [...selectedVO2Metrics];
-    newMetrics[index] = newKey;
-    setSelectedVO2Metrics(newMetrics);
-  };
-
-  const updateAntroMetric = (index: number, newKey: string) => {
-    const newMetrics = [...selectedAntroMetrics];
-    newMetrics[index] = newKey;
-    setSelectedAntroMetrics(newMetrics);
-  };
-
-  const updateAgilityMetric = (index: number, newKey: string) => {
-    const newMetrics = [...selectedAgilityMetrics];
-    newMetrics[index] = newKey;
-    setSelectedAgilityMetrics(newMetrics);
-  };
-
-  const updateReboundMetric = (index: number, newKey: string) => {
-    const newMetrics = [...selectedReboundMetrics];
-    newMetrics[index] = newKey;
-    setSelectedReboundMetrics(newMetrics);
   };
 
   const getEvaluationCategory = (metricKey: string, val: number) => {
@@ -3905,15 +4157,367 @@ const IndividualDashboard = ({
     return list.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
   }, [imtp, speed, vo2max, antropometria, test505, cmjRebound]);
 
-  if (!player) return (
-    <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
-      <i className="fa-solid fa-user-magnifying-glass text-4xl text-slate-200 mb-4"></i>
-      <p className="text-slate-400 font-black uppercase text-xs tracking-widest">Selecciona un atleta para visualizar su huella digital</p>
-    </div>
-  );
+  // 1. Neuromuscular Trend Data (Fuerza Máxima vs CMJ Altura)
+  const neuromuscularTrendData = useMemo(() => {
+    const dateMap: { [time: number]: { dateStr: string; fullDate: number; imtp_fuerza_n?: number; cmj_altura_salto_im?: number } } = {};
+    const imtpData = getMetricData('imtp_fuerza_n');
+    const cmjData = getMetricData('cmj_altura_salto_im');
+
+    imtpData.forEach(d => {
+      if (!dateMap[d.fullDate]) {
+        dateMap[d.fullDate] = { dateStr: d.date, fullDate: d.fullDate };
+      }
+      dateMap[d.fullDate].imtp_fuerza_n = d.value;
+    });
+
+    cmjData.forEach(d => {
+      if (!dateMap[d.fullDate]) {
+        dateMap[d.fullDate] = { dateStr: d.date, fullDate: d.fullDate };
+      }
+      dateMap[d.fullDate].cmj_altura_salto_im = d.value;
+    });
+
+    return Object.keys(dateMap)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(time => dateMap[time]);
+  }, [imtp]);
+
+  // 2. Velocidad & Agilidad Trend Data (Tiempo 10m vs Tiempo COD 505)
+  const speedAgilityTrendData = useMemo(() => {
+    const dateMap: { [time: number]: { dateStr: string; fullDate: number; tiempo_10m?: number; t_cod_2m?: number } } = {};
+    const speedData = getMetricData('tiempo_10m');
+    const codData = getMetricData('t_cod_2m');
+
+    speedData.forEach(d => {
+      if (!dateMap[d.fullDate]) {
+        dateMap[d.fullDate] = { dateStr: d.date, fullDate: d.fullDate };
+      }
+      dateMap[d.fullDate].tiempo_10m = d.value;
+    });
+
+    codData.forEach(d => {
+      if (!dateMap[d.fullDate]) {
+        dateMap[d.fullDate] = { dateStr: d.date, fullDate: d.fullDate };
+      }
+      dateMap[d.fullDate].t_cod_2m = d.value;
+    });
+
+    return Object.keys(dateMap)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(time => dateMap[time]);
+  }, [speed, test505]);
+
+  // 3. Resistencia & Reactividad Trend Data (VO2 Max vs Rebound RSI)
+  const resistenciaReactividadTrendData = useMemo(() => {
+    const dateMap: { [time: number]: { dateStr: string; fullDate: number; vo2_max?: number; rebound_rsi?: number } } = {};
+    const vo2Data = getMetricData('vo2_max');
+    const rsiData = getMetricData('rebound_rsi');
+
+    vo2Data.forEach(d => {
+      if (!dateMap[d.fullDate]) {
+        dateMap[d.fullDate] = { dateStr: d.date, fullDate: d.fullDate };
+      }
+      dateMap[d.fullDate].vo2_max = d.value;
+    });
+
+    rsiData.forEach(d => {
+      if (!dateMap[d.fullDate]) {
+        dateMap[d.fullDate] = { dateStr: d.date, fullDate: d.fullDate };
+      }
+      dateMap[d.fullDate].rebound_rsi = d.value;
+    });
+
+    return Object.keys(dateMap)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(time => dateMap[time]);
+  }, [vo2max, cmjRebound]);
+
+  // Customized intelligent diagnosis based on physics domains
+  const intelligentPrescription = useMemo(() => {
+    const weakLinks: string[] = [];
+    const strongPoints: string[] = [];
+    
+    const fMax = latestImtpFuerza || 2500;
+    const fRel = latestImtpFuerzaRel || 32;
+    const cmj = latestCmjAltura || 36;
+    const react = latestReboundRsi || 1.4;
+    const vel = latestSpeedTotal || 4.3;
+    const aer = latestVo2Max || 52;
+
+    if (fMax < 2600) weakLinks.push("Fuerza Máxima Estructural (IMTP)");
+    else strongPoints.push("Fuerza Máxima de Base");
+
+    if (fRel < 35) weakLinks.push("Tasa de Desarrollo de Fuerza / RFD Relativa");
+    else strongPoints.push("RFD y Fuerza Relativa");
+
+    if (cmj < 38) weakLinks.push("Potencia y Altura del Salto (CMJ)");
+    else strongPoints.push("Potencia Vertical / Triple Extensión");
+
+    if (react < 1.6) weakLinks.push("Fuerza Reactiva y Stiffness de Tobillo");
+    else strongPoints.push("Capacidad Elástica / Stiffness");
+
+    if (vel > 4.25) weakLinks.push("Velocidad Lineal / Aceleración Horizontal");
+    else strongPoints.push("Velocidad y Aceleración de Sprint");
+
+    if (aer < 54) weakLinks.push("Capacidad y Potencia Aeróbica (VO2 Max)");
+    else strongPoints.push("Base Aeróbica y Capacidad de Recuperación");
+
+    let diagnosis = "";
+    let trainingFocus = "";
+
+    if (weakLinks.length === 0) {
+      diagnosis = "Perfil atlético altamente competitivo y balanceado en todos los dominios físicos analizados.";
+      trainingFocus = "Mantenimiento de cargas neuromusculares, prevención de lesiones articulares y estímulos específicos de alta intensidad competitiva.";
+    } else {
+      diagnosis = `Se detecta un perfil asimétrico con prioridad de atención en: ${weakLinks.slice(0, 3).join(', ')}.`;
+      
+      const primaryWeakness = weakLinks[0];
+      if (primaryWeakness.includes("Fuerza Máxima")) {
+        trainingFocus = "Priorizar bloques de Fuerza Estructural y Neural en gimnasio (e.g. Sentadilla trasera pesada, Peso Muerto Hex Bar al 80-87% 1RM) para establecer una base sólida antes de fases pliométricas intensas.";
+      } else if (primaryWeakness.includes("RFD") || primaryWeakness.includes("Salto")) {
+        trainingFocus = "Enfocarse en la tasa de desarrollo de fuerza (RFD). Trabajo dinámico, pliometría media (saltos verticales, drop jumps de 30cm) y levantamientos olímpicos derivados con cargas medias-ligeras a máxima intención.";
+      } else if (primaryWeakness.includes("Reactiva")) {
+        trainingFocus = "Priorizar rigidez de tobillo (stiffness) y reactividad elástica rápida. Pliometría de contacto corto (<200ms, pogo jumps continuos, saltos sobre vallas bajas) y drop jumps rápidos.";
+      } else if (primaryWeakness.includes("Velocidad")) {
+        trainingFocus = "Trabajo de aceleración horizontal y técnica de sprint lineal. Sprints cortos (10-30m) con recuperación completa (>1 min por cada 10m recorridos), empujes de trineo pesado y velocidad asistida.";
+      } else {
+        trainingFocus = "Entrenamiento interválico de alta intensidad (HIIT - pasadas intermitentes cortas en cancha al 105-115% VAM con micro-pausas) para maximizar la cinética de oxígeno y la recuperación de fosfágenos.";
+      }
+    }
+
+    return { diagnosis, trainingFocus, weakLinks, strongPoints };
+  }, [latestImtpFuerza, latestImtpFuerzaRel, latestCmjAltura, latestReboundRsi, latestSpeedTotal, latestVo2Max]);
+
+  // Master historical evaluations filter
+  const filteredEvaluations = useMemo(() => {
+    return parsedEvaluations.filter(row => {
+      const matchArea = selectedTableArea === 'Todos' || row.area === selectedTableArea;
+      const matchSearch = tableSearch === '' || 
+        row.area.toLowerCase().includes(tableSearch.toLowerCase()) ||
+        row.observations.toLowerCase().includes(tableSearch.toLowerCase()) ||
+        row.metrics.some(m => m.label.toLowerCase().includes(tableSearch.toLowerCase()));
+      return matchArea && matchSearch;
+    });
+  }, [parsedEvaluations, selectedTableArea, tableSearch]);
+
+  const getProtoRows = useCallback((proto: EvaluationConfig) => {
+    let sourceData: any[] = [];
+    switch (proto.table) {
+      case 'imtp': sourceData = imtp; break;
+      case 'speed': sourceData = speed; break;
+      case 'vo2max': sourceData = vo2max; break;
+      case 'antropometria': sourceData = antropometria; break;
+      case 'rebound': sourceData = cmjRebound; break;
+      case 'test505': sourceData = test505; break;
+    }
+    
+    return sourceData
+      .map(row => {
+        const rawDate = row[proto.dateKey] ? new Date(row[proto.dateKey]) : (row.fecha_test ? new Date(row.fecha_test) : (row.fecha ? new Date(row.fecha) : (row.fecha_medicion ? new Date(row.fecha_medicion) : new Date())));
+        
+        const resolvedMetrics = proto.metrics.map(m => {
+          const val = resolveMetricValue(row, m.key);
+          const numVal = (val !== undefined && val !== null && val !== '') ? Number(val) : NaN;
+          return {
+            key: m.key,
+            label: m.label,
+            unit: m.unit,
+            value: numVal,
+          };
+        });
+
+        return {
+          rawDate,
+          dateStr: rawDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+          metrics: resolvedMetrics,
+          observations: row.observaciones || row.observations || ''
+        };
+      })
+      .filter(row => row.metrics.some(m => !isNaN(m.value)))
+      .sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+  }, [imtp, speed, vo2max, antropometria, cmjRebound, test505]);
+
+  const getGraphTrendData = (proto: EvaluationConfig, graph: GraphConfig) => {
+    let sourceData: any[] = [];
+    switch (proto.table) {
+      case 'imtp': sourceData = imtp; break;
+      case 'speed': sourceData = speed; break;
+      case 'vo2max': sourceData = vo2max; break;
+      case 'antropometria': sourceData = antropometria; break;
+      case 'rebound': sourceData = cmjRebound; break;
+      case 'test505': sourceData = test505; break;
+    }
+    return sourceData
+      .map(d => {
+        const dKey = proto.dateKey;
+        const rawD = d[dKey] || d.fecha_test || d.fecha || d.fecha_medicion;
+        const val1 = resolveMetricValue(d, graph.m1);
+        const val2 = graph.m2 ? resolveMetricValue(d, graph.m2) : undefined;
+        return {
+          dateStr: rawD ? new Date(rawD).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : '',
+          fullDate: rawD ? new Date(rawD).getTime() : 0,
+          v1: val1 !== undefined && val1 !== null && val1 !== '' ? Number(val1) : null,
+          v2: val2 !== undefined && val2 !== null && val2 !== '' ? Number(val2) : null,
+        };
+      })
+      .filter(d => d.fullDate > 0 && (d.v1 !== null || (graph.m2 ? d.v2 !== null : false)))
+      .sort((a, b) => a.fullDate - b.fullDate);
+  };
+
+  const exportProtoToCSV = (proto: EvaluationConfig) => {
+    const rows = getProtoRows(proto);
+    let csvContent = "data:text/csv;charset=utf-8,";
+    const headerCols = ["Fecha", ...proto.metrics.map(m => m.label), "Observaciones"];
+    csvContent += headerCols.join(",") + "\n";
+    
+    rows.forEach(row => {
+      const rowCols = [
+        row.dateStr,
+        ...row.metrics.map(m => isNaN(m.value) ? "-" : `${m.value}`),
+        `"${row.observations.replace(/"/g, '""')}"`
+      ];
+      csvContent += rowCols.join(",") + "\n";
+    });
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Evaluacion_${proto.label}_${player.nombre}_${player.apellido1}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getDomainAdvisor = useCallback((proto: EvaluationConfig) => {
+    let title = "";
+    let diagnosis = "";
+    let trainingFocus = "";
+    let badgeClass = "";
+    
+    switch (proto.id) {
+      case 'imtp': {
+        const fMax = latestImtpFuerza || 2500;
+        const fRel = latestImtpFuerzaRel || 32;
+        title = "Orientación de Fuerza Máxima";
+        if (fMax < 2600) {
+          diagnosis = `Fuerza máxima absoluta subóptima (${fMax.toFixed(0)} N). Requiere desarrollo de hipertrofia miofibrilar y reclutamiento neuromuscular de base.`;
+          trainingFocus = "Priorizar sentadilla libre pesada, peso muerto con barra hexagonal al 80-85% 1RM (3-5 reps), y empujes concéntricos máximos.";
+          badgeClass = "bg-rose-100 text-rose-700 border-rose-200";
+        } else {
+          diagnosis = `Excelente base de fuerza máxima absoluta (${fMax.toFixed(0)} N, fuerza relativa: ${fRel.toFixed(1)} N/kg). Atleta listo para transferencia de potencia de alta velocidad.`;
+          trainingFocus = "Mantenimiento neural con cargas de choque (90% 1RM) y énfasis en pliometría de alto impacto y levantamientos olímpicos dinámicos.";
+          badgeClass = "bg-emerald-100 text-emerald-700 border-emerald-200";
+        }
+        break;
+      }
+      case 'cmj': {
+        const cmj = latestCmjAltura || 36;
+        title = "Orientación de Ciclo Estiramiento-Acortamiento Lento";
+        if (cmj < 38) {
+          diagnosis = `Capacidad de triple extensión vertical mejorable (${cmj.toFixed(1)} cm). Posible deficiencia en el reclutamiento concéntrico veloz de fibras tipo II.`;
+          trainingFocus = "Bloques de pliometría de carga media (box jumps, saltos con contramovimiento con carga del 10% peso corporal) y cargadas colgadas.";
+          badgeClass = "bg-amber-100 text-amber-700 border-amber-200";
+        } else {
+          diagnosis = `Perfil elástico-explosivo vertical óptimo (${cmj.toFixed(1)} cm). Excelente eficiencia en transferencia elástica de energía.`;
+          trainingFocus = "Transferir a gestos específicos de juego (saltos de cabeceo con aproximación, saltos asimétricos y caídas unilaterales estables).";
+          badgeClass = "bg-emerald-100 text-emerald-700 border-emerald-200";
+        }
+        break;
+      }
+      case 'speed': {
+        const vel = latestSpeedTotal || 4.3;
+        title = "Orientación de Sprint & Aceleración";
+        if (vel > 4.25) {
+          diagnosis = `Tiempo de sprint 30m mejorable (${vel.toFixed(2)} s). Deficiencia potencial en la fase de aceleración inicial (0-10m) o en el mantenimiento de velocidad máxima.`;
+          trainingFocus = "Sprints cortos resistidos (trineo con carga de 10% peso corporal), técnica de empuje horizontal en ángulo y velocidad pura asistida.";
+          badgeClass = "bg-rose-100 text-rose-700 border-rose-200";
+        } else {
+          diagnosis = `Velocidad élite en distancia lineal (${vel.toFixed(2)} s). Excelente mecánica de zancada y frecuencia cíclica.`;
+          trainingFocus = "Mantenimiento con sprints con cambio de dirección integrados en fatiga y arrastres de velocidad supra-máxima.";
+          badgeClass = "bg-emerald-100 text-emerald-700 border-emerald-200";
+        }
+        break;
+      }
+      case 'agility': {
+        const agility = latestAgilityCod || 2.4;
+        title = "Orientación de Agilidad & Desaceleración";
+        if (agility > 2.45) {
+          diagnosis = `Giro de 180° subóptimo en test 505 (${agility.toFixed(2)} s). Requiere mayor fuerza excéntrica para absorber inercia y re-acelerar eficazmente.`;
+          trainingFocus = "Entrenamiento de fuerza excéntrica en polea isoinercial (yoyo), caídas de cajón con frenado inmediato y técnicas de pivote bajo.";
+          badgeClass = "bg-rose-100 text-rose-700 border-rose-200";
+        } else {
+          diagnosis = `Excelente agilidad reactiva y bajo tiempo de cambio de dirección (${agility.toFixed(2)} s).`;
+          trainingFocus = "Estímulos caóticos con luces de reacción o estímulo verbal de imprevisto en cancha.";
+          badgeClass = "bg-emerald-100 text-emerald-700 border-emerald-200";
+        }
+        break;
+      }
+      case 'vo2max': {
+        const aer = latestVo2Max || 52;
+        title = "Orientación de Capacidad Aeróbica";
+        if (aer < 54) {
+          diagnosis = `Capacidad aeróbica límite para rendimiento deportivo prolongado (${aer.toFixed(1)} ml/kg/min). Riesgo de fatiga prematura en el segundo tiempo.`;
+          trainingFocus = "Series intermitentes de alta intensidad (HIIT) al 105% VAM con micro-pausas pasivas (e.g., 15s x 15s) para maximizar la cinética de O2.";
+          badgeClass = "bg-rose-100 text-rose-700 border-rose-200";
+        } else {
+          diagnosis = `Excelente perfil de recuperación mitocondrial (${aer.toFixed(1)} ml/kg/min). Alta capacidad de repetir esfuerzos de alta intensidad (RSA).`;
+          trainingFocus = "Mantener volumen con entrenamientos específicos de posesión reducida de alta densidad metabólica.";
+          badgeClass = "bg-emerald-100 text-emerald-700 border-emerald-200";
+        }
+        break;
+      }
+      case 'rebound': {
+        const react = latestReboundRsi || 1.4;
+        title = "Orientación de Rigidez de Tobillo (Stiffness)";
+        if (react < 1.6) {
+          diagnosis = `Índice de fuerza reactiva bajo (${react.toFixed(2)}). Tiempo de contacto con el suelo prolongado; disipación innecesaria de energía elástica.`;
+          trainingFocus = "Pliometría rápida de tobillo, pogo jumps reactivos continuos descalzo sobre césped, y saltos con soga a máxima frecuencia.";
+          badgeClass = "bg-rose-100 text-rose-700 border-rose-200";
+        } else {
+          diagnosis = `Estructura de tobillo rígida y reactiva (${react.toFixed(2)}). Óptima utilización del reflejo de estiramiento-acortamiento rápido.`;
+          trainingFocus = "Pliometría avanzada con cargas excéntricas añadidas y drop jumps desde cajones de 40cm.";
+          badgeClass = "bg-emerald-100 text-emerald-700 border-emerald-200";
+        }
+        break;
+      }
+      case 'antropometria': {
+        const sortedA = [...antropometria].sort((a, b) => new Date(b.fecha_medicion).getTime() - new Date(a.fecha_medicion).getTime());
+        const fat = sortedA[0]?.masa_adiposa_pct || 11.5;
+        title = "Orientación de Composición Corporal";
+        if (fat > 13) {
+          diagnosis = `Porcentaje de grasa corporal por encima del estándar óptimo competitivo (${fat.toFixed(1)}%). Incremento ineficiente de la masa de arrastre pasiva.`;
+          trainingFocus = "Coordinar plan de recomposición corporal con nutrición: déficit energético moderado y mantenimiento de cargas pesadas de fuerza.";
+          badgeClass = "bg-amber-100 text-amber-700 border-amber-200";
+        } else {
+          diagnosis = `Excelente porcentaje graso y masa magra competitiva (${fat.toFixed(1)}%). Balance metabólico ideal para sprint y salto.`;
+          trainingFocus = "Optimizar carga de carbohidratos en pre-partido y reposición de glucógeno post-esfuerzo.";
+          badgeClass = "bg-emerald-100 text-emerald-700 border-emerald-200";
+        }
+        break;
+      }
+    }
+    
+    return { title, diagnosis, trainingFocus, badgeClass };
+  }, [latestImtpFuerza, latestImtpFuerzaRel, latestCmjAltura, latestSpeedTotal, latestVo2Max, latestAgilityCod, latestReboundRsi, antropometria]);
+
+  if (!player) {
+    return (
+      <div className="bg-white rounded-[40px] p-20 text-center border border-dashed border-slate-200">
+        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 mx-auto mb-4 animate-pulse">
+          <i className="fa-solid fa-user-magnifying-glass text-xl"></i>
+        </div>
+        <p className="text-slate-400 font-black uppercase text-xs tracking-widest">
+          Selecciona un atleta en la barra superior para visualizar su reporte de Sports Science
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-12">
       {/* HEADER PERFIL ATLETA */}
       <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-wrap items-center justify-between gap-8">
         <div className="flex items-center">
@@ -3947,568 +4551,268 @@ const IndividualDashboard = ({
         </div>
       </div>
 
-      {/* TABLA DE EVALUACIONES INDIVIDUALES */}
-      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+      {/* DIAGNÓSTICO GLOBAL DEL RENDIMIENTO */}
+      <div className="bg-slate-950 rounded-[40px] p-8 border border-slate-800 shadow-md text-white space-y-6">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-red-600/10 flex items-center justify-center text-red-500 border border-red-500/25 shrink-0">
+            <i className="fa-solid fa-brain text-lg"></i>
+          </div>
           <div>
-            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Resumen de Evaluaciones y Categorías</h3>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">Listado de evaluaciones individuales con códigos de color de su categoría de rendimiento</p>
-          </div>
-          
-          <div className="flex gap-4 items-center">
-            <div className="flex gap-2 text-[9px] font-black uppercase tracking-wider bg-slate-50 p-2 rounded-2xl border border-slate-100">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>Excelente</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>Normal</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>Bajo</span>
-            </div>
+            <span className="text-[9px] font-black text-red-500 uppercase tracking-widest leading-none block">Inteligencia de Rendimiento</span>
+            <h3 className="text-lg font-black uppercase tracking-tight italic text-slate-150">Diagnóstico de Perfil Integral</h3>
           </div>
         </div>
 
-        <div className="overflow-x-auto -mx-8 px-8 max-h-96 overflow-y-auto">
-          <table className="w-full text-left border-collapse min-w-[700px]">
-            <thead>
-              <tr className="border-b border-slate-100 pb-3">
-                <th className="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-3 w-32">Fecha</th>
-                <th className="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-3 w-48">Tipo de Evaluación</th>
-                <th className="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-3">Métricas Obtenidas & Categoría</th>
-                <th className="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-3 w-48">Observaciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parsedEvaluations.length > 0 ? (
-                parsedEvaluations.map((row, idx) => (
-                  <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                    <td className="py-3 text-xs font-black text-slate-900 uppercase tracking-tight">{row.dateStr}</td>
-                    <td className="py-3">
-                      <span className="bg-slate-100 text-slate-800 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border border-slate-200">
-                        {row.area}
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {row.metrics.map((m, mIdx) => {
-                          const status = getEvaluationCategory(m.key, m.value);
-                          return (
-                            <span 
-                              key={mIdx} 
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-xl text-[9px] font-black uppercase tracking-wider border ${status.bg} ${status.text}`}
-                              title={`${m.label}: ${m.value} ${m.unit} (${status.label})`}
-                            >
-                              <span className="opacity-70">{m.label}:</span>
-                              <span>{m.value}{m.unit}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td className="py-3 text-[10px] text-slate-500 font-bold truncate max-w-[200px]" title={row.observations}>
-                      {row.observations || '-'}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4} className="py-8 text-center text-slate-300 font-bold uppercase text-xs tracking-widest">
-                    No hay evaluaciones registradas para este atleta
-                  </td>
-                </tr>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+          <div className="lg:col-span-7 bg-slate-900 rounded-3xl p-6 border border-slate-800 flex flex-col justify-between">
+            <div className="space-y-3">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Evaluación de Prioridad Neuromuscular</span>
+              <p className="text-xs text-slate-200 font-bold leading-relaxed">
+                <span className="text-red-500 font-black mr-1 uppercase tracking-tight">[FOCO CLÍNICO]:</span> 
+                {intelligentPrescription.diagnosis}
+              </p>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t border-slate-800/60 flex flex-wrap gap-2">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block w-full mb-1">Fortalezas Consolidadas</span>
+              {intelligentPrescription.strongPoints.map((sp, idx) => (
+                <span key={idx} className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase">
+                  {sp}
+                </span>
+              ))}
+              {intelligentPrescription.strongPoints.length === 0 && (
+                <span className="text-[9px] text-slate-500 italic font-bold">Sin fortalezas registradas</span>
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {player && (
-        <FichaOrientacionAtleta
-          player={player as any}
-          imtp={imtp}
-          speed={speed}
-          vo2max={vo2max}
-          test505={test505}
-          cmjRebound={cmjRebound}
-          allPlayers={allPlayers}
-          allImtp={allImtp}
-          allSpeed={allSpeed}
-          allVo2={allVo2}
-          allTest505={allTest505}
-          allCmjRebound={allCmjRebound}
-        />
-      )}
-
-      {/* BLOQUES DINÁMICOS IMTP */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Fuerza Máxima (IMTP) & Saltabilidad (CMJ)</h3>
-          <div className="h-px flex-1 bg-slate-100"></div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedMetrics.map((metricKey, idx) => {
-            const data = getMetricData(metricKey);
-            const metricLabel = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
-
-            return (
-              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                <div className="flex justify-between items-center mb-8">
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
-                    <span className={`w-2 h-6 rounded-full ${idx % 2 === 0 ? 'bg-red-500' : 'bg-blue-500'}`}></span>
-                    {metricLabel}
-                  </h3>
-                  <select 
-                    value={metricKey}
-                    onChange={(e) => updateMetric(idx, e.target.value)}
-                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
-                  >
-                    {imtpMetrics.map(opt => (
-                      <option key={opt.key} value={opt.key}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="h-64">
-                  {data.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={data}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
-                        <Tooltip 
-                          contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                          itemStyle={{ color: idx % 2 === 0 ? '#ef4444' : '#3b82f6' }}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke={idx % 2 === 0 ? '#ef4444' : '#3b82f6'} 
-                          strokeWidth={4} 
-                          dot={{ r: 4, fill: idx % 2 === 0 ? '#ef4444' : '#3b82f6', strokeWidth: 2, stroke: '#fff' }}
-                          activeDot={{ r: 6, strokeWidth: 0 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
-                      <i className="fa-solid fa-chart-line text-3xl opacity-20"></i>
-                      <p className="text-[10px] font-black uppercase tracking-widest">Sin datos registrados</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {latestImtpFuerza !== null && (
-          <div className="bg-red-50 rounded-3xl p-6 border border-red-100 flex items-start gap-4 mt-4">
-            <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600 shrink-0">
-              <i className="fa-solid fa-dumbbell text-sm"></i>
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Fuerza & Potencia</h4>
-              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                {latestImtpFuerza < 2800 && (latestCmjAltura === null || latestCmjAltura < 35) ? (
-                  "Déficit combinado en Fuerza Máxima y Potencia. Se prescribe priorizar una base de fuerza estructural y fuerza máxima en el gimnasio (Sentadillas, IMTP al 75-85% 1RM) antes de programar bloques dinámicos/balísticos."
-                ) : latestImtpFuerza >= 2800 && (latestCmjAltura !== null && latestCmjAltura < 35) ? (
-                  "Nivel de Fuerza Máxima óptimo pero con baja transferencia a Potencia. Enfoca el programa de gimnasio en la tasa de desarrollo de fuerza (RFD), velocidad-fuerza y pliometría con cargas medias a ligeras (30-50% 1RM) a máxima intención concéntrica."
-                ) : (
-                  "Perfil competitivo de fuerza y saltabilidad. Continuar con el microciclo actual enfocado en el mantenimiento de la potencia dinámica y prevención."
-                )}
-              </p>
             </div>
           </div>
-        )}
-      </div>
 
-      {/* BLOQUES DINÁMICOS VELOCIDAD */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Velocidad (Sprint)</h3>
-          <div className="h-px flex-1 bg-slate-100"></div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedSpeedMetrics.map((metricKey, idx) => {
-            const data = getMetricData(metricKey);
-            const metricLabel = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
-
-            return (
-              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                <div className="flex justify-between items-center mb-8">
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
-                    <span className={`w-2 h-6 rounded-full ${idx % 2 === 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
-                    {metricLabel}
-                  </h3>
-                  <select 
-                    value={metricKey}
-                    onChange={(e) => updateSpeedMetric(idx, e.target.value)}
-                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
-                  >
-                    {speedMetrics.map(opt => (
-                      <option key={opt.key} value={opt.key}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="h-64">
-                  {data.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={data}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
-                        <Tooltip 
-                          contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                          itemStyle={{ color: idx % 2 === 0 ? '#f59e0b' : '#10b981' }}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke={idx % 2 === 0 ? '#f59e0b' : '#10b981'} 
-                          strokeWidth={4} 
-                          dot={{ r: 4, fill: idx % 2 === 0 ? '#f59e0b' : '#10b981', strokeWidth: 2, stroke: '#fff' }}
-                          activeDot={{ r: 6, strokeWidth: 0 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
-                      <i className="fa-solid fa-bolt text-3xl opacity-20"></i>
-                      <p className="text-[10px] font-black uppercase tracking-widest">Sin datos registrados</p>
-                    </div>
-                  )}
-                </div>
+          <div className="lg:col-span-5 bg-gradient-to-br from-red-950/20 to-slate-900 rounded-3xl p-6 border border-slate-800/80 flex flex-col justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-red-400">
+                <i className="fa-solid fa-graduation-cap text-xs"></i>
+                <p className="text-[9px] font-black uppercase tracking-widest">Ficha Metodológica de Orientación</p>
               </div>
-            );
-          })}
-        </div>
-
-        {latestSpeedTotal !== null && (
-          <div className="bg-amber-50 rounded-3xl p-6 border border-amber-100 flex items-start gap-4 mt-4">
-            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
-              <i className="fa-solid fa-person-running text-sm"></i>
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Velocidad / Sprint Lineal</h4>
-              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                {latestSpeedTotal > 4.40 ? (
-                  "Nivel de velocidad lineal y aceleración por debajo del promedio. Se aconseja integrar series de sprints cortos (10-30m) con recuperación completa al inicio de la sesión, complementado con fuerza horizontal y arrastres de trineo en gimnasio."
-                ) : (
-                  "Perfil competitivo de velocidad lineal. Sostener la calidad técnica y mecánica actual, alternando con trabajos de agilidad y deceleración reactiva."
-                )}
+              <p className="text-xs text-slate-200 font-medium leading-relaxed italic mt-2">
+                "{intelligentPrescription.trainingFocus}"
               </p>
             </div>
-          </div>
-        )}
-      </div>
 
-      {/* BLOQUES DINÁMICOS VO2 MAX */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Capacidad Aeróbica (VO2 Max)</h3>
-          <div className="h-px flex-1 bg-slate-100"></div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedVO2Metrics.map((metricKey, idx) => {
-            const data = getMetricData(metricKey);
-            const metricLabel = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
-
-            return (
-              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                <div className="flex justify-between items-center mb-8">
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
-                    <span className={`w-2 h-6 rounded-full ${idx % 2 === 0 ? 'bg-indigo-500' : 'bg-violet-500'}`}></span>
-                    {metricLabel}
-                  </h3>
-                  <select 
-                    value={metricKey}
-                    onChange={(e) => updateVO2Metric(idx, e.target.value)}
-                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
-                  >
-                    {vo2Metrics.map(opt => (
-                      <option key={opt.key} value={opt.key}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="h-64">
-                  {data.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={data}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
-                        <Tooltip 
-                          contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                          itemStyle={{ color: idx % 2 === 0 ? '#6366f1' : '#8b5cf6' }}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke={idx % 2 === 0 ? '#6366f1' : '#8b5cf6'} 
-                          strokeWidth={4} 
-                          dot={{ r: 4, fill: idx % 2 === 0 ? '#6366f1' : '#8b5cf6', strokeWidth: 2, stroke: '#fff' }}
-                          activeDot={{ r: 6, strokeWidth: 0 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
-                      <i className="fa-solid fa-lungs text-3xl opacity-20"></i>
-                      <p className="text-[10px] font-black uppercase tracking-widest">Sin datos registrados</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {latestVo2Max !== null && (
-          <div className="bg-indigo-50 rounded-3xl p-6 border border-indigo-100 flex items-start gap-4 mt-4">
-            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-              <i className="fa-solid fa-lungs text-sm"></i>
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Capacidad Aeróbica (VO2 Max)</h4>
-              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                {latestVo2Max < 52 ? (
-                  "Capacidad aeróbica subóptima para alta competencia. Se prescribe entrenamiento interválico de alta intensidad (HIIT - e.g. pasadas intermitentes en cancha de 15s al 105% VAM con 15s de pausa pasiva) para aumentar la potencia aeróbica y acelerar la recuperación entre esfuerzos de alta intensidad."
-                ) : (
-                  "Resistencia aeróbica óptima. Mantener el volumen general de trabajo y el estímulo intermitente específico en cancha."
-                )}
-              </p>
+            <div className="mt-4 pt-4 border-t border-slate-800/60 flex flex-wrap gap-2">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block w-full mb-1">Dominios con Prioridad de Mejora</span>
+              {intelligentPrescription.weakLinks.map((wl, idx) => (
+                <span key={idx} className="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase">
+                  {wl}
+                </span>
+              ))}
+              {intelligentPrescription.weakLinks.length === 0 && (
+                <span className="text-[9px] text-slate-500 italic font-bold">Todos los sistemas equilibrados</span>
+              )}
             </div>
           </div>
-        )}
-      </div>
-
-      {/* BLOQUES DINÁMICOS ANTROPOMETRÍA */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Antropometría & Composición</h3>
-          <div className="h-px flex-1 bg-slate-100"></div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedAntroMetrics.map((metricKey, idx) => {
-            const data = getMetricData(metricKey);
-            const metricLabel = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
-
-            return (
-              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                <div className="flex justify-between items-center mb-8">
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
-                    <span className={`w-2 h-6 rounded-full ${idx % 2 === 0 ? 'bg-emerald-500' : 'bg-blue-500'}`}></span>
-                    {metricLabel}
-                  </h3>
-                  <select 
-                    value={metricKey}
-                    onChange={(e) => updateAntroMetric(idx, e.target.value)}
-                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
-                  >
-                    {antroMetrics.map(opt => (
-                      <option key={opt.key} value={opt.key}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="h-64">
-                  {data.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={data}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
-                        <Tooltip 
-                          contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                          itemStyle={{ color: idx % 2 === 0 ? '#10b981' : '#3b82f6' }}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke={idx % 2 === 0 ? '#10b981' : '#3b82f6'} 
-                          strokeWidth={4} 
-                          dot={{ r: 4, fill: idx % 2 === 0 ? '#10b981' : '#3b82f6', strokeWidth: 2, stroke: '#fff' }}
-                          activeDot={{ r: 6, strokeWidth: 0 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
-                      <i className="fa-solid fa-ruler-combined text-3xl opacity-20"></i>
-                      <p className="text-[10px] font-black uppercase tracking-widest">Sin datos registrados</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
         </div>
       </div>
 
-      {/* BLOQUES DINÁMICOS AGILIDAD */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Agilidad & Cambios de Dirección (Test 505)</h3>
-          <div className="h-px flex-1 bg-slate-100"></div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedAgilityMetrics.map((metricKey, idx) => {
-            const data = getMetricData(metricKey);
-            const metricLabel = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
-
-            return (
-              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                <div className="flex justify-between items-center mb-8">
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
-                    <span className={`w-2 h-6 rounded-full ${idx % 2 === 0 ? 'bg-sky-500' : 'bg-indigo-500'}`}></span>
-                    {metricLabel}
-                  </h3>
-                  <select 
-                    value={metricKey}
-                    onChange={(e) => updateAgilityMetric(idx, e.target.value)}
-                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
-                  >
-                    {agilityMetrics.map(opt => (
-                      <option key={opt.key} value={opt.key}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="h-64">
-                  {data.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={data}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
-                        <Tooltip 
-                          contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                          itemStyle={{ color: idx % 2 === 0 ? '#0ea5e9' : '#6366f1' }}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke={idx % 2 === 0 ? '#0ea5e9' : '#6366f1'} 
-                          strokeWidth={4} 
-                          dot={{ r: 4, fill: idx % 2 === 0 ? '#0ea5e9' : '#6366f1', strokeWidth: 2, stroke: '#fff' }}
-                          activeDot={{ r: 6, strokeWidth: 0 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
-                      <i className="fa-solid fa-person-running text-3xl opacity-20"></i>
-                      <p className="text-[10px] font-black uppercase tracking-widest">Sin datos registrados</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {latestAgilityCod !== null && (
-          <div className="bg-sky-50 rounded-3xl p-6 border border-sky-100 flex items-start gap-4 mt-4">
-            <div className="w-10 h-10 rounded-xl bg-sky-100 flex items-center justify-center text-sky-600 shrink-0">
-              <i className="fa-solid fa-person-running text-sm"></i>
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Cambio de Dirección & Agilidad</h4>
-              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                {latestAgilityCod > 1.60 ? (
-                  "Tiempo de cambio de dirección deficiente. Enfocar el entrenamiento en sobrecarga excéntrica de frenado (polea cónica, frenadas excéntricas con cinturón ruso) y técnica de re-aceleración en el primer paso en cancha."
-                ) : (
-                  "Excelente agilidad y control motor lateral. Mantener driles abiertos con toma de decisión cognitiva y reactiva ante estímulos visuales."
-                )}
-              </p>
-            </div>
-          </div>
-        )}
+      {/* DIVIDER DE PROTOCOLOS */}
+      <div className="border-t border-slate-200 pt-4">
+        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Protocolos de Evaluación Física y Fisiológica</h3>
+        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Desglose completo y detallado de cada dominio de evaluación física</p>
       </div>
 
-      {/* BLOQUES DINÁMICOS CMJ REBOUND */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Fuerza Reactiva (CMJ Rebound)</h3>
-          <div className="h-px flex-1 bg-slate-100"></div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {selectedReboundMetrics.map((metricKey, idx) => {
-            const data = getMetricData(metricKey);
-            const metricLabel = METRICS_OPTIONS.find(m => m.key === metricKey)?.label;
+      {/* LISTADO DE EVALUACIONES VERTICAL */}
+      <div className="space-y-16">
+        {EVALUATION_PROTOCOLS.map((proto) => {
+          const domainAdvisor = getDomainAdvisor(proto);
+          const protoRows = getProtoRows(proto);
 
-            return (
-              <div key={idx} className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-                <div className="flex justify-between items-center mb-8">
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
-                    <span className={`w-2 h-6 rounded-full ${idx % 2 === 0 ? 'bg-red-500' : 'bg-rose-500'}`}></span>
-                    {metricLabel}
-                  </h3>
-                  <select 
-                    value={metricKey}
-                    onChange={(e) => updateReboundMetric(idx, e.target.value)}
-                    className="bg-slate-50 border-none rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-500 outline-none focus:ring-2 focus:ring-red-500 uppercase tracking-widest"
-                  >
-                    {reboundMetrics.map(opt => (
-                      <option key={opt.key} value={opt.key}>{opt.label}</option>
-                    ))}
-                  </select>
+          return (
+            <div key={proto.id} className="bg-slate-50/50 rounded-[48px] p-6 lg:p-8 border border-slate-150/80 space-y-8 shadow-xs">
+              
+              {/* RECUADRO SUPERIOR: DESCRIPCIÓN Y ORIENTACIÓN DE ENTRENAMIENTO */}
+              <div className="bg-slate-900 rounded-[32px] p-6 lg:p-8 border border-slate-800 shadow-md text-white grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                <div className="lg:col-span-8 flex flex-col justify-between space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-red-600/10 flex items-center justify-center text-red-500 border border-red-500/25 shrink-0">
+                        <i className="fa-solid fa-clipboard-user text-sm"></i>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-black text-red-500 uppercase tracking-widest leading-none block">Reporte Individual Clínico</span>
+                        <h3 className="text-lg font-black uppercase tracking-tight italic text-slate-100">{proto.label}</h3>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-300 font-medium leading-relaxed max-w-2xl">{proto.description}</p>
+                  </div>
+                  
+                  <div className="bg-slate-950 rounded-2xl p-5 border border-slate-800 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${domainAdvisor.badgeClass}`}>
+                        {domainAdvisor.title}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-200 font-bold leading-relaxed">
+                      <span className="text-red-500 font-black mr-1 uppercase tracking-tight">[DIAGNÓSTICO DEL PERFIL]:</span> 
+                      {domainAdvisor.diagnosis}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="h-64">
-                  {data.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={data}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={9} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
-                        <Tooltip 
-                          contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                          itemStyle={{ color: idx % 2 === 0 ? '#ef4444' : '#f43f5e' }}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke={idx % 2 === 0 ? '#ef4444' : '#f43f5e'} 
-                          strokeWidth={4} 
-                          dot={{ r: 4, fill: idx % 2 === 0 ? '#ef4444' : '#f43f5e', strokeWidth: 2, stroke: '#fff' }}
-                          activeDot={{ r: 6, strokeWidth: 0 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
-                      <i className="fa-solid fa-arrows-up-down text-3xl opacity-20"></i>
-                      <p className="text-[10px] font-black uppercase tracking-widest">Sin datos registrados</p>
+                <div className="lg:col-span-4 bg-slate-950 rounded-[24px] p-6 border border-slate-800 flex flex-col justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-blue-400">
+                      <i className="fa-solid fa-graduation-cap text-xs"></i>
+                      <p className="text-[9px] font-black uppercase tracking-widest">Ficha de Orientación de Entrenamiento</p>
                     </div>
-                  )}
+                    <p className="text-xs text-slate-300 font-medium leading-relaxed italic mt-2">
+                      "{domainAdvisor.trainingFocus}"
+                    </p>
+                  </div>
+                  
+                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Historial disponible</span>
+                    <span className="bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-black px-2.5 py-0.5 rounded-full">
+                      {protoRows.length} {protoRows.length === 1 ? 'Sesión' : 'Sesiones'}
+                    </span>
+                  </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
 
-        {latestReboundRsi !== null && (
-          <div className="bg-rose-50 rounded-3xl p-6 border border-rose-100 flex items-start gap-4 mt-4">
-            <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
-              <i className="fa-solid fa-arrows-up-down text-sm"></i>
+              {/* SECCIÓN DATOS MAESTROS: TABLA HISTÓRICA DEL PROTOCOLO */}
+              <div className="bg-white rounded-[32px] p-6 lg:p-8 shadow-sm border border-slate-100">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 uppercase tracking-tighter italic">Tabla de Datos Históricos</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Registros cronológicos de {proto.label} con parámetros y categorías</p>
+                  </div>
+                  
+                  <button 
+                    onClick={() => exportProtoToCSV(proto)}
+                    className="bg-slate-950 hover:bg-slate-900 text-white font-black uppercase text-[10px] tracking-wider px-4 py-2.5 rounded-2xl flex items-center gap-2 self-stretch sm:self-auto justify-center"
+                  >
+                    <i className="fa-solid fa-file-csv"></i> Descargar Reporte CSV
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                  <table className="w-full text-left border-collapse min-w-[700px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="text-[9px] font-black text-slate-400 uppercase tracking-widest py-3 px-4 w-32">Fecha de Test</th>
+                        {proto.metrics.map((m) => (
+                          <th key={m.key} className="text-[9px] font-black text-slate-400 uppercase tracking-widest py-3 px-4 text-center">{m.label}</th>
+                        ))}
+                        <th className="text-[9px] font-black text-slate-400 uppercase tracking-widest py-3 px-4 w-48">Notas de Campo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {protoRows.length > 0 ? (
+                        protoRows.map((row, idx) => (
+                          <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/40 transition-all">
+                            <td className="py-3 px-4 text-xs font-black text-slate-950 uppercase tracking-tight">
+                              {row.dateStr}
+                            </td>
+                            {row.metrics.map((m) => {
+                              const category = getEvaluationCategory(m.key, m.value);
+                              const isNa = isNaN(m.value);
+                              return (
+                                <td key={m.key} className="py-3 px-4 text-center">
+                                  {isNa ? (
+                                    <span className="text-slate-300 font-bold text-xs">-</span>
+                                  ) : (
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <span className="text-xs font-black text-slate-800">{m.value} <span className="text-[9px] text-slate-400 font-bold">{m.unit}</span></span>
+                                      <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider ${category.bg} ${category.text}`}>
+                                        {category.label}
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="py-3 px-4 text-[10px] text-slate-500 font-bold truncate max-w-[200px]" title={row.observations}>
+                              {row.observations || '-'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={2 + proto.metrics.length} className="py-12 text-center text-slate-300 font-bold uppercase text-xs tracking-widest">
+                            Sin registros cargados para este atleta en {proto.label}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* SECCIÓN INFERIOR: GRÁFICOS DE TENDENCIAS ESPECÍFICOS */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 uppercase tracking-tighter italic px-2">Tendencias de Rendimiento ({proto.label})</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 px-2">Análisis visual de los parámetros clave en el tiempo</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {proto.graphs.map((graph, gIdx) => {
+                    const trendData = getGraphTrendData(proto, graph);
+                    const hasData = trendData.length > 0;
+
+                    return (
+                      <div key={gIdx} className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-xs flex flex-col justify-between">
+                        <div>
+                          <span className="text-[8px] font-black text-red-600 uppercase tracking-widest">Gráfico {gIdx + 1}</span>
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight italic">{graph.title}</h4>
+                          <p className="text-[10px] text-slate-400 font-bold leading-normal mt-1">{graph.desc}</p>
+                          
+                          <div className="h-48 mt-4">
+                            {hasData ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={trendData} margin={{ left: -15, right: -5, top: 10, bottom: 5 }}>
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                  <XAxis dataKey="dateStr" stroke="#94a3b8" fontSize={8} fontWeight={900} axisLine={false} tickLine={false} />
+                                  <YAxis yAxisId="left" stroke={graph.color1} fontSize={8} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} reversed={graph.reversedY1} />
+                                  {graph.m2 && (
+                                    <YAxis yAxisId="right" orientation="right" stroke={graph.color2} fontSize={8} fontWeight={900} axisLine={false} tickLine={false} domain={['auto', 'auto']} reversed={graph.reversedY2} />
+                                  )}
+                                  <Tooltip 
+                                    contentStyle={{ borderRadius: '16px', border: 'none', fontWeight: '900', fontSize: '10px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                  />
+                                  <Line yAxisId="left" type="monotone" dataKey="v1" name={graph.m1Label} stroke={graph.color1} strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                                  {graph.m2 && (
+                                    <Line yAxisId="right" type="monotone" dataKey="v2" name={graph.m2Label} stroke={graph.color2} strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                                  )}
+                                </LineChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-2">
+                                <i className="fa-solid fa-chart-line text-xl opacity-25"></i>
+                                <p className="text-[9px] font-black uppercase tracking-widest">Sin datos históricos suficientes</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap gap-2 text-[8px] text-slate-400 font-bold border-t border-slate-100 pt-2">
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: graph.color1 }}></span>
+                            {graph.m1Label}
+                          </span>
+                          {graph.m2 && (
+                            <span className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: graph.color2 }}></span>
+                              {graph.m2Label}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
             </div>
-            <div className="space-y-1">
-              <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Ficha de Orientación: Fuerza Reactiva & Elasticidad</h4>
-              <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                {latestReboundRsi < 1.50 ? (
-                  "Capacidad elástica/reactiva (stiffness de tobillo) deficiente. Priorizar pliometría reactiva rápida (contacto < 250ms, e.g. pogo jumps de tobillo continuos, rebotes continuos en cajón bajo) para optimizar el ciclo de estiramiento-acortamiento rápido (SSC)."
-                ) : (
-                  "Excelente reactividad y elasticidad muscular-tendinosa. Mantener la dosis actual con drop jumps de mayor altura y aceleraciones de alta velocidad."
-                )}
-              </p>
-            </div>
-          </div>
-        )}
+          );
+        })}
       </div>
     </div>
   );
