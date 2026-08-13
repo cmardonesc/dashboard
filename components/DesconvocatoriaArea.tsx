@@ -587,6 +587,82 @@ export default function DesconvocatoriaArea({
     setShowMedicalTextModal(false);
   };
 
+  const handleUndoDesconvocatoria = async () => {
+    if (!processingBajaAtleta || !selectedMicro) return;
+    
+    if (!window.confirm(`¿Está seguro de que desea revertir la baja de ${processingBajaAtleta.name} y volver a convocarlo?`)) {
+      return;
+    }
+    
+    setLoading(true);
+    let deletedSuccessfully = false;
+    try {
+      // 1. Intentar eliminar usando RPC seguro para saltar RLS
+      console.log("Intentando revertir desconvocatoria mediante RPC seguro...");
+      const { error: rpcError } = await supabase.rpc('delete_desconvocatoria_safe', {
+        p_athlete_id: String(processingBajaAtleta.player_id),
+        p_microciclo_id: String(selectedMicro.id)
+      });
+
+      if (!rpcError) {
+        deletedSuccessfully = true;
+      } else {
+        console.warn("RPC delete_desconvocatoria_safe falló o no existe, intentando eliminación directa...", rpcError);
+        
+        // 2. Fallback: Eliminar directamente de la tabla de Supabase
+        const { error: deleteError } = await supabase
+          .from('desconvocatorias')
+          .delete()
+          .eq('athlete_id', String(processingBajaAtleta.player_id))
+          .eq('microciclo_id', String(selectedMicro.id));
+          
+        if (!deleteError) {
+          deletedSuccessfully = true;
+        } else {
+          console.error("Error al eliminar desconvocatoria de Supabase directamente (posible RLS):", deleteError);
+          setShowErrorSqlModal(true);
+        }
+      }
+      
+      // 3. Eliminar de local storage fallback
+      try {
+        const stored = localStorage.getItem('local_desconvocatorias');
+        if (stored) {
+          const arr = JSON.parse(stored);
+          const filtered = arr.filter((item: any) => 
+            !(String(item.athlete_id) === String(processingBajaAtleta.player_id) && 
+              String(item.microciclo_id) === String(selectedMicro.id))
+          );
+          localStorage.setItem('local_desconvocatorias', JSON.stringify(filtered));
+        }
+      } catch (e) {
+        console.error("Error al limpiar desconvocatoria local:", e);
+      }
+      
+      // 4. Actualizar estado local inmediatamente para asegurar respuesta visual reactiva
+      setBajaReasonsMap(prev => {
+        const copy = { ...prev };
+        delete copy[processingBajaAtleta.player_id!];
+        return copy;
+      });
+      
+      // Notificar a otras áreas
+      try {
+        window.dispatchEvent(new CustomEvent('desconvocatorias-updated'));
+      } catch (e) {
+        console.error(e);
+      }
+      
+      alert(`Baja revertida con éxito. ${processingBajaAtleta.name} ha sido reincorporado.`);
+      fetchCitedPlayers(selectedMicro.id);
+    } catch (err) {
+      console.error("Error al revertir desconvocatoria:", err);
+      alert("No se pudo revertir la desconvocatoria.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const confirmDesconvocatoria = async () => {
     if (!processingBajaAtleta || !selectedMicro || !bajaReasonInput.trim()) return
 
@@ -594,6 +670,29 @@ export default function DesconvocatoriaArea({
     let savedLocally = false;
     try {
       let saveError = null;
+
+      // Sincronizar dictamen médico si está vacío, para evitar pérdida de datos clínicos
+      if (processingBajaAtleta.player_id && !medicalTexts[processingBajaAtleta.player_id]) {
+        const updatedTexts = { ...medicalTexts, [processingBajaAtleta.player_id]: bajaReasonInput };
+        setMedicalTexts(updatedTexts);
+        localStorage.setItem('local_medical_texts', JSON.stringify(updatedTexts));
+
+        try {
+          const serializedValue = '[[MEDICAL_DICTAMEN]]:' + JSON.stringify({
+            medical_text: bajaReasonInput,
+            doctor_name: tempDoctorName || 'Médico de Turno'
+          });
+          await supabase
+            .from('citaciones')
+            .update({
+              observacion: serializedValue
+            })
+            .eq('microcycle_id', selectedMicro.id)
+            .eq('player_id', processingBajaAtleta.player_id);
+        } catch (e) {
+          console.error("Error sincronizando dictamen médico automático en Supabase:", e);
+        }
+      }
 
       // 1. Intentar primero con la función RPC segura para evitar RLS (42501)
       console.log("Intentando desconvocatoria mediante RPC seguro...");
@@ -1670,6 +1769,32 @@ export default function DesconvocatoriaArea({
                       REGISTRADO POR: DR. {doctorName}
                     </p>
                   )}
+                  {/* MOTIVO DE DESCONVOCATORIA MOSTRADO DEBAJO */}
+                  {bajaReasonsMap[player.player_id!] && (
+                    <div className="mt-3 pt-3 border-t border-rose-100/40">
+                      <span className="text-[8px] font-black text-red-600 uppercase tracking-widest block mb-1">Motivo de la Desconvocatoria:</span>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase italic">
+                        {bajaReasonsMap[player.player_id!]}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : bajaReasonsMap[player.player_id!] ? (
+              <div className="bg-red-50/50 border-2 border-red-500/20 rounded-[32px] p-8 flex gap-6 items-start">
+                <div className="w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center shrink-0">
+                  <i className="fa-solid fa-user-xmark text-xl text-red-600"></i>
+                </div>
+                <div>
+                  <h5 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                    ESTADO: JUGADOR DESCONVOCADO (BAJA OFICIAL)
+                  </h5>
+                  <p className="text-[11px] font-bold text-slate-600 leading-relaxed uppercase italic mb-2">
+                    El atleta ha sido desconvocado oficialmente del microciclo por el siguiente motivo:
+                  </p>
+                  <p className="text-[12px] font-extrabold text-red-600 uppercase italic">
+                    "{bajaReasonsMap[player.player_id!]}"
+                  </p>
                 </div>
               </div>
             ) : history.isInInjuredBoard ? (
@@ -1894,15 +2019,17 @@ export default function DesconvocatoriaArea({
                {/* Botón de Dar de Baja posicionado al lado de Descargar PDF, como estaba antes */}
                {isDesconvocado ? (
                  <button 
-                   disabled 
-                   className="bg-slate-100 text-slate-400 px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-slate-200 flex items-center gap-2 cursor-not-allowed"
-                 >
-                   <i className="fa-solid fa-circle-check text-green-500"></i> DADO DE BAJA
-                 </button>
+                    onClick={handleUndoDesconvocatoria}
+                    disabled={loading}
+                    className="bg-amber-600 hover:bg-amber-700 text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 transform disabled:opacity-50"
+                  >
+                    <i className="fa-solid fa-rotate-left"></i> REVERTIR BAJA / VOLVER
+                  </button>
                ) : (
                  <button 
                    onClick={() => {
-                     setBajaReasonInput('Desconvocado por el técnico');
+                     const existingMedical = medicalTexts[processingBajaAtleta.player_id!] || '';
+                      setBajaReasonInput(existingMedical || 'Desconvocado por el técnico');
                      setShowBajaModal(true);
                    }} 
                    className="bg-red-600 hover:bg-red-700 text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 transform"
@@ -2150,8 +2277,8 @@ export default function DesconvocatoriaArea({
             </div>
 
             <p className="text-slate-600 text-sm mb-6 leading-relaxed">
-              La tabla de <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-red-600">desconvocatorias</code> tiene activada la seguridad de filas (RLS) en Supabase, lo que impide inserciones desde el cliente de manera directa. 
-              Hemos creado un script SQL con la política adecuada y una función segura (<code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-green-600">create_desconvocatoria_safe</code>) para solucionarlo.
+              La tabla de <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-red-600">desconvocatorias</code> tiene activada la seguridad de filas (RLS) en Supabase, lo que impide operaciones de escritura/eliminación desde el cliente de manera directa. 
+              Hemos creado funciones seguras (<code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-green-600">create_desconvocatoria_safe</code> y <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-green-600">delete_desconvocatoria_safe</code>) para solucionarlo.
             </p>
 
             <p className="text-slate-900 text-xs font-black uppercase tracking-widest mb-2 flex items-center gap-2">
@@ -2167,6 +2294,7 @@ ALTER TABLE public.desconvocatorias ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Enable all access for desconvocatorias" ON public.desconvocatorias;
 CREATE POLICY "Enable all access for desconvocatorias" ON public.desconvocatorias FOR ALL USING (true) WITH CHECK (true);
 
+-- 1. Función Segura para Crear Desconvocatoria
 CREATE OR REPLACE FUNCTION public.create_desconvocatoria_safe(
   p_athlete_id text,
   p_athlete_name text,
@@ -2191,6 +2319,21 @@ BEGIN
     p_observaciones_extra
   );
 END;
+$$;
+
+-- 2. Función Segura para Revertir/Eliminar Desconvocatoria
+CREATE OR REPLACE FUNCTION public.delete_desconvocatoria_safe(
+  p_athlete_id text,
+  p_microciclo_id text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  DELETE FROM public.desconvocatorias
+  WHERE athlete_id = p_athlete_id AND microciclo_id = p_microciclo_id;
+END;
 $$;`;
                   navigator.clipboard.writeText(sqlCode);
                   alert("¡Código SQL copiado al portapapeles con éxito!");
@@ -2208,7 +2351,7 @@ DROP POLICY IF EXISTS "Enable all access for desconvocatorias" ON public.desconv
 CREATE POLICY "Enable all access for desconvocatorias" 
 ON public.desconvocatorias FOR ALL USING (true) WITH CHECK (true);
 
--- 3. Crear Función Segura (Bypass RLS)
+-- 3. Crear Función Segura (Bypass RLS para Crear)
 CREATE OR REPLACE FUNCTION public.create_desconvocatoria_safe(
   p_athlete_id text,
   p_athlete_name text,
@@ -2232,6 +2375,21 @@ BEGIN
     CASE WHEN p_staff_id IS NOT NULL AND p_staff_id <> '' THEN p_staff_id::uuid ELSE NULL END,
     p_observaciones_extra
   );
+END;
+$$;
+
+-- 4. Crear Función Segura (Bypass RLS para Revertir)
+CREATE OR REPLACE FUNCTION public.delete_desconvocatoria_safe(
+  p_athlete_id text,
+  p_microciclo_id text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  DELETE FROM public.desconvocatorias
+  WHERE athlete_id = p_athlete_id AND microciclo_id = p_microciclo_id;
 END;
 $$;`}
               </pre>
