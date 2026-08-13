@@ -854,6 +854,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             allVo2={vo2maxData}
             allTest505={test505Data}
             allCmjRebound={cmjReboundData}
+            allAntro={antropometria}
           />
         )}
         {activeTab === 'grupal' && (
@@ -3573,10 +3574,7 @@ const EVALUATION_PROTOCOLS: EvaluationConfig[] = [
     metrics: [
       { key: 'imtp_fuerza_n', label: 'Fuerza Pico (N)', unit: 'N' },
       { key: 'imtp_f_relativa_n_kg', label: 'Fuerza Relativa (N/kg)', unit: 'N/kg' },
-      { key: 'imtp_force_50ms', label: 'Fuerza 50ms (N)', unit: 'N' },
-      { key: 'imtp_force_100ms', label: 'Fuerza 100ms (N)', unit: 'N' },
-      { key: 'imtp_force_150ms', label: 'Fuerza 150ms (N)', unit: 'N' },
-      { key: 'imtp_force_200ms', label: 'Fuerza 200ms (N)', unit: 'N' }
+      { key: 'imtp_rfd_100ms', label: 'RFD - 100 ms', unit: 'N/s' }
     ],
     graphs: [
       {
@@ -3853,7 +3851,7 @@ const EVALUATION_PROTOCOLS: EvaluationConfig[] = [
 
 const IndividualDashboard = ({ 
   player, imtp, speed, antropometria, vo2max, test505 = [], cmjRebound = [], clubs,
-  allPlayers = [], allImtp = [], allSpeed = [], allVo2 = [], allTest505 = [], allCmjRebound = []
+  allPlayers = [], allImtp = [], allSpeed = [], allVo2 = [], allTest505 = [], allCmjRebound = [], allAntro = []
 }: { 
   player?: PlayerData, 
   imtp: IMTPData[], 
@@ -3868,7 +3866,8 @@ const IndividualDashboard = ({
   allSpeed?: any[],
   allVo2?: any[],
   allTest505?: any[],
-  allCmjRebound?: any[]
+  allCmjRebound?: any[],
+  allAntro?: any[]
 }) => {
   const [activeEvalType, setActiveEvalType] = useState<string>('imtp');
 
@@ -3981,30 +3980,165 @@ const IndividualDashboard = ({
       .sort((a, b) => a.fullDate - b.fullDate);
   };
 
+  const getValueForPlayerShared = (playerId: number, metricKey: string) => {
+    let records: any[] = [];
+    let dateField = 'fecha';
+
+    const isIMTP = [
+      'imtp_fuerza_n', 'imtp_f_relativa_n_kg', 'imtp_asimetria', 'imtp_debil', 'imtp_force_50ms', 'imtp_force_100ms', 'imtp_force_150ms', 'imtp_force_200ms', 'imtp_rfd_100ms', 'imtp_rfd_150ms', 'imtp_rfd_200ms',
+      'fuerza_cmj', 'cmj_rsi_mod', 'cmj_altura_salto_im', 'cmj_peak_pot_relativa',
+      'concentric_peak_force_n', 'rsi_modified_m_s', 'jump_height_impmom_cm', 'peak_power_bm_w_kg', 'countermovement_depth_cm', 'concentric_duration_ms', 'concentric_impulse_ns', 'take_off_momentum_kg_m_s', 'peak_power_w'
+    ].includes(metricKey);
+
+    const isCmjRebound = [
+      'rebound_rsi', 'rebound_contact_time_ms', 'rebound_flight_time_ms'
+    ].includes(metricKey);
+
+    const isSpeed = [
+      'tiempo_10m', 'vel_10m', 'tiempo_10_20m', 'vel_10_20m', 'tiempo_20_30m', 'vel_20_30m', 'tiempo_total', 'vel_max_kmh'
+    ].includes(metricKey);
+
+    const is505 = [
+      't_acel_2m', 'vel_acel_kmh', 't_desacel_2m', 'vel_desacel_kmh', 't_cod_2m', 'vel_cod_kmh', 't_reacel_1_2m', 'vel_reacel_1_kmh', 't_reacel_2_2m', 'vel_reacel_2_kmh', 'z_score_acel'
+    ].includes(metricKey);
+
+    const isVO2 = [
+      'vo2_max', 'vam', 'fc_max', 'nivel', 'pasada', 'mts', 'vfa', 'vt1_vel', 'vt1_pct', 'vt1_fc', 'vt2_vel', 'vt2_pct', 'vt2_fc'
+    ].includes(metricKey);
+
+    const isAntro = [
+      'masa_adiposa_pct', 'masa_corporal_kg', 'talla_cm', 'talla_sentada_cm', 'masa_muscular_pct', 'masa_osea_pct', 'sum_pliegues_6_mm', 'sum_pliegues_8_mm', 'indice_imo', 'indice_imc', 'masa_muscular_kg', 'masa_adiposa_kg', 'masa_osea_kg', 'somatotipo_endo', 'somatotipo_meso', 'somatotipo_ecto', 'maduracion_media', 'phv_media', 'estatura_proy_media_cm'
+    ].includes(metricKey);
+
+    if (isIMTP) {
+      records = allImtp;
+      dateField = 'fecha_test';
+    } else if (isCmjRebound) {
+      records = allCmjRebound;
+      dateField = 'fecha_test';
+    } else if (isSpeed) {
+      records = allSpeed;
+      dateField = 'fecha';
+    } else if (is505) {
+      records = allTest505;
+      dateField = 'fecha';
+    } else if (isVO2) {
+      records = allVo2;
+      dateField = 'fecha';
+    } else if (isAntro) {
+      records = allAntro;
+      dateField = 'fecha_medicion';
+    }
+
+    const sorted = records
+      .filter(r => Number(r.player_id) === Number(playerId))
+      .sort((a, b) => new Date(b[dateField]).getTime() - new Date(a[dateField]).getTime());
+
+    for (const r of sorted) {
+      let val = r[metricKey];
+      if (val === undefined || val === null || val === '') {
+        if (metricKey === 'imtp_fuerza_n') val = r['Peak Vertical Force [N]'];
+        if (metricKey === 'imtp_f_relativa_n_kg') val = r['Peak Vertical Force / BM'] || r['Peak Vertical Force / BM [N/kg]'];
+        if (metricKey === 'imtp_force_50ms') val = r['Force (Net of BW) at 50ms'] || r['Force (Net of BW) at 50ms [N]'];
+        if (metricKey === 'imtp_force_100ms') val = r['Force (Net of BW) at 100ms'] || r['Force (Net of BW) at 100ms [N]'];
+        if (metricKey === 'imtp_force_150ms') val = r['Force (Net of BW) at 150ms'] || r['Force (Net of BW) at 150ms [N]'];
+        if (metricKey === 'imtp_force_200ms') val = r['Force (Net of BW) at 200ms'] || r['Force (Net of BW) at 200ms [N]'];
+        if (metricKey === 'imtp_rfd_100ms') val = r['RFD - 100ms [N/s]'];
+        if (metricKey === 'imtp_rfd_150ms') val = r['RFD - 150ms [N/s]'];
+        if (metricKey === 'imtp_rfd_200ms') val = r['RFD - 200ms [N/s]'];
+
+        if (metricKey === 'concentric_peak_force_n') val = r.fuerza_cmj;
+        if (metricKey === 'rsi_modified_m_s') val = r.cmj_rsi_mod;
+        if (metricKey === 'jump_height_impmom_cm') val = r.cmj_altura_salto_im;
+      }
+      if (val !== null && val !== undefined && val !== '') {
+        const valNum = Number(val);
+        if (!isNaN(valNum)) {
+          return valNum;
+        }
+      }
+    }
+    return undefined;
+  };
+
   const getEvaluationCategory = (metricKey: string, val: number) => {
     if (val === undefined || val === null || val === 0 || isNaN(val)) {
       return { label: 'S/D', bg: 'bg-slate-50 border-slate-100', text: 'text-slate-400' };
     }
 
-    const config = ALL_METRIC_CONFIGS[metricKey];
-    if (!config) {
-      if (metricKey === 'masa_adiposa_pct') {
-        if (val < 10) return { label: 'Excelente', bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' };
-        if (val <= 14) return { label: 'Normal', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600' };
-        return { label: 'Bajo', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
+    // Excluir jugadores de la categoría 2012 del cálculo de percentiles
+    const filteredPlayers = allPlayers.filter(p => {
+      const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
+      return pYear !== 2012;
+    });
+
+    const values = filteredPlayers.map(p => {
+      const v = getValueForPlayerShared(p.player_id, metricKey);
+      return v !== undefined ? Number(v) : null;
+    }).filter((v): v is number => v !== null && !isNaN(v));
+
+    if (values.length < 3) {
+      const config = ALL_METRIC_CONFIGS[metricKey];
+      if (!config) {
+        if (metricKey === 'masa_adiposa_pct') {
+          if (val < 10) return { label: 'Élite', bg: 'bg-purple-50 border-purple-100 shadow-md shadow-purple-50', text: 'text-purple-600 font-bold' };
+          if (val <= 14) return { label: 'Promedio', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-600' };
+          return { label: 'Alerta', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
+        }
+        return { label: 'Valor', bg: 'bg-slate-50 border-slate-200', text: 'text-slate-700' };
       }
-      return { label: 'Valor', bg: 'bg-slate-50 border-slate-200', text: 'text-slate-700' };
+
+      const { excellent, normal } = config.thresholds;
+      if (config.lowerIsBetter) {
+        if (val <= excellent) return { label: 'Élite', bg: 'bg-purple-50 border-purple-100 shadow-md shadow-purple-50', text: 'text-purple-600 font-bold' };
+        if (val <= normal) return { label: 'Promedio', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-600' };
+        return { label: 'Alerta', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
+      } else {
+        if (val >= excellent) return { label: 'Élite', bg: 'bg-purple-50 border-purple-100 shadow-md shadow-purple-50', text: 'text-purple-600 font-bold' };
+        if (val >= normal) return { label: 'Promedio', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-600' };
+        return { label: 'Alerta', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
+      }
     }
 
-    const { excellent, normal } = config.thresholds;
-    if (config.lowerIsBetter) {
-      if (val <= excellent) return { label: 'Excelente', bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' };
-      if (val <= normal) return { label: 'Normal', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600' };
-      return { label: 'Bajo', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
+    const sorted = [...values].sort((a, b) => a - b);
+    const getP = (p: number) => {
+      const idx = Math.floor((p / 100) * (sorted.length - 1));
+      return sorted[idx];
+    };
+
+    const isInverted = [
+      'masa_adiposa_kg', 
+      'masa_adiposa_pct', 
+      'tiempo_10m', 
+      'tiempo_10_20m', 
+      'tiempo_20_30m', 
+      'tiempo_total',
+      'sum_pliegues_6_mm',
+      'sum_pliegues_8_mm'
+    ].includes(metricKey) || ALL_METRIC_CONFIGS[metricKey]?.lowerIsBetter;
+
+    if (isInverted) {
+      const p10 = getP(10);
+      const p25 = getP(25);
+      const p55 = getP(55);
+      const p80 = getP(80);
+
+      if (val <= p10) return { label: 'Élite', bg: 'bg-purple-50 border-purple-100 shadow-md shadow-purple-50', text: 'text-purple-600 font-bold' };
+      if (val <= p25) return { label: 'Sobresaliente', bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' };
+      if (val <= p55) return { label: 'Promedio', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-600' };
+      if (val <= p80) return { label: 'Por Mejorar', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600' };
+      return { label: 'Alerta', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
     } else {
-      if (val >= excellent) return { label: 'Excelente', bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' };
-      if (val >= normal) return { label: 'Normal', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600' };
-      return { label: 'Bajo', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
+      const p90 = getP(90);
+      const p75 = getP(75);
+      const p45 = getP(45);
+      const p20 = getP(20);
+
+      if (val >= p90) return { label: 'Élite', bg: 'bg-purple-50 border-purple-100 shadow-sm', text: 'text-purple-600 font-bold' };
+      if (val >= p75) return { label: 'Sobresaliente', bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' };
+      if (val >= p45) return { label: 'Promedio', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-600' };
+      if (val >= p20) return { label: 'Por Mejorar', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600' };
+      return { label: 'Alerta', bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' };
     }
   };
 
@@ -6392,7 +6526,7 @@ const Categorias = ({
   const calculateStats = (metricKey: string) => {
     const filteredPlayers = players.filter(p => {
       const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
-      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
+      const yearMatch = (selectedAnios.length === 0 || selectedAnios.includes(pYear)) && pYear !== 2012;
       const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
       return yearMatch && posMatch;
     });
@@ -6437,7 +6571,7 @@ const Categorias = ({
   const calculatePercentileStats = (metricKey: string) => {
     const filteredPlayers = players.filter(p => {
       const pYear = (p as any).anio ? Number((p as any).anio) : new Date(p.fecha_nacimiento).getFullYear();
-      const yearMatch = selectedAnios.length === 0 || selectedAnios.includes(pYear);
+      const yearMatch = (selectedAnios.length === 0 || selectedAnios.includes(pYear)) && pYear !== 2012;
       const posMatch = selectedPosiciones.length === 0 || selectedPosiciones.includes(p.posicion);
       return yearMatch && posMatch;
     });

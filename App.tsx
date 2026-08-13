@@ -36,6 +36,7 @@ const normalizeDateStr = (raw: string): string => {
 
 export default function App() {
   const [loading, setLoading] = useState(true)
+  const [showTimeoutControls, setShowTimeoutControls] = useState(false)
   const [playersLoading, setPlayersLoading] = useState(true)
   const [role, setRole] = useState<Role>(null)
   const [userClub, setUserClub] = useState<string | null>(null)
@@ -715,6 +716,7 @@ export default function App() {
 
   const handleSignOut = async () => {
     console.log("Cerrando sesión, limpiando datos...");
+    setShowTimeoutControls(false);
     try {
       localStorage.removeItem('lr-performance-auth-session');
     } catch (e) {
@@ -727,6 +729,7 @@ export default function App() {
     setLinkedPlayerId(null);
     setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
     setActiveMenu('inicio');
+    setLoading(false);
     
     await supabase.auth.signOut().catch((err: any) => console.warn("Supabase auth signOut error:", err));
   };
@@ -775,6 +778,13 @@ export default function App() {
         setLoading(false);
       }
     }, 10000);
+
+    // Temporizador de 5 segundos para mostrar botones de Reintentar / Cerrar Sesión
+    const timeoutTimer = setTimeout(() => {
+      if (isMounted && loading) {
+        setShowTimeoutControls(true);
+      }
+    }, 5000);
 
     const initialize = async () => {
       try {
@@ -896,6 +906,7 @@ export default function App() {
         if (isMounted) {
           setLoading(false)
           clearTimeout(safetyTimer);
+          clearTimeout(timeoutTimer);
         }
       }
     }
@@ -1005,6 +1016,7 @@ export default function App() {
     return () => {
       isMounted = false
       clearTimeout(safetyTimer);
+      clearTimeout(timeoutTimer);
       authListener.subscription.unsubscribe()
     }
   }, [fetchPerformanceData])
@@ -1016,6 +1028,7 @@ export default function App() {
     
     // Mostrar loading mientras buscamos el rol para dar feedback visual
     setLoading(true);
+    setShowTimeoutControls(false);
 
     const emailLower = session.user.email?.toLowerCase();
     // SUPERADMIN / ADMIN OVERRIDE
@@ -1399,10 +1412,30 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0b1220]">
-        <div className="flex flex-col items-center space-y-6">
+      <div className="min-h-screen flex items-center justify-center bg-[#0b1220] p-6 text-center">
+        <div className="flex flex-col items-center space-y-6 max-w-sm">
           <div className="w-16 h-16 border-4 border-slate-800 border-t-red-600 rounded-full animate-spin"></div>
           <p className="text-white/40 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Sincronizando con La Roja...</p>
+          
+          {showTimeoutControls && (
+            <div className="space-y-4 pt-6 animate-in fade-in duration-500">
+              <p className="text-red-500 font-bold uppercase text-[9px] tracking-wider">La sincronización está tardando más de lo habitual</p>
+              <div className="flex flex-col sm:flex-row gap-2 justify-center w-full">
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition-colors shadow-lg cursor-pointer"
+                >
+                  Reintentar
+                </button>
+                <button 
+                  onClick={handleSignOut} 
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-black text-[10px] uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                >
+                  Cerrar Sesión
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         {/* Watermark */}
         <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none opacity-20">
@@ -1596,12 +1629,12 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
   const handleLogin = async () => {
     if (submitting) return
     setMsg(null)
-    const trimmedEmail = email.trim();
+    const trimmedEmail = email.toLowerCase().replace(/[\s\u200B\u200C\u200D\uFEFF]/g, '');
     if (!trimmedEmail || !password) { setMsg('Completa todos los campos.'); return; }
     setSubmitting(true)
     console.log("Iniciando login para:", trimmedEmail);
 
-    const emailLower = trimmedEmail.toLowerCase();
+    const emailLower = trimmedEmail;
     const isOfficialStaff = emailLower.endsWith('@anfpchile.cl') || emailLower.endsWith('@anfp.cl') || emailLower === 'mardones.camilo@gmail.com';
     
     // Helper para realizar el login offline de respaldo
@@ -1734,12 +1767,13 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
   }
 
   const handleSignUp = async () => {
-    if (!email || !password || !signupRole) { setMsg('Completa todos los campos.'); return; }
+    const cleanedEmail = email.toLowerCase().replace(/[\s\u200B\u200C\u200D\uFEFF]/g, '');
+    if (!cleanedEmail || !password || !signupRole) { setMsg('Completa todos los campos.'); return; }
     setSubmitting(true)
     setMsg(null) // Limpiar mensajes previos
     
     try {
-      console.log("Iniciando registro para:", email, "Rol:", signupRole);
+      console.log("Iniciando registro para:", cleanedEmail, "Rol:", signupRole);
       // VALIDACIÓN DE ID DE JUGADOR
       let verifiedPlayerId: number | null = null;
       if (signupRole === 'player') {
@@ -1802,7 +1836,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
       const safePid = (typeof rawPid === 'number' && !isNaN(rawPid)) ? rawPid : null;
 
       const { data, error } = await supabase.auth.signUp({ 
-        email, 
+        email: cleanedEmail, 
         password, 
         options: { 
           data: { 
@@ -1825,7 +1859,7 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
       } else { 
         if (data?.session === null || data?.session === undefined) {
           // El email no ha sido confirmado aún (no hay sesión activa)
-          setMsg(`Te enviamos un correo a ${email}. Haz clic en el enlace para activar tu cuenta.`);
+          setMsg(`Te enviamos un correo a ${cleanedEmail}. Haz clic en el enlace para activar tu cuenta.`);
         } else {
           // El usuario ya tiene sesión activa (confirmado o en desarrollo)
           if (data?.user) {
@@ -1891,7 +1925,13 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
             <button onClick={() => setMode('signup')} className={`flex-1 py-3 rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all ${mode === 'signup' ? 'bg-[#0b1220] text-white' : 'text-slate-400'}`}>Registro</button>
           </div>
           <div className="space-y-3">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" placeholder="Email" />
+            <input 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value.toLowerCase().replace(/[\s\u200B\u200C\u200D\uFEFF]/g, ''))} 
+              type="email" 
+              className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" 
+              placeholder="Email" 
+            />
             <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" placeholder="Contraseña" />
             {mode === 'signup' && (
               <>

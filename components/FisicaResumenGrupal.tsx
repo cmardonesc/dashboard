@@ -32,6 +32,7 @@ export const ALL_METRIC_CONFIGS: Record<string, MetricConfig> = {
   // IMTP (Fuerza Máxima)
   imtp_fuerza_n: { key: 'imtp_fuerza_n', label: 'IMTP Fuerza Máxima', unit: 'N', lowerIsBetter: false, thresholds: { excellent: 3500, normal: 2800 } },
   imtp_f_relativa_n_kg: { key: 'imtp_f_relativa_n_kg', label: 'IMTP F. Relativa', unit: 'N/kg', lowerIsBetter: false, thresholds: { excellent: 45, normal: 35 } },
+  imtp_rfd_100ms: { key: 'imtp_rfd_100ms', label: 'IMTP RFD 100ms', unit: 'N/s', lowerIsBetter: false, thresholds: { excellent: 15000, normal: 10000 } },
   imtp_asimetria: { key: 'imtp_asimetria', label: 'IMTP Asimetría', unit: '%', lowerIsBetter: true, thresholds: { excellent: 5, normal: 10 } },
   fuerza_cmj: { key: 'fuerza_cmj', label: 'Fuerza CMJ', unit: 'N', lowerIsBetter: false, thresholds: { excellent: 3500, normal: 2800 } },
 
