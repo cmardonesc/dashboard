@@ -48,6 +48,13 @@ interface HistoricalData {
   gps: any[]
   medical: any[]
   isInInjuredBoard?: boolean
+  injuryDetails?: {
+    estado: string
+    disponibilidad: string
+    diagnostico_clinico: string
+    ultimo_control: string
+    actualizacion_medica_desc?: string
+  } | null
 }
 
 interface ClubGroup {
@@ -412,12 +419,44 @@ export default function DesconvocatoriaArea({
 
       const { data: activeInjuries } = await supabase
         .from('lesionados')
-        .select('id, fecha_inicio, fecha_alta')
+        .select('id, fecha_inicio, fecha_alta, estado, disponibilidad, diagnostico_clinico, ultimo_control, observaciones, actualizaciones_medicas')
         .eq('player_id', playerId);
 
-      const isInInjuredBoard = !!(activeInjuries && activeInjuries.some((injury: any) => {
-        return !injury.fecha_alta;
-      }));
+      const activeInjury = activeInjuries?.find((injury: any) => !injury.fecha_alta);
+      const isInInjuredBoard = !!activeInjury;
+
+      let actualizacion_medica_desc = '';
+      if (activeInjury) {
+        const updates = activeInjury.actualizaciones_medicas || [];
+        if (updates.length > 0) {
+          const sorted = [...updates].sort((a: any, b: any) => {
+            const timeA = a.date ? new Date(a.date).getTime() : 0;
+            const timeB = b.date ? new Date(b.date).getTime() : 0;
+            return timeB - timeA;
+          });
+          if (sorted[0]?.description) {
+            actualizacion_medica_desc = sorted[0].description;
+          }
+        }
+        if (!actualizacion_medica_desc) {
+          const rawObs = activeInjury.observaciones || '';
+          const parts = rawObs.split('\n\n[[EXAMS_DATA]]\n');
+          let obsText = parts[0];
+          if (obsText.includes('\n\n[[METADATA_V2]]\n')) {
+            const metaParts = obsText.split('\n\n[[METADATA_V2]]\n');
+            obsText = metaParts[0];
+          }
+          actualizacion_medica_desc = obsText.trim();
+        }
+      }
+
+      const injuryDetails = activeInjury ? {
+        estado: activeInjury.estado || 'Lesionado',
+        disponibilidad: activeInjury.disponibilidad || 'Baja Confirmada',
+        diagnostico_clinico: activeInjury.diagnostico_clinico || '',
+        ultimo_control: activeInjury.ultimo_control || '',
+        actualizacion_medica_desc: actualizacion_medica_desc || activeInjury.diagnostico_clinico || ''
+      } : null;
 
       const mappedWellness = (wellnessRaw || []).map(w => ({
         date: w.checkin_date,
@@ -473,7 +512,7 @@ export default function DesconvocatoriaArea({
         };
       });
 
-      return { wellness: mappedWellness, loads: mappedLoads, gps: mappedGps, medical: mappedMedical, isInInjuredBoard };
+      return { wellness: mappedWellness, loads: mappedLoads, gps: mappedGps, medical: mappedMedical, isInInjuredBoard, injuryDetails };
     } catch (err) {
       console.error("Error en historia:", err);
       return { wellness: [], loads: [], gps: [], medical: [], isInInjuredBoard: false };
@@ -1804,11 +1843,22 @@ export default function DesconvocatoriaArea({
                 </div>
                 <div>
                   <h5 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-1.5 flex items-center gap-2">
-                    ESTADO: ATLETA LESIONADO (BAJA CONFIRMADA)
+                    ESTADO: ATLETA EN TABLERO DE LESIONADOS
                   </h5>
+                  {history.injuryDetails?.estado && (
+                    <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-1">
+                      CONDICIÓN: {history.injuryDetails.estado.toUpperCase()}
+                    </p>
+                  )}
                   <p className="text-[11px] font-bold text-slate-600 leading-relaxed uppercase italic">
-                    El jugador presenta una lesión clínica diagnosticada en el microciclo, por lo que no se encuentra disponible para la competencia. Se adjunta ficha de control clínico.
+                    {history.injuryDetails?.actualizacion_medica_desc || 
+                     'EL JUGADOR PRESENTA UNA LESIÓN CLÍNICA DIAGNOSTICADA EN EL MICROCICLO, POR LO QUE NO SE ENCUENTRA DISPONIBLE PARA LA COMPETENCIA. SE ADJUNTA FICHA DE CONTROL CLÍNICO.'}
                   </p>
+                  {history.injuryDetails?.ultimo_control && (
+                    <p className="text-[9px] font-bold text-slate-400 mt-2 uppercase tracking-widest font-mono">
+                      CONTROL CLÍNICO: {history.injuryDetails.ultimo_control}
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (

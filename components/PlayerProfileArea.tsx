@@ -184,6 +184,27 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
           pDataWithClub.id_club = 89;
           pDataWithClub.club = 'Everton';
         }
+        
+        if (userRole === 'club') {
+          const targetClubId = userClubId;
+          const targetClubNameNorm = userClub ? normalizeClub(userClub) : '';
+          const playerClubId = pDataWithClub.id_club;
+          const playerClubNameNorm = pDataWithClub.club ? normalizeClub(pDataWithClub.club) : '';
+          
+          let isOwn = false;
+          if (targetClubId && playerClubId && Number(playerClubId) === Number(targetClubId)) {
+            isOwn = true;
+          } else if (targetClubNameNorm && playerClubNameNorm && playerClubNameNorm === targetClubNameNorm) {
+            isOwn = true;
+          }
+          
+          if (!isOwn) {
+            pDataWithClub.nombre = 'Jugador';
+            pDataWithClub.apellido1 = `[${pDataWithClub.player_id || 'EXT'}]`;
+            pDataWithClub.apellido2 = '';
+            pDataWithClub.club = 'OTRO CLUB';
+          }
+        }
         setProfileData(pDataWithClub);
       } else {
         setProfileData(null);

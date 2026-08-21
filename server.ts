@@ -15,6 +15,7 @@ const __dirname = path.dirname(__filename);
 // Initialize Supabase Client Safely
 let supabaseUrl = '';
 let supabaseKey = '';
+let supabaseServiceKey = '';
 
 try {
   const envPath = path.join(process.cwd(), '.env');
@@ -28,6 +29,7 @@ try {
         const val = parts.slice(1).join('=').trim().replace(/['"]/g, '');
         if (key === 'VITE_SUPABASE_URL') supabaseUrl = val;
         if (key === 'VITE_SUPABASE_ANON_KEY') supabaseKey = val;
+        if (key === 'SUPABASE_SERVICE_ROLE_KEY') supabaseServiceKey = val;
       }
     }
   }
@@ -37,12 +39,28 @@ if (!supabaseUrl || !supabaseKey) {
   supabaseUrl = process.env.VITE_SUPABASE_URL || '';
   supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
 }
+if (!supabaseServiceKey) {
+  supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+}
 
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+const supabaseAdmin = (supabaseUrl && supabaseServiceKey) ? createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  }
+}) : null;
+
 if (supabase) {
   console.log("🟢 [SUPABASE PROXY] Local Supabase client initialized successfully with URL:", supabaseUrl);
 } else {
   console.warn("⚠️ [SUPABASE PROXY] Could not initialize Supabase client (keys missing)");
+}
+
+if (supabaseAdmin) {
+  console.log("🟢 [SUPABASE ADMIN] Supabase Admin client initialized successfully");
+} else {
+  console.warn("⚠️ [SUPABASE ADMIN] Supabase Admin client not initialized (SUPABASE_SERVICE_ROLE_KEY missing)");
 }
  
 let transporter: nodemailer.Transporter | null = null;
@@ -771,6 +789,65 @@ Proporciona un diagnóstico del estado de potencia, fuerza-velocidad y capacidad
     } catch (error: any) {
       console.error("[EMAIL] Error:", error);
       return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ADMIN PASS RESET ENDPOINT
+  app.post("/api/admin/reset-user-password", async (req, res) => {
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: "El servicio de administrador de Supabase no está configurado (falta SUPABASE_SERVICE_ROLE_KEY en el servidor)." });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "No autorizado. Token faltante." });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    
+    try {
+      // 1. Obtener la sesión del usuario que solicita
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+      if (authError || !user) {
+        return res.status(401).json({ error: "Sesión inválida o expirada." });
+      }
+
+      // 2. Verificar que el rol sea 'staff' o 'admin'
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError || !profile || (profile.role !== "staff" && profile.role !== "admin")) {
+        // Como respaldo, comprobar si el email es del dominio oficial o es el admin principal
+        const emailLower = user.email?.toLowerCase() || '';
+        const isOfficialStaff = emailLower.endsWith('@anfpchile.cl') || emailLower.endsWith('@anfp.cl') || emailLower === 'mardones.camilo@gmail.com';
+        if (!isOfficialStaff) {
+          return res.status(403).json({ error: "Acceso denegado. Se requieren privilegios de Staff técnico." });
+        }
+      }
+
+      const { targetUserId, newPassword } = req.body;
+      if (!targetUserId || !newPassword) {
+        return res.status(400).json({ error: "Faltan parámetros requeridos (targetUserId, newPassword)." });
+      }
+
+      // 3. Modificar la contraseña del usuario objetivo usando el Auth Admin API
+      const { data, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        targetUserId,
+        { password: newPassword }
+      );
+
+      if (updateError) {
+        return res.status(400).json({ error: updateError.message });
+      }
+
+      console.log(`🔑 [ADMIN AUTH] Contraseña restablecida con éxito para el usuario ${targetUserId} por el administrador ${user.email}`);
+      return res.json({ success: true, message: "Contraseña restablecida con éxito por el Administrador." });
+    } catch (err: any) {
+      console.error("[ADMIN AUTH ERROR]:", err);
+      return res.status(500).json({ error: "Error interno del servidor.", details: err.message });
     }
   });
 

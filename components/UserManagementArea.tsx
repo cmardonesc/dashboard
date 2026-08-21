@@ -203,6 +203,50 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
     }
   };
 
+  const handleAdminResetPassword = async (userId: string) => {
+    const defaultTempPass = `Roja${new Date().getFullYear()}%Temp`;
+    const newPass = window.prompt(`Ingresa la nueva contraseña temporal para el usuario (ID: ${userId}):`, defaultTempPass);
+    if (!newPass) return;
+
+    if (newPass.length < 6) {
+      alert("La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        throw new Error("No hay una sesión activa de administrador.");
+      }
+
+      const response = await fetch('/api/admin/reset-user-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          targetUserId: userId,
+          newPassword: newPass
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || "Error al restablecer contraseña.");
+      }
+
+      alert(`¡Contraseña restablecida correctamente!\n\nNueva clave temporal:\n${newPass}\n\nPor favor, entrégale esta contraseña al usuario.`);
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleApproveClub = async (clubName: string) => {
     if (!window.confirm(`¿Deseas crear "${clubName}" como un club oficial?`)) return;
     
@@ -478,9 +522,18 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                       </p>
                     </td>
                     <td className="px-8 py-4 text-right">
-                      <button onClick={() => setEditingProfile(p)} className="text-slate-400 hover:text-blue-600 transition-colors">
-                        <i className="fa-solid fa-pen-to-square"></i>
-                      </button>
+                      <div className="flex items-center justify-end gap-3">
+                        <button 
+                          onClick={() => handleAdminResetPassword(p.id)} 
+                          title="Restablecer Contraseña"
+                          className="text-slate-400 hover:text-[#CF1B2B] transition-colors"
+                        >
+                          <i className="fa-solid fa-key"></i>
+                        </button>
+                        <button onClick={() => setEditingProfile(p)} className="text-slate-400 hover:text-blue-600 transition-colors">
+                          <i className="fa-solid fa-pen-to-square"></i>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

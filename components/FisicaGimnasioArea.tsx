@@ -1702,8 +1702,240 @@ export default function FisicaGimnasioArea({
           }
         }
       } catch (err) {
-        console.error("Error incorporating focus group:", err);
+        console.error("Error adding focus group:", err);
         setErrorMsg("Error al incorporar el foco.");
+      }
+    }
+  };
+
+  const handleUpdateExerciseFieldDirectly = async (exerciseId: string | number, field: string, value: any) => {
+    let updatedExData: any = {};
+    
+    // Find the current exercise to know its current state
+    const currentDaySession = sessions.find(s => s.dia_semana === selectedDia);
+    const currentEx = (currentDaySession?.ejercicios || []).find(e => e.id === exerciseId);
+    
+    if (field === 'target_group') {
+      const focusId = value;
+      // Filter templates for this focus
+      const filteredTemplates = focusId === 'TODOS'
+        ? PREDEFINED_FOCUS_EXERCISES
+        : PREDEFINED_FOCUS_EXERCISES.filter(t => t.target_group === focusId);
+      
+      const firstMuscle = filteredTemplates[0]?.grupo_muscular || 'General';
+      const firstExName = filteredTemplates[0]?.ejercicio || 'Nuevo Ejercicio';
+      
+      const template = PREDEFINED_FOCUS_EXERCISES.find(e => 
+        (focusId === 'TODOS' || e.target_group === focusId) && 
+        e.grupo_muscular === firstMuscle && 
+        e.ejercicio === firstExName
+      ) || filteredTemplates[0] || PREDEFINED_FOCUS_EXERCISES[0];
+
+      updatedExData = {
+        target_group: focusId,
+        grupo_muscular: firstMuscle,
+        ejercicio: firstExName,
+        series: template?.series ?? 3,
+        repeticiones: template?.repeticiones ?? '10',
+        carga_kg: template?.carga_kg ?? '0',
+        equipamiento: template?.equipamiento ?? 'Ninguno',
+        tecnica_ejecucion: template?.tecnica_ejecucion ?? '',
+        rpe_sugerido: template?.rpe_sugerido ?? 7
+      };
+    } else if (field === 'grupo_muscular') {
+      const focusId = currentEx?.target_group || 'TODOS';
+      const muscleGroup = value;
+      
+      // Filter templates matching focus and this muscle group
+      const filteredTemplates = PREDEFINED_FOCUS_EXERCISES.filter(t => {
+        const matchesFocus = focusId === 'TODOS' || t.target_group === focusId;
+        return matchesFocus && t.grupo_muscular === muscleGroup;
+      });
+      const firstExName = filteredTemplates[0]?.ejercicio || 'Nuevo Ejercicio';
+      
+      const template = filteredTemplates[0] || PREDEFINED_FOCUS_EXERCISES[0];
+
+      updatedExData = {
+        grupo_muscular: muscleGroup,
+        ejercicio: firstExName,
+        series: template?.series ?? 3,
+        repeticiones: template?.repeticiones ?? '10',
+        carga_kg: template?.carga_kg ?? '0',
+        equipamiento: template?.equipamiento ?? 'Ninguno',
+        tecnica_ejecucion: template?.tecnica_ejecucion ?? '',
+        rpe_sugerido: template?.rpe_sugerido ?? 7
+      };
+    } else if (field === 'ejercicio') {
+      const focusId = currentEx?.target_group || 'TODOS';
+      const muscleGroup = currentEx?.grupo_muscular || '';
+      const exName = value;
+      
+      const template = PREDEFINED_FOCUS_EXERCISES.find(e => 
+        (focusId === 'TODOS' || e.target_group === focusId) && 
+        e.grupo_muscular === muscleGroup && 
+        e.ejercicio === exName
+      ) || PREDEFINED_FOCUS_EXERCISES.find(e => e.ejercicio === exName);
+
+      updatedExData = {
+        ejercicio: exName,
+        series: template?.series ?? 3,
+        repeticiones: template?.repeticiones ?? '10',
+        carga_kg: template?.carga_kg ?? '0',
+        equipamiento: template?.equipamiento ?? 'Ninguno',
+        tecnica_ejecucion: template?.tecnica_ejecucion ?? '',
+        rpe_sugerido: template?.rpe_sugerido ?? 7
+      };
+    } else {
+      updatedExData = {
+        [field]: field === 'series' ? Number(value) : value
+      };
+    }
+
+    // Update state locally first
+    const updatedSessions = sessions.map(s => {
+      if (s.dia_semana === selectedDia) {
+        return {
+          ...s,
+          ejercicios: (s.ejercicios || []).map(ex => {
+            if (ex.id === exerciseId) {
+              return {
+                ...ex,
+                ...updatedExData
+              };
+            }
+            return ex;
+          })
+        };
+      }
+      return s;
+    });
+    setSessions(updatedSessions);
+    
+    if (selectedMicro) {
+      saveSessionsLocal(selectedMicro.id, updatedSessions);
+    }
+    setHasUnsavedChanges(true);
+    
+    if (isDbMode) {
+      try {
+        const { error } = await supabase
+          .from('fisica_gimnasio_ejercicio')
+          .update(updatedExData)
+          .eq('id', exerciseId);
+          
+        if (error) throw error;
+      } catch (e) {
+        console.warn("DB update failed, using local/offline storage:", e);
+      }
+    }
+  };
+
+  const handleAddNewRowDirectly = async () => {
+    if (!selectedMicro) return;
+    const { targetSessionId, updatedSessions } = await ensureActiveSessionExist(sessions);
+    if (!targetSessionId) return;
+    
+    const template = PREDEFINED_FOCUS_EXERCISES[0];
+    const newEx: any = {
+      id: `local-ex-${Date.now()}-${Math.random()}`,
+      target_group: template?.target_group || 'FUERZA_MAXIMA',
+      grupo_muscular: template?.grupo_muscular || 'Piernas / Cadena Posterior',
+      ejercicio: template?.ejercicio || 'Sentadilla trasera con barra baja (Back Squat)',
+      equipamiento: template?.equipamiento || 'Barra olímpica, Discos, Rack',
+      tecnica_ejecucion: template?.tecnica_ejecucion || '',
+      series: template?.series ?? 4,
+      repeticiones: template?.repeticiones ?? '3-5',
+      carga_kg: template?.carga_kg ?? '80-85% 1RM',
+      rpe_sugerido: template?.rpe_sugerido ?? 8
+    };
+    
+    if (isDbMode) {
+      try {
+        const { data: existingExs } = await supabase
+          .from('fisica_gimnasio_ejercicio')
+          .select('id')
+          .eq('sesion_id', targetSessionId);
+        const orderIndex = existingExs ? existingExs.length : 0;
+        
+        const { data, error } = await supabase
+          .from('fisica_gimnasio_ejercicio')
+          .insert([{
+            sesion_id: targetSessionId,
+            grupo_muscular: newEx.grupo_muscular,
+            ejercicio: newEx.ejercicio,
+            equipamiento: newEx.equipamiento,
+            tecnica_ejecucion: newEx.tecnica_ejecucion,
+            series: newEx.series,
+            repeticiones: newEx.repeticiones,
+            carga_kg: newEx.carga_kg,
+            rpe_sugerido: newEx.rpe_sugerido,
+            target_group: newEx.target_group,
+            orden: orderIndex
+          }])
+          .select()
+          .single();
+          
+        if (error) throw error;
+        await fetchSessionsForMicro(selectedMicro.id);
+      } catch (e) {
+        console.warn("Failed to insert row in DB, setting off-line:", e);
+        setIsDbMode(false);
+        const withNewEx = updatedSessions.map(s => {
+          if (s.id === targetSessionId) {
+            return {
+              ...s,
+              ejercicios: [...(s.ejercicios || []), newEx]
+            };
+          }
+          return s;
+        });
+        setSessions(withNewEx);
+        saveSessionsLocal(selectedMicro.id, withNewEx);
+        setHasUnsavedChanges(true);
+      }
+    } else {
+      const withNewEx = updatedSessions.map(s => {
+        if (s.id === targetSessionId) {
+          return {
+            ...s,
+            ejercicios: [...(s.ejercicios || []), newEx]
+          };
+        }
+        return s;
+      });
+      setSessions(withNewEx);
+      saveSessionsLocal(selectedMicro.id, withNewEx);
+      setHasUnsavedChanges(true);
+    }
+  };
+
+  const handleDeleteRowDirectly = async (exId: string | number) => {
+    if (!window.confirm("¿Seguro que deseas eliminar esta fila de ejercicio?")) return;
+    const updatedSessions = sessions.map(s => {
+      if (s.dia_semana === selectedDia) {
+        return {
+          ...s,
+          ejercicios: (s.ejercicios || []).filter(e => e.id !== exId)
+        };
+      }
+      return s;
+    });
+    setSessions(updatedSessions);
+    
+    if (selectedMicro) {
+      saveSessionsLocal(selectedMicro.id, updatedSessions);
+    }
+    setHasUnsavedChanges(true);
+    
+    if (isDbMode) {
+      try {
+        const { error } = await supabase
+          .from('fisica_gimnasio_ejercicio')
+          .delete()
+          .eq('id', exId);
+        if (error) throw error;
+      } catch (e) {
+        console.warn("DB delete failed, using local/offline:", e);
       }
     }
   };
@@ -3458,148 +3690,164 @@ export default function FisicaGimnasioArea({
             <div className="flex justify-between items-center border-b border-slate-50 pb-4">
               <div className="flex items-center gap-2.5 text-left">
                 <div className="w-8 h-8 bg-slate-50 text-slate-800 rounded-lg flex items-center justify-center border border-slate-100/50">
-                  <i className="fa-solid fa-layer-group text-sm text-[#CF1B2B]"></i>
+                  <i className="fa-solid fa-dumbbell text-sm text-[#CF1B2B]"></i>
                 </div>
                 <div>
-                  <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">TRABAJOS GENERALES Y DE GRUPO</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Focos de trabajo generales de base, de grupo y acondicionamiento general</p>
+                  <h3 className="text-xs font-black text-[#0b1220] uppercase tracking-wider">PLANIFICACIÓN DE EJERCICIOS Y TRABAJOS</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Define foco, grupo muscular, ejercicio, series y repeticiones para el {selectedDia}</p>
                 </div>
               </div>
-              {nominatedPlayers.length > 0 && (
-                <button
-                  onClick={handleAutoAssignGeneralFocusGroups}
-                  className="px-3.5 py-1.5 bg-indigo-50 hover:bg-[#CF1B2B] text-indigo-600 hover:text-white border border-indigo-100 hover:border-[#CF1B2B] rounded-xl flex items-center gap-1.5 transition-all cursor-pointer text-[9px] font-black uppercase tracking-wider shadow-sm"
-                  title="Auto-asignar ejercicios predefinidos para los focos generales"
-                >
-                  <i className="fa-solid fa-wand-magic-sparkles text-[10px]"></i>
-                  <span>Auto-Asignar Trabajos Generales</span>
-                </button>
-              )}
+              <button
+                onClick={handleAddNewRowDirectly}
+                className="px-4 py-2 bg-[#CF1B2B] hover:bg-[#CF1B2B]/95 text-white rounded-xl flex items-center gap-1.5 transition-all cursor-pointer text-[10px] font-black uppercase tracking-wider shadow-md transform active:scale-95"
+                title="Agregar nueva fila de ejercicio para hoy"
+              >
+                <i className="fa-solid fa-plus text-[10px]"></i>
+                <span>Agregar Ejercicio</span>
+              </button>
             </div>
 
-            {nominatedPlayers.length === 0 ? (
-              <p className="text-slate-400 text-xs font-semibold py-4 text-center">No hay jugadores convocados con evaluaciones en este microciclo.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-50 text-slate-400 text-[8px] font-black uppercase tracking-widest pb-3">
-                      <th className="pb-3 pr-4 w-12 text-center">Inc.</th>
-                      <th className="pb-3 pr-4">Foco General</th>
-                      <th className="pb-3 pr-4 text-center">Ejercicios Asignados</th>
-                      <th className="pb-3 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 text-[11px] text-slate-700 font-semibold">
-                    {TARGET_GROUPS_CONFIG.filter(g => ['TODOS', 'GENERALES_SUPERIOR', 'CORE_ZONA_MEDIA', 'GENERALES_INFERIOR'].includes(g.id)).map((g) => {
-                      const dayExercises = activeDaySessions.flatMap(s => s.ejercicios || []);
-                      const exercisesForGroup = dayExercises.filter(ex => ex.target_group === g.id);
-                      const exercisesCount = exercisesForGroup.length;
+            {(() => {
+              const dayExercises = activeDaySessions.flatMap(s => s.ejercicios || []);
 
-                      let displayLabel = g.label;
-                      if (g.id === 'TODOS') displayLabel = 'TODOS / GENERAL';
-                      if (g.id === 'GENERALES_SUPERIOR') displayLabel = 'TREN SUPERIOR';
-                      if (g.id === 'CORE_ZONA_MEDIA') displayLabel = 'CORE Y ZONA MEDIA';
-                      if (g.id === 'GENERALES_INFERIOR') displayLabel = 'TREN INFERIOR';
+              if (dayExercises.length === 0) {
+                return (
+                  <div className="text-center py-12 bg-slate-50/50 border-2 border-dashed border-slate-100 rounded-[32px]">
+                    <i className="fa-solid fa-keyboard text-slate-200 text-4xl mb-3"></i>
+                    <p className="text-slate-400 text-xs font-black uppercase tracking-wider">No hay ejercicios para el {selectedDia}</p>
+                    <p className="text-slate-400 text-[10px] font-semibold mt-1">
+                      Haz clic en "Agregar Ejercicio" para crear filas editables de forma interactiva.
+                    </p>
+                  </div>
+                );
+              }
 
-                      return (
-                        <tr key={g.id} className="hover:bg-slate-50/40 transition-colors">
-                          <td className="py-3 pr-4 text-center">
+              return (
+                <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-sm bg-slate-50/30">
+                  <table className="w-full text-left border-collapse min-w-[700px]">
+                    <thead>
+                      <tr className="bg-slate-100/50 text-slate-400 text-[9px] font-black uppercase tracking-widest border-b border-slate-100">
+                        <th className="py-3 px-4">Foco</th>
+                        <th className="py-3 px-4">Grupo Muscular</th>
+                        <th className="py-3 px-4">Ejercicio</th>
+                        <th className="py-3 px-4 text-center w-24">Series</th>
+                        <th className="py-3 px-4 text-center w-28">Repeticiones</th>
+                        <th className="py-3 px-4 text-center w-20">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-[11px] text-slate-700">
+                      {dayExercises.map((ex, idx) => (
+                        <tr key={ex.id || idx} className="hover:bg-white transition-colors bg-white/40">
+                          {/* FOCO */}
+                          <td className="py-2.5 px-4">
+                            <select
+                              value={ex.target_group || 'TODOS'}
+                              onChange={(e) => handleUpdateExerciseFieldDirectly(ex.id, 'target_group', e.target.value)}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-extrabold text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#CF1B2B] focus:bg-white transition-all cursor-pointer"
+                            >
+                              {TARGET_GROUPS_CONFIG.map(g => (
+                                <option key={g.id} value={g.id}>{g.shortLabel || g.label}</option>
+                              ))}
+                            </select>
+                          </td>
+
+                          {/* GRUPO MUSCULAR */}
+                          <td className="py-2.5 px-4">
+                            {(() => {
+                              const focusId = ex.target_group || 'TODOS';
+                              const filteredTemplates = focusId === 'TODOS'
+                                ? PREDEFINED_FOCUS_EXERCISES
+                                : PREDEFINED_FOCUS_EXERCISES.filter(t => t.target_group === focusId);
+                              const muscles = Array.from(new Set(filteredTemplates.map(t => t.grupo_muscular)));
+                              
+                              if (ex.grupo_muscular && !muscles.includes(ex.grupo_muscular)) {
+                                muscles.push(ex.grupo_muscular);
+                              }
+                              
+                              return (
+                                <select
+                                  value={ex.grupo_muscular || ''}
+                                  onChange={(e) => handleUpdateExerciseFieldDirectly(ex.id, 'grupo_muscular', e.target.value)}
+                                  className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-extrabold text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#CF1B2B] focus:bg-white transition-all cursor-pointer"
+                                >
+                                  {muscles.map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                  ))}
+                                </select>
+                              );
+                            })()}
+                          </td>
+
+                          {/* EJERCICIO */}
+                          <td className="py-2.5 px-4">
+                            {(() => {
+                              const focusId = ex.target_group || 'TODOS';
+                              const muscleGroup = ex.grupo_muscular || '';
+                              const filteredTemplates = PREDEFINED_FOCUS_EXERCISES.filter(t => {
+                                const matchesFocus = focusId === 'TODOS' || t.target_group === focusId;
+                                const matchesMuscle = !muscleGroup || t.grupo_muscular === muscleGroup;
+                                return matchesFocus && matchesMuscle;
+                              });
+                              const exercises = Array.from(new Set(filteredTemplates.map(t => t.ejercicio)));
+                              
+                              if (ex.ejercicio && !exercises.includes(ex.ejercicio)) {
+                                exercises.push(ex.ejercicio);
+                              }
+                              
+                              return (
+                                <select
+                                  value={ex.ejercicio || ''}
+                                  onChange={(e) => handleUpdateExerciseFieldDirectly(ex.id, 'ejercicio', e.target.value)}
+                                  className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-extrabold text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#CF1B2B] focus:bg-white transition-all cursor-pointer"
+                                >
+                                  {exercises.map(e => (
+                                    <option key={e} value={e}>{e}</option>
+                                  ))}
+                                </select>
+                              );
+                            })()}
+                          </td>
+
+                          {/* SERIES */}
+                          <td className="py-2.5 px-4 text-center">
                             <input
-                              type="checkbox"
-                              checked={exercisesCount > 0}
-                              onChange={() => handleToggleFocusGroup(g.id, exercisesCount > 0)}
-                              className="w-4 h-4 rounded border-slate-300 text-[#CF1B2B] focus:ring-[#CF1B2B] cursor-pointer"
-                              title={exercisesCount > 0 ? "Quitar foco de la sesión" : "Incorporar foco en la sesión"}
+                              type="number"
+                              value={ex.series || ''}
+                              onChange={(e) => handleUpdateExerciseFieldDirectly(ex.id, 'series', e.target.value)}
+                              placeholder="3"
+                              min="1"
+                              className="w-full max-w-[70px] mx-auto px-2 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-extrabold text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#CF1B2B] focus:bg-white transition-all text-center"
                             />
                           </td>
-                          <td className="py-3 pr-4">
-                            <span className={`px-2.5 py-1 rounded text-[8px] font-black uppercase text-white ${g.colorClass} inline-block`}>
-                              {displayLabel}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-4 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* Minus Button */}
-                              <button
-                                onClick={() => handleRemoveLastExerciseOfGroup(g.id)}
-                                disabled={exercisesCount === 0}
-                                className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold transition-all border ${
-                                  exercisesCount > 0
-                                    ? 'bg-red-50 text-red-600 border-red-100 hover:bg-red-100 hover:border-red-300 cursor-pointer'
-                                    : 'bg-slate-50 text-slate-300 border-slate-100 opacity-40 cursor-not-allowed'
-                                }`}
-                                title="Quitar un ejercicio de este foco"
-                              >
-                                <i className="fa-solid fa-minus text-[9px]"></i>
-                              </button>
 
-                              {/* Exercises Count / Details Pill with Tooltip */}
-                              <div className="relative inline-block group">
-                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border inline-block select-none ${
-                                  exercisesCount > 0
-                                    ? 'bg-indigo-50 border-indigo-100 text-indigo-600'
-                                    : 'bg-slate-50 border-slate-100 text-slate-400 opacity-60'
-                                }`}>
-                                  {exercisesCount}
-                                </span>
-                                {exercisesCount > 0 && (
-                                  <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 bg-[#0b1220] text-white rounded-xl shadow-xl p-3 text-left border border-slate-800 transition-all">
-                                    <div className="text-[9px] font-black uppercase tracking-widest text-[#CF1B2B] mb-2 border-b border-slate-800 pb-1.5 flex items-center gap-1.5">
-                                      <i className="fa-solid fa-dumbbell text-[10px]"></i>
-                                      <span>Ejercicios Foco: {displayLabel}</span>
-                                    </div>
-                                    <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar font-medium">
-                                      {exercisesForGroup.map((ex, idx) => (
-                                        <div key={ex.id || idx} className="text-[10px] leading-relaxed border-b border-slate-800/40 last:border-0 pb-1.5 last:pb-0">
-                                          <div className="font-bold text-slate-100 flex justify-between gap-2">
-                                            <span>{idx + 1}. {ex.ejercicio}</span>
-                                            <span className="text-[#CF1B2B] font-black text-[9px] shrink-0 bg-[#CF1B2B]/10 px-1 rounded">{ex.series}x{ex.repeticiones}</span>
-                                          </div>
-                                          {ex.equipamiento && ex.equipamiento !== 'Ninguno' && (
-                                            <div className="text-[8.5px] text-slate-400 font-bold mt-0.5 uppercase tracking-wider flex items-center gap-1">
-                                              <i className="fa-solid fa-toolbox text-[8px]"></i>
-                                              <span>{ex.equipamiento}</span>
-                                            </div>
-                                          )}
-                                          {ex.tecnica_ejecucion && (
-                                            <div className="text-[8.5px] text-slate-400 italic mt-0.5 line-clamp-1">{ex.tecnica_ejecucion}</div>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-2 h-2 bg-[#0b1220] rotate-45 border-r border-b border-slate-800"></div>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Plus Button */}
-                              <button
-                                onClick={() => handleAddNextExerciseOfGroup(g.id)}
-                                className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 hover:border-emerald-300 flex items-center justify-center text-xs font-bold transition-all cursor-pointer"
-                                title="Agregar un ejercicio predefinido"
-                              >
-                                <i className="fa-solid fa-plus text-[9px]"></i>
-                              </button>
-                            </div>
+                          {/* REPETICIONES */}
+                          <td className="py-2.5 px-4 text-center">
+                            <input
+                              type="text"
+                              value={ex.repeticiones || ''}
+                              onChange={(e) => handleUpdateExerciseFieldDirectly(ex.id, 'repeticiones', e.target.value)}
+                              placeholder="10"
+                              className="w-full max-w-[85px] mx-auto px-2 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-extrabold text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#CF1B2B] focus:bg-white transition-all text-center"
+                            />
                           </td>
-                          <td className="py-3 text-right flex items-center justify-end gap-1.5">
+
+                          {/* ACCION */}
+                          <td className="py-2.5 px-4 text-center">
                             <button
-                              onClick={() => handleOpenManageGroupModal(g.id)}
-                              className="px-2.5 py-1.5 bg-[#CF1B2B]/10 hover:bg-[#CF1B2B] text-[#CF1B2B] hover:text-white rounded-xl flex items-center gap-1.5 transition-all cursor-pointer text-[9px] font-black uppercase tracking-wider"
-                              title={`Gestionar tareas asignadas de ${displayLabel}`}
+                              onClick={() => handleDeleteRowDirectly(ex.id)}
+                              className="w-8 h-8 rounded-xl bg-red-50 text-red-600 border border-red-100 hover:bg-red-500 hover:text-white hover:border-red-500 flex items-center justify-center transition-all cursor-pointer mx-auto"
+                              title="Eliminar este ejercicio"
                             >
-                              <i className="fa-solid fa-pen-to-square text-[10px]"></i>
-                              <span>Editar Tareas</span>
+                              <i className="fa-solid fa-trash text-[11px]"></i>
                             </button>
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
 
           {/* SECTION: REGISTRO DE TAREAS SELECCIONADAS */}

@@ -46,6 +46,7 @@ export default function App() {
   const [activeMenu, setActiveMenu] = useState<MenuId>('inicio')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [allowedMenus, setAllowedMenus] = useState<string[]>(['*'])
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false)
 
   useEffect(() => {
     const handleGlobalNavigation = (e: any) => {
@@ -352,23 +353,6 @@ export default function App() {
 
   const fetchRealPlayers = useCallback(async () => {
     try {
-      // Intentar actualizar el club de Renato Vera Maldonado (ID 355) a Everton (ID 89) de forma asíncrona
-      (async () => {
-        try {
-          const { error } = await supabase
-            .from('players')
-            .update({ id_club: 89 })
-            .eq('player_id', 355);
-          if (!error) {
-            console.log("App: Renato Vera Maldonado (player_id 355) id_club actualizado exitosamente a 89 (Everton) en Supabase.");
-          } else {
-            console.warn("App: No se pudo actualizar el club de Renato Vera Maldonado en Supabase:", error.message);
-          }
-        } catch (err) {
-          console.error("App: Error asíncrono al actualizar club de Renato Vera:", err);
-        }
-      })();
-
       console.log("App: Fetching players and clubes...");
       const [{ data: playersData, error: playersError }, { data: clubsData, error: clubesError }] = await Promise.all([
         supabase
@@ -827,16 +811,34 @@ export default function App() {
           console.error("Error restaurando sesión desde localStorage:", e);
         }
 
-        const { data, error } = await supabase.auth.getSession()
-        if (error) {
-          console.error("Error obteniendo sesión de Supabase:", error.message);
-          throw error;
+        let session = null;
+        try {
+          const { data, error } = await supabase.auth.getSession();
+          if (error) {
+            console.error("Error obteniendo sesión de Supabase:", error.message);
+            if (error.message?.includes("Refresh Token") || error.message?.includes("refresh_token") || error.message?.includes("token") || error.message?.includes("fetch")) {
+              console.warn("Invalid session token or fetch error, cleaning local auth keys...");
+              localStorage.removeItem('lr-performance-auth-v1');
+              localStorage.removeItem('lr-performance-auth-session');
+              await supabase.auth.signOut().catch(() => {});
+            }
+          } else {
+            session = data?.session;
+          }
+        } catch (authErr: any) {
+          console.error("Excepción al obtener la sesión de Supabase:", authErr);
+          const errMsg = authErr?.message || String(authErr);
+          if (errMsg.includes("Refresh Token") || errMsg.includes("refresh_token") || errMsg.includes("token") || errMsg.includes("fetch")) {
+            console.warn("Exception with session token or fetch, cleaning local auth keys...");
+            localStorage.removeItem('lr-performance-auth-v1');
+            localStorage.removeItem('lr-performance-auth-session');
+            await supabase.auth.signOut().catch(() => {});
+          }
         }
 
-        console.log("Sesión obtenida de Supabase:", data?.session ? "Activa" : "Ninguna");
+        console.log("Sesión obtenida de Supabase:", session ? "Activa" : "Ninguna");
 
         if (!isMounted) return
-        const session = data?.session
         if (session) {
           // Si no habíamos restaurado, o si la sesión de Supabase contiene un id diferente, actualizamos
           if (!hasRestored || session.user.id !== sessionUser?.id) {
@@ -915,6 +917,14 @@ export default function App() {
     
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return
+
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+        if (session) {
+          setSessionUser(session.user);
+        }
+        return;
+      }
 
       if (event === 'SIGNED_OUT') {
         try {
@@ -1445,6 +1455,16 @@ export default function App() {
     )
   }
 
+  if (isRecoveryMode) return (
+    <div className="min-h-screen flex items-center justify-center bg-[#0b1220] px-6 relative">
+      <UpdatePasswordCard onComplete={() => setIsRecoveryMode(false)} />
+      {/* Watermark */}
+      <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none opacity-20">
+        <span className="text-[10px] font-black tracking-widest text-white uppercase">CMSPORTECH</span>
+      </div>
+    </div>
+  )
+
   if (!role) return (
     <div className="min-h-screen flex items-center justify-center bg-[#0b1220] px-6 relative">
       <LoginCard onLoginSuccess={handleLoginSuccess} />
@@ -1582,6 +1602,7 @@ export default function App() {
 
 function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [signupRole, setSignupRole] = useState<'player' | 'staff' | 'club' | ''>('')
@@ -1903,6 +1924,85 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
     }
   }
 
+  if (showForgotPassword) {
+    return (
+      <div className="w-full max-w-[440px] px-4 animate-in fade-in zoom-in-95 duration-500">
+        <div className="bg-white rounded-[32px] md:rounded-[40px] overflow-hidden shadow-2xl border border-slate-100">
+          <div className="bg-[#CF1B2B] py-8 md:py-12 px-6 md:px-8 flex items-center justify-center gap-4 md:gap-6">
+            {FEDERATION_LOGO && (
+              <div className="w-16 h-16 md:w-20 md:h-20 overflow-hidden shrink-0">
+                <img 
+                  src={getDriveDirectLink(FEDERATION_LOGO)} 
+                  alt="Federación Logo" 
+                  className="w-full h-full object-contain"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            )}
+            <div className="text-white font-black text-3xl md:text-4xl tracking-tighter uppercase italic leading-none">La Roja</div>
+          </div>
+          <div className="p-6 md:p-10 space-y-4 md:space-y-6">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider text-center">Recuperar Contraseña</h3>
+            <p className="text-xs text-slate-500 text-center leading-normal">
+              Ingresa tu correo electrónico. Te enviaremos un enlace seguro para restablecer tu clave de acceso.
+            </p>
+            <div className="space-y-3">
+              <input 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value.toLowerCase().replace(/[\s\u200B\u200C\u200D\uFEFF]/g, ''))} 
+                type="email" 
+                className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" 
+                placeholder="Ingresa tu Email" 
+              />
+            </div>
+            <button 
+              onClick={async () => {
+                if (!email) {
+                  setMsg('Por favor ingresa tu correo.');
+                  return;
+                }
+                setSubmitting(true);
+                setMsg(null);
+                try {
+                  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                    redirectTo: `${window.location.origin}/`,
+                  });
+                  if (error) {
+                    setMsg(error.message);
+                  } else {
+                    setMsg('¡Enlace enviado! Revisa tu bandeja de entrada (y la carpeta de spam).');
+                  }
+                } catch (err: any) {
+                  setMsg(err.message || 'Error inesperado.');
+                } finally {
+                  setSubmitting(false);
+                }
+              }} 
+              disabled={submitting} 
+              className="w-full py-4 md:py-5 rounded-2xl bg-[#0b1220] text-white font-black uppercase tracking-widest text-[10px] md:text-xs"
+            >
+              {submitting ? 'ENVIANDO...' : 'ENVIAR ENLACE'}
+            </button>
+            {msg && (
+              <div className="text-red-600 text-[10px] font-black uppercase text-center leading-tight">
+                {msg}
+              </div>
+            )}
+            <button 
+              onClick={() => {
+                setShowForgotPassword(false);
+                setMsg(null);
+              }} 
+              className="w-full text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-[#CF1B2B] transition-colors"
+            >
+              Volver al Inicio de Sesión
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="w-full max-w-[440px] px-4 animate-in fade-in zoom-in-95 duration-500">
       <div className="bg-white rounded-[32px] md:rounded-[40px] overflow-hidden shadow-2xl border border-slate-100">
@@ -1933,6 +2033,22 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
               placeholder="Email" 
             />
             <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" placeholder="Contraseña" />
+            
+            {mode === 'login' && (
+              <div className="flex justify-end px-1">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowForgotPassword(true);
+                    setMsg(null);
+                  }} 
+                  className="text-[10px] font-bold text-slate-400 hover:text-[#CF1B2B] transition-colors uppercase tracking-wider"
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
+            )}
+
             {mode === 'signup' && (
               <>
                 <select value={signupRole} onChange={(e) => setSignupRole(e.target.value as any)} className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none">
@@ -1993,6 +2109,98 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
                   <i className="fa-solid fa-paper-plane mr-1"></i> Reenviar Correo de Confirmación
                 </button>
               )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function UpdatePasswordCard({ onComplete }: { onComplete: () => void }) {
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+
+  const handleUpdate = async () => {
+    if (!password || !confirmPassword) {
+      setMsg('Completa todos los campos.')
+      return
+    }
+    if (password !== confirmPassword) {
+      setMsg('Las contraseñas no coinciden.')
+      return
+    }
+    if (password.length < 6) {
+      setMsg('La contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+
+    setSubmitting(true)
+    setMsg(null)
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: password
+      })
+
+      if (error) {
+        setMsg(error.message)
+      } else {
+        setSuccess(true)
+        setMsg('Contraseña actualizada con éxito.')
+        setTimeout(() => {
+          onComplete()
+          window.location.reload() // Recargar para limpiar la URL y cargar sesión limpia
+        }, 2000)
+      }
+    } catch (err: any) {
+      setMsg(err.message || 'Error inesperado.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="w-full max-w-[440px] px-4 animate-in fade-in zoom-in-95 duration-500">
+      <div className="bg-white rounded-[32px] md:rounded-[40px] overflow-hidden shadow-2xl border border-slate-100">
+        <div className="bg-[#CF1B2B] py-8 md:py-12 px-6 md:px-8 flex items-center justify-center gap-4 md:gap-6">
+          <div className="text-white font-black text-2xl md:text-3xl tracking-tighter uppercase italic leading-none text-center">
+            NUEVA CONTRASEÑA
+          </div>
+        </div>
+        <div className="p-6 md:p-10 space-y-4 md:space-y-6">
+          <p className="text-xs text-slate-500 text-center font-bold uppercase tracking-wider leading-normal">
+            Ingresa tu nueva contraseña para acceder a la plataforma
+          </p>
+          <div className="space-y-3">
+            <input 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              type="password" 
+              className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" 
+              placeholder="Nueva Contraseña" 
+            />
+            <input 
+              value={confirmPassword} 
+              onChange={(e) => setConfirmPassword(e.target.value)} 
+              type="password" 
+              className="w-full px-5 md:px-6 py-3.5 md:py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none" 
+              placeholder="Confirmar Nueva Contraseña" 
+            />
+          </div>
+          <button 
+            onClick={handleUpdate} 
+            disabled={submitting || success} 
+            className="w-full py-4 md:py-5 rounded-2xl bg-[#0b1220] text-white font-black uppercase tracking-widest text-[10px] md:text-xs disabled:opacity-50"
+          >
+            {submitting ? 'GUARDANDO...' : success ? '¡CONTRASEÑA ACTUALIZADA!' : 'GUARDAR CONTRASEÑA'}
+          </button>
+          {msg && (
+            <div className={`text-[10px] font-black uppercase text-center leading-tight ${success ? 'text-green-600' : 'text-red-600'}`}>
+              {msg}
             </div>
           )}
         </div>

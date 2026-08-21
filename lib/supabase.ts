@@ -79,43 +79,66 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
   const urlStr = typeof input === 'string' 
     ? input 
     : (input as any).url || (input && typeof input.toString === 'function' ? input.toString() : '');
-  
-  if (urlStr && urlStr.includes('supabase.co')) {
-    // Si no estamos en un entorno de desarrollo de AI Studio o local, conectarse DIRECTAMENTE a Supabase
-    if (!shouldProxy()) {
-      return await fetch(input, init);
-    }
 
-    try {
-      const proxyUrl = typeof window !== 'undefined' 
-        ? '/api/supabase-proxy' 
-        : 'http://localhost:3000/api/supabase-proxy';
-      
-      const headers = new Headers(init?.headers || {});
-      headers.set('x-target-url', urlStr);
-      
-      const proxyInit: RequestInit = {
-        ...init,
-        headers,
-      };
-      
-      const response = await fetch(proxyUrl, proxyInit);
-      
-      // Si el proxy responde con un HTML (por ejemplo, el fallback del SPA en producción que es un 404)
-      const contentType = response.headers.get('content-type') || '';
-      if (!response.ok || contentType.includes('text/html')) {
-        console.warn(`Supabase proxy returned non-JSON/error (${response.status}). Falling back to direct Supabase.`);
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  const maxRetries = 2;
+
+  const executeFetch = async (): Promise<Response> => {
+    if (urlStr && urlStr.includes('supabase.co')) {
+      // Si no estamos en un entorno de desarrollo de AI Studio o local, conectarse DIRECTAMENTE a Supabase
+      if (!shouldProxy()) {
         return await fetch(input, init);
       }
-      
-      return response;
-    } catch (err) {
-      console.warn("Supabase customFetch proxy failed, falling back to direct:", err);
-      return await fetch(input, init);
+
+      try {
+        const proxyUrl = typeof window !== 'undefined' 
+          ? '/api/supabase-proxy' 
+          : 'http://localhost:3000/api/supabase-proxy';
+        
+        const headers = new Headers(init?.headers || {});
+        headers.set('x-target-url', urlStr);
+        
+        const proxyInit: RequestInit = {
+          ...init,
+          headers,
+        };
+        
+        const response = await fetch(proxyUrl, proxyInit);
+        
+        // Si el proxy responde con un HTML (por ejemplo, el fallback del SPA en producción que es un 404)
+        const contentType = response.headers.get('content-type') || '';
+        if (!response.ok || contentType.includes('text/html')) {
+          console.warn(`Supabase proxy returned non-JSON/error (${response.status}). Falling back to direct Supabase.`);
+          return await fetch(input, init);
+        }
+        
+        return response;
+      } catch (err) {
+        console.warn("Supabase customFetch proxy failed, falling back to direct:", err);
+        return await fetch(input, init);
+      }
+    }
+    
+    return await fetch(input, init);
+  };
+
+  let lastError: any = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        console.warn(`[SUPABASE FETCH RETRY] Transient network issue. Retrying (${attempt}/${maxRetries}) for URL: ${urlStr}`);
+        await delay(300 * attempt);
+      }
+      return await executeFetch();
+    } catch (err: any) {
+      lastError = err;
+      const isTransient = err?.message?.includes('Failed to fetch') || err?.message?.includes('network') || !err?.message;
+      if (!isTransient) {
+        throw err;
+      }
     }
   }
-  
-  return await fetch(input, init);
+  throw lastError;
 };
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

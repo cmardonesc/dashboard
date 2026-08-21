@@ -112,7 +112,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const isMenuAllowed = (menuId: string) => {
     if (userRole === 'admin') return true;
     if (userRole === 'club') {
-      return ['inicio', 'perfil_jugador', 'dinamicas'].includes(menuId);
+      return [
+        'inicio', 
+        'perfil_jugador', 
+        'dinamicas', 
+        'sports_science',
+        'fisica_wellness', 
+        'fisica_pse', 
+        'fisica_carga_externa_total', 
+        'fisica_carga_externa_tareas', 
+        'fisica_gps_intelligence'
+      ].includes(menuId);
     }
     if (userRole === 'player') {
       return ['inicio', 'perfil_jugador'].includes(menuId);
