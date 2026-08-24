@@ -29,7 +29,7 @@ import PlayerProfileArea from './PlayerProfileArea'
 import DinamicasArea from './DinamicasArea'
 import FisicaGimnasioArea from './FisicaGimnasioArea'
 import { logActivity } from '../lib/activityLogger'
-import { getPerformanceInsights, getWeatherForecast, queryCoachAssistant, WeatherData } from '../services/geminiService'
+import { getPerformanceInsights, queryCoachAssistant } from '../services/geminiService'
 import { AreaChart, Area, XAxis, ResponsiveContainer, Tooltip, BarChart, Bar, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
 import { Reorder } from 'framer-motion'
 
@@ -108,11 +108,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   
-  const [weather, setWeather] = useState<WeatherData | null>(null);
   const [isCustomizing, setIsCustomizing] = useState(false);
+  const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [visibleWidgets, setVisibleWidgets] = useState<string[]>(() => {
     const saved = localStorage.getItem('visibleWidgets');
-    if (!saved) return ['weather', 'tasks', 'checkin', 'soreness', 'illness', 'schedule', 'ai_summary'];
+    const defaultWidgets = ['tasks', 'checkin', 'soreness', 'illness', 'schedule', 'ai_summary'];
+    if (!saved) return defaultWidgets;
     try {
       let widgets = JSON.parse(saved);
       if (widgets.includes('discomfort')) {
@@ -120,9 +121,9 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         if (!widgets.includes('soreness')) widgets.push('soreness');
         if (!widgets.includes('illness')) widgets.push('illness');
       }
-      return widgets;
+      return widgets.filter((w: string) => w !== 'weather');
     } catch (e) {
-      return ['weather', 'tasks', 'checkin', 'soreness', 'illness', 'schedule', 'ai_summary'];
+      return defaultWidgets;
     }
   });
 
@@ -131,7 +132,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   }, [visibleWidgets]);
 
   const availableWidgets = [
-    { id: 'weather', label: 'Clima en Complejo', icon: 'fa-cloud-sun', description: 'Estado del tiempo y pronóstico para el entrenamiento.' },
     { id: 'ai_summary', label: 'Resumen IA', icon: 'fa-sparkles', description: 'Insights clave generados por inteligencia artificial.' },
     { id: 'tasks', label: 'Tareas del Día', icon: 'fa-list-check', description: 'Listado de tareas técnicas y físicas programadas.' },
     { id: 'checkin', label: 'Check-in', icon: 'fa-user-check', description: 'Seguimiento de reportes de bienestar matutinos.' },
@@ -244,118 +244,109 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   }, [performanceRecords, todayStr, playerToCategory]);
 
   const fetchDashboardData = useCallback(async () => {
-    // 1. Fetch Microcycles
-    const { data: mcData } = await supabase.from('microcycles').select('*');
-    
-    if (mcData) {
-      setRealMicrocycles(mcData);
-      const active = mcData.filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
-      
-      if (active.length > 0) {
-        setLoadingTasks(true);
-        const { data: tasksData } = await supabase
-          .from('tareas_semanales')
-          .select('*')
-          .in('id_microcycles', active.map(m => m.id))
-          .eq('fecha', todayStr);
-        
-        if (tasksData) {
-          setActiveTasks(tasksData);
-        }
-        setLoadingTasks(false);
-      } else {
-        setActiveTasks([]);
-      }
-    }
-
-    // 2. Fetch Citaciones for pending logic
-    const activeMcIds = (mcData || [])
-      .filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10))
-      .map(m => m.id);
-    
-    if (activeMcIds.length > 0) {
-      const { data: citRes } = await supabase
-        .from('citaciones')
-        .select('player_id, microcycle_id')
-        .in('microcycle_id', activeMcIds);
-      
-      if (citRes) setCitData(citRes);
-
-      const { data: descRes } = await supabase
-        .from('desconvocatorias')
-        .select('athlete_id, microciclo_id')
-        .in('microciclo_id', activeMcIds);
-      
-      if (descRes) setDesconvocatorias(descRes);
-    } else {
-      setDesconvocatorias([]);
-    }
-
-    // 3. Fetch Weekly Activities (Cronograma from Area Tecnica)
-    if (activeMcIds.length > 0) {
-      const { data: activities } = await supabase
-        .from('cronograma_semanal')
-        .select('*')
-        .in('id_microcycles', activeMcIds)
-        .order('fecha', { ascending: true })
-        .order('hora', { ascending: true });
-      
-      if (activities) {
-        setDailyActivities(activities);
-      }
-    } else {
-      setDailyActivities([]);
-    }
-
-    // 4. Fetch Medical and Kinesic data
-    const { data: medData } = await supabase
-      .from('medical_daily_reports')
-      .select('*')
-      .eq('report_date', todayStr);
-    
-    const { data: kinData } = await supabase
-      .from('medical_treatments')
-      .select('*')
-      .eq('treatment_date', todayStr);
-
-    if (medData) {
-      const enriched = medData.map(m => {
-        let obs = m.observation || '';
-        let sev = m.severity;
-        if (obs.includes('[[SICK_CASE]]')) {
-          sev = 'sick';
-          obs = obs.replace('[[SICK_CASE]]', '').trim();
-        }
-        if (obs.includes('\n\n[[ADDED_BY]]: ')) {
-          obs = obs.split('\n\n[[ADDED_BY]]: ')[0];
-        }
-        return {
-          ...m,
-          observation: obs,
-          severity: sev,
-          players: performanceRecords.find(r => r.player.player_id === m.player_id)?.player
-        };
-      });
-      setMedicalReportsToday(enriched);
-    }
-    
-    if (kinData) {
-      const enriched = kinData.map(k => ({
-        ...k,
-        players: performanceRecords.find(r => r.player.player_id === k.player_id)?.player
-      }));
-      setKinesicTreatmentsToday(enriched);
-    }
-
-    // 5. Fetch Weather
+    setLoadingDashboard(true);
     try {
-      const weatherRes = await getWeatherForecast('Santiago', 'Chile');
-      if (weatherRes.data) setWeather(weatherRes.data);
+      // 1. Fetch Microcycles, Medical daily reports, and treatments in parallel
+      const [mcRes, medRes, kinRes] = await Promise.all([
+        supabase.from('microcycles').select('*'),
+        supabase.from('medical_daily_reports').select('*').eq('report_date', todayStr),
+        supabase.from('medical_treatments').select('*').eq('treatment_date', todayStr)
+      ]);
+
+      const mcData = mcRes.data;
+      if (mcData) {
+        setRealMicrocycles(mcData);
+        const active = mcData.filter(m => todayStr >= m.start_date.substring(0, 10) && todayStr <= m.end_date.substring(0, 10));
+        
+        if (active.length > 0) {
+          const activeMcIds = active.map(m => m.id);
+          setLoadingTasks(true);
+
+          // Fetch tasks, citaciones, desconvocatorias, and weekly activities in parallel
+          const [tasksRes, citRes, descRes, actRes] = await Promise.all([
+            supabase.from('tareas_semanales').select('*').in('id_microcycles', activeMcIds).eq('fecha', todayStr),
+            supabase.from('citaciones').select('player_id, microcycle_id').in('microcycle_id', activeMcIds),
+            supabase.from('desconvocatorias').select('athlete_id, microciclo_id').in('microciclo_id', activeMcIds),
+            supabase.from('cronograma_semanal').select('*').in('id_microcycles', activeMcIds).order('fecha', { ascending: true }).order('hora', { ascending: true })
+          ]);
+
+          if (tasksRes.data) {
+            setActiveTasks(tasksRes.data);
+          } else {
+            setActiveTasks([]);
+          }
+
+          if (citRes.data) {
+            setCitData(citRes.data);
+          } else {
+            setCitData([]);
+          }
+
+          if (descRes.data) {
+            setDesconvocatorias(descRes.data);
+          } else {
+            setDesconvocatorias([]);
+          }
+
+          if (actRes.data) {
+            setDailyActivities(actRes.data);
+          } else {
+            setDailyActivities([]);
+          }
+
+          setLoadingTasks(false);
+        } else {
+          setActiveTasks([]);
+          setCitData([]);
+          setDesconvocatorias([]);
+          setDailyActivities([]);
+        }
+      }
+
+      // Enriched medical and kinesic data
+      const medData = medRes.data;
+      const kinData = kinRes.data;
+
+      if (medData) {
+        const enriched = medData.map(m => {
+          let obs = m.observation || '';
+          let sev = m.severity;
+          if (obs.includes('[[SICK_CASE]]')) {
+            sev = 'sick';
+            obs = obs.replace('[[SICK_CASE]]', '').trim();
+          }
+          if (obs.includes('\n\n[[ADDED_BY]]: ')) {
+            obs = obs.split('\n\n[[ADDED_BY]]: ')[0];
+          }
+          return {
+            ...m,
+            observation: obs,
+            severity: sev,
+            players: performanceRecords.find(r => r.player.player_id === m.player_id)?.player
+          };
+        });
+        setMedicalReportsToday(enriched);
+      } else {
+        setMedicalReportsToday([]);
+      }
+      
+      if (kinData) {
+        const enriched = kinData.map(k => ({
+          ...k,
+          players: performanceRecords.find(r => r.player.player_id === k.player_id)?.player
+        }));
+        setKinesicTreatmentsToday(enriched);
+      } else {
+        setKinesicTreatmentsToday([]);
+      }
+
     } catch (e) {
-      console.error('Error fetching weather:', e);
+      console.error('Error fetching dashboard data:', e);
+    } finally {
+      setLoadingDashboard(false);
     }
 
-    // 6. Generate AI Insight if not present
+    // 2. Generate AI Insight if not present
     if (!aiInsight && performanceRecords.length > 0) {
       handleGenerateAiInsight();
     }
@@ -560,41 +551,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
   };
 
   const widgetMap: Record<string, React.ReactNode> = {
-      weather: (
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-[32px] md:rounded-[48px] p-6 md:p-8 text-white shadow-lg shadow-blue-500/20 flex flex-col h-full relative overflow-hidden animate-in fade-in zoom-in-95 duration-500">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-          <div className="flex items-center justify-between mb-4 relative z-10">
-            <div className="flex items-center gap-2">
-              <i className="fa-solid fa-location-dot text-[10px] opacity-70"></i>
-              <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Juan Pinto Durán</p>
-            </div>
-            <i className="fa-solid fa-cloud-sun text-xl"></i>
-          </div>
-          
-          <div className="flex-1 flex flex-col justify-center relative z-10">
-            <div className="flex items-end gap-2 mb-1">
-              <h2 className="text-4xl font-black italic leading-none">{weather?.currentTemp || '--'}°</h2>
-              <p className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">{weather?.condition || 'Despejado'}</p>
-            </div>
-            <p className="text-[10px] font-medium opacity-70">Humedad: {weather?.humidity || '--'} • Viento: {weather?.wind || '--'}</p>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-white/10 flex justify-between relative z-10">
-            <div className="text-center">
-              <p className="text-[8px] font-black uppercase opacity-60 mb-1">Mañana</p>
-              <p className="text-[10px] font-bold">14°</p>
-            </div>
-            <div className="text-center">
-              <p className="text-[8px] font-black uppercase opacity-60 mb-1">Tarde</p>
-              <p className="text-[10px] font-bold">26°</p>
-            </div>
-            <div className="text-center">
-              <p className="text-[8px] font-black uppercase opacity-60 mb-1">Noche</p>
-              <p className="text-[10px] font-bold">18°</p>
-            </div>
-          </div>
-        </div>
-      ),
       ai_summary: (
         <div className="bg-[#0b1220] rounded-[32px] md:rounded-[48px] p-6 md:p-8 text-white border border-white/5 shadow-2xl flex flex-col h-full relative overflow-hidden animate-in fade-in zoom-in-95 duration-500">
           <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
@@ -1161,7 +1117,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
                      )}
                    </div>
                    <div className="space-y-2">
-                     {activeMicrocycles.length === 0 ? (
+                     {loadingDashboard ? (
+                       <div className="flex items-center gap-2 p-3 text-slate-400 text-xs italic">
+                         <i className="fa-solid fa-spinner animate-spin text-sm text-red-500"></i>
+                         <span>Cargando series...</span>
+                       </div>
+                     ) : activeMicrocycles.length === 0 ? (
                        <p className="text-slate-400 text-xs italic">No hay microciclos activos hoy.</p>
                      ) : (
                        activeMicrocycles.map((mc, idx) => {
@@ -1254,7 +1215,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
                   <div className="mt-12 flex justify-center">
                     <button 
                       onClick={() => {
-                        const defaults = ['weather', 'tasks', 'checkin', 'soreness', 'illness', 'schedule', 'ai_summary'];
+                        const defaults = ['tasks', 'checkin', 'soreness', 'illness', 'schedule', 'ai_summary'];
                         setVisibleWidgets(defaults);
                       }}
                       className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] hover:text-white transition-colors flex items-center gap-3"

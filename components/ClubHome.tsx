@@ -147,7 +147,7 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
       .filter(p => {
         let isMyPlayer = false;
         if (userClubId && p.id_club) {
-          isMyPlayer = Number(p.id_club) === Number(userClubId);
+          isMyPlayer = Number(p.id_club) === Number(userClubId) || String(p.id_club) === String(userClubId);
         }
         if (!isMyPlayer) {
           const pClub = p.club_name || p.club || '';
@@ -158,7 +158,7 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
   }, [performanceRecords, userClub, userClubId]);
 
   const clubPlayerIds = useMemo(() => {
-    return new Set(clubPlayers.map(p => p.player_id).filter(Boolean) as number[]);
+    return new Set(clubPlayers.map(p => p.player_id ? Number(p.player_id) : null).filter(Boolean) as number[]);
   }, [clubPlayers]);
 
   // 1. DINÁMICAS DEL DÍA
@@ -195,8 +195,21 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
     );
 
     // Filter club players who are cited
-    return clubPlayers.filter(p => p.player_id && citedPlayerIds.has(p.player_id));
-  }, [activeMicrocycle, citations, clubPlayers]);
+    const filtered = clubPlayers.filter(p => p.player_id && (citedPlayerIds.has(Number(p.player_id)) || citedPlayerIds.has(p.player_id)));
+
+    console.log("ClubHome Diagnostic Log:", {
+      userClub,
+      userClubId,
+      performanceRecordsCount: performanceRecords.length,
+      clubPlayersCount: clubPlayers.length,
+      activeMicrocycleId: activeMicrocycle.id,
+      citationsCountForActiveMicrocycle: citations.filter(c => Number(c.microcycle_id) === Number(activeMicrocycle.id)).length,
+      citedPlayerIdsList: Array.from(citedPlayerIds),
+      activeMicrocyclePlayersCount: filtered.length
+    });
+
+    return filtered;
+  }, [activeMicrocycle, citations, clubPlayers, performanceRecords, userClub, userClubId]);
 
   // 3. TOP 3 PARÁMETROS FÍSICOS (GPS) PARA LA FECHA SELECCIONADA
   const physicalTopPerformers = useMemo(() => {
@@ -254,7 +267,7 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
         const dateVal = item.fecha_test || item.fecha || '';
 
         if (!playerBestMap[pId]) {
-          const matchedPlayer = clubPlayers.find(p => p.player_id === pId);
+          const matchedPlayer = clubPlayers.find(p => p.player_id && Number(p.player_id) === Number(pId));
           if (matchedPlayer) {
             playerBestMap[pId] = { player: matchedPlayer, score: val, date: dateVal };
           }
