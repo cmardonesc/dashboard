@@ -43,6 +43,15 @@ if (!supabaseServiceKey) {
   supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 }
 
+// Clean and sanitize the Supabase URL
+if (supabaseUrl) {
+  supabaseUrl = supabaseUrl.trim().replace(/\/$/, "");
+  supabaseUrl = supabaseUrl.replace(/\/(rest|auth)\/v1$/, "");
+  if (!supabaseUrl.startsWith('http')) {
+    supabaseUrl = `https://${supabaseUrl}`;
+  }
+}
+
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 const supabaseAdmin = (supabaseUrl && supabaseServiceKey) ? createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
@@ -136,6 +145,28 @@ async function startServer() {
       message: "Catapult Proxy is running",
       endpoint: "bakestatus (CloudBaker API)"
     });
+  });
+
+  // Proxy endpoint to retrieve tasks bypassing any client-side RLS limitations
+  app.get("/api/tareas", async (req, res) => {
+    try {
+      if (!supabaseAdmin) {
+        return res.status(500).json({ error: "Supabase admin client not initialized" });
+      }
+      const { data, error } = await supabaseAdmin
+        .from('tareas')
+        .select('id, nombre, link_foto, link_video, tipo, descripcion, contenidos_ofensivos, contenidos_defensivos, consignas, reglas, variantes');
+      
+      if (error) {
+        console.error("Error fetching tasks via admin proxy:", error);
+        return res.status(500).json({ error: error.message });
+      }
+      
+      res.json(data);
+    } catch (err: any) {
+      console.error("Internal server error in /api/tareas:", err);
+      res.status(500).json({ error: err.message });
+    }
   });
  
   // ✅ ACTIVITIES ENDPOINT - bakestatus con filtros flexibles

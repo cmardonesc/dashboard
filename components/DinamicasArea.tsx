@@ -70,16 +70,62 @@ function calculateBoxPlotStats(values: number[]) {
 }
 
 // Generador de datos fallback locales de dinámicas para robustez absoluta
-function generateLocalFallbackData(): DrillGpsRecord[] {
-  const sampleDrills = [
-    { name: 'Rondo Transición 5v2', duration: 12, dist: 780, mpm: 65.0, a15: 140, a20: 35, a25: 5, sprints: 2, vmax: 26.5, acc: 22 },
-    { name: 'Fútbol Reducido 4v4 +3C', duration: 15, dist: 1250, mpm: 83.3, a15: 280, a20: 85, a25: 12, sprints: 4, vmax: 28.1, acc: 38 },
-    { name: 'Trabajo Táctico 11v0', duration: 20, dist: 1100, mpm: 55.0, a15: 180, a20: 40, a25: 2, sprints: 1, vmax: 24.2, acc: 15 },
-    { name: 'Presión tras Pérdida 6v6', duration: 18, dist: 1480, mpm: 82.2, a15: 310, a20: 95, a25: 18, sprints: 5, vmax: 29.4, acc: 45 },
-    { name: 'Fútbol Formal 11v11', duration: 25, dist: 2250, mpm: 90.0, a15: 550, a20: 160, a25: 35, sprints: 8, vmax: 31.8, acc: 52 },
-    { name: 'Juegos de Posición 8v8', duration: 15, dist: 1150, mpm: 76.7, a15: 210, a20: 60, a25: 8, sprints: 3, vmax: 27.6, acc: 32 },
-    { name: 'Ataque vs Defensa 6v4', duration: 14, dist: 950, mpm: 67.8, a15: 190, a20: 52, a25: 10, sprints: 3, vmax: 28.5, acc: 28 }
-  ];
+function generateLocalFallbackData(tareasList?: any[]): DrillGpsRecord[] {
+  const listToUse = tareasList && tareasList.length > 0 ? tareasList : DEFAULT_TAREAS_FALLBACK;
+
+  const sampleDrills = listToUse.map((t, idx) => {
+    const name = t.nombre;
+    const cleanName = name.toLowerCase();
+    
+    // Asignar parámetros realistas según el tipo/nombre del ejercicio
+    let duration = 15;
+    let dist = 1100;
+    let vmax = 27.0;
+    let sprints = 3;
+    let acc = 30;
+
+    const isFormal = cleanName.includes('11 vs 11') || cleanName.includes('formal') || t.tipo === 'partido';
+    const isReducido = cleanName.includes('vs') || t.tipo === 'abierta' || t.tipo === 'cerrada';
+    const isRondo = cleanName.includes('rondo') || cleanName.includes('cuadrado') || cleanName.includes('jaula');
+
+    if (isFormal) {
+      duration = 25;
+      dist = 2250;
+      vmax = 31.8;
+      sprints = 8;
+      acc = 52;
+    } else if (isRondo) {
+      duration = 12;
+      dist = 780;
+      vmax = 25.5;
+      sprints = 1;
+      acc = 22;
+    } else if (isReducido) {
+      duration = 15 + (idx % 5);
+      dist = 1150 + (idx % 5) * 50;
+      vmax = 27.5 + (idx % 3) * 0.5;
+      sprints = 3 + (idx % 3);
+      acc = 32 + (idx % 5) * 2;
+    }
+
+    const mpm = Number((dist / duration).toFixed(1));
+    const a15 = Math.round(dist * 0.22);
+    const a20 = Math.round(dist * 0.07);
+    const a25 = Math.round(dist * 0.012);
+
+    return {
+      name,
+      duration,
+      dist,
+      mpm,
+      a15,
+      a20,
+      a25,
+      sprints,
+      vmax,
+      acc
+    };
+  });
 
   const teams = ['Selección Sub-15', 'Selección Sub-16', 'Selección Sub-17', 'Selección Sub-20'];
   const positions = ['DEFENSA', 'MEDIO', 'DELANTERO'];
@@ -286,6 +332,93 @@ function findMatchedTareaInList(drillName: string, tareasList: any[]) {
   return null;
 }
 
+const DEFAULT_TAREAS_FALLBACK = [
+  {
+    id: 9001,
+    nombre: 'Rondo Transición 5v2',
+    tipo: 'cerrada',
+    descripcion: 'Rondo de posesión con transición rápida tras pérdida. Foco en líneas de pase y presión inmediata.',
+    link_foto: 'https://nqdbqqmjyygopjnpqyvm.supabase.co/storage/v1/object/public/dinamicas/p06_Dinamica_4_vs_4_3_octagono_.jpg',
+    contenidos_ofensivos: '["Continuidad", "Estar en línea de pase", "Mirar lejos"]',
+    contenidos_defensivos: '["Presión pospérdida", "Cerrar líneas de pase"]',
+    consignas: '["Dos toques máximo", "Buscar al tercer hombre"]',
+    reglas: '["Si recupera el defensa, transición a miniportería"]',
+    variantes: '["Limitar a un toque", "Ampliar el espacio de juego"]'
+  },
+  {
+    id: 9002,
+    nombre: 'Fútbol Reducido 4v4 +3C',
+    tipo: 'cerrada',
+    descripcion: 'Juego reducido con 3 comodines (2 exteriores y 1 central) para generar superioridad numérica en la posesión.',
+    link_foto: 'https://nqdbqqmjyygopjnpqyvm.supabase.co/storage/v1/object/public/dinamicas/p05_Dinamica_4_vs_4_C_2A.jpg',
+    contenidos_ofensivos: '["Atraer rivales", "Superioridad numérica", "Tercer hombre"]',
+    contenidos_defensivos: '["Presión tras pérdida", "Defensa en bloque"]',
+    consignas: '["Aprovechar comodines", "Cambiar de orientación rápido"]',
+    reglas: '["Goles valen doble si asiste un comodín"]',
+    variantes: '["Comodines a un toque", "Orientación de arcos variable"]'
+  },
+  {
+    id: 9003,
+    nombre: 'Trabajo Táctico 11v0',
+    tipo: 'partido',
+    descripcion: 'Circulación táctica formal sin oposición para afinar automatismos ofensivos, salidas y desmarques de ruptura.',
+    link_foto: 'https://nqdbqqmjyygopjnpqyvm.supabase.co/storage/v1/object/public/dinamicas/p52_Dinamica_Salidas_largas_11_vs_11.jpg',
+    contenidos_ofensivos: '["Estructura 4-3-3", "Salidas cortas", "Desmarques de ruptura"]',
+    contenidos_defensivos: '["Repliegue ordenado", "Ajustes de línea"]',
+    consignas: '["Pase firme al pie", "Sincronizar desmarques", "Máxima velocidad de balón"]',
+    reglas: '["Completar secuencia de 10 pases antes de finalizar"]',
+    variantes: '["Iniciar juego desde diferentes zonas", "Oposición pasiva de entrenadores"]'
+  },
+  {
+    id: 9004,
+    nombre: 'Presión tras Pérdida 6v6',
+    tipo: 'cerrada',
+    descripcion: 'Dinámica de posesión en espacio reducido enfocada en la transición defensiva inmediata ante pérdida del balón.',
+    link_foto: 'https://nqdbqqmjyygopjnpqyvm.supabase.co/storage/v1/object/public/dinamicas/p22_Dinamica_6_vs_6_2C_2A.jpg',
+    contenidos_ofensivos: '["Amplitud", "Sostener posesión", "Pase de seguridad"]',
+    contenidos_defensivos: '["Presión inmediata", "Acortar distancias", "Acoso al poseedor"]',
+    consignas: '["Reaccionar en menos de 3 segundos", "Cerrar líneas de pase internas"]',
+    reglas: '["El equipo que recupera tiene 5 segundos para rematar"]',
+    variantes: '["Espacio de juego hexagonal", "Comodín neutral central"]'
+  },
+  {
+    id: 9005,
+    nombre: 'Fútbol Formal 11v11',
+    tipo: 'partido',
+    descripcion: 'Partido de fútbol 11 contra 11 en dimensiones reglamentarias con consignas tácticas específicas de competencia.',
+    link_foto: 'https://nqdbqqmjyygopjnpqyvm.supabase.co/storage/v1/object/public/dinamicas/p52_Dinamica_Salidas_largas_11_vs_11.jpg',
+    contenidos_ofensivos: '["Amplitud y profundidad", "Ataque posicional", "Transición rápida"]',
+    contenidos_defensivos: '["Bloque medio/bajo", "Defensa de área", "Vigilancias defensivas"]',
+    consignas: '["Mantener el bloque compacto", "Atacar los pasillos laterales"]',
+    reglas: '["Reglas de fútbol oficial de la FIFA"]',
+    variantes: '["Limitar toques en zona de inicio", "Obligatorio finalizar de cabeza o volea"]'
+  },
+  {
+    id: 9006,
+    nombre: 'Juegos de Posición 8v8',
+    tipo: 'abierta',
+    descripcion: 'Estructura posicional donde los equipos mantienen sus posiciones reales para circular el balón ante una oposición organizada.',
+    link_foto: 'https://nqdbqqmjyygopjnpqyvm.supabase.co/storage/v1/object/public/dinamicas/p30_Dinamica_8_vs_8_C_2A.jpg',
+    contenidos_ofensivos: '["Juego de posición", "Orientación corporal", "Atraer para liberar"]',
+    contenidos_defensivos: '["Orientar presión", "Cerrar pasillos interiores"]',
+    consignas: '["No salir de la zona de influencia", "Mantener amplitud constante"]',
+    reglas: '["Balón debe pasar por el mediocentro antes de progresar"]',
+    variantes: '["Reducir dimensiones", "Añadir un mediocentro comodín"]'
+  },
+  {
+    id: 9007,
+    nombre: 'Ataque vs Defensa 6v4',
+    tipo: 'abierta',
+    descripcion: 'Acciones combinadas de ataque contra una línea defensiva en inferioridad para entrenar finalizaciones y coberturas.',
+    link_foto: 'https://nqdbqqmjyygopjnpqyvm.supabase.co/storage/v1/object/public/dinamicas/p20_Dinamica_6_vs_4_2P_2A.jpg',
+    contenidos_ofensivos: '["Ataque rápido", "Doblajes por banda", "Centros y remates"]',
+    contenidos_defensivos: '["Coberturas recíprocas", "Basculación rápida", "Despejes orientados"]',
+    consignas: '["Finalizar jugadas rápido", "Evitar el centro lateral", "Perfilamiento correcto"]',
+    reglas: '["Defensa suma punto si despeja de cabeza"]',
+    variantes: '["Añadir 2 defensores replegándose tarde", "Límites de tiempo para finalizar"]'
+  }
+];
+
 export default function DinamicasArea() {
   const [data, setData] = useState<DrillGpsRecord[]>([]);
   const [tareas, setTareas] = useState<any[]>([]);
@@ -309,6 +442,7 @@ export default function DinamicasArea() {
   const fetchDrillData = async () => {
     setLoading(true);
     setMsg(null);
+    let activeTareas = DEFAULT_TAREAS_FALLBACK;
     try {
       // 1. Obtener jugadores para mapear categorías y posiciones
       const { data: playersData } = await supabase
@@ -325,16 +459,46 @@ export default function DinamicasArea() {
         });
       }
 
-      // Fetch the tareas table with all dynamic details
+      // Fetch the tareas table via server proxy with all dynamic details
       try {
-        const { data: tData } = await supabase
-          .from('tareas')
-          .select('id, nombre, link_foto, link_video, tipo, descripcion, contenidos_ofensivos, contenidos_defensivos, consignas, reglas, variantes');
-        if (tData) {
-          setTareas(tData);
+        const res = await fetch('/api/tareas');
+        if (res.ok) {
+          const tData = await res.json();
+          if (tData && tData.length > 0) {
+            activeTareas = tData;
+            setTareas(tData);
+          } else {
+            setTareas(DEFAULT_TAREAS_FALLBACK);
+          }
+        } else {
+          console.warn("Proxy /api/tareas returned error, trying client direct as fallback");
+          const { data: tData } = await supabase
+            .from('tareas')
+            .select('id, nombre, link_foto, link_video, tipo, descripcion, contenidos_ofensivos, contenidos_defensivos, consignas, reglas, variantes');
+          if (tData && tData.length > 0) {
+            activeTareas = tData;
+            setTareas(tData);
+          } else {
+            setTareas(DEFAULT_TAREAS_FALLBACK);
+          }
         }
       } catch (err) {
-        console.error("Error fetching tareas:", err);
+        console.error("Error fetching tareas via proxy:", err);
+        // Fallback directly to client client in case of local offline development
+        try {
+          const { data: tData } = await supabase
+            .from('tareas')
+            .select('id, nombre, link_foto, link_video, tipo, descripcion, contenidos_ofensivos, contenidos_defensivos, consignas, reglas, variantes');
+          if (tData && tData.length > 0) {
+            activeTareas = tData;
+            setTareas(tData);
+          } else {
+            setTareas(DEFAULT_TAREAS_FALLBACK);
+          }
+        } catch (clientErr) {
+          console.error("Fallback client fetch failed:", clientErr);
+          setTareas(DEFAULT_TAREAS_FALLBACK);
+        }
       }
 
       // 2. Obtener datos directamente de la tabla drill_gps_data con paginación de rangos para superar el límite de 1000 registros
@@ -405,7 +569,7 @@ export default function DinamicasArea() {
         setData(allMergedRecords);
       } else {
         // Si no hay datos, cargamos los datos fallback locales de inmediato
-        const fallback = generateLocalFallbackData();
+        const fallback = generateLocalFallbackData(activeTareas);
         setData(fallback);
         setMsg({
           text: "La tabla 'drill_gps_data' está vacía. Mostrando datos de Dinámicas GPS de muestra.",
@@ -414,7 +578,7 @@ export default function DinamicasArea() {
       }
     } catch (err: any) {
       console.error("Error al cargar datos de drill_gps_data, cargando fallback:", err);
-      const fallback = generateLocalFallbackData();
+      const fallback = generateLocalFallbackData(activeTareas);
       setData(fallback);
       setMsg({
         text: "Modo offline: Visualizando datos locales de Dinámicas GPS.",
@@ -431,9 +595,20 @@ export default function DinamicasArea() {
 
   // Lista de dinámicas únicas desde la columna 'nombre' de la tabla de tareas
   const uniqueDrills = useMemo(() => {
-    const drills = tareas.map(t => t.nombre).filter(Boolean);
+    let drills = tareas.map(t => t.nombre).filter(Boolean);
+    
+    // Si la tabla tareas está vacía o faltan dinámicas que existen en la data GPS cargada,
+    // garantizamos que se incluyan para que la navegación por selector sea robusta
+    const dataDrills = data.map(r => r.drill_name).filter(Boolean);
+    dataDrills.forEach(d => {
+      const exists = drills.some(tName => tName.trim().toLowerCase() === d.trim().toLowerCase());
+      if (!exists) {
+        drills.push(d);
+      }
+    });
+
     return Array.from(new Set(drills)).sort((a, b) => a.localeCompare(b));
-  }, [tareas]);
+  }, [tareas, data]);
 
   // Sincronizar la dinámica seleccionada desde el Área Técnica
   useEffect(() => {
@@ -648,7 +823,39 @@ export default function DinamicasArea() {
   // Encontrar la tarea correspondiente y su link de video
   const matchedTarea = useMemo(() => {
     if (!selectedDrill) return null;
-    return tareas.find(t => t.nombre === selectedDrill) || null;
+    const raw = tareas.find(t => t.nombre === selectedDrill) || null;
+    if (!raw) return null;
+
+    // Helper to safely parse array-like fields
+    const parseArray = (val: any): string[] => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) return parsed;
+          } catch (e) {
+            // ignore JSON parse error, proceed
+          }
+        }
+        if (trimmed.includes(',')) {
+          return trimmed.split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+        }
+        return [trimmed];
+      }
+      return [];
+    };
+
+    return {
+      ...raw,
+      contenidos_ofensivos: parseArray(raw.contenidos_ofensivos),
+      contenidos_defensivos: parseArray(raw.contenidos_defensivos),
+      consignas: parseArray(raw.consignas),
+      reglas: parseArray(raw.reglas),
+      variantes: parseArray(raw.variantes),
+    };
   }, [selectedDrill, tareas]);
 
   const videoDetails = useMemo(() => {

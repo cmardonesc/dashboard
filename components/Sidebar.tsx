@@ -130,7 +130,42 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
     // Para staff, verificar permisos de menú personalizados si están configurados
     if (userRole === 'staff' && allowedMenus) {
       if (allowedMenus.includes('*')) return true;
-      return allowedMenus.includes(menuId);
+      
+      // Mapeos de retrocompatibilidad y herencia de permisos
+      if (allowedMenus.includes(menuId)) return true;
+      if (allowedMenus.includes('planning') && menuId.startsWith('planificacion_')) return true;
+      if (allowedMenus.includes('diario') && (
+        menuId === 'fisica_wellness' || 
+        menuId === 'fisica_pse' || 
+        menuId === 'fisica_carga_externa_total' || 
+        menuId === 'fisica_carga_externa_tareas' || 
+        menuId === 'fisica_gps_intelligence'
+      )) return true;
+      if (allowedMenus.includes('fisica') && (
+        menuId === 'fisica_resumen_grupal' || 
+        menuId === 'fisica_reporte' || 
+        menuId === 'fisica_pronostico' || 
+        menuId === 'fisica_gimnasio'
+      )) return true;
+      if (allowedMenus.includes('nutricion') && (
+        menuId === 'nutricion_resumen_grupal' || 
+        menuId === 'nutricion_individual' || 
+        menuId === 'nutricion_top10' || 
+        menuId === 'nutricion_maduracion'
+      )) return true;
+      if (allowedMenus.includes('tecnica') && (
+        menuId === 'tecnica_biblioteca' || 
+        menuId === 'tecnica_competencia'
+      )) return true;
+      if (allowedMenus.includes('competencia') && menuId === 'tecnica_competencia') return true;
+      if (allowedMenus.includes('logistica') && (
+        menuId === 'logistica_jugadores' || 
+        menuId === 'citaciones' || 
+        menuId === 'desconvocatoria' || 
+        menuId === 'contactos_clubes'
+      )) return true;
+
+      return false;
     }
     return true; // Acceso total para staff por defecto si no está restringido
   };

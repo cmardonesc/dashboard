@@ -1308,17 +1308,23 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     
     // 2. Si es CLUB, asegurar que sus propios jugadores estén incluidos, incluso si no hay microciclo
     if (userRole === 'club') {
-      const myPlayers = performanceRecords.filter(r => {
-        let isMyPlayer = false;
+      const isMyPlayerFn = (player: any) => {
         if (userClubId) {
-          isMyPlayer = r.player.id_club === userClubId;
-        } else if (userClub) {
-          const uClubNorm = normalizeClub(userClub);
-          const pClub = r.player.club_name || r.player.club || '';
-          isMyPlayer = normalizeClub(pClub) === uClubNorm;
+          return player.id_club === userClubId;
         }
-        
-        if (!isMyPlayer) return false;
+        if (userClub) {
+          const uClubNorm = normalizeClub(userClub);
+          const pClub = player.club_name || player.club || '';
+          return normalizeClub(pClub) === uClubNorm;
+        }
+        return false;
+      };
+
+      // Filtrar la lista general de citados para incluir SOLO los del propio club
+      const citedClubOnly = cited.filter(r => isMyPlayerFn(r.player));
+
+      const myPlayers = performanceRecords.filter(r => {
+        if (!isMyPlayerFn(r.player)) return false;
         
         // Si hay categorías seleccionadas, intentamos filtrar por ellas para mantener coherencia con la UI
         if (selectedCategories.length > 0 && r.player.anio) {
@@ -1333,12 +1339,21 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           
           if (!matchesCategory) return false;
         }
+
+        // El jugador debe pertenecer al microciclo (ya está en citedClubOnly)
+        // O debe haber contestado hoy (tiene datos para selectedDate)
+        const inMicrocycle = citedClubOnly.some(c => c.player.player_id === r.player.player_id);
+        const hasAnswered = r.wellness.some(w => w.date === selectedDate) || r.loads.some(l => l.date === selectedDate);
+
+        if (!inMicrocycle && !hasAnswered) {
+          return false;
+        }
         
         return true;
       });
       
-      // Combinar citados con jugadores propios sin duplicados
-      const combined = [...cited];
+      // Combinar citados filtrados con jugadores propios sin duplicados
+      const combined = [...citedClubOnly];
       myPlayers.forEach(p => {
         if (!combined.some(c => c.player.player_id === p.player.player_id)) {
           combined.push(p);
@@ -1348,7 +1363,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
     }
 
     return cited.filter(r => !r.player.player_id || !desconvocadosIds.includes(r.player.player_id));
-  }, [performanceRecords, citedPlayerIds, desconvocadosIds, userRole, userClub, selectedCategories, userClubId]);
+  }, [performanceRecords, citedPlayerIds, desconvocadosIds, userRole, userClub, selectedCategories, userClubId, selectedDate]);
 
   const currentCitadosPlayers = useMemo(() => {
     // Verificar si algún jugador reportó más de una sesión en el día seleccionado
@@ -2983,7 +2998,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                   const isHighlighted = highlightPlayerId && Number(row.player.player_id) === Number(highlightPlayerId);
                   
                   return (
-                    <tr key={idx} className={`transition-all font-black uppercase italic text-[8px] md:text-xs shadow-sm hover:scale-[1.01] hover:shadow-md ${isHighlighted ? 'bg-blue-50 ring-2 ring-blue-500' : isPending ? 'bg-slate-50/50 text-slate-300' : (row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '') ? 'bg-slate-100/80 hover:bg-slate-100' : 'bg-white hover:bg-slate-50 text-slate-900')} rounded-2xl overflow-hidden`}>
+                    <tr key={idx} className={`transition-all font-black uppercase italic text-[8px] md:text-xs shadow-sm hover:scale-[1.01] hover:shadow-md ${isHighlighted ? 'bg-blue-50 ring-2 ring-blue-500' : isPending ? 'bg-white hover:bg-slate-50 text-slate-900 border border-slate-100' : (row.player && normalizeClub(row.player.club_name || row.player.club || '') === normalizeClub(userClub || '') ? 'bg-slate-100/80 hover:bg-slate-100' : 'bg-white hover:bg-slate-50 text-slate-900')} rounded-2xl overflow-hidden`}>
                       <td className={`px-2 md:px-8 py-3 md:py-5 text-left rounded-l-2xl ${isHighlighted ? 'bg-blue-50' : ''}`}>
                         <div className="flex flex-col min-w-[70px]">
                           <div className="flex items-center gap-1.5">
@@ -3214,13 +3229,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           </div>
 
           {/* REPORTE DE WELLNESS DIARIO (DISEÑO PREMIUM EN UNA SOLA HOJA DE DOS GRUPOS EN FILAS SIMILARES) */}
-          <div className="mt-12 space-y-4 font-sans focus-within:outline-none" style={{ pageBreakInside: 'avoid' }}>
-            <div className="flex items-center justify-between px-2 print:hidden">
-              <h4 className="text-xs font-black text-slate-400 DevOnly tracking-[0.2em] italic flex items-center gap-2">
-                <i className="fa-solid fa-file-invoice text-[#02428c]"></i> VISTA PREVIA DE REPORTE PREMIUM (A4)
-              </h4>
-            </div>
-
+          <div className="absolute -left-[9999px] -top-[9999px] w-[1200px] pointer-events-none opacity-0 select-none">
             <div id="wellness-report-container" className="bg-white rounded-[40px] p-10 border border-slate-100 shadow-xl relative overflow-hidden text-slate-800">
               {/* Cabecera Oficial Selección Nacional */}
               <div className="mb-8 border-b border-slate-200 pb-6">
@@ -3409,7 +3418,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           (row.wellness.illness_symptoms && row.wellness.illness_symptoms.length > 0)
                         );
                         return (
-                          <tr key={`left-well-${idx}`} className={`hover:bg-slate-50/50 transition-all ${isPending ? 'opacity-40' : ''}`}>
+                          <tr key={`left-well-${idx}`} className="hover:bg-slate-50/50 transition-all">
                             <td className="py-2.5 font-bold text-slate-800">
                               <span className="block font-black uppercase text-[10px]">{row.player?.name}</span>
                               <span className="text-[7.5px] uppercase tracking-wider text-slate-400 font-bold leading-none">{row.player?.club_name || row.player?.club || 'SIN CLUB'}</span>
@@ -3530,7 +3539,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                           (row.wellness.illness_symptoms && row.wellness.illness_symptoms.length > 0)
                         );
                         return (
-                          <tr key={`right-well-${idx}`} className={`hover:bg-slate-50/50 transition-all ${isPending ? 'opacity-40' : ''}`}>
+                          <tr key={`right-well-${idx}`} className="hover:bg-slate-50/50 transition-all">
                             <td className="py-2.5 font-bold text-slate-800">
                               <span className="block font-black uppercase text-[10px]">{row.player?.name}</span>
                               <span className="text-[7.5px] uppercase tracking-wider text-slate-400 font-bold leading-none">{row.player?.club_name || row.player?.club || 'SIN CLUB'}</span>

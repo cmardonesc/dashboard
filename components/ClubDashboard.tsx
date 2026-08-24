@@ -6,6 +6,7 @@ import NutricionArea from './NutricionArea';
 import MedicaArea from './MedicaArea';
 import TecnicaArea from './TecnicaArea';
 import CargaTareasArea from './CargaTareasArea';
+import DinamicasArea from './DinamicasArea';
 import NutricionResumenGrupal from './NutricionResumenGrupal';
 import ClubBadge from './ClubBadge';
 import { useIFR, GPSData as IFRGPSData } from '../hooks/useIFR';
@@ -392,24 +393,39 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
       case 'tecnica':
         return (
           <div className="space-y-6">
-            <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl w-fit">
+            <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl w-fit overflow-x-auto">
               <button 
                 onClick={() => setSubSection('cronograma')} 
-                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${subSection === 'cronograma' || subSection === 'default' ? 'bg-[#0b1220] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${subSection === 'cronograma' || subSection === 'default' ? 'bg-[#0b1220] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 Cronograma Semanal
               </button>
               <button 
                 onClick={() => setSubSection('tareas')} 
-                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${subSection === 'tareas' ? 'bg-[#0b1220] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${subSection === 'tareas' ? 'bg-[#0b1220] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 Tareas Semanales
+              </button>
+              <button 
+                onClick={() => setSubSection('dinamicas')} 
+                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${subSection === 'dinamicas' ? 'bg-[#0b1220] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                Dinámicas GPS
               </button>
             </div>
             {subSection === 'tareas' ? (
               <CargaTareasArea performanceRecords={clubRecords} />
+            ) : subSection === 'dinamicas' ? (
+              <DinamicasArea />
             ) : (
-              <TecnicaArea performanceRecords={clubRecords} />
+              <TecnicaArea 
+                performanceRecords={clubRecords} 
+                onMenuChange={(menuId) => {
+                  if (menuId === 'dinamicas') {
+                    setSubSection('dinamicas');
+                  }
+                }}
+              />
             )}
           </div>
         );
