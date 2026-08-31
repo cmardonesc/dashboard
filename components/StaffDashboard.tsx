@@ -23,6 +23,7 @@ import { TelegramNotificationsArea } from './TelegramNotificationsArea'
 import VO2MaxArea from './VO2MaxArea'
 import SportsScienceArea from './SportsScienceArea'
 import GPSIntelligenceDashboard from './GPSIntelligenceDashboard'
+import GpsInternacionalDashboard from './GpsInternacionalDashboard'
 import PronosticoCargas from './PronosticoCargas'
 import ClubDashboard from './ClubDashboard'
 import PlayerProfileArea from './PlayerProfileArea'
@@ -1341,6 +1342,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
           userRole={userRole}
           userClub={userClub}
           userClubId={userClubId}
+        />;
+      case 'gps_internacional':
+        return <GpsInternacionalDashboard 
+          clubs={clubs} 
+          userRole={userRole}
+          userClub={userClub}
         />;
       case 'fisica_reporte':
         return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} categoryName={selectedCategoryName} />;

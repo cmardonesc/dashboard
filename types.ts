@@ -107,6 +107,7 @@ export type MenuId =
   | 'nutricion_top10'
   | 'nutricion_maduracion'
   | 'competencia'
+  | 'gps_internacional'
   | 'citaciones'
   | 'desconvocatoria'
   | 'logistica_jugadores'

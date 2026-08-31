@@ -101,9 +101,15 @@ export default function App() {
       let gpsQuery = supabase.from('gps_tareas').select('*');
       let nutritionQuery = supabase.from('antropometria').select('*');
 
-      const rangeDate = new Date();
-      rangeDate.setDate(rangeDate.getDate() - 90); // Nutrición suele ser trimestral
-      const dateStr = rangeDate.toISOString().split('T')[0];
+      // Optimización: Rango de 30 días para bienestar, cargas y GPS (óptimo para uso frecuente)
+      const rangeDate30 = new Date();
+      rangeDate30.setDate(rangeDate30.getDate() - 30);
+      const dateStr30 = rangeDate30.toISOString().split('T')[0];
+
+      // 90 días para nutrición (evaluaciones periódicas)
+      const rangeDate90 = new Date();
+      rangeDate90.setDate(rangeDate90.getDate() - 90);
+      const dateStr90 = rangeDate90.toISOString().split('T')[0];
 
       if (userRole === 'player' && pId) {
         wellnessQuery = wellnessQuery.eq('player_id', pId);
@@ -112,11 +118,11 @@ export default function App() {
         nutritionQuery = nutritionQuery.eq('player_id', pId);
       } else {
         // Intentamos usar checkin_date, si falla el backend lo reportará
-        wellnessQuery = wellnessQuery.gte('checkin_date', dateStr);
-        loadsQuery = loadsQuery.gte('session_date', dateStr);
-        gpsQuery = gpsQuery.gte('fecha', dateStr);
-        // Traer últimos registros nutricionales
-        nutritionQuery = nutritionQuery.order('fecha_medicion', { ascending: false });
+        wellnessQuery = wellnessQuery.gte('checkin_date', dateStr30);
+        loadsQuery = loadsQuery.gte('session_date', dateStr30);
+        gpsQuery = gpsQuery.gte('fecha', dateStr30);
+        // Traer últimos registros nutricionales de los últimos 90 días
+        nutritionQuery = nutritionQuery.gte('fecha_medicion', dateStr90).order('fecha_medicion', { ascending: false });
       }
 
       let [wellnessRes, loadsRes, gpsRes, nutritionRes] = await Promise.all([
@@ -132,7 +138,7 @@ export default function App() {
         wellnessRes = await supabase
           .from('wellness_checkin')
           .select('*')
-          .gte('checkin_dat', dateStr)
+          .gte('checkin_dat', dateStr30)
           .order('checkin_dat', { ascending: false });
       }
 
@@ -147,15 +153,24 @@ export default function App() {
         console.log("Sample Nutrition Record:", nutritionRes.data[0]);
       }
 
+      // Pre-crear mapa de clubes para búsquedas O(1) de altísimo rendimiento
+      const clubsMap = new Map<string, any>();
+      dbClubs.forEach((c: any) => {
+        const cId = c.id_club || c.id;
+        if (cId !== undefined) {
+          clubsMap.set(cId.toString(), c);
+        }
+      });
+
       const mappedWellness = (wellnessRes.data || []).map((w: any) => {
         const rawDate = w.checkin_date || w.checkin_dat || w.fecha || '';
         const normalizedDate = normalizeDateStr(rawDate);
         
         // Resolver club si es ID
-        let resolvedClub = w.club || w.club_name ||'';
+        let resolvedClub = w.club || w.club_name || '';
         const clubId = w.id_club;
         if (clubId) {
-          const cObj = dbClubs.find(c => Number(c.id_club) === Number(clubId));
+          const cObj = clubsMap.get(clubId.toString());
           if (cObj) resolvedClub = cObj.nombre;
         }
 
@@ -185,10 +200,10 @@ export default function App() {
         const duration = l.duration_min || l.duracion || l.minutos || 0;
 
         // Resolver club si es ID
-        let resolvedClub = l.club || l.club_name ||'';
+        let resolvedClub = l.club || l.club_name || '';
         const clubId = l.id_club;
         if (clubId) {
-          const cObj = dbClubs.find(c => Number(c.id_club) === Number(clubId));
+          const cObj = clubsMap.get(clubId.toString());
           if (cObj) resolvedClub = cObj.nombre;
         }
 
@@ -217,10 +232,10 @@ export default function App() {
         const duration = Number(g.minutos || g.duration || 0);
 
         // Resolver club si es ID
-        let resolvedClub = g.club || g.club_name ||'';
+        let resolvedClub = g.club || g.club_name || '';
         const clubId = g.id_club;
         if (clubId) {
-          const cObj = dbClubs.find(c => Number(c.id_club) === Number(clubId));
+          const cObj = clubsMap.get(clubId.toString());
           if (cObj) resolvedClub = cObj.nombre;
         }
 
@@ -772,9 +787,16 @@ export default function App() {
 
     const initialize = async () => {
       try {
-        // Cargar jugadores en segundo plano
-        fetchRealPlayers().catch(err => console.error("Error cargando jugadores:", err));
-        
+        const isRecoveryInUrl = window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery');
+        if (isRecoveryInUrl) {
+          console.log("Password recovery detected in URL on load!");
+          setIsRecoveryMode(true);
+          setLoading(false);
+          clearTimeout(safetyTimer);
+          clearTimeout(timeoutTimer);
+          return;
+        }
+
         let hasRestored = false;
         try {
           const stored = localStorage.getItem('lr-performance-auth-session');
@@ -788,6 +810,11 @@ export default function App() {
               setLinkedPlayerId(parsed.linkedPlayerId);
               hasRestored = true;
               console.log("Sesión restaurada desde localStorage con rol:", parsed.role);
+              
+              // Cargar listado de jugadores en segundo plano solo si no es un jugador
+              if (parsed.role && parsed.role !== 'player') {
+                fetchRealPlayers().catch(err => console.error("Error cargando jugadores restaurados:", err));
+              }
               
               // Restaurar sesión activa de Supabase si está disponible
               if (parsed.supabaseSession?.access_token && parsed.supabaseSession?.refresh_token) {
@@ -881,6 +908,11 @@ export default function App() {
               setUserClub(userData.club_name)
               setLinkedPlayerId(userData.player_id)
               
+              // Cargar listado de jugadores en segundo plano solo si no es un jugador
+              if (userData.role && userData.role !== 'player') {
+                fetchRealPlayers().catch(err => console.error("Error cargando jugadores desde sesión:", err));
+              }
+              
               // Si tenemos club_name pero no ID, intentamos recuperarlo de la tabla clubes
               if (userData.club_name) {
                 supabase.from('clubes').select('id_club').eq('nombre', userData.club_name).maybeSingle()
@@ -950,6 +982,7 @@ export default function App() {
         if (emailLower === 'mardones.camilo@gmail.com' || emailLower === 'cmardones@anfpchile.cl') {
           setRole('admin');
           setLinkedPlayerId(null);
+          fetchRealPlayers().catch(e => console.error("Error loading players (Admin):", e));
           fetchPerformanceData('admin', null).catch(e => console.error(e));
           return;
         }
@@ -966,6 +999,7 @@ export default function App() {
           setRole('club');
           setUserClub(clubOverrides[emailLower]);
           setLinkedPlayerId(null);
+          fetchRealPlayers().catch(e => console.error("Error loading players (Club override):", e));
           fetchPerformanceData('club', null).catch(e => console.error(e));
           return;
         }
@@ -1007,6 +1041,11 @@ export default function App() {
           setRole(userData.role)
           setUserClub(userData.club_name)
           setLinkedPlayerId(userData.player_id)
+          
+          if (userData.role && userData.role !== 'player') {
+            fetchRealPlayers().catch(err => console.error("Error loading players from state change:", err));
+          }
+          
           fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error(e));
         }
       } else {
@@ -1046,6 +1085,7 @@ export default function App() {
       console.log("Admin detectado. Forzando rol de ADMIN.");
       setRole('admin');
       setLinkedPlayerId(null);
+      fetchRealPlayers().catch(err => console.error("Error loading players (Admin override):", err));
       fetchPerformanceData('admin', null).catch(console.error);
       logActivity('Inicio de Sesión (Admin)', { email: emailLower });
       setLoading(false);
@@ -1057,6 +1097,7 @@ export default function App() {
       console.log("Staff manual detectado. Forzando rol de STAFF.");
       setRole('staff');
       setLinkedPlayerId(null);
+      fetchRealPlayers().catch(err => console.error("Error loading players (Staff override):", err));
       fetchPerformanceData('staff', null).catch(console.error);
       logActivity('Inicio de Sesión (Staff)', { email: emailLower });
       setLoading(false);
@@ -1076,6 +1117,7 @@ export default function App() {
       setRole('club');
       setUserClub(clubOverrides[emailLower]);
       setLinkedPlayerId(null);
+      fetchRealPlayers().catch(err => console.error("Error loading players (Club override):", err));
       fetchPerformanceData('club', null).catch(console.error);
       logActivity('Inicio de Sesión (Club)', { email: emailLower, club: clubOverrides[emailLower] });
       setLoading(false);
@@ -1089,6 +1131,7 @@ export default function App() {
       setUserClub(session.user.clubName);
       setUserClubId(session.user.idClub);
       setLinkedPlayerId(null);
+      fetchRealPlayers().catch(err => console.error("Error loading players (Club table override):", err));
       fetchPerformanceData('club', null).catch(console.error);
       logActivity('Inicio de Sesión (Club - Tabla)', { username: emailLower, club: session.user.clubName });
       setLoading(false);
@@ -1188,6 +1231,11 @@ export default function App() {
         if (userData.club_name) {
            const { data: cData } = await supabase.from('clubes').select('id_club').eq('nombre', userData.club_name).maybeSingle();
            if (cData) setUserClubId(cData.id_club);
+        }
+
+        // Cargar listado de jugadores si es rol Staff/Admin/Club
+        if (userData.role !== 'player') {
+          fetchRealPlayers().catch(err => console.error("Error cargando jugadores en login exitoso:", err));
         }
 
         // Cargar datos iniciales
@@ -1342,6 +1390,44 @@ export default function App() {
 
     console.log(`PerformanceRecords: ${playersToUse.length} jugadores filtrados`);
 
+    // Pre-agrupar datos de rendimiento por player_id para búsquedas instantáneas O(1)
+    const wellnessByPlayer = new Map<string, any[]>();
+    const loadsByPlayer = new Map<string, any[]>();
+    const gpsByPlayer = new Map<string, any[]>();
+    const nutritionByPlayer = new Map<string, any[]>();
+
+    allData.wellness.forEach((w: any) => {
+      const wId = (w.player_id || w.playerId)?.toString().replace('player-', '');
+      if (wId) {
+        if (!wellnessByPlayer.has(wId)) wellnessByPlayer.set(wId, []);
+        wellnessByPlayer.get(wId)!.push(w);
+      }
+    });
+
+    allData.loads.forEach((l: any) => {
+      const lId = (l.player_id || l.playerId || l.id_jugador)?.toString().replace('player-', '');
+      if (lId) {
+        if (!loadsByPlayer.has(lId)) loadsByPlayer.set(lId, []);
+        loadsByPlayer.get(lId)!.push(l);
+      }
+    });
+
+    allData.gps.forEach((g: any) => {
+      const gId = (g.player_id || g.playerId)?.toString().replace('player-', '');
+      if (gId) {
+        if (!gpsByPlayer.has(gId)) gpsByPlayer.set(gId, []);
+        gpsByPlayer.get(gId)!.push(g);
+      }
+    });
+
+    allData.nutrition.forEach((n: any) => {
+      const nId = (n.player_id || n.id_jugador)?.toString();
+      if (nId) {
+        if (!nutritionByPlayer.has(nId)) nutritionByPlayer.set(nId, []);
+        nutritionByPlayer.get(nId)!.push(n);
+      }
+    });
+
     return (playersToUse as User[]).map((player) => {
       const pId = player.player_id?.toString();
 
@@ -1371,22 +1457,10 @@ export default function App() {
 
       return {
         player: finalPlayer,
-        wellness: allData.wellness.filter((w: any) => {
-          const wId = (w.player_id || w.playerId)?.toString().replace('player-', '');
-          return wId && pId && String(wId) === String(pId);
-        }),
-        loads: allData.loads.filter((l: any) => {
-          const lId = (l.player_id || l.playerId || l.id_jugador)?.toString().replace('player-', '');
-          return lId && pId && String(lId) === String(pId);
-        }),
-        gps: allData.gps.filter((g: any) => {
-          const gId = (g.player_id || g.playerId)?.toString().replace('player-', '');
-          return gId && pId && String(gId) === String(pId);
-        }),
-        nutrition: allData.nutrition.filter((n: any) => {
-          const nId = (n.player_id || n.id_jugador)?.toString();
-          return nId && pId && String(nId) === String(pId);
-        })
+        wellness: pId ? (wellnessByPlayer.get(pId) || []) : [],
+        loads: pId ? (loadsByPlayer.get(pId) || []) : [],
+        gps: pId ? (gpsByPlayer.get(pId) || []) : [],
+        nutrition: pId ? (nutritionByPlayer.get(pId) || []) : []
       };
     });
   }, [allData, dbPlayers, role, userClub, userClubId, playersLoading, dbClubs]);
@@ -1419,6 +1493,16 @@ export default function App() {
     }
     return found
   }, [performanceRecords, sessionUser, linkedPlayerId, role, playersLoading])
+
+  if (isRecoveryMode) return (
+    <div className="min-h-screen flex items-center justify-center bg-[#0b1220] px-6 relative">
+      <UpdatePasswordCard onComplete={() => setIsRecoveryMode(false)} />
+      {/* Watermark */}
+      <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none opacity-20">
+        <span className="text-[10px] font-black tracking-widest text-white uppercase">CMSPORTECH</span>
+      </div>
+    </div>
+  )
 
   if (loading) {
     return (
@@ -1454,16 +1538,6 @@ export default function App() {
       </div>
     )
   }
-
-  if (isRecoveryMode) return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0b1220] px-6 relative">
-      <UpdatePasswordCard onComplete={() => setIsRecoveryMode(false)} />
-      {/* Watermark */}
-      <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none opacity-20">
-        <span className="text-[10px] font-black tracking-widest text-white uppercase">CMSPORTECH</span>
-      </div>
-    </div>
-  )
 
   if (!role) return (
     <div className="min-h-screen flex items-center justify-center bg-[#0b1220] px-6 relative">
@@ -2153,7 +2227,8 @@ function UpdatePasswordCard({ onComplete }: { onComplete: () => void }) {
         setMsg('Contraseña actualizada con éxito.')
         setTimeout(() => {
           onComplete()
-          window.location.reload() // Recargar para limpiar la URL y cargar sesión limpia
+          // Limpiar la URL de tokens/hash y redirigir limpiamente para iniciar sesión
+          window.location.href = window.location.origin + window.location.pathname;
         }, 2000)
       }
     } catch (err: any) {

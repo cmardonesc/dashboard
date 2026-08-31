@@ -72,7 +72,18 @@ try {
 const shouldProxy = (): boolean => {
   if (typeof window === 'undefined') return true;
   const host = window.location.hostname;
-  return host === 'localhost' || host === '127.0.0.1' || host.includes('.run.app') || host.includes('gitpod') || host.includes('codesandbox');
+  
+  // Detectar si estamos en un iframe (como en la vista previa de desarrollo)
+  let isIframe = false;
+  try {
+    isIframe = window.self !== window.top;
+  } catch (e) {
+    isIframe = true;
+  }
+
+  // Solo usar proxy si estamos local, gitpod, etc., o si estamos dentro de un iframe en .run.app
+  const isLocalOrWorkspace = host === 'localhost' || host === '127.0.0.1' || host.includes('gitpod') || host.includes('codesandbox');
+  return isLocalOrWorkspace || (host.includes('.run.app') && isIframe);
 };
 
 const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {

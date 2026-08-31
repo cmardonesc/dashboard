@@ -56,6 +56,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const isTecnicaActive = TECNICA_IDS.includes(activeMenu);
   const [tecnicaOpen, setTecnicaOpen] = useState(isTecnicaActive);
 
+  // Estado para Competencia y sus submenús
+  const COMPETENCIA_IDS = ['competencia', 'gps_internacional'];
+  const isCompetenciaActive = COMPETENCIA_IDS.includes(activeMenu);
+  const [competenciaOpen, setCompetenciaOpen] = useState(isCompetenciaActive);
+
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
 
@@ -85,6 +90,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
     if (!TECNICA_IDS.includes(id)) {
       setTecnicaOpen(false);
     }
+    if (!COMPETENCIA_IDS.includes(id)) {
+      setCompetenciaOpen(false);
+    }
   };
 
   const toggleCollapse = () => {
@@ -97,6 +105,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
       setLogisticsOpen(false);
       setPlanificacionOpen(false);
       setTecnicaOpen(false);
+      setCompetenciaOpen(false);
     }
   };
 
@@ -157,7 +166,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
         menuId === 'tecnica_biblioteca' || 
         menuId === 'tecnica_competencia'
       )) return true;
-      if (allowedMenus.includes('competencia') && menuId === 'tecnica_competencia') return true;
+      if (allowedMenus.includes('competencia') && (menuId === 'tecnica_competencia' || menuId === 'competencia' || menuId === 'gps_internacional')) return true;
       if (allowedMenus.includes('logistica') && (
         menuId === 'logistica_jugadores' || 
         menuId === 'citaciones' || 
@@ -554,17 +563,55 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
           </div>
         )}
 
-        {userRole !== 'club' && isMenuAllowed('competencia') && (
-          <button
-            onClick={() => handleMenuClick('competencia')}
-            title={isCollapsed ? 'Competencia' : ''}
-            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 group ${
-              activeMenu === 'competencia' ? 'bg-red-900/20 text-[#CF1B2B]' : 'text-slate-400 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <i className={`fa-solid fa-trophy text-xl ${isCollapsed ? '' : 'w-6'} ${activeMenu === 'competencia' ? 'text-[#CF1B2B]' : 'text-slate-500 group-hover:text-white'}`}></i>
-            {!isCollapsed && <span className="font-bold text-sm tracking-tight">Competencia</span>}
-          </button>
+        {/* COMPETENCIA COLLAPSIBLE */}
+        {userRole !== 'club' && (isMenuAllowed('competencia') || isMenuAllowed('gps_internacional')) && (
+          <div className="pt-2">
+            <button
+              onClick={() => handleSubmenuClick(setCompetenciaOpen, !competenciaOpen)}
+              title={isCollapsed ? 'Competencia' : ''}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between gap-4 px-6'} py-4 rounded-2xl transition-all duration-200 ${
+                competenciaOpen ? 'text-white bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
+                <i className={`fa-solid fa-trophy text-xl ${isCollapsed ? '' : 'w-6'} ${competenciaOpen ? 'text-[#CF1B2B]' : 'text-slate-500'}`}></i>
+                {!isCollapsed && <span className="font-bold text-sm tracking-tight">Competencia</span>}
+              </div>
+              {!isCollapsed && <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${competenciaOpen ? 'rotate-180' : ''}`}></i>}
+            </button>
+            
+            {competenciaOpen && !isCollapsed && (
+              <div className="mt-2 ml-4 space-y-1 animate-in slide-in-from-top-2 duration-300 border-l border-white/10 pl-4">
+                {isMenuAllowed('competencia') && (
+                  <button
+                    onClick={() => handleMenuClick('competencia')}
+                    className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                      activeMenu === 'competencia' ? 'text-red-500 bg-red-900/10' : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'competencia' ? 'bg-red-500' : 'bg-slate-700'}`}></div>
+                    <span className="text-[10px] font-bold italic">Gestor de Partidos</span>
+                  </button>
+                )}
+                {isMenuAllowed('gps_internacional') && (
+                  <button
+                    onClick={() => handleMenuClick('gps_internacional')}
+                    className={`w-full flex items-center justify-between px-4 py-2 rounded-lg transition-all ${
+                      activeMenu === 'gps_internacional' ? 'text-red-500 bg-red-900/10' : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'gps_internacional' ? 'bg-red-500' : 'bg-slate-700'}`}></div>
+                      <span className="text-[10px] font-bold italic">GPS Internacional</span>
+                    </div>
+                    <span className="text-[7px] font-black uppercase bg-amber-500/25 text-amber-500 px-1.5 py-0.5 rounded-md leading-none border border-amber-500/10 tracking-widest shrink-0">
+                      DEV
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* ÁREA TÉCNICA COLLAPSIBLE */}
