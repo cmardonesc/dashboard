@@ -54,9 +54,16 @@ export default function App() {
         setActiveMenu('perfil_jugador');
       }
     };
+    const handleMenuNavigation = (e: any) => {
+      if (e.detail?.menuId) {
+        setActiveMenu(e.detail.menuId);
+      }
+    };
     window.addEventListener('navigate-to-profile', handleGlobalNavigation);
+    window.addEventListener('navigate-to-menu', handleMenuNavigation);
     return () => {
       window.removeEventListener('navigate-to-profile', handleGlobalNavigation);
+      window.removeEventListener('navigate-to-menu', handleMenuNavigation);
     };
   }, []);
 

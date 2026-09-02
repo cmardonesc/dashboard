@@ -32,6 +32,7 @@ interface TareaSemanal {
   nombre: string;
   jornada: string;
   observacion?: string;
+  id_microcycles?: string | number;
 }
 
 interface Citacion {
@@ -47,6 +48,7 @@ interface Microcycle {
   country?: string;
   city?: string;
   micro_number?: number;
+  category_id?: number;
 }
 
 const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userClubId, clubs = [] }) => {
@@ -89,12 +91,9 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
     const loadDashboardData = async () => {
       setLoading(true);
       try {
-        // 1. Fetch Microcycles and Citations
+        // 1. Fetch Microcycles
         const { data: mcData } = await supabase.from('microcycles').select('*').order('start_date', { ascending: false });
         if (mcData) setMicrocycles(mcData);
-
-        const { data: citData } = await supabase.from('citaciones').select('*');
-        if (citData) setCitations(citData);
 
         // 2. Fetch Weekly Dynamics
         const { data: taskData } = await supabase.from('tareas_semanales').select('*');
@@ -138,6 +137,41 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
     return containing || microcycles[0];
   }, [microcycles, selectedDate]);
 
+  // Determine all microcycles active on the selectedDate (handles parallel microcycles)
+  const activeMicrocycles = useMemo(() => {
+    return microcycles.filter(mc => selectedDate >= mc.start_date && selectedDate <= mc.end_date);
+  }, [microcycles, selectedDate]);
+
+  // Fetch only the citations belonging to the active microcycles to avoid postgREST 1000-row limits
+  useEffect(() => {
+    if (microcycles.length === 0) return;
+
+    const loadCitationsForActiveMicros = async () => {
+      const activeMcIds = activeMicrocycles.map(mc => Number(mc.id));
+
+      if (activeMcIds.length === 0 && activeMicrocycle) {
+        activeMcIds.push(Number(activeMicrocycle.id));
+      }
+
+      if (activeMcIds.length > 0) {
+        const { data: citData, error } = await supabase
+          .from('citaciones')
+          .select('*')
+          .in('microcycle_id', activeMcIds);
+
+        if (error) {
+          console.error("Error fetching filtered citations:", error);
+        } else if (citData) {
+          setCitations(citData);
+        }
+      } else {
+        setCitations([]);
+      }
+    };
+
+    loadCitationsForActiveMicros();
+  }, [selectedDate, microcycles, activeMicrocycles, activeMicrocycle]);
+
   // Filter players that belong to the user's club
   const clubPlayers = useMemo(() => {
     if (!userClub) return [];
@@ -162,91 +196,168 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
   }, [clubPlayers]);
 
   // 1. DINÁMICAS DEL DÍA
+  const [selectedJornada, setSelectedJornada] = useState<string>('AM');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('TODAS');
+
+  // Automatically reset category filter to 'TODAS' when selected date changes
+  useEffect(() => {
+    setSelectedCategoryFilter('TODAS');
+  }, [selectedDate]);
+
+  // Get active categories of training on selected date
+  const trainingCategories = useMemo(() => {
+    const activeMcs = microcycles.filter(mc => selectedDate >= mc.start_date && selectedDate <= mc.end_date);
+    const catIds = Array.from(new Set(activeMcs.map(mc => mc.category_id).filter(Boolean))) as number[];
+    
+    if (catIds.length === 0) {
+      const scheduledToday = scheduledTasks.filter(t => t.fecha === selectedDate);
+      scheduledToday.forEach(st => {
+        const mc = microcycles.find(m => String(m.id) === String(st.id_microcycles));
+        if (mc?.category_id) {
+          catIds.push(mc.category_id);
+        }
+      });
+    }
+
+    return Array.from(new Set(catIds)).sort((a, b) => a - b);
+  }, [microcycles, scheduledTasks, selectedDate]);
+
+  const getCategoryLabel = (catId: number | string) => {
+    const labels: Record<number, string> = {
+      1: 'SUB-13',
+      2: 'SUB-14',
+      3: 'SUB-15',
+      4: 'SUB-16',
+      5: 'SUB-17',
+      6: 'SUB-18',
+      7: 'SUB-20',
+      8: 'SUB-21',
+      9: 'SUB-23',
+      10: 'ADULTA'
+    };
+    return labels[Number(catId)] || `SUB-${catId}`;
+  };
+
   const dailyDynamics = useMemo(() => {
     // Filter scheduled tasks for selectedDate
     const scheduledToday = scheduledTasks.filter(t => t.fecha === selectedDate);
     
-    return scheduledToday.map(st => {
+    const mapped = scheduledToday.map(st => {
       // Find matching detailed dynamic in the seeded library
       const matchedLibrary = dynamicsLibrary.find(d => 
         normalizeClub(d.nombre) === normalizeClub(st.nombre) || 
         normalizeClub(d.nombre) === normalizeClub(st.dinamica)
       );
 
+      // Find microcycle containing this task
+      const mc = microcycles.find(m => String(m.id) === String(st.id_microcycles));
+
       return {
         id: st.id,
         nombre: st.nombre || st.dinamica,
-        jornada: st.jornada,
+        jornada: st.jornada || 'AM',
         observacion: st.observacion,
+        categoryId: mc?.category_id,
         detail: matchedLibrary
       };
     });
-  }, [scheduledTasks, dynamicsLibrary, selectedDate]);
+
+    // Filter by selectedJornada (AM / PM)
+    let filtered = mapped.filter(d => d.jornada === selectedJornada);
+
+    // Filter by selectedCategoryFilter
+    if (selectedCategoryFilter !== 'TODAS') {
+      filtered = filtered.filter(d => d.categoryId !== undefined && String(d.categoryId) === String(selectedCategoryFilter));
+    }
+
+    return filtered;
+  }, [scheduledTasks, dynamicsLibrary, microcycles, selectedDate, selectedJornada, selectedCategoryFilter]);
 
   // 2. JUGADORES EN EL MICROCICLO ACTIVO
   const activeMicrocyclePlayers = useMemo(() => {
-    if (!activeMicrocycle) return [];
-    
-    // Get player IDs cited for this microcycle
+    if (activeMicrocycles.length === 0) {
+      if (!activeMicrocycle) return [];
+      const citedIds = new Set(
+        citations
+          .filter(c => Number(c.microcycle_id) === Number(activeMicrocycle.id))
+          .map(c => Number(c.player_id))
+      );
+      return clubPlayers.filter(p => p.player_id && citedIds.has(Number(p.player_id)));
+    }
+
+    const activeMcIds = new Set(activeMicrocycles.map(mc => Number(mc.id)));
+
+    // Get player IDs cited for any active microcycles
     const citedPlayerIds = new Set(
       citations
-        .filter(c => Number(c.microcycle_id) === Number(activeMicrocycle.id))
+        .filter(c => activeMcIds.has(Number(c.microcycle_id)))
         .map(c => Number(c.player_id))
     );
 
-    // Filter club players who are cited
-    const filtered = clubPlayers.filter(p => p.player_id && (citedPlayerIds.has(Number(p.player_id)) || citedPlayerIds.has(p.player_id)));
+    // Filter club players who are cited in these microcycles
+    return clubPlayers.filter(p => p.player_id && citedPlayerIds.has(Number(p.player_id)));
+  }, [activeMicrocycles, activeMicrocycle, citations, clubPlayers]);
 
-    console.log("ClubHome Diagnostic Log:", {
-      userClub,
-      userClubId,
-      performanceRecordsCount: performanceRecords.length,
-      clubPlayersCount: clubPlayers.length,
-      activeMicrocycleId: activeMicrocycle.id,
-      citationsCountForActiveMicrocycle: citations.filter(c => Number(c.microcycle_id) === Number(activeMicrocycle.id)).length,
-      citedPlayerIdsList: Array.from(citedPlayerIds),
-      activeMicrocyclePlayersCount: filtered.length
-    });
-
-    return filtered;
-  }, [activeMicrocycle, citations, clubPlayers, performanceRecords, userClub, userClubId]);
-
-  // 3. TOP 3 PARÁMETROS FÍSICOS (GPS) PARA LA FECHA SELECCIONADA
+  // 3. TOP 3 PARÁMETROS FÍSICOS (GPS) - MÁXIMOS PARÁMETROS HISTÓRICOS DE JUGADORES DEL CLUB
   const physicalTopPerformers = useMemo(() => {
-    const dailyGpsRecords: { player: User; gps: any }[] = [];
+    const playerMaxGps: Record<number, { 
+      player: User; 
+      maxDistance: number; 
+      maxHsr: number; 
+      maxSprints: number;
+    }> = {};
 
     performanceRecords.forEach(record => {
-      const isMyPlayer = record.player.player_id && clubPlayerIds.has(record.player.player_id);
-      if (!isMyPlayer) return;
+      const pId = record.player.player_id;
+      if (!pId || !clubPlayerIds.has(pId)) return;
 
-      // Find GPS log for selectedDate
-      const gpsLog = record.gps.find(g => g.date === selectedDate);
-      if (gpsLog) {
-        dailyGpsRecords.push({ player: record.player, gps: gpsLog });
+      let maxDistance = 0;
+      let maxHsr = 0;
+      let maxSprints = 0;
+
+      // Scan all historical GPS logs for this player
+      if (Array.isArray(record.gps)) {
+        record.gps.forEach(g => {
+          const dist = Number(g.totalDistance || 0);
+          const hsr = Number(g.hsrDistance || 0);
+          const spr = Number(g.sprintCount || 0);
+
+          if (dist > maxDistance) maxDistance = dist;
+          if (hsr > maxHsr) maxHsr = hsr;
+          if (spr > maxSprints) maxSprints = spr;
+        });
+      }
+
+      if (maxDistance > 0 || maxHsr > 0 || maxSprints > 0) {
+        playerMaxGps[pId] = {
+          player: record.player,
+          maxDistance,
+          maxHsr,
+          maxSprints
+        };
       }
     });
 
-    const getTop3 = (metricKey: 'totalDistance' | 'hsrDistance' | 'sprintCount' | 'maxSpeed') => {
-      return [...dailyGpsRecords]
-        .filter(r => r.gps[metricKey] !== undefined && r.gps[metricKey] !== null && r.gps[metricKey] > 0)
-        .sort((a, b) => b.gps[metricKey] - a.gps[metricKey])
+    const getTop3 = (metricKey: 'maxDistance' | 'maxHsr' | 'maxSprints') => {
+      return Object.values(playerMaxGps)
+        .filter(r => r[metricKey] > 0)
+        .sort((a, b) => b[metricKey] - a[metricKey])
         .slice(0, 3)
         .map((r, index) => ({
           rank: index + 1,
           player: r.player,
-          value: r.gps[metricKey]
+          value: r[metricKey]
         }));
     };
 
     return {
-      distancia: getTop3('totalDistance'),
-      hsr: getTop3('hsrDistance'),
-      sprints: getTop3('sprintCount'),
-      velocidad: getTop3('maxSpeed')
+      distancia: getTop3('maxDistance'),
+      hsr: getTop3('maxHsr'),
+      sprints: getTop3('maxSprints')
     };
-  }, [performanceRecords, clubPlayerIds, selectedDate]);
+  }, [performanceRecords, clubPlayerIds]);
 
-  // 4. TOP 3 EN EVALUACIONES FÍSICAS (CMJ, SLJ, IMTP, Velocidad)
+  // 4. TOP 3 EN EVALUACIONES FÍSICAS (SOLO CMJ E IMTP)
   const evaluationsTopPerformers = useMemo(() => {
     const getTop3FromEvaluations = (
       dataList: any[],
@@ -254,7 +365,6 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
       playerKey: string = 'player_id',
       higherIsBetter: boolean = true
     ) => {
-      // Find maximum score per player in the entire history
       const playerBestMap: Record<number, { player: User; score: number; date: string }> = {};
 
       dataList.forEach(item => {
@@ -294,11 +404,9 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
 
     return {
       cmj: getTop3FromEvaluations(cmjEvaluations, 'cmj_altura_salto_im'),
-      slj: getTop3FromEvaluations(sljEvaluations, 'jump_height_cm'),
-      imtp: getTop3FromEvaluations(imtpEvaluations, 'imtp_fuerza_n'),
-      speed: getTop3FromEvaluations(speedEvaluations, 'vel_max_kmh')
+      imtp: getTop3FromEvaluations(imtpEvaluations, 'imtp_fuerza_n')
     };
-  }, [cmjEvaluations, sljEvaluations, imtpEvaluations, speedEvaluations, clubPlayers, clubPlayerIds]);
+  }, [cmjEvaluations, imtpEvaluations, clubPlayers, clubPlayerIds]);
 
   // Players grouped by Year (Original functionality preserved)
   const playersByYear = useMemo(() => {
@@ -376,30 +484,95 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
       )}
 
       {!loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* COLUMNA IZQUIERDA: DINÁMICAS Y MICROCICLO */}
-          <div className="lg:col-span-2 space-y-10">
+        <div className="space-y-10">
             
-            {/* 1. DINÁMICAS DEL DÍA */}
+            {/* 1. DINÁMICAS DE LA CATEGORÍA */}
             <div className="bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-2 h-6 bg-red-600 rounded-full"></div>
-                  <h2 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter">
-                    Dinámicas de la Jornada
-                  </h2>
+                  <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-600">
+                    <i className="fa-solid fa-list-check text-lg"></i>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">
+                      Tareas de la Categoría
+                    </h2>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                      {dailyDynamics.length} Sesiones programadas
+                    </p>
+                  </div>
                 </div>
-                <span className="px-3 py-1 bg-red-50 text-red-600 rounded-full text-[9px] font-black uppercase tracking-wider">
-                  {dailyDynamics.length} Sesiones
-                </span>
+                
+                <div className="flex items-center gap-4">
+                  {/* Toggle AM / PM */}
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">
+                    <button 
+                      onClick={() => setSelectedJornada('AM')}
+                      className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                        selectedJornada === 'AM' 
+                          ? 'bg-white text-red-600 shadow-sm font-black' 
+                          : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      AM
+                    </button>
+                    <button 
+                      onClick={() => setSelectedJornada('PM')}
+                      className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                        selectedJornada === 'PM' 
+                          ? 'bg-white text-red-600 shadow-sm font-black' 
+                          : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      PM
+                    </button>
+                  </div>
+
+                  {/* Link GESTIONAR */}
+                  <button 
+                    onClick={() => window.dispatchEvent(new CustomEvent('navigate-to-menu', { detail: { menuId: 'tecnica' } }))}
+                    className="text-red-600 text-[10px] font-black uppercase tracking-widest hover:underline shrink-0"
+                  >
+                    GESTIONAR &gt;
+                  </button>
+                </div>
+              </div>
+
+              {/* Categorías de entrenamiento activas */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 pb-2">
+                <button
+                  onClick={() => setSelectedCategoryFilter('TODAS')}
+                  className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl border transition-all ${
+                    selectedCategoryFilter === 'TODAS'
+                      ? 'bg-red-600 border-red-600 text-white shadow-md'
+                      : 'bg-white border-slate-100 text-slate-500 hover:border-slate-200'
+                  }`}
+                >
+                  TODAS ({trainingCategories.length})
+                </button>
+                {trainingCategories.map(catId => {
+                  const isSelected = String(selectedCategoryFilter) === String(catId);
+                  return (
+                    <button
+                      key={catId}
+                      onClick={() => setSelectedCategoryFilter(String(catId))}
+                      className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl border transition-all ${
+                        isSelected
+                          ? 'bg-red-600 border-red-600 text-white shadow-md'
+                          : 'bg-white border-slate-100 text-slate-500 hover:border-slate-200'
+                      }`}
+                    >
+                      {getCategoryLabel(catId)}
+                    </button>
+                  );
+                })}
               </div>
 
               {dailyDynamics.length === 0 ? (
-                <div className="py-10 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <div className="py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                   <i className="fa-solid fa-calendar-day text-slate-300 text-3xl mb-3 block"></i>
                   <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
-                    No se han asignado dinámicas técnicas para esta fecha
+                    No se han asignado dinámicas técnicas para esta categoría
                   </p>
                 </div>
               ) : (
@@ -411,8 +584,8 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
                     >
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="px-2.5 py-1 bg-[#0b1220] text-white text-[8px] font-black uppercase tracking-widest rounded-lg">
-                            {dyn.jornada}
+                          <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[8px] font-black uppercase tracking-widest rounded-lg">
+                            {dyn.categoryId ? getCategoryLabel(dyn.categoryId) : 'GENERAL'} {dyn.jornada}
                           </span>
                           {dyn.detail?.tipo && (
                             <span className="text-[8px] font-black uppercase tracking-wider text-slate-400">
@@ -547,185 +720,7 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
                 </div>
               )}
             </div>
-
           </div>
-
-          {/* COLUMNA DERECHA: PARÁMETROS GPS & EVALUACIONES FÍSICAS */}
-          <div className="space-y-10">
-            
-            {/* 3. VALORES TOP 3 EN PARÁMETROS FÍSICOS (GPS) */}
-            <div className="bg-[#0b1220] rounded-[40px] p-6 md:p-8 text-white shadow-xl space-y-6 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/5 rounded-full -mr-32 -mt-32 blur-2xl"></div>
-              
-              <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-                <div className="w-2 h-6 bg-red-600 rounded-full"></div>
-                <h2 className="text-base font-black uppercase italic tracking-tighter">
-                  Top 3 GPS ({selectedDate})
-                </h2>
-              </div>
-
-              <div className="space-y-5">
-                
-                {/* METRICA 1: DISTANCIA */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    <span>Distancia Total (m)</span>
-                    <i className="fa-solid fa-road text-red-500"></i>
-                  </div>
-                  <div className="space-y-1.5">
-                    {physicalTopPerformers.distancia.map(perf => (
-                      <div key={perf.rank} className="flex items-center justify-between bg-white/5 p-2 rounded-xl text-xs">
-                        <span className="font-black text-red-500 w-4">{perf.rank}°</span>
-                        <span className="font-bold uppercase truncate flex-1 px-2">{perf.player.nombre} {perf.player.apellido1}</span>
-                        <span className="font-black text-white">{Math.round(perf.value)} m</span>
-                      </div>
-                    ))}
-                    {physicalTopPerformers.distancia.length === 0 && (
-                      <p className="text-[9px] text-slate-500 font-bold uppercase italic">Sin datos cargados para hoy</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* METRICA 2: HSR */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    <span>HSR Alta Intensidad (&gt;20 km/h)</span>
-                    <i className="fa-solid fa-bolt text-amber-500"></i>
-                  </div>
-                  <div className="space-y-1.5">
-                    {physicalTopPerformers.hsr.map(perf => (
-                      <div key={perf.rank} className="flex items-center justify-between bg-white/5 p-2 rounded-xl text-xs">
-                        <span className="font-black text-amber-500 w-4">{perf.rank}°</span>
-                        <span className="font-bold uppercase truncate flex-1 px-2">{perf.player.nombre} {perf.player.apellido1}</span>
-                        <span className="font-black text-white">{Math.round(perf.value)} m</span>
-                      </div>
-                    ))}
-                    {physicalTopPerformers.hsr.length === 0 && (
-                      <p className="text-[9px] text-slate-500 font-bold uppercase italic">Sin datos cargados para hoy</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* METRICA 3: SPRINTS */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    <span>Sprints Ejecutados (&gt;25 km/h)</span>
-                    <i className="fa-solid fa-gauge-high text-emerald-500"></i>
-                  </div>
-                  <div className="space-y-1.5">
-                    {physicalTopPerformers.sprints.map(perf => (
-                      <div key={perf.rank} className="flex items-center justify-between bg-white/5 p-2 rounded-xl text-xs">
-                        <span className="font-black text-emerald-500 w-4">{perf.rank}°</span>
-                        <span className="font-bold uppercase truncate flex-1 px-2">{perf.player.nombre} {perf.player.apellido1}</span>
-                        <span className="font-black text-white">{perf.value}</span>
-                      </div>
-                    ))}
-                    {physicalTopPerformers.sprints.length === 0 && (
-                      <p className="text-[9px] text-slate-500 font-bold uppercase italic">Sin datos cargados para hoy</p>
-                    )}
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-            {/* 4. VALORES TOP 3 EN EVALUACIONES FÍSICAS */}
-            <div className="bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-6">
-              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                <div className="w-2 h-6 bg-red-600 rounded-full"></div>
-                <h2 className="text-base font-black text-slate-900 uppercase italic tracking-tighter">
-                  Top 3 Evaluaciones Históricas
-                </h2>
-              </div>
-
-              <div className="space-y-6">
-                
-                {/* CMJ HEIGHT */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    <span>Salto Vertical (CMJ - Altura cm)</span>
-                    <i className="fa-solid fa-arrows-up-down text-blue-500"></i>
-                  </div>
-                  <div className="space-y-1.5">
-                    {evaluationsTopPerformers.cmj.map(perf => (
-                      <div key={perf.rank} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl text-xs">
-                        <span className="font-black text-slate-400 w-4">{perf.rank}°</span>
-                        <span className="font-bold text-slate-800 uppercase truncate flex-1 px-2">{perf.player.nombre} {perf.player.apellido1}</span>
-                        <span className="font-black text-slate-900">{perf.value.toFixed(1)} cm</span>
-                      </div>
-                    ))}
-                    {evaluationsTopPerformers.cmj.length === 0 && (
-                      <p className="text-[9px] text-slate-400 font-bold uppercase italic">Sin registros de CMJ</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* SLJ */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    <span>Single Leg Jump (SLJ - Distancia cm)</span>
-                    <i className="fa-solid fa-arrow-right-arrow-left text-emerald-500"></i>
-                  </div>
-                  <div className="space-y-1.5">
-                    {evaluationsTopPerformers.slj.map(perf => (
-                      <div key={perf.rank} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl text-xs">
-                        <span className="font-black text-slate-400 w-4">{perf.rank}°</span>
-                        <span className="font-bold text-slate-800 uppercase truncate flex-1 px-2">{perf.player.nombre} {perf.player.apellido1}</span>
-                        <span className="font-black text-slate-900">{perf.value.toFixed(0)} cm</span>
-                      </div>
-                    ))}
-                    {evaluationsTopPerformers.slj.length === 0 && (
-                      <p className="text-[9px] text-slate-400 font-bold uppercase italic">Sin registros de SLJ</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* IMTP */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    <span>Isométrica Muslo Medio (IMTP - Fuerza Máx N)</span>
-                    <i className="fa-solid fa-weight-hanging text-amber-500"></i>
-                  </div>
-                  <div className="space-y-1.5">
-                    {evaluationsTopPerformers.imtp.map(perf => (
-                      <div key={perf.rank} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl text-xs">
-                        <span className="font-black text-slate-400 w-4">{perf.rank}°</span>
-                        <span className="font-bold text-slate-800 uppercase truncate flex-1 px-2">{perf.player.nombre} {perf.player.apellido1}</span>
-                        <span className="font-black text-slate-900">{perf.value.toLocaleString()} N</span>
-                      </div>
-                    ))}
-                    {evaluationsTopPerformers.imtp.length === 0 && (
-                      <p className="text-[9px] text-slate-400 font-bold uppercase italic">Sin registros de IMTP</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* SPEED */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    <span>Velocidad Sprint Máxima (km/h)</span>
-                    <i className="fa-solid fa-running text-red-500"></i>
-                  </div>
-                  <div className="space-y-1.5">
-                    {evaluationsTopPerformers.speed.map(perf => (
-                      <div key={perf.rank} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl text-xs">
-                        <span className="font-black text-slate-400 w-4">{perf.rank}°</span>
-                        <span className="font-bold text-slate-800 uppercase truncate flex-1 px-2">{perf.player.nombre} {perf.player.apellido1}</span>
-                        <span className="font-black text-slate-900">{perf.value.toFixed(1)} km/h</span>
-                      </div>
-                    ))}
-                    {evaluationsTopPerformers.speed.length === 0 && (
-                      <p className="text-[9px] text-slate-400 font-bold uppercase italic">Sin registros de Velocidad</p>
-                    )}
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-          </div>
-
-        </div>
       )}
 
       {/* 5. SECCIÓN ORIGINAL: EXPLORACIÓN POR GENERACIONES */}
