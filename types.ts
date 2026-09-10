@@ -79,6 +79,8 @@ export interface User {
   anio?: number; 
   celular?: string;
   foto_url?: string;
+  foto_path?: string;
+  foto_updated_at?: string;
 }
 
 export type MenuId =

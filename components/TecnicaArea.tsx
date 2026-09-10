@@ -12,6 +12,7 @@ import html2canvas from 'html2canvas';
 import MatchesArea from './MatchesArea';
 import { ConvocatoriaTactical } from './ConvocatoriaTactical';
 import ClubBadge from './ClubBadge';
+import { DinamicasPlanificador } from './DinamicasPlanificador';
 
 type ViewMode = 'selection' | 'management';
 type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia' | 'partidos' | 'convocatoria';
@@ -100,6 +101,7 @@ const formatCategoryLabel = (idOrName: any) => {
 
 const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuChange, onRefresh, initialTab, hideCronograma, clubs }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('selection');
+  const [activeDinamicasPlanner, setActiveDinamicasPlanner] = useState<{ dateKey: string; dayNumber: number } | null>(null);
   const [activeTab, setActiveTab] = useState<SubTab>(initialTab || (hideCronograma ? 'partidos' : 'cronograma'));
   const [selectedMicro, setSelectedMicro] = useState<MicrocicloUI | null>(null);
   const [selectedJornada, setSelectedJornada] = useState<'AM' | 'PM'>('AM');
@@ -379,7 +381,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
           .eq('microcycle_id', microId);
 
         if (!citeErr && citations && citations.length > 0) {
-          const playerIds = citations.map(c => c.player_id).filter(id => id !== null && id !== undefined);
+          const playerIds = Array.from(new Set(citations.map(c => c.player_id).filter(id => id !== null && id !== undefined)));
           if (playerIds.length > 0) {
             const { data: playersData, error: playersErr } = await supabase
               .from('players')
@@ -747,7 +749,11 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     };
   }, [unifiedCompetenciaReports]);
 
-  const formatDateKey = (date: Date) => date.toISOString().split('T')[0];
+  const formatDateKey = (date: Date) => {
+    const offset = date.getTimezoneOffset();
+    const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  };
 
   const handleAddActivity = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2378,6 +2384,28 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     );
   }
 
+  if (activeDinamicasPlanner && selectedMicro) {
+    return (
+      <DinamicasPlanificador
+        microcycle={{
+          id: selectedMicro.id,
+          nombre_display: selectedMicro.nombre_display,
+          start_date: selectedMicro.start_date,
+          end_date: selectedMicro.end_date,
+          category_id: selectedMicro.category_id
+        }}
+        dateKey={activeDinamicasPlanner.dateKey}
+        dayNumber={activeDinamicasPlanner.dayNumber}
+        citedPlayers={microcyclePlayers}
+        dayTasks={(fieldTasks[activeDinamicasPlanner.dateKey] || []).filter(t => t.jornada === selectedJornada)}
+        onBack={() => setActiveDinamicasPlanner(null)}
+        onRefreshParent={() => {
+          fetchWeeklyTasks(selectedMicro.id);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
@@ -2594,6 +2622,10 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                       >
                         <p className="text-[10px] font-black uppercase italic tracking-tight leading-tight mb-1">{task.nombre}</p>
                         <p className="text-[8px] font-bold opacity-70 uppercase tracking-widest">{task.tipoDinamica}</p>
+                        <div className="mt-2 pt-1 border-t border-white/20 flex items-center justify-between text-[8px] font-black uppercase tracking-wider opacity-80 group-hover/item:opacity-100 transition-opacity">
+                          <span>Ver Ficha Técnica</span>
+                          <i className="fa-solid fa-person-running"></i>
+                        </div>
                         <button 
                           onClick={(e) => { e.stopPropagation(); removeFieldTask(dateKey, task.id); }} 
                           className="absolute -top-1 -right-1 w-5 h-5 bg-white border border-slate-100 rounded-full text-slate-300 hover:text-red-500 hover:border-red-500 flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-all shadow-sm"
@@ -2615,6 +2647,13 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
                     <button onClick={() => { setSelectedDayIndex(i); setShowTareaFieldModal(true); }} className="w-full py-4 rounded-[20px] bg-slate-50 border border-slate-100 text-slate-400 hover:bg-[#CF1B2B] hover:text-white hover:border-[#CF1B2B] hover:shadow-lg transition-all flex items-center justify-center gap-2 group">
                       <i className="fa-solid fa-plus text-sm"></i>
                       <span className="text-[10px] font-black uppercase tracking-widest">Asignar Tarea</span>
+                    </button>
+                    <button 
+                      onClick={() => setActiveDinamicasPlanner({ dateKey, dayNumber: i + 1 })} 
+                      className="w-full py-4 rounded-[20px] bg-red-50 hover:bg-[#CF1B2B] text-red-600 hover:text-white transition-all flex items-center justify-center gap-2 border border-red-100/50 hover:border-transparent font-black text-[10px] uppercase tracking-widest"
+                    >
+                      <i className="fa-solid fa-people-group text-sm"></i>
+                      <span>Crear Dinámicas</span>
                     </button>
                   </div>
                 </div>

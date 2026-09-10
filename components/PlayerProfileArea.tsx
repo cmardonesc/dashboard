@@ -11,6 +11,7 @@ import ClubBadge from './ClubBadge';
 import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS, MatchDB, CATEGORY_ID_MAP } from '../types';
 import { FALLBACK_CLUB_NAMES, FEDERATION_LOGO } from '../constants';
 import { AthleteHuella } from './SportsScienceArea';
+import { AvatarJugador } from './AvatarJugador';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -150,7 +151,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
   const fetchPlayers = async () => {
     try {
       console.log("Fetching players in PlayerProfileArea (fallback)...");
-      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio, clubes!fk_players_clubes(nombre)');
+      let query = supabase.from('players').select('player_id, nombre, apellido1, apellido2, id_club, posicion, anio, foto_path, foto_updated_at, clubes!fk_players_clubes(nombre)');
       if (userRole === 'club') {
         if (userClubId) {
           query = query.eq('id_club', userClubId);
@@ -177,7 +178,7 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     setLoading(true);
     try {
       // 1. Basic Player Info
-      const { data: pData } = await supabase.from('players').select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion, fecha_nacimiento').eq('player_id', playerId).single();
+      const { data: pData } = await supabase.from('players').select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion, fecha_nacimiento, foto_path, foto_updated_at').eq('player_id', playerId).single();
       if (pData) {
         const pDataWithClub = { ...pData } as any;
         if (pData.player_id === 355) {
@@ -2206,12 +2207,15 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
               <div className="bg-[#0b2d6a] rounded-[40px] p-8 text-white relative overflow-hidden shadow-2xl">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
                 <div className="relative z-10 text-center">
-                  <div className="w-32 h-32 bg-slate-800 rounded-[32px] mx-auto mb-6 flex items-center justify-center border-4 border-white/5 relative shadow-2xl overflow-hidden">
-                    {profileData.foto_url ? (
-                      <img src={getDriveDirectLink(profileData.foto_url)} alt="Atleta" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                    ) : (
-                      <span className="text-4xl font-black italic opacity-20">{profileData.nombre?.charAt(0)}{profileData.apellido1?.charAt(0)}</span>
-                    )}
+                  <div className="flex justify-center mb-6">
+                    <AvatarJugador
+                      player={{
+                        ...profileData,
+                        signed_url: !profileData.foto_path && profileData.foto_url ? getDriveDirectLink(profileData.foto_url) : undefined
+                      }}
+                      size={112}
+                      className="border-4 border-white/10 shadow-2xl"
+                    />
                   </div>
                   <h3 className="text-2xl font-black uppercase tracking-tighter italic leading-none truncate">{profileData.nombre} {profileData.apellido1} {profileData.apellido2 || ''}</h3>
                   <p className="text-red-500 text-[10px] font-black uppercase tracking-widest mt-2">{profileData.posicion}</p>

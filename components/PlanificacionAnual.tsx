@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Category, CATEGORY_ID_MAP, REVERSE_CATEGORY_ID_MAP } from '../types';
+import { Category, CATEGORY_ID_MAP, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS } from '../types';
 
 interface AnnualActivity {
   id: string;
@@ -9,6 +9,11 @@ interface AnnualActivity {
   actividad: string;
   categoria?: number;
   observacion?: string;
+  isWeeklySchedule?: boolean;
+  hora?: string;
+  lugar?: string;
+  otra?: string;
+  grupo?: string;
 }
 
 const TIPO_COLORS: Record<string, string> = {
@@ -64,16 +69,53 @@ const PlanificacionAnual: React.FC<PlanificacionAnualProps> = ({ onRefresh }) =>
     const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString().split('T')[0];
 
     try {
-      const { data, error } = await supabase
-        .from('anual_activities')
-        .select('*')
-        .gte('fecha', start)
-        .lte('fecha', end);
+      const [anualRes, weeklyRes] = await Promise.all([
+        supabase
+          .from('anual_activities')
+          .select('*')
+          .gte('fecha', start)
+          .lte('fecha', end),
+        supabase
+          .from('cronograma_semanal')
+          .select('*')
+          .gte('fecha', start)
+          .lte('fecha', end)
+      ]);
 
-      if (error) throw error;
-      setActivities(data || []);
+      if (anualRes.error) throw anualRes.error;
+
+      const anualList = anualRes.data || [];
+      const weeklyList = (weeklyRes.data || [])
+        .map(w => ({
+          id: `weekly-${w.id}`,
+          db_id: w.id,
+          fecha: w.fecha,
+          actividad: w.actividad || "Sin actividad",
+          categoria: w.id_categoria,
+          observacion: [w.lugar, w.otra].filter(Boolean).join(' - ') || w.grupo || '',
+          isWeeklySchedule: true,
+          hora: w.hora,
+          lugar: w.lugar,
+          otra: w.otra,
+          grupo: w.grupo
+        }))
+        .filter(w => {
+          const act = w.actividad.toUpperCase();
+          return act.includes('ENTRENAMIENTO') || 
+                 act.includes('PARTIDO') || 
+                 act.includes('AMISTOSO') || 
+                 act.includes('SUDAMERICANO') || 
+                 act.includes('MUNDIAL') || 
+                 act.includes('TORNEO') || 
+                 act.includes('COMPETENCIA');
+        });
+
+      setActivities([
+        ...anualList,
+        ...weeklyList
+      ]);
     } catch (err) {
-      console.error("Error al cargar planificación:", err);
+      console.error("Error al cargar planificación unificada:", err);
     } finally {
       setLoading(false);
     }
@@ -107,9 +149,11 @@ const PlanificacionAnual: React.FC<PlanificacionAnualProps> = ({ onRefresh }) =>
         
         let current = new Date(start);
         while (current <= end) {
+          const offset = current.getTimezoneOffset();
+          const localCurrent = new Date(current.getTime() - (offset * 60 * 1000));
           payloads.push({
             ...basePayload,
-            fecha: current.toISOString().split('T')[0]
+            fecha: localCurrent.toISOString().split('T')[0]
           });
           current.setDate(current.getDate() + 1);
         }
@@ -209,16 +253,24 @@ const PlanificacionAnual: React.FC<PlanificacionAnualProps> = ({ onRefresh }) =>
           days.push({
             day: i,
             date: dateStr,
-            activities: activities.filter(a => 
-              a.fecha === dateStr && 
-              (!filterType || a.actividad === filterType) &&
-              (!selectedCategoryId || a.categoria === selectedCategoryId)
-            )
+            activities: activities.filter(a => {
+              if (a.fecha !== dateStr) return false;
+              
+              const isCategoryMatch = !selectedCategoryId || Number(a.categoria) === Number(selectedCategoryId);
+              if (!isCategoryMatch) return false;
+
+              if (!filterType) return true;
+              
+              const actName = (a.actividad || "").toUpperCase();
+              const fType = filterType.toUpperCase();
+              
+              return actName === fType || actName.includes(fType) || (fType === 'ENTRENAMIENTO' && actName.includes('ENTRENAMIENTO'));
+            })
           });
         }
 
     return days;
-  }, [currentDate, activities, filterType]);
+  }, [currentDate, activities, filterType, selectedCategoryId]);
 
   const monthName = currentDate.toLocaleString('es-ES', { month: 'long' }).toUpperCase();
 
@@ -451,7 +503,7 @@ const PlanificacionAnual: React.FC<PlanificacionAnualProps> = ({ onRefresh }) =>
             return (
               <div 
                 key={dayObj.date}
-                className={`relative rounded-xl md:rounded-[32px] border transition-all cursor-pointer p-2 md:p-4 group min-h-[60px] md:min-h-[110px] flex flex-col justify-between ${
+                className={`relative rounded-xl md:rounded-[32px] border transition-all cursor-pointer p-2 md:p-4 group min-h-[120px] md:min-h-[200px] flex flex-col justify-between ${
                   isSelected ? `border-red-500 ring-4 ring-red-500/5 shadow-xl ${bgColor}` : `${bgColor} ${borderColor} ${hoverBorder} hover:shadow-lg`
                 }`}
                 onClick={() => { setSelectedDay(dayObj.date); setIsDrawerOpen(true); }}
@@ -472,31 +524,46 @@ const PlanificacionAnual: React.FC<PlanificacionAnualProps> = ({ onRefresh }) =>
                   </div>
                 </div>
                 
-                <div className="flex flex-wrap gap-0.5 md:gap-1 mt-1">
-                  {dayObj.activities.slice(0, 5).map(act => (
-                    <div key={act.id} className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${TIPO_COLORS[act.actividad.toUpperCase()] || 'bg-slate-300'}`} title={act.actividad}></div>
-                  ))}
+                {/* List of activities in the calendar day block */}
+                <div className="mt-2 space-y-1.5 overflow-y-auto custom-scrollbar flex-1 max-h-[90px] md:max-h-[150px] pr-1">
+                  {dayObj.activities.slice(0, 5).map((act: any) => {
+                    const isWeekly = act.isWeeklySchedule;
+                    const catColor = CATEGORY_COLORS[act.categoria] || 'bg-slate-500';
+                    const actColor = TIPO_COLORS[act.actividad.toUpperCase()] || 'bg-slate-500';
+                    return (
+                      <div 
+                        key={act.id} 
+                        className={`p-1.5 rounded-xl border border-slate-100 flex flex-col gap-0.5 transition-all text-left overflow-hidden ${
+                          isWeekly ? 'bg-slate-50 hover:bg-slate-100' : 'bg-red-50/30 hover:bg-red-50/50'
+                        }`}
+                        title={`${act.actividad} - ${getCategoryDisplay(act.categoria)}\n${act.observacion || ''}`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1 min-w-0 flex-1">
+                            <span className={`w-1.5 h-1.5 rounded-full ${actColor} shrink-0`}></span>
+                            <span className="text-[8px] font-black uppercase text-slate-800 italic truncate leading-none">
+                              {act.actividad}
+                            </span>
+                          </div>
+                          {act.categoria && (
+                            <span className={`text-[6px] font-black text-white ${catColor} px-1.5 py-0.5 rounded uppercase tracking-tighter shrink-0`}>
+                              {getCategoryDisplay(act.categoria)}
+                            </span>
+                          )}
+                        </div>
+                        {/* Timing and details */}
+                        {(act.hora || act.observacion) && (
+                          <p className="text-[6.5px] font-bold text-slate-500 truncate pl-2 leading-none">
+                            {act.hora ? `${act.hora.substring(0, 5)} ` : ''}
+                            {act.observacion || ''}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                   {dayObj.activities.length > 5 && (
-                    <span className="text-[6px] md:text-[7px] font-black text-slate-400">+{dayObj.activities.length - 5}</span>
-                  )}
-                </div>
-
-                <div className="hidden md:block mt-1.5 space-y-1 overflow-hidden">
-                  {dayObj.activities.slice(0, 4).map(act => (
-                    <div key={act.id} className="flex items-center justify-between gap-1">
-                      <p className="text-[7px] font-black uppercase text-slate-800 italic truncate leading-none flex-1">
-                        {act.actividad}
-                      </p>
-                      {act.categoria && (
-                        <span className="text-[6px] font-black text-white bg-slate-900 px-1 py-0.5 rounded uppercase tracking-tighter shrink-0">
-                          {getCategoryDisplay(act.categoria)}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                  {dayObj.activities.length > 4 && (
-                    <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest text-center pt-1 border-t border-slate-50">
-                      + {dayObj.activities.length - 4} más
+                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest text-center pt-1">
+                      + {dayObj.activities.length - 5} más
                     </p>
                   )}
                 </div>
@@ -612,43 +679,74 @@ const PlanificacionAnual: React.FC<PlanificacionAnualProps> = ({ onRefresh }) =>
                   {calendarDays.find(d => d?.date === selectedDay)?.activities.length === 0 ? (
                     <p className="text-[10px] text-slate-300 font-bold uppercase italic text-center py-10">Sin actividades agendadas.</p>
                   ) : (
-                    calendarDays.find(d => d?.date === selectedDay)?.activities.map(act => (
-                      <div 
-                        key={act.id} 
-                        className={`bg-slate-50 p-4 rounded-[24px] border flex items-center justify-between group cursor-pointer transition-all ${editingActivityId === act.id ? 'border-blue-500 bg-blue-50' : 'border-slate-100 hover:bg-white hover:shadow-lg'}`}
-                        onClick={() => startEditing(act)}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className={`w-2 h-10 rounded-full ${TIPO_COLORS[act.actividad.toUpperCase()] || 'bg-slate-300'}`}></div>
-                          <div>
-                            <p className="text-[11px] font-black text-slate-900 uppercase italic tracking-tight">
-                              {act.actividad}
-                            </p>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                              {getCategoryDisplay(act.categoria)}
-                            </p>
+                    calendarDays.find(d => d?.date === selectedDay)?.activities.map(act => {
+                      const isWeekly = act.isWeeklySchedule;
+                      return (
+                        <div 
+                          key={act.id} 
+                          className={`bg-slate-50 p-4 rounded-[24px] border flex items-center justify-between group transition-all ${
+                            editingActivityId === act.id 
+                              ? 'border-blue-500 bg-blue-50' 
+                              : isWeekly 
+                                ? 'border-slate-100 hover:bg-slate-100/50' 
+                                : 'border-slate-100 hover:bg-white hover:shadow-lg cursor-pointer'
+                          }`}
+                          onClick={() => {
+                            if (!isWeekly) startEditing(act);
+                          }}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className={`w-2 h-10 rounded-full ${TIPO_COLORS[act.actividad.toUpperCase()] || 'bg-slate-300'}`}></div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-[11px] font-black text-slate-900 uppercase italic tracking-tight">
+                                  {act.actividad}
+                                </p>
+                                {isWeekly && (
+                                  <span className="text-[7px] font-black bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                    Semanal
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                                {getCategoryDisplay(act.categoria)}
+                              </p>
+                              {act.observacion && (
+                                <p className="text-[8px] font-bold text-slate-500 mt-1">
+                                  {act.observacion}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            {!isWeekly ? (
+                              <>
+                                <button 
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); startEditing(act); }} 
+                                  className="w-8 h-8 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                                  title="Editar"
+                                >
+                                  <i className="fa-solid fa-pen text-[10px]"></i>
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={(e) => handleDeleteActivity(act.id, e)} 
+                                  className="w-8 h-8 rounded-xl bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                                  title="Eliminar"
+                                >
+                                  <i className="fa-solid fa-trash-can text-[10px]"></i>
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-[8px] font-black uppercase text-slate-400 tracking-wider pr-2">
+                                Solo Lectura
+                              </span>
+                            )}
                           </div>
                         </div>
-                        <div className="flex gap-2">
-                          <button 
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); startEditing(act); }} 
-                            className="w-8 h-8 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all shadow-sm"
-                            title="Editar"
-                          >
-                            <i className="fa-solid fa-pen text-[10px]"></i>
-                          </button>
-                          <button 
-                            type="button"
-                            onClick={(e) => handleDeleteActivity(act.id, e)} 
-                            className="w-8 h-8 rounded-xl bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
-                            title="Eliminar"
-                          >
-                            <i className="fa-solid fa-trash-can text-[10px]"></i>
-                          </button>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </section>

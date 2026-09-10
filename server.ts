@@ -168,6 +168,123 @@ async function startServer() {
       res.status(500).json({ error: err.message });
     }
   });
+
+  // --- DINAMICAS PLANIFICACIONES ENDPOINTS ---
+  const planificacionesFile = path.join(process.cwd(), 'data', 'dinamicas_planificaciones.json');
+
+  // Asegurar que exista la carpeta data
+  try {
+    const dir = path.dirname(planificacionesFile);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  } catch (err) {
+    console.error("Error creating data directory:", err);
+  }
+
+  // Helper para leer planificaciones
+  const readPlanificaciones = (): any => {
+    try {
+      if (fs.existsSync(planificacionesFile)) {
+        const content = fs.readFileSync(planificacionesFile, 'utf8');
+        return JSON.parse(content || '{}');
+      }
+    } catch (err) {
+      console.error("Error reading planificaciones file:", err);
+    }
+    return {};
+  };
+
+  // Helper para escribir planificaciones
+  const writePlanificaciones = (data: any): boolean => {
+    try {
+      fs.writeFileSync(planificacionesFile, JSON.stringify(data, null, 2), 'utf8');
+      return true;
+    } catch (err) {
+      console.error("Error writing planificaciones file:", err);
+      return false;
+    }
+  };
+
+  // GET /api/dinamicas-planificaciones
+  app.get("/api/dinamicas-planificaciones", (req, res) => {
+    try {
+      const data = readPlanificaciones();
+      const { microcycleId, dateKey } = req.query;
+
+      if (microcycleId && dateKey) {
+        const mcData = data[String(microcycleId)] || {};
+        const dayData = mcData[String(dateKey)] || [];
+        return res.json(dayData);
+      } else if (microcycleId) {
+        const mcData = data[String(microcycleId)] || {};
+        return res.json(mcData);
+      }
+
+      res.json(data);
+    } catch (err: any) {
+      console.error("Error in GET /api/dinamicas-planificaciones:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/dinamicas-planificaciones
+  app.post("/api/dinamicas-planificaciones", (req, res) => {
+    try {
+      const { microcycleId, dateKey, assignments } = req.body;
+      if (!microcycleId || !dateKey) {
+        return res.status(400).json({ error: "Missing microcycleId or dateKey" });
+      }
+
+      const data = readPlanificaciones();
+      if (!data[String(microcycleId)]) {
+        data[String(microcycleId)] = {};
+      }
+
+      data[String(microcycleId)][String(dateKey)] = assignments || [];
+      const success = writePlanificaciones(data);
+
+      if (!success) {
+        return res.status(500).json({ error: "Failed to write data file" });
+      }
+
+      res.json({ success: true, message: "Planning saved successfully" });
+    } catch (err: any) {
+      console.error("Error in POST /api/dinamicas-planificaciones:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/dinamicas-planificaciones/duplicate
+  app.post("/api/dinamicas-planificaciones/duplicate", (req, res) => {
+    try {
+      const { microcycleId, sourceDateKey, targetDateKey } = req.body;
+      if (!microcycleId || !sourceDateKey || !targetDateKey) {
+        return res.status(400).json({ error: "Missing required params: microcycleId, sourceDateKey, targetDateKey" });
+      }
+
+      const data = readPlanificaciones();
+      const mcData = data[String(microcycleId)] || {};
+      const sourceAssignments = mcData[String(sourceDateKey)] || [];
+
+      if (!data[String(microcycleId)]) {
+        data[String(microcycleId)] = {};
+      }
+
+      // Duplicar assignments
+      data[String(microcycleId)][String(targetDateKey)] = JSON.parse(JSON.stringify(sourceAssignments));
+      const success = writePlanificaciones(data);
+
+      if (!success) {
+        return res.status(500).json({ error: "Failed to write data file" });
+      }
+
+      res.json({ success: true, message: "Planning duplicated successfully" });
+    } catch (err: any) {
+      console.error("Error in POST /api/dinamicas-planificaciones/duplicate:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
  
   // ✅ ACTIVITIES ENDPOINT - bakestatus con filtros flexibles
   app.get("/api/catapult/activities", async (req, res) => {

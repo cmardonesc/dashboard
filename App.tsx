@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useState, useCallback } from 'react'
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { LEGACY_EMAIL_MAPPING } from './lib/legacyMapping'
 import { normalizeClub, getDriveDirectLink } from './lib/utils'
@@ -38,10 +38,34 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [showTimeoutControls, setShowTimeoutControls] = useState(false)
   const [playersLoading, setPlayersLoading] = useState(true)
-  const [role, setRole] = useState<Role>(null)
-  const [userClub, setUserClub] = useState<string | null>(null)
-  const [userClubId, setUserClubId] = useState<number | null>(null)
-  const [linkedPlayerId, setLinkedPlayerId] = useState<number | null>(null)
+  const [role, setRole] = useState<Role>(() => {
+    try {
+      const cached = localStorage.getItem('lr-performance-ui-cache');
+      if (cached) return JSON.parse(cached).role || null;
+    } catch (e) {}
+    return null;
+  });
+  const [userClub, setUserClub] = useState<string | null>(() => {
+    try {
+      const cached = localStorage.getItem('lr-performance-ui-cache');
+      if (cached) return JSON.parse(cached).userClub || null;
+    } catch (e) {}
+    return null;
+  });
+  const [userClubId, setUserClubId] = useState<number | null>(() => {
+    try {
+      const cached = localStorage.getItem('lr-performance-ui-cache');
+      if (cached) return JSON.parse(cached).userClubId || null;
+    } catch (e) {}
+    return null;
+  });
+  const [linkedPlayerId, setLinkedPlayerId] = useState<number | null>(() => {
+    try {
+      const cached = localStorage.getItem('lr-performance-ui-cache');
+      if (cached) return JSON.parse(cached).linkedPlayerId || null;
+    } catch (e) {}
+    return null;
+  });
   const [sessionUser, setSessionUser] = useState<any>(null)
   const [activeMenu, setActiveMenu] = useState<MenuId>('inicio')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -101,8 +125,17 @@ export default function App() {
     }
   }, [userClub, dbClubs, userClubId]);
 
+  const activeFetchRef = useRef<{ key: string; promise: Promise<any> } | null>(null);
+
   const fetchPerformanceData = useCallback(async (userRole: Role, pId: number | null) => {
-    try {
+    const cacheKey = `${userRole}-${pId}`;
+    if (activeFetchRef.current && activeFetchRef.current.key === cacheKey) {
+      console.log(`[fetchPerformanceData] Compartiendo consulta en curso para key: ${cacheKey}`);
+      return activeFetchRef.current.promise;
+    }
+
+    const runFetch = async () => {
+      try {
       let wellnessQuery = supabase.from('wellness_checkin').select('*');
       let loadsQuery = supabase.from('internal_load').select('*');
       let gpsQuery = supabase.from('gps_tareas').select('*');
@@ -371,6 +404,18 @@ export default function App() {
         console.error("Error cargando mock secundario:", mockErr);
       }
     }
+  };
+
+    const promise = runFetch();
+    activeFetchRef.current = { key: cacheKey, promise };
+    try {
+      await promise;
+    } finally {
+      if (activeFetchRef.current && activeFetchRef.current.key === cacheKey) {
+        activeFetchRef.current = null;
+      }
+    }
+    return promise;
   }, []);
 
   const fetchRealPlayers = useCallback(async () => {
@@ -740,455 +785,153 @@ export default function App() {
     await supabase.auth.signOut().catch((err: any) => console.warn("Supabase auth signOut error:", err));
   };
 
-  // Sincronizar sesión activa a localStorage en cada cambio de variables críticas
+  // Sincronizar datos rápidos de interfaz no sensibles a localStorage
   useEffect(() => {
-    if (sessionUser && role) {
-      try {
-        supabase.auth.getSession().then(({ data }) => {
-          const customSession = {
-            sessionUser,
-            role,
-            userClub,
-            userClubId,
-            linkedPlayerId,
-            supabaseSession: data?.session ? {
-              access_token: data.session.access_token,
-              refresh_token: data.session.refresh_token
-            } : null
-          };
-          localStorage.setItem('lr-performance-auth-session', JSON.stringify(customSession));
-        }).catch(err => {
-          console.error("Error obteniendo sesión de Supabase para sincronizar:", err);
-          const customSession = {
-            sessionUser,
-            role,
-            userClub,
-            userClubId,
-            linkedPlayerId
-          };
-          localStorage.setItem('lr-performance-auth-session', JSON.stringify(customSession));
-        });
-      } catch (e) {
-        console.error("Error guardando sesión en localStorage:", e);
-      }
-    }
-  }, [sessionUser, role, userClub, userClubId, linkedPlayerId]);
-
-  useEffect(() => {
-    let isMounted = true
-    
-    // Temporizador de seguridad: Si después de 10 segundos sigue cargando, forzamos la entrada
-    const safetyTimer = setTimeout(() => {
-      if (isMounted && loading) {
-        console.warn("Tiempo de espera de carga excedido (10s), forzando visualización de la interfaz. Verifica tu conexión o credenciales.");
-        setLoading(false);
-      }
-    }, 10000);
-
-    // Temporizador de 5 segundos para mostrar botones de Reintentar / Cerrar Sesión
-    const timeoutTimer = setTimeout(() => {
-      if (isMounted && loading) {
-        setShowTimeoutControls(true);
-      }
-    }, 5000);
-
-    const initialize = async () => {
-      try {
-        const isRecoveryInUrl = window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery');
-        if (isRecoveryInUrl) {
-          console.log("Password recovery detected in URL on load!");
-          setIsRecoveryMode(true);
-          setLoading(false);
-          clearTimeout(safetyTimer);
-          clearTimeout(timeoutTimer);
-          return;
-        }
-
-        let hasRestored = false;
-        try {
-          const stored = localStorage.getItem('lr-performance-auth-session');
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (parsed && parsed.sessionUser) {
-              setSessionUser(parsed.sessionUser);
-              setRole(parsed.role);
-              setUserClub(parsed.userClub);
-              if (parsed.userClubId) setUserClubId(parsed.userClubId);
-              setLinkedPlayerId(parsed.linkedPlayerId);
-              hasRestored = true;
-              console.log("Sesión restaurada desde localStorage con rol:", parsed.role);
-              
-              // Cargar listado de jugadores en segundo plano solo si no es un jugador
-              if (parsed.role && parsed.role !== 'player') {
-                fetchRealPlayers().catch(err => console.error("Error cargando jugadores restaurados:", err));
-              }
-              
-              // Restaurar sesión activa de Supabase si está disponible
-              if (parsed.supabaseSession?.access_token && parsed.supabaseSession?.refresh_token) {
-                console.log("Restaurando sesión de autenticación de Supabase...");
-                try {
-                  await supabase.auth.setSession({
-                    access_token: parsed.supabaseSession.access_token,
-                    refresh_token: parsed.supabaseSession.refresh_token
-                  });
-                  console.log("✅ Sesión de autenticación de Supabase restaurada exitosamente.");
-                } catch (sessErr) {
-                  console.error("Error al establecer la sesión restaurada de Supabase:", sessErr);
-                }
-              }
-              
-              // Cargar de inmediato los datos correspondientes en segundo plano
-              fetchPerformanceData(parsed.role, parsed.linkedPlayerId).catch(e => console.error("Error cargando datos de rendimiento restaurados:", e));
-            }
-          }
-        } catch (e) {
-          console.error("Error restaurando sesión desde localStorage:", e);
-        }
-
-        let session = null;
-        try {
-          const { data, error } = await supabase.auth.getSession();
-          if (error) {
-            console.error("Error obteniendo sesión de Supabase:", error.message);
-            if (error.message?.includes("Refresh Token") || error.message?.includes("refresh_token") || error.message?.includes("token") || error.message?.includes("fetch")) {
-              console.warn("Invalid session token or fetch error, cleaning local auth keys...");
-              localStorage.removeItem('lr-performance-auth-v1');
-              localStorage.removeItem('lr-performance-auth-session');
-              await supabase.auth.signOut().catch(() => {});
-            }
-          } else {
-            session = data?.session;
-          }
-        } catch (authErr: any) {
-          console.error("Excepción al obtener la sesión de Supabase:", authErr);
-          const errMsg = authErr?.message || String(authErr);
-          if (errMsg.includes("Refresh Token") || errMsg.includes("refresh_token") || errMsg.includes("token") || errMsg.includes("fetch")) {
-            console.warn("Exception with session token or fetch, cleaning local auth keys...");
-            localStorage.removeItem('lr-performance-auth-v1');
-            localStorage.removeItem('lr-performance-auth-session');
-            await supabase.auth.signOut().catch(() => {});
-          }
-        }
-
-        console.log("Sesión obtenida de Supabase:", session ? "Activa" : "Ninguna");
-
-        if (!isMounted) return
-        if (session) {
-          // Si no habíamos restaurado, o si la sesión de Supabase contiene un id diferente, actualizamos
-          if (!hasRestored || session.user.id !== sessionUser?.id) {
-            setSessionUser(session.user)
-            let userData = await fetchUserData(session.user.id, session.user.email)
-            
-            // RECOVERY: Si el perfil completo no existe pero el metadata sí (sesión activa)
-            if (!userData.role && session.user.user_metadata?.role) {
-              console.log("Recuperando perfil completo desde metadata de sesión activa...");
-              userData = {
-                role: session.user.user_metadata.role,
-                player_id: session.user.user_metadata.player_id ? Number(session.user.user_metadata.player_id) : null,
-                club_name: session.user.user_metadata.club_name || null,
-                email: session.user.email || null
-              };
-              try {
-                await supabase.from('profiles').upsert({
-                  id: session.user.id,
-                  role: userData.role,
-                  player_id: userData.player_id,
-                  club_name: userData.club_name
-                });
-              } catch (e) {
-                console.error("Error creando perfil desde metadata en initialize:", e);
-              }
-            } else if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
-              const recoveredId = Number(session.user.user_metadata.player_id);
-              console.log("Recuperando player_id desde metadata:", recoveredId);
-              await supabase.from('profiles').upsert({
-                id: session.user.id,
-                player_id: recoveredId,
-                role: 'player',
-                club_name: userData.club_name
-              });
-              userData.player_id = recoveredId;
-            }
-
-            if (isMounted) {
-              setRole(userData.role)
-              setUserClub(userData.club_name)
-              setLinkedPlayerId(userData.player_id)
-              
-              // Cargar listado de jugadores en segundo plano solo si no es un jugador
-              if (userData.role && userData.role !== 'player') {
-                fetchRealPlayers().catch(err => console.error("Error cargando jugadores desde sesión:", err));
-              }
-              
-              // Si tenemos club_name pero no ID, intentamos recuperarlo de la tabla clubes
-              if (userData.club_name) {
-                supabase.from('clubes').select('id_club').eq('nombre', userData.club_name).maybeSingle()
-                  .then(({data}) => { if (data) setUserClubId(data.id_club); });
-              }
-
-              fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error("Error cargando datos de rendimiento:", e));
-            }
-          }
-        } else {
-          // Si no hay sesión de Supabase, pero teníamos una sesión restaurada, la protegemos. 
-          // Si no teníamos sesión restaurada, nos aseguramos de que todo esté limpio.
-          if (!hasRestored) {
-            setSessionUser(null)
-            setRole(null)
-            setUserClub(null)
-            setUserClubId(null)
-            setLinkedPlayerId(null)
-            setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
-          }
-        }
-      } catch (err) {
-        console.error("Error crítico durante la inicialización:", err)
-      } finally {
-        if (isMounted) {
-          setLoading(false)
-          clearTimeout(safetyTimer);
-          clearTimeout(timeoutTimer);
-        }
-      }
-    }
-
-    initialize()
-    
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!isMounted) return
-
-      if (event === 'PASSWORD_RECOVERY') {
-        setIsRecoveryMode(true);
-        if (session) {
-          setSessionUser(session.user);
-        }
-        return;
-      }
-
-      if (event === 'SIGNED_OUT') {
-        try {
-          localStorage.removeItem('lr-performance-auth-session');
-        } catch (e) {
-          console.error(e);
-        }
-        setSessionUser(null)
-        setRole(null)
-        setUserClub(null)
-        setUserClubId(null)
-        setLinkedPlayerId(null)
-        setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
-        setActiveMenu('inicio');
-        return;
-      }
-
-      if (session) {
-        setSessionUser(session.user)
-
-        // SUPERADMIN OVERRIDE
-        const emailLower = session.user.email?.toLowerCase();
-        if (emailLower === 'mardones.camilo@gmail.com' || emailLower === 'cmardones@anfpchile.cl') {
-          setRole('admin');
-          setLinkedPlayerId(null);
-          fetchRealPlayers().catch(e => console.error("Error loading players (Admin):", e));
-          fetchPerformanceData('admin', null).catch(e => console.error(e));
-          return;
-        }
-
-        // CLUB OVERRIDES
-        const clubOverrides: Record<string, string> = {
-          'ohiggins@anfp.cl': 'O\'Higgins',
-          'colocolo@anfp.cl': 'Colo-Colo',
-          'udechile@anfp.cl': 'Universidad de Chile',
-          'ucatolica@anfp.cl': 'Universidad Católica'
-        };
-
-        if (emailLower && clubOverrides[emailLower]) {
-          setRole('club');
-          setUserClub(clubOverrides[emailLower]);
-          setLinkedPlayerId(null);
-          fetchRealPlayers().catch(e => console.error("Error loading players (Club override):", e));
-          fetchPerformanceData('club', null).catch(e => console.error(e));
-          return;
-        }
-
-        let userData = await fetchUserData(session.user.id, session.user.email)
-        
-        // RECOVERY: Si el perfil completo no existe pero el metadata sí (sesión activa)
-        if (!userData.role && session.user.user_metadata?.role) {
-          console.log("onAuthStateChange: Recuperando perfil completo desde metadata de sesión activa...");
-          userData = {
-            role: session.user.user_metadata.role,
-            player_id: session.user.user_metadata.player_id ? Number(session.user.user_metadata.player_id) : null,
-            club_name: session.user.user_metadata.club_name || null,
-            email: session.user.email || null
-          };
-          try {
-            await supabase.from('profiles').upsert({
-              id: session.user.id,
-              role: userData.role,
-              player_id: userData.player_id,
-              club_name: userData.club_name
-            });
-          } catch (e) {
-            console.error("onAuthStateChange: Error creando perfil desde metadata:", e);
-          }
-        } else if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
-          const recoveredId = Number(session.user.user_metadata.player_id);
-          console.log("onAuthStateChange: Recuperando player_id desde metadata:", recoveredId);
-          await supabase.from('profiles').upsert({
-            id: session.user.id,
-            player_id: recoveredId,
-            role: 'player',
-            club_name: userData.club_name
-          });
-          userData.player_id = recoveredId;
-        }
-
-        if (isMounted) {
-          setRole(userData.role)
-          setUserClub(userData.club_name)
-          setLinkedPlayerId(userData.player_id)
-          
-          if (userData.role && userData.role !== 'player') {
-            fetchRealPlayers().catch(err => console.error("Error loading players from state change:", err));
-          }
-          
-          fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error(e));
-        }
+    try {
+      if (role || userClub || userClubId || linkedPlayerId) {
+        localStorage.setItem('lr-performance-ui-cache', JSON.stringify({
+          role,
+          userClub,
+          userClubId,
+          linkedPlayerId
+        }));
       } else {
-        // Solo limpiar si no hay una sesión restaurada/iniciada previamente
-        const stored = localStorage.getItem('lr-performance-auth-session');
-        if (!stored) {
-          setSessionUser(null)
-          setRole(null)
-          setUserClub(null)
-          setLinkedPlayerId(null)
-          setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
-          setActiveMenu('inicio');
-        }
+        localStorage.removeItem('lr-performance-ui-cache');
       }
-    })
-
-    return () => {
-      isMounted = false
-      clearTimeout(safetyTimer);
-      clearTimeout(timeoutTimer);
-      authListener.subscription.unsubscribe()
+    } catch (e) {
+      console.error("Error guardando lr-performance-ui-cache:", e);
     }
-  }, [fetchPerformanceData])
+  }, [role, userClub, userClubId, linkedPlayerId]);
 
-  const handleLoginSuccess = async (session: any) => {
-    console.log("Manejando éxito de login...", session.user.email);
-    setSessionUser(session.user);
-    setActiveMenu('inicio');
-    
-    // Mostrar loading mientras buscamos el rol para dar feedback visual
+  const armLoadingWatchdog = useCallback(() => {
     setLoading(true);
     setShowTimeoutControls(false);
 
-    const emailLower = session.user.email?.toLowerCase();
-    // SUPERADMIN / ADMIN OVERRIDE
-    if (emailLower === 'mardones.camilo@gmail.com' || emailLower === 'cmardones@anfpchile.cl') {
-      console.log("Admin detectado. Forzando rol de ADMIN.");
-      setRole('admin');
-      setLinkedPlayerId(null);
-      fetchRealPlayers().catch(err => console.error("Error loading players (Admin override):", err));
-      fetchPerformanceData('admin', null).catch(console.error);
-      logActivity('Inicio de Sesión (Admin)', { email: emailLower });
-      setLoading(false);
-      return;
-    }
+    const timer5s = setTimeout(() => {
+      setShowTimeoutControls(true);
+    }, 5000);
 
-    // MANUAL STAFF OVERRIDE (Bypass for email issues)
-    if (emailLower === 'ifabres@anfpchile.cl') {
-      console.log("Staff manual detectado. Forzando rol de STAFF.");
-      setRole('staff');
-      setLinkedPlayerId(null);
-      fetchRealPlayers().catch(err => console.error("Error loading players (Staff override):", err));
-      fetchPerformanceData('staff', null).catch(console.error);
-      logActivity('Inicio de Sesión (Staff)', { email: emailLower });
+    const timer10s = setTimeout(() => {
+      console.warn("Watchdog: Tiempo de espera de carga excedido (10s), forzando visualización de la interfaz.");
       setLoading(false);
-      return;
-    }
+    }, 10000);
 
-    // CLUB OVERRIDES (Bypass for demo/clubs)
-    const clubOverrides: Record<string, string> = {
-      'ohiggins@anfp.cl': 'O\'Higgins',
-      'colocolo@anfp.cl': 'Colo-Colo',
-      'udechile@anfp.cl': 'Universidad de Chile',
-      'ucatolica@anfp.cl': 'Universidad Católica'
+    return () => {
+      clearTimeout(timer5s);
+      clearTimeout(timer10s);
     };
+  }, []);
 
-    if (emailLower && clubOverrides[emailLower]) {
-      console.log(`Club ${clubOverrides[emailLower]} detectado. Forzando rol de CLUB.`);
-      setRole('club');
-      setUserClub(clubOverrides[emailLower]);
-      setLinkedPlayerId(null);
-      fetchRealPlayers().catch(err => console.error("Error loading players (Club override):", err));
-      fetchPerformanceData('club', null).catch(console.error);
-      logActivity('Inicio de Sesión (Club)', { email: emailLower, club: clubOverrides[emailLower] });
-      setLoading(false);
-      return;
-    }
+  const resolvingUserRef = useRef<string | null>(null);
 
-    // CHECK FOR TABLE-BASED CLUB LOGIN (isTableLogin flag)
-    if (session.user.isTableLogin) {
-      console.log(`Login de club desde tabla detectado: ${session.user.clubName}`);
-      setRole('club');
-      setUserClub(session.user.clubName);
-      setUserClubId(session.user.idClub);
-      setLinkedPlayerId(null);
-      fetchRealPlayers().catch(err => console.error("Error loading players (Club table override):", err));
-      fetchPerformanceData('club', null).catch(console.error);
-      logActivity('Inicio de Sesión (Club - Tabla)', { username: emailLower, club: session.user.clubName });
-      setLoading(false);
+  const resolveUserAndLoad = useCallback(async (session: any) => {
+    if (!session?.user) return;
+    
+    const userId = session.user.id;
+    if (resolvingUserRef.current === userId) {
+      console.log(`[resolveUserAndLoad] Ya se está resolviendo el usuario ${userId}, ignorando llamada concurrente.`);
       return;
     }
     
+    resolvingUserRef.current = userId;
+    console.log(`[resolveUserAndLoad] Iniciando resolución unificada para usuario: ${userId}`);
+
     try {
+      setSessionUser(session.user);
+
+      const emailLower = session.user.email?.toLowerCase();
+
+      // 1. SUPERADMIN OVERRIDE
+      if (emailLower === 'mardones.camilo@gmail.com' || emailLower === 'cmardones@anfpchile.cl') {
+        setRole('admin');
+        setLinkedPlayerId(null);
+        await Promise.all([
+          fetchRealPlayers().catch(e => console.error("Error loading players (Admin):", e)),
+          fetchPerformanceData('admin', null).catch(e => console.error(e))
+        ]);
+        if (typeof logActivity === 'function') logActivity('Inicio de Sesión (Admin)', { email: emailLower });
+        return;
+      }
+
+      // 2. STAFF MANUAL OVERRIDE
+      if (emailLower === 'ifabres@anfpchile.cl') {
+        setRole('staff');
+        setLinkedPlayerId(null);
+        await Promise.all([
+          fetchRealPlayers().catch(e => console.error("Error loading players (Staff manual override):", e)),
+          fetchPerformanceData('staff', null).catch(e => console.error(e))
+        ]);
+        if (typeof logActivity === 'function') logActivity('Inicio de Sesión (Staff Manual)', { email: emailLower });
+        return;
+      }
+
+      // 3. CLUB OVERRIDES
+      const clubOverrides: Record<string, string> = {
+        'ohiggins@anfp.cl': "O'Higgins",
+        'colocolo@anfp.cl': 'Colo-Colo',
+        'udechile@anfp.cl': 'Universidad de Chile',
+        'ucatolica@anfp.cl': 'Universidad Católica'
+      };
+
+      if (emailLower && clubOverrides[emailLower]) {
+        const clubName = clubOverrides[emailLower];
+        setRole('club');
+        setUserClub(clubName);
+        setLinkedPlayerId(null);
+        await Promise.all([
+          fetchRealPlayers().catch(e => console.error("Error loading players (Club override):", e)),
+          fetchPerformanceData('club', null).catch(e => console.error(e))
+        ]);
+        if (typeof logActivity === 'function') logActivity('Inicio de Sesión (Club)', { email: emailLower, club: clubName });
+        return;
+      }
+
+      // 4. TABLE-BASED CLUB LOGIN
+      if (session.user.isTableLogin) {
+        setRole('club');
+        setUserClub(session.user.clubName);
+        setUserClubId(session.user.idClub);
+        setLinkedPlayerId(null);
+        await Promise.all([
+          fetchRealPlayers().catch(e => console.error("Error loading players (Club table):", e)),
+          fetchPerformanceData('club', null).catch(e => console.error(e))
+        ]);
+        if (typeof logActivity === 'function') logActivity('Inicio de Sesión (Club - Tabla)', { username: emailLower, club: session.user.clubName });
+        return;
+      }
+
+      // 5. REGULAR DATABASE RESOLUTION
       let userData = await fetchUserData(session.user.id, session.user.email);
-      console.log("Datos de usuario obtenidos:", userData);
-      
-      // NUEVO: RECOVERY FROM LEGACY CSV MAPPING
-      const emailMatch = session.user.email?.toLowerCase();
-      if (emailMatch && LEGACY_EMAIL_MAPPING[emailMatch]) {
-        const legacyPlayerId = LEGACY_EMAIL_MAPPING[emailMatch];
-        console.log(`Mapeo legacy detectado para ${emailMatch}: player_id ${legacyPlayerId}`);
-        
-        if (!userData.role) {
-          userData.role = 'player';
-        }
-        
+
+      // Legacy CSV mapping recovery
+      if (emailLower && LEGACY_EMAIL_MAPPING[emailLower]) {
+        const legacyPlayerId = LEGACY_EMAIL_MAPPING[emailLower];
+        if (!userData.role) userData.role = 'player';
         if (!userData.player_id) {
-          console.log(`Auto-vinculando player_id legacy ${legacyPlayerId}`);
           userData.player_id = legacyPlayerId;
-          // Persistir vínculo en DB de forma asíncrona
           supabase.from('profiles').upsert({
              id: session.user.id,
              role: userData.role,
              player_id: legacyPlayerId
-          }).then(({error}) => {
+          }).then(({ error }) => {
              if (error) console.error("Error persistiendo mapeo legacy:", error);
           });
         }
       }
 
-      // DOMAIN-BASED AUTO ASSIGNMENT (Staff/Official domains)
+      // Domain-based auto-assignment
       if (!userData.role && emailLower && (emailLower.endsWith('@anfpchile.cl') || emailLower.endsWith('@anfp.cl'))) {
-        console.log("Dominio oficial detectado sin rol. Asignando STAFF.");
         userData.role = 'staff';
       }
 
-      // RECOVERY BY EMAIL: Buscar si hay uno con el mismo metadata o ID
+      // Recovery by email / ID in profiles table
       if (!userData.role && session.user.email) {
         const { data: altProfile } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', session.user.id)
           .maybeSingle();
-        
         if (altProfile) {
-          console.log("¡Vínculo recuperado!", altProfile);
           userData = {
             role: altProfile.role as Role,
             player_id: altProfile.player_id,
@@ -1197,12 +940,11 @@ export default function App() {
           };
         }
       }
-
-      // RECOVERY / MOCK HANDLING: Si el perfil no tiene rol (sesión activa)
+      
+      // Recovery from session metadata
       if (!userData.role && session.user.user_metadata?.role) {
-        console.log("Usando rol desde metadata:", session.user.user_metadata.role);
         userData = {
-          role: session.user.user_metadata.role,
+          role: session.user.user_metadata.role as Role,
           player_id: session.user.user_metadata.player_id ? Number(session.user.user_metadata.player_id) : null,
           club_name: session.user.user_metadata.club_name || null,
           email: session.user.email || null
@@ -1215,11 +957,10 @@ export default function App() {
             club_name: userData.club_name
           });
         } catch (e) {
-          console.error("Error creando perfil desde metadata en handleLoginSuccess:", e);
+          console.error("resolveUserAndLoad: Error creando perfil desde metadata:", e);
         }
       } else if (userData.role === 'player' && !userData.player_id && session.user.user_metadata?.player_id) {
         const recoveredId = Number(session.user.user_metadata.player_id);
-        console.log("Recuperando player_id desde metadata en login:", recoveredId);
         await supabase.from('profiles').upsert({
           id: session.user.id,
           player_id: recoveredId,
@@ -1228,37 +969,258 @@ export default function App() {
         });
         userData.player_id = recoveredId;
       }
-      
+
+      // 6. APPLY FINAL RESOLVED VALUES
       if (userData.role) {
         setRole(userData.role);
         setUserClub(userData.club_name);
         setLinkedPlayerId(userData.player_id);
         
-        // Resolver ID del club si existe
         if (userData.club_name) {
-           const { data: cData } = await supabase.from('clubes').select('id_club').eq('nombre', userData.club_name).maybeSingle();
-           if (cData) setUserClubId(cData.id_club);
+          supabase.from('clubes').select('id_club').eq('nombre', userData.club_name).maybeSingle()
+            .then(({data}) => { if (data) setUserClubId(data.id_club); });
         }
 
-        // Cargar listado de jugadores si es rol Staff/Admin/Club
+        const promises: Promise<any>[] = [];
         if (userData.role !== 'player') {
-          fetchRealPlayers().catch(err => console.error("Error cargando jugadores en login exitoso:", err));
+          promises.push(fetchRealPlayers().catch(err => console.error("Error loading players:", err)));
         }
-
-        // Cargar datos iniciales
-        fetchPerformanceData(userData.role, userData.player_id).catch(console.error);
-        logActivity(`Inicio de Sesión (${userData.role})`, { email: emailLower, playerId: userData.player_id });
+        promises.push(fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error("Error loading performance data:", e)));
+        
+        await Promise.all(promises);
+        if (typeof logActivity === 'function') logActivity(`Inicio de Sesión (${userData.role})`, { email: emailLower, playerId: userData.player_id });
       } else {
-        console.warn("Usuario sin rol en tabla profiles. Asignando rol 'player' por defecto.");
-        // Fallback: si no tiene perfil, lo tratamos como jugador nuevo
-        setRole('player'); 
-        logActivity('Inicio de Sesión (Nuevo Jugador)', { email: emailLower });
+        // Fallback: si no tiene perfil, lo tratamos como jugador nuevo por defecto
+        setRole('player');
+        if (typeof logActivity === 'function') logActivity('Inicio de Sesión (Nuevo Jugador)', { email: emailLower });
       }
-    } catch (error) {
-      console.error("Error en handleLoginSuccess:", error);
+
+    } catch (err) {
+      console.error("[resolveUserAndLoad] Error crítico resolviendo usuario y cargando datos:", err);
       setRole('player'); // Fallback de seguridad
     } finally {
+      resolvingUserRef.current = null;
       setLoading(false);
+    }
+  }, [fetchRealPlayers, fetchPerformanceData]);
+
+  useEffect(() => {
+    let isMounted = true;
+    let disarmWatchdog: (() => void) | null = null;
+
+    const initialize = async () => {
+      disarmWatchdog = armLoadingWatchdog();
+      try {
+        const isRecoveryInUrl = window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery');
+        if (isRecoveryInUrl) {
+          console.log("Password recovery detected in URL on load!");
+          setIsRecoveryMode(true);
+          setLoading(false);
+          if (disarmWatchdog) disarmWatchdog();
+          return;
+        }
+
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error("Error obteniendo sesión de Supabase:", error.message);
+          const lowerMsg = error.message?.toLowerCase() || "";
+          if (lowerMsg.includes("refresh token") || lowerMsg.includes("not found") || lowerMsg.includes("token") || lowerMsg.includes("fetch") || lowerMsg.includes("invalid") || lowerMsg.includes("expired")) {
+            console.warn("Invalid session token or fetch error, cleaning local auth keys...");
+            localStorage.removeItem('lr-performance-auth-v1');
+            localStorage.removeItem('lr-performance-ui-cache');
+            await supabase.auth.signOut().catch(() => {});
+          }
+        }
+
+        const session = data?.session;
+        console.log("Sesión obtenida de Supabase:", session ? "Activa" : "Ninguna");
+
+        if (isMounted) {
+          if (session) {
+            await resolveUserAndLoad(session);
+          } else {
+            setSessionUser(null);
+            setRole(null);
+            setUserClub(null);
+            setUserClubId(null);
+            setLinkedPlayerId(null);
+            setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
+            setLoading(false);
+          }
+        }
+      } catch (err) {
+        console.error("Error crítico durante la inicialización:", err);
+      } finally {
+        if (isMounted && disarmWatchdog) {
+          disarmWatchdog();
+        }
+      }
+    };
+
+    initialize();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+        if (session) {
+          setSessionUser(session.user);
+        }
+        return;
+      }
+
+      if (event === 'SIGNED_OUT') {
+        localStorage.removeItem('lr-performance-ui-cache');
+        setSessionUser(null);
+        setRole(null);
+        setUserClub(null);
+        setUserClubId(null);
+        setLinkedPlayerId(null);
+        setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
+        setActiveMenu('inicio');
+        setLoading(false);
+        return;
+      }
+
+      if (session) {
+        setTimeout(() => {
+          resolveUserAndLoad(session).catch(e => console.error("onAuthStateChange resolving error:", e));
+        }, 0);
+      } else {
+        setSessionUser(null);
+        setRole(null);
+        setUserClub(null);
+        setUserClubId(null);
+        setLinkedPlayerId(null);
+        setAllData({ wellness: [], loads: [], gps: [], nutrition: [] });
+        setActiveMenu('inicio');
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (disarmWatchdog) disarmWatchdog();
+      if (authListener?.subscription) {
+        authListener.subscription.unsubscribe();
+      }
+    };
+  }, [armLoadingWatchdog, resolveUserAndLoad]);
+
+  useEffect(() => {
+    if (!role) return;
+
+    // Suscribirse a cambios en tiempo real en múltiples tablas
+    const appEventsSubscription = supabase
+      .channel('app_events_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'medical_daily_reports' },
+        async (payload) => {
+          handleRealtimeNotification('Reporte Médico', payload.new);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'wellness_checkin' },
+        async (payload) => {
+          handleRealtimeNotification('Check-in Wellness', payload.new);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'internal_load' },
+        async (payload) => {
+          handleRealtimeNotification('Check-out (RPE)', payload.new);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'microcycles' },
+        async (payload) => {
+          if (typeof Notification !== 'undefined') {
+            try {
+              new Notification('Nuevo Microciclo', {
+                body: `Se ha creado un nuevo microciclo: ${payload.new.type}`,
+                icon: '/icon-192x192.png'
+              });
+            } catch (e) {
+              console.warn(e);
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cronograma_semanal' },
+        () => {
+          console.log('Cronograma semanal changed, triggering refresh...');
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tareas_semanales' },
+        () => {
+          console.log('Tareas semanales changed, triggering refresh...');
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'notification' },
+        (payload) => {
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            try {
+              new Notification(payload.payload.title, {
+                body: payload.payload.body,
+                icon: '/icon-192x192.png'
+              });
+            } catch (e) {
+              console.warn(e);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    async function handleRealtimeNotification(type: string, record: any) {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try {
+          const { data: player } = await supabase
+            .from('players')
+            .select('nombre, apellido1')
+            .eq('player_id', record.player_id)
+            .single();
+          
+          const playerName = player ? `${player.nombre} ${player.apellido1}` : 'Jugador';
+          
+          new Notification(`Nuevo ${type}`, {
+            body: `${playerName}: ${record.diagnostico_medico || record.molestias || (record.rpe ? 'RPE ' + record.rpe : '') || 'Nueva actualización'}.`,
+            icon: '/icon-192x192.png'
+          });
+        } catch (e) {
+          console.warn("Failed to create realtime notification:", e);
+        }
+      }
+    }
+
+    return () => {
+      supabase.removeChannel(appEventsSubscription);
+    };
+  }, [role]);
+
+  const handleLoginSuccess = async (session: any) => {
+    console.log("Manejando éxito de login...", session.user.email);
+    const disarmWatchdog = armLoadingWatchdog();
+    try {
+      setSessionUser(session.user);
+      setActiveMenu('inicio');
+      await resolveUserAndLoad(session);
+    } catch (error) {
+      console.error("Error en handleLoginSuccess:", error);
+      setRole('player');
+    } finally {
+      disarmWatchdog();
     }
   };
 
@@ -1323,16 +1285,19 @@ export default function App() {
       ...allData.gps.map((g: any) => ({ id: g.player_id, name: g.jugador_nombre, club: (g as any).jugador_club }))
     ].filter(item => item.id);
 
+    const playerIndexMap = new Map<number, number>();
+    playersToUse.forEach((p, idx) => {
+      if (p.player_id !== undefined) {
+        playerIndexMap.set(Number(p.player_id), idx);
+      }
+    });
+
     discoverFrom.forEach((item) => {
       const rawIdStr = item.id?.toString().replace('player-', '');
       if (!rawIdStr) return;
       const rawIdNum = Number(rawIdStr);
       
-      const existingIdx = playersToUse.findIndex(p => {
-        const pId = p.player_id;
-        if (pId === undefined) return false;
-        return Number(pId) === rawIdNum || String(pId) === String(rawIdNum);
-      });
+      const existingIdx = playerIndexMap.has(rawIdNum) ? playerIndexMap.get(rawIdNum)! : -1;
       
       if (existingIdx === -1) {
         const name = item.name || `Atleta #${rawIdStr}`;
@@ -1342,7 +1307,7 @@ export default function App() {
         const clubObj = dbClubs.find(c => Number(c.id_club) === Number(item.club) || c.nombre === item.club);
         const finalClub = clubObj?.nombre || item.club || 'Sin Club';
 
-        playersToUse.push({
+        const newPlayer = {
           id: `player-v-${rawIdStr}`,
           player_id: isNaN(rawIdNum) ? undefined : rawIdNum,
           name: name,
@@ -1354,7 +1319,11 @@ export default function App() {
           id_club: clubObj?.id_club ? Number(clubObj.id_club) : (isNaN(Number(item.club)) ? undefined : Number(item.club)),
           position: 'S/D',
           category: Category.SUB_17
-        });
+        };
+
+        const newIdx = playersToUse.length;
+        playersToUse.push(newPlayer);
+        playerIndexMap.set(rawIdNum, newIdx);
       } else {
         // Si ya existe pero el nombre es genérico o nulo, y el log tiene un nombre real, actualizamos
         const p = playersToUse[existingIdx];

@@ -94,11 +94,12 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   const maxRetries = 2;
 
-  const executeFetch = async (): Promise<Response> => {
+  const executeFetch = async (signal?: AbortSignal): Promise<Response> => {
+    const fetchInit = signal ? { ...init, signal } : init;
     if (urlStr && urlStr.includes('supabase.co')) {
       // Si no estamos en un entorno de desarrollo de AI Studio o local, conectarse DIRECTAMENTE a Supabase
       if (!shouldProxy()) {
-        return await fetch(input, init);
+        return await fetch(input, fetchInit);
       }
 
       try {
@@ -110,7 +111,7 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
         headers.set('x-target-url', urlStr);
         
         const proxyInit: RequestInit = {
-          ...init,
+          ...fetchInit,
           headers,
         };
         
@@ -120,28 +121,69 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
         const contentType = response.headers.get('content-type') || '';
         if (!response.ok || contentType.includes('text/html')) {
           console.warn(`Supabase proxy returned non-JSON/error (${response.status}). Falling back to direct Supabase.`);
-          return await fetch(input, init);
+          return await fetch(input, fetchInit);
         }
         
         return response;
       } catch (err) {
         console.warn("Supabase customFetch proxy failed, falling back to direct:", err);
-        return await fetch(input, init);
+        return await fetch(input, fetchInit);
       }
     }
     
-    return await fetch(input, init);
+    return await fetch(input, fetchInit);
   };
 
   let lastError: any = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    
+    const combinedSignal = controller.signal;
+    let onExternalAbort: (() => void) | null = null;
+    
+    if (init?.signal) {
+      const externalSignal = init.signal;
+      if (externalSignal.aborted) {
+        clearTimeout(timeoutId);
+        const externalAbortErr = new Error('Aborted');
+        externalAbortErr.name = 'AbortError';
+        throw externalAbortErr;
+      }
+      onExternalAbort = () => {
+        controller.abort();
+      };
+      externalSignal.addEventListener('abort', onExternalAbort);
+    }
+
     try {
       if (attempt > 0) {
         console.warn(`[SUPABASE FETCH RETRY] Transient network issue. Retrying (${attempt}/${maxRetries}) for URL: ${urlStr}`);
         await delay(300 * attempt);
       }
-      return await executeFetch();
+      const res = await executeFetch(combinedSignal);
+      clearTimeout(timeoutId);
+      if (init?.signal && onExternalAbort) {
+        init.signal.removeEventListener('abort', onExternalAbort);
+      }
+      return res;
     } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (init?.signal && onExternalAbort) {
+        init.signal.removeEventListener('abort', onExternalAbort);
+      }
+      
+      const isTimeout = controller.signal.aborted && !init?.signal?.aborted;
+      if (isTimeout) {
+        const timeoutErr = new Error('Supabase request timeout (15s)');
+        timeoutErr.name = 'AbortError';
+        throw timeoutErr;
+      }
+      
+      if (init?.signal?.aborted) {
+        throw err;
+      }
+
       lastError = err;
       const isTransient = err?.message?.includes('Failed to fetch') || err?.message?.includes('network') || !err?.message;
       if (!isTransient) {
@@ -157,15 +199,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false,
-    storageKey: 'lr-performance-auth-v1',
-    lock: async (name, acquireTimeout, fn) => {
-      try {
-        return await fn();
-      } catch (e) {
-        console.error("Lock error bypassed:", e);
-        return await fn();
-      }
-    }
+    storageKey: 'lr-performance-auth-v1'
   },
   global: {
     fetch: customFetch

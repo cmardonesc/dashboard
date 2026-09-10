@@ -4,6 +4,8 @@ import { MicrocicloDB, Category, UserRole, REVERSE_CATEGORY_ID_MAP } from '../ty
 import { GYM_EXERCISES_DATA, GymExerciseTemplate } from './gymExercisesData'
 import GymSessionDesigner from './GymSessionDesigner'
 import { motion, AnimatePresence } from 'motion/react'
+import { AvatarJugador } from './AvatarJugador'
+import { getFotoUrls } from '../lib/fotos'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
@@ -535,6 +537,22 @@ export default function FisicaGimnasioArea({
 
   // Player needs grouping states
   const [nominatedPlayers, setNominatedPlayers] = useState<any[]>([])
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (nominatedPlayers.length === 0) return;
+    const loadSignedUrls = async () => {
+      const items = nominatedPlayers
+        .filter(p => p.foto_path)
+        .map(p => ({ path: p.foto_path!, updated_at: p.foto_updated_at }));
+      if (items.length > 0) {
+        const urlsMap = await getFotoUrls(items);
+        setSignedUrls(prev => ({ ...prev, ...urlsMap }));
+      }
+    };
+    loadSignedUrls();
+  }, [nominatedPlayers]);
+
   const [playerAssignments, setPlayerAssignments] = useState<Record<number, string>>({})
   const [loadingPlayers, setLoadingPlayers] = useState(false)
   const [selectedSubTab, setSelectedSubTab] = useState<'sessions' | 'groups'>('sessions')
@@ -2363,7 +2381,7 @@ export default function FisicaGimnasioArea({
       // 2. Fetch players profiles
       const { data: players, error: errPlayers } = await supabase
         .from('players')
-        .select('player_id, nombre, apellido1, apellido2, posicion, id_club')
+        .select('player_id, nombre, apellido1, apellido2, posicion, id_club, foto_path, foto_updated_at')
 
       let filtered: any[] = []
 
@@ -3552,9 +3570,14 @@ export default function FisicaGimnasioArea({
                         >
                           {/* Player Info */}
                           <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-[#0b1220] text-white flex items-center justify-center font-black text-xs uppercase shadow-sm shrink-0">
-                              {initials}
-                            </div>
+                             <AvatarJugador
+                               player={{
+                                 ...player,
+                                 signed_url: player.foto_path ? signedUrls[player.foto_path] : undefined
+                               }}
+                               size={40}
+                               className="rounded-xl shadow-sm"
+                             />
                             <div className="min-w-0 flex-1">
                               <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight truncate text-left" title={player.name}>
                                 {player.name}
@@ -4405,11 +4428,14 @@ export default function FisicaGimnasioArea({
                           : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-100 hover:border-slate-200'
                       }`}
                     >
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs uppercase shadow-inner shrink-0 ${
-                        isSelected ? 'bg-white/10 text-white' : 'bg-slate-50 text-slate-800'
-                      }`}>
-                        {player.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
-                      </div>
+                      <AvatarJugador
+                        player={{
+                          ...player,
+                          signed_url: player.foto_path ? signedUrls[player.foto_path] : undefined
+                        }}
+                        size={40}
+                        className="rounded-xl shadow-inner shrink-0"
+                      />
 
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex items-center justify-between gap-2">
@@ -4477,9 +4503,14 @@ export default function FisicaGimnasioArea({
                     {/* Selected Player Profile Card info */}
                     <div className="bg-white rounded-2xl p-5 border border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-[#0b1220] text-white flex items-center justify-center text-sm font-black uppercase tracking-tight">
-                          {selectedPlayer.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
-                        </div>
+                        <AvatarJugador
+                          player={{
+                            ...selectedPlayer,
+                            signed_url: selectedPlayer.foto_path ? signedUrls[selectedPlayer.foto_path] : undefined
+                          }}
+                          size={48}
+                          className="rounded-2xl shadow-inner shrink-0"
+                        />
                         <div>
                           <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">{selectedPlayer.name}</h4>
                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">

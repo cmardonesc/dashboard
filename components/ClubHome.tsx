@@ -635,6 +635,18 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
                         </span>
                         
                         <div className="flex gap-2 shrink-0">
+                          <button 
+                            onClick={() => {
+                              localStorage.setItem('selected_drill_name', dyn.nombre);
+                              window.dispatchEvent(new CustomEvent('selected_drill_changed', { detail: { name: dyn.nombre } }));
+                              window.dispatchEvent(new CustomEvent('navigate-to-menu', { detail: { menuId: 'dinamicas' } }));
+                            }}
+                            className="h-7 rounded-lg bg-slate-900 text-white hover:bg-red-600 px-3 flex items-center gap-1.5 text-[8px] font-black uppercase tracking-wider transition-colors shadow-sm"
+                            title="Ver en menú de dinámicas"
+                          >
+                            <span>Ver Ficha</span>
+                            <i className="fa-solid fa-person-running"></i>
+                          </button>
                           {dyn.detail?.link_foto && (
                             <a 
                               href={getDriveDirectLink(dyn.detail.link_foto)} 

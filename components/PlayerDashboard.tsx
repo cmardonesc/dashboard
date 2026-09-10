@@ -589,56 +589,108 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   useEffect(() => {
     const fetchEvaluations = async () => {
       if (!player?.player_id) return;
+      
+      const pYearRaw = player ? ((player as any).anio ? Number((player as any).anio) : (player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : NaN)) : NaN;
+      if (isNaN(pYearRaw)) {
+        console.warn("No valid player year found. Skipping evaluations query.");
+        setAllPlayers([]);
+        setEvalImtp([]);
+        setEvalCmj([]);
+        setEvalCmjRebound([]);
+        return;
+      }
+
       setLoadingEvals(true);
       try {
-        const { data: pData } = await supabase.from('players').select('*');
-        if (pData) setAllPlayers(pData);
-
-        const { data: imtpData } = await supabase.from('evaluaciones_imtp').select('*');
-        if (imtpData) {
-          const processed = imtpData.map((item: any) => {
-            const newItem = { ...item };
-            if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
-              newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
-            } else if (newItem.imtp_fuerza_n !== undefined && newItem.imtp_fuerza_n !== null) {
-              newItem['Peak Vertical Force [N]'] = newItem.imtp_fuerza_n;
-            }
-            if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
-              newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
-            } else if (newItem.imtp_f_relativa_n_kg !== undefined && newItem.imtp_f_relativa_n_kg !== null) {
-              newItem['Peak Vertical Force / BM [N/kg]'] = newItem.imtp_f_relativa_n_kg;
-            }
-            return newItem;
-          });
-          setEvalImtp(processed);
+        const { data: pData } = await supabase
+          .from('players')
+          .select('player_id, anio, fecha_nacimiento')
+          .eq('anio', pYearRaw);
+        
+        if (pData) {
+          setAllPlayers(pData);
         }
 
-        const { data: cmjData } = await supabase.from('evaluaciones_cmj').select('*');
-        if (cmjData) {
-          const processed = cmjData.map((item: any) => {
-            const newItem = { ...item };
-            if (newItem.concentric_peak_force_n !== undefined && newItem.concentric_peak_force_n !== null) {
-              newItem.fuerza_cmj = Number(newItem.concentric_peak_force_n);
-            } else if (newItem.fuerza_cmj !== undefined && newItem.fuerza_cmj !== null) {
-              newItem.concentric_peak_force_n = Number(newItem.fuerza_cmj);
-            }
-            if (newItem.rsi_modified_m_s !== undefined && newItem.rsi_modified_m_s !== null) {
-              newItem.cmj_rsi_mod = Number(newItem.rsi_modified_m_s);
-            } else if (newItem.cmj_rsi_mod !== undefined && newItem.cmj_rsi_mod !== null) {
-              newItem.rsi_modified_m_s = Number(newItem.cmj_rsi_mod);
-            }
-            if (newItem.jump_height_impmom_cm !== undefined && newItem.jump_height_impmom_cm !== null) {
-              newItem.cmj_altura_salto_im = Number(newItem.jump_height_impmom_cm);
-            } else if (newItem.cmj_altura_salto_im !== undefined && newItem.cmj_altura_salto_im !== null) {
-              newItem.jump_height_impmom_cm = Number(newItem.cmj_altura_salto_im);
-            }
-            return newItem;
-          });
-          setEvalCmj(processed);
-        }
+        const ids = Array.from(new Set([
+          player.player_id,
+          ...(pData || []).map((p: any) => p.player_id).filter(Boolean)
+        ]));
 
-        const { data: cmjReboundData } = await supabase.from('evaluaciones_cmj_rebound').select('*');
-        if (cmjReboundData) setEvalCmjRebound(cmjReboundData);
+        const fetchInBatches = async (table: string, columns: string, idList: number[]) => {
+          if (idList.length === 0) return [];
+          const batchSize = 200;
+          const results = [];
+          for (let i = 0; i < idList.length; i += batchSize) {
+            const batch = idList.slice(i, i + batchSize);
+            const { data, error } = await supabase
+              .from(table)
+              .select(columns)
+              .in('player_id', batch);
+            if (error) {
+              console.error(`Error querying ${table} batch:`, error.message);
+            } else if (data) {
+              results.push(...data);
+            }
+          }
+          return results;
+        };
+
+        const imtpData = await fetchInBatches(
+          'evaluaciones_imtp',
+          'player_id, fecha, fecha_test, "Peak Vertical Force [N]", "Peak Vertical Force / BM [N/kg]", imtp_fuerza_n, imtp_f_relativa_n_kg',
+          ids
+        );
+
+        const processedImtp = imtpData.map((item: any) => {
+          const newItem = { ...item };
+          if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
+            newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
+          } else if (newItem.imtp_fuerza_n !== undefined && newItem.imtp_fuerza_n !== null) {
+            newItem['Peak Vertical Force [N]'] = newItem.imtp_fuerza_n;
+          }
+          if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
+            newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
+          } else if (newItem.imtp_f_relativa_n_kg !== undefined && newItem.imtp_f_relativa_n_kg !== null) {
+            newItem['Peak Vertical Force / BM [N/kg]'] = newItem.imtp_f_relativa_n_kg;
+          }
+          return newItem;
+        });
+        setEvalImtp(processedImtp);
+
+        const cmjData = await fetchInBatches(
+          'evaluaciones_cmj',
+          'player_id, fecha, fecha_test, concentric_peak_force_n, fuerza_cmj, rsi_modified_m_s, cmj_rsi_mod, jump_height_impmom_cm, cmj_altura_salto_im',
+          ids
+        );
+
+        const processedCmj = cmjData.map((item: any) => {
+          const newItem = { ...item };
+          if (newItem.concentric_peak_force_n !== undefined && newItem.concentric_peak_force_n !== null) {
+            newItem.fuerza_cmj = Number(newItem.concentric_peak_force_n);
+          } else if (newItem.fuerza_cmj !== undefined && newItem.fuerza_cmj !== null) {
+            newItem.concentric_peak_force_n = Number(newItem.fuerza_cmj);
+          }
+          if (newItem.rsi_modified_m_s !== undefined && newItem.rsi_modified_m_s !== null) {
+            newItem.cmj_rsi_mod = Number(newItem.rsi_modified_m_s);
+          } else if (newItem.cmj_rsi_mod !== undefined && newItem.cmj_rsi_mod !== null) {
+            newItem.rsi_modified_m_s = Number(newItem.cmj_rsi_mod);
+          }
+          if (newItem.jump_height_impmom_cm !== undefined && newItem.jump_height_impmom_cm !== null) {
+            newItem.cmj_altura_salto_im = Number(newItem.jump_height_impmom_cm);
+          } else if (newItem.cmj_altura_salto_im !== undefined && newItem.cmj_altura_salto_im !== null) {
+            newItem.jump_height_impmom_cm = Number(newItem.cmj_altura_salto_im);
+          }
+          return newItem;
+        });
+        setEvalCmj(processedCmj);
+
+        const cmjReboundData = await fetchInBatches(
+          'evaluaciones_cmj_rebound',
+          'player_id, fecha, fecha_test, rebound_rsi, rebound_contact_time_ms',
+          ids
+        );
+        setEvalCmjRebound(cmjReboundData);
+
       } catch (err) {
         console.error('Error fetching evaluations in PlayerDashboard:', err);
       } finally {

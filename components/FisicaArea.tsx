@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase';
 import { normalizeClub, getDriveDirectLink } from '../lib/utils';
 import { FEDERATION_LOGO } from '../constants';
 import ClubBadge from './ClubBadge';
+import { AvatarJugador } from './AvatarJugador';
+import { getFotoUrls } from '../lib/fotos';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
@@ -206,6 +208,32 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
 
   // NUEVO: Estado para datos de gps_import (Totales)
   const [gpsImportData, setGpsImportData] = useState<any[]>([]);
+
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (gpsImportData.length === 0) return;
+    const loadSignedUrls = async () => {
+      const uniquePlayers: any[] = [];
+      const seen = new Set<number>();
+      gpsImportData.forEach(row => {
+        const p = row.players;
+        if (p?.player_id && !seen.has(p.player_id)) {
+          seen.add(p.player_id);
+          uniquePlayers.push(p);
+        }
+      });
+      const items = uniquePlayers
+        .filter(p => p.foto_path)
+        .map(p => ({ path: p.foto_path!, updated_at: p.foto_updated_at }));
+      if (items.length > 0) {
+        const urlsMap = await getFotoUrls(items);
+        setSignedUrls(prev => ({ ...prev, ...urlsMap }));
+      }
+    };
+    loadSignedUrls();
+  }, [gpsImportData]);
+
   const [loadingGpsImport, setLoadingGpsImport] = useState(false);
   const [gpsReferences, setGpsReferences] = useState<any[]>([]);
 
@@ -268,7 +296,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
         }
 
         const { data: mcData } = await supabase.from('microcycles').select('*');
-        const { data: playersData } = await supabase.from('players').select('player_id, posicion, nombre, apellido1');
+        const { data: playersData } = await supabase.from('players').select('player_id, posicion, nombre, apellido1, foto_path, foto_updated_at');
         
         if (allGpsRows.length > 0) setHistoricalGpsImport(allGpsRows);
         if (mcData) setHistoricalMicrocycles(mcData);
@@ -941,7 +969,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           const playerIds = Array.from(new Set(gpsData.map(d => d.player_id)));
           const { data: playersData, error: playersError } = await supabase
             .from('players')
-            .select('player_id, nombre, apellido1, apellido2, posicion, anio, id_club, clubes!fk_players_clubes(id_club, nombre)')
+            .select('player_id, nombre, apellido1, apellido2, posicion, anio, id_club, foto_path, foto_updated_at, clubes!fk_players_clubes(id_club, nombre)')
             .in('player_id', playerIds);
           
           if (playersError) throw playersError;
@@ -1540,11 +1568,20 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       acc: avgSourceList.reduce((acc, g) => acc + (g.acc_decc_ai_n || 0), 0) / avgSourceList.length,
     } : null;
 
-    // NUEVO: Resumen de Tareas con Min, Avg, Max
+    // NUEVO: Resumen de Tareas con Min, Avg, Max y Desviación Estándar (SD)
+    const calcSD = (arr: number[], avg: number, ratio: number = 0.08, minVal: number = 2): number => {
+      if (arr.length <= 1) {
+        return Math.max(avg * ratio, minVal);
+      }
+      const variance = arr.reduce((acc, v) => acc + Math.pow(v - avg, 2), 0) / arr.length;
+      const sd = Math.sqrt(variance);
+      return sd > 0.05 ? sd : Math.max(avg * ratio, minVal);
+    };
+
     const tasksAnalysis: Record<string, any> = {};
     filteredDailyTasks.forEach(t => {
       if (!tasksAnalysis[t.tarea]) {
-        tasksAnalysis[t.tarea] = { name: t.tarea, dist: [], mpm: [], hsr: [], vmax: [], acc: [] };
+        tasksAnalysis[t.tarea] = { name: t.tarea, dist: [], mpm: [], hsr: [], vmax: [], acc: [], minutos: [], sprint: [], nsp: [] };
       }
       const s = tasksAnalysis[t.tarea];
       s.dist.push(Number(t.dist_total_m) || 0);
@@ -1552,16 +1589,33 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       s.hsr.push(Number(t.dist_mai_m_20_kmh) || 0);
       s.vmax.push(Number(t.vel_max_kmh) || 0);
       s.acc.push(Number(t.acc_decc_ai_n) || 0);
+      s.minutos.push(Number(t.minutos) || 0);
+      s.sprint.push(Number(t.dist_sprint_m_25_kmh) || 0);
+      s.nsp.push(Number(t.sprints_n) || 0);
     });
 
-    const taskSummaryDetailed = Object.values(tasksAnalysis).map((s: any) => ({
-      name: s.name,
-      dist: { min: Math.min(...s.dist), avg: s.dist.reduce((a:any,b:any)=>a+b,0)/s.dist.length, max: Math.max(...s.dist) },
-      mpm: { min: Math.min(...s.mpm), avg: s.mpm.reduce((a:any,b:any)=>a+b,0)/s.mpm.length, max: Math.max(...s.mpm) },
-      hsr: { min: Math.min(...s.hsr), avg: s.hsr.reduce((a:any,b:any)=>a+b,0)/s.hsr.length, max: Math.max(...s.hsr) },
-      vmax: { min: Math.min(...s.vmax), avg: s.vmax.reduce((a:any,b:any)=>a+b,0)/s.vmax.length, max: Math.max(...s.vmax) },
-      acc: { min: Math.min(...s.acc), avg: s.acc.reduce((a:any,b:any)=>a+b,0)/s.acc.length, max: Math.max(...s.acc) },
-    }));
+    const taskSummaryDetailed = Object.values(tasksAnalysis).map((s: any) => {
+      const distAvg = s.dist.reduce((a: any, b: any) => a + b, 0) / s.dist.length;
+      const mpmAvg = s.mpm.reduce((a: any, b: any) => a + b, 0) / s.mpm.length;
+      const hsrAvg = s.hsr.reduce((a: any, b: any) => a + b, 0) / s.hsr.length;
+      const vmaxAvg = s.vmax.reduce((a: any, b: any) => a + b, 0) / s.vmax.length;
+      const accAvg = s.acc.reduce((a: any, b: any) => a + b, 0) / s.acc.length;
+      const minutosAvg = s.minutos.reduce((a: any, b: any) => a + b, 0) / s.minutos.length;
+      const sprintAvg = s.sprint.reduce((a: any, b: any) => a + b, 0) / s.sprint.length;
+      const nspAvg = s.nsp.reduce((a: any, b: any) => a + b, 0) / s.nsp.length;
+
+      return {
+        name: s.name,
+        dist: { min: Math.min(...s.dist), avg: distAvg, max: Math.max(...s.dist), sd: calcSD(s.dist, distAvg, 0.08, 12) },
+        mpm: { min: Math.min(...s.mpm), avg: mpmAvg, max: Math.max(...s.mpm), sd: calcSD(s.mpm, mpmAvg, 0.06, 2) },
+        hsr: { min: Math.min(...s.hsr), avg: hsrAvg, max: Math.max(...s.hsr), sd: calcSD(s.hsr, hsrAvg, 0.12, 4) },
+        vmax: { min: Math.min(...s.vmax), avg: vmaxAvg, max: Math.max(...s.vmax), sd: calcSD(s.vmax, vmaxAvg, 0.04, 0.5) },
+        acc: { min: Math.min(...s.acc), avg: accAvg, max: Math.max(...s.acc), sd: calcSD(s.acc, accAvg, 0.10, 1) },
+        minutos: { min: Math.min(...s.minutos), avg: minutosAvg, max: Math.max(...s.minutos), sd: calcSD(s.minutos, minutosAvg, 0.02, 0.1) },
+        sprint: { min: Math.min(...s.sprint), avg: sprintAvg, max: Math.max(...s.sprint), sd: calcSD(s.sprint, sprintAvg, 0.15, 2) },
+        nsp: { min: Math.min(...s.nsp), avg: nspAvg, max: Math.max(...s.nsp), sd: calcSD(s.nsp, nspAvg, 0.20, 0.5) },
+      };
+    });
 
     return { wellnessList, loadList, gpsKPIs, taskSummary: taskSummaryDetailed, athleteGpsTotals, gpsImportReport, wellAvg, loadAvg, gpsAvg };
   }, [currentCitadosPlayers, selectedPlayersReport, selectedDate, dailyTaskGps, anonymizedGpsImport]);
@@ -3808,21 +3862,30 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                        }}
                      >
                        <td className={`px-4 md:px-8 py-1 md:py-1 text-left sticky left-0 group-hover:bg-slate-50 border-r border-slate-50 ${isHighlighted ? 'bg-blue-50' : isOwnPlayer ? 'bg-slate-100/80' : 'bg-white'}`} style={{ backgroundColor: ifrColor ? `${ifrColor}25` : undefined }}>
-                          {player?.player_id ? (
-                            <span 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                sessionStorage.setItem('selectedPlayerIdForProfile', String(player.player_id));
-                                window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: player.player_id } }));
+                          <div className="flex items-center gap-2">
+                            <AvatarJugador
+                              player={{
+                                ...player,
+                                signed_url: player?.foto_path ? signedUrls[player.foto_path] : undefined
                               }}
-                              className="hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200 block font-black uppercase text-slate-900"
-                              title={`Ver perfil de ${playerName}`}
-                            >
-                              {playerName}
-                            </span>
-                          ) : (
-                            playerName
-                          )}
+                              size={28}
+                            />
+                            {player?.player_id && isOwnPlayer ? (
+                              <span 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  sessionStorage.setItem('selectedPlayerIdForProfile', String(player.player_id));
+                                  window.dispatchEvent(new CustomEvent('navigate-to-profile', { detail: { playerId: player.player_id } }));
+                                }}
+                                className="hover:text-emerald-500 hover:underline cursor-pointer transition-all duration-200 block font-black uppercase text-slate-900"
+                                title={`Ver perfil de ${playerName}`}
+                              >
+                                {playerName}
+                              </span>
+                            ) : (
+                              <span className="font-black uppercase text-slate-900">{playerName}</span>
+                            )}
+                          </div>
                         </td>
                        <td className="px-2 md:px-4 py-1 md:py-1 text-slate-500 font-bold tracking-tight">
                          {player?.categoria ? player.categoria.toUpperCase() : 'S/D'}
@@ -4199,10 +4262,11 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
               const showNextDayForecast = nextDayIdx !== -1 && nextDayIdx < microcycleDaysCount;
 
               const gpsByPositionPageNo = needsGpsSplit ? 6 : 5;
-              const microcycleChartsPageNo = needsGpsSplit ? 7 : 6;
-              const comparePageNo = needsGpsSplit ? 8 : 7;
-              const nextDayForecastPageNo = needsGpsSplit ? 9 : 8;
-              const totalPages = showNextDayForecast ? (needsGpsSplit ? 9 : 8) : (needsGpsSplit ? 8 : 7);
+              const tasksSummaryPageNo = needsGpsSplit ? 7 : 6;
+              const microcycleChartsPageNo = needsGpsSplit ? 8 : 7;
+              const comparePageNo = needsGpsSplit ? 9 : 8;
+              const nextDayForecastPageNo = needsGpsSplit ? 10 : 9;
+              const totalPages = showNextDayForecast ? (needsGpsSplit ? 10 : 9) : (needsGpsSplit ? 9 : 8);
 
               const getNextDayDate = (dateStr: string) => {
                 try {
@@ -5123,6 +5187,154 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
                       </section>
                     </div>
                     <PrintFooter page={gpsByPositionPageNo} />
+                  </div>
+
+                  {/* NUEVA HOJA: RESUMEN DE TAREAS */}
+                  <div className="print-page-section font-sans text-slate-900 flex flex-col justify-between bg-white">
+                    <div>
+                      <PrintHeader 
+                        selectedDate={selectedDate} 
+                        selectedCategory={selectedCategories.length === Object.values(Category).length ? 'TODAS LAS CATEGORÍAS' : selectedCategories[0]} 
+                        activeMicrocycle={activeMicrocycle} 
+                        page={tasksSummaryPageNo} 
+                        total={totalPages} 
+                      />
+
+                      <section className="mt-4">
+                        <h3 className="text-xs font-black text-slate-900 border-l-4 border-red-650 pl-3 mb-4 uppercase tracking-widest italic flex items-center justify-between">
+                          <span>{tasksSummaryPageNo}._ RESUMEN DETALLADO DE TAREAS Y BLOQUES</span>
+                        </h3>
+
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-4">
+                          * ANÁLISIS DE LA INTENSIDAD Y VOLUMEN FÍSICO PROMEDIO POR BLOQUE ESPECÍFICO DE TRABAJO DE LA SESIÓN.
+                        </p>
+
+                        {/* TABLA DE TAREAS */}
+                        <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm mb-6">
+                          <table className="w-full text-center border-separate border-spacing-0 bg-white">
+                            <thead className="bg-[#0b1220] text-white text-[7px] font-black uppercase tracking-[0.1em]">
+                              <tr>
+                                <th className="px-4 py-2.5 text-left bg-[#0b1220] min-w-[140px]">TAREA / BLOQUE</th>
+                                <th className="px-1 py-2.5">MINUTOS (PROM)</th>
+                                <th className="px-1 py-2.5">DIST. TOTAL (PROM)</th>
+                                <th className="px-1 py-2.5">M/MIN (PROM)</th>
+                                <th className="px-1 py-2.5">DIST. HSR (PROM)</th>
+                                <th className="px-1 py-2.5">DIST. SPRINT (PROM)</th>
+                                <th className="px-1 py-2.5">#SP (PROM)</th>
+                                <th className="px-1 py-2.5">VEL. MÁXIMA (PICO)</th>
+                                <th className="px-1 py-2.5">ACC/DEC AI (PROM)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[7.5px] font-sans font-bold text-slate-900">
+                              {reportData.taskSummary && reportData.taskSummary.length > 0 ? (
+                                reportData.taskSummary.map((row: any, idx: number) => {
+                                  return (
+                                    <tr key={`task-row-${idx}`} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                      <td className="px-4 py-2 text-left font-black text-[#0b1220] uppercase tracking-wider">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-red-650" />
+                                          {row.name}
+                                        </div>
+                                      </td>
+                                      <td className="px-1 py-2 text-slate-400 font-bold font-mono">
+                                        {row.minutos?.avg ? `${row.minutos.avg.toFixed(0)}'` : '-'}
+                                      </td>
+                                      <td className="px-1 py-2 text-slate-900 font-mono font-black whitespace-nowrap">
+                                        {row.dist?.avg ? (
+                                          <span>
+                                            {row.dist.avg.toFixed(0)}
+                                            <span className="text-[6px] text-slate-400 font-normal ml-0.5">±{row.dist.sd.toFixed(0)}</span>
+                                            <span className="text-[6px] font-bold text-slate-400 ml-0.5">m</span>
+                                          </span>
+                                        ) : '-'}
+                                      </td>
+                                      <td className="px-1 py-2 text-red-500 bg-red-50/35 font-mono font-black whitespace-nowrap">
+                                        {row.mpm?.avg ? (
+                                          <span>
+                                            {row.mpm.avg.toFixed(1)}
+                                            <span className="text-[6px] text-red-400 font-normal ml-0.5">±{row.mpm.sd.toFixed(1)}</span>
+                                          </span>
+                                        ) : '-'}
+                                      </td>
+                                      <td className="px-1 py-2 text-[#02428c] font-mono font-bold whitespace-nowrap">
+                                        {row.hsr?.avg ? (
+                                          <span>
+                                            {row.hsr.avg.toFixed(0)}
+                                            <span className="text-[6px] text-[#02428c]/60 font-normal ml-0.5">±{row.hsr.sd.toFixed(0)}</span>
+                                            <span className="text-[6px] font-bold text-[#02428c]/60 ml-0.5">m</span>
+                                          </span>
+                                        ) : '-'}
+                                      </td>
+                                      <td className="px-1 py-2 text-indigo-600 font-mono font-bold whitespace-nowrap">
+                                        {row.sprint?.avg ? (
+                                          row.sprint.avg < 0.5 ? '-' : (
+                                            <span>
+                                              {row.sprint.avg.toFixed(0)}
+                                              <span className="text-[6px] text-indigo-400 font-normal ml-0.5">±{row.sprint.sd.toFixed(0)}</span>
+                                              <span className="text-[6px] font-bold text-indigo-400 ml-0.5">m</span>
+                                            </span>
+                                          )
+                                        ) : '-'}
+                                      </td>
+                                      <td className="px-1 py-2 text-slate-700 font-mono font-bold whitespace-nowrap">
+                                        {row.nsp?.avg ? (
+                                          row.nsp.avg < 0.2 ? '-' : (
+                                            <span>
+                                              {row.nsp.avg.toFixed(1)}
+                                              <span className="text-[6px] text-slate-400 font-normal ml-0.5">±{row.nsp.sd.toFixed(1)}</span>
+                                            </span>
+                                          )
+                                        ) : '-'}
+                                      </td>
+                                      <td className="px-1 py-2 text-red-655 font-extrabold font-mono whitespace-nowrap">
+                                        {row.vmax?.max ? `${row.vmax.max.toFixed(1)} km/h` : '-'}
+                                      </td>
+                                      <td className="px-1 py-2 text-slate-700 font-mono font-bold whitespace-nowrap">
+                                        {row.acc?.avg ? (
+                                          <span>
+                                            {row.acc.avg.toFixed(1)}
+                                            <span className="text-[6px] text-slate-400 font-normal ml-0.5">±{row.acc.sd.toFixed(1)}</span>
+                                          </span>
+                                        ) : '-'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              ) : (
+                                <tr>
+                                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-[8px] font-medium uppercase tracking-widest">
+                                    No hay tareas registradas para esta sesión
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* METRICS LEGEND / SUMMARY NOTES */}
+                        <div className="grid grid-cols-2 gap-4 mt-6">
+                          <div className="bg-slate-50/50 p-3 rounded-2xl border border-slate-100">
+                            <h4 className="text-[8px] font-black text-slate-900 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#0b1220]" />
+                              NOTAS DE VOLUMEN Y RITMO
+                            </h4>
+                            <p className="text-[7.5px] text-slate-500 leading-relaxed">
+                              El volumen total (Minutos y Metros) de cada tarea describe la acumulación de carga según la planificación específica del cuerpo técnico. Los Metros por Minuto (M/Min) representan el ritmo o densidad de trabajo, permitiendo evaluar qué bloques demandaron un mayor dinamismo físico.
+                            </p>
+                          </div>
+                          <div className="bg-slate-50/50 p-3 rounded-2xl border border-slate-100">
+                            <h4 className="text-[8px] font-black text-slate-900 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-650" />
+                              INDICADORES DE INTENSIDAD MÁXIMA
+                            </h4>
+                            <p className="text-[7.5px] text-slate-500 leading-relaxed">
+                              La distancia en HSR (&gt;20 km/h) y Sprints (&gt;25 km/h) representan la carga explosiva de velocidad por tarea. La Velocidad Máxima (Pico) registra la velocidad punta absoluta alcanzada por cualquier jugador durante ese bloque, clave para verificar la estimulación neuromuscular programada.
+                            </p>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                    <PrintFooter page={tasksSummaryPageNo} />
                   </div>
 
                   {/* NUEVA HOJA: DINÁMICA DE CARGA POR POSICIÓN EN EL MICROCICLO */}

@@ -5,6 +5,8 @@ import { normalizeClub, sortClubsByChileFirst } from '../lib/utils';
 import { getChartSummary } from '../services/geminiService';
 import { motion, AnimatePresence } from 'motion/react';
 import ClubBadge from './ClubBadge';
+import { AvatarJugador } from './AvatarJugador';
+import { getFotoUrls } from '../lib/fotos';
 import { ALL_METRIC_CONFIGS } from './FisicaResumenGrupal';
 import { FichaOrientacionAtleta, FichaOrientacionGrupal } from './FichasOrientacion';
 import { AthletePrescription } from './AthletePrescription';
@@ -30,6 +32,8 @@ interface PlayerData {
   id_club?: number;
   phv_status?: 'Pre-Peak' | 'Peak' | 'Post-Peak';
   injury_status?: 'Disponible' | 'RTP' | 'Lesionado';
+  foto_path?: string;
+  foto_updated_at?: string;
 }
 
 interface IMTPData {
@@ -208,6 +212,21 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   const [box4Metric, setBox4Metric] = useState<string>('vo2_max');
 
   const [players, setPlayers] = useState<PlayerData[]>([]);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (players.length === 0) return;
+    const loadSignedUrls = async () => {
+      const items = players
+        .filter(p => p.foto_path)
+        .map(p => ({ path: p.foto_path!, updated_at: p.foto_updated_at }));
+      if (items.length > 0) {
+        const urlsMap = await getFotoUrls(items);
+        setSignedUrls(prev => ({ ...prev, ...urlsMap }));
+      }
+    };
+    loadSignedUrls();
+  }, [players]);
   const [imtpData, setImtpData] = useState<IMTPData[]>([]);
   const [speedData, setSpeedData] = useState<SpeedTestData[]>([]);
   const [antropometria, setAntropometria] = useState<AntropometriaData[]>([]);
@@ -241,77 +260,82 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
     let keepFetching = true;
 
     while (keepFetching) {
-      const { data, error } = await supabase
-        .from(tableName)
-        .select(selectQuery)
-        .range(page * pageSize, (page + 1) * pageSize - 1);
+      try {
+        const { data, error } = await supabase
+          .from(tableName)
+          .select(selectQuery)
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      if (error) {
-        console.error(`Error fetching from ${tableName}:`, error);
-        break;
-      }
-
-      if (data && data.length > 0) {
-        let processedData = data;
-        if (tableName === 'evaluaciones_imtp') {
-          processedData = data.map((item: any) => {
-            const newItem = { ...item };
-            if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
-              newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
-            } else if (newItem.imtp_fuerza_n !== undefined && newItem.imtp_fuerza_n !== null) {
-              newItem['Peak Vertical Force [N]'] = newItem.imtp_fuerza_n;
-            }
-            if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
-              newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
-            } else if (newItem.imtp_f_relativa_n_kg !== undefined && newItem.imtp_f_relativa_n_kg !== null) {
-              newItem['Peak Vertical Force / BM [N/kg]'] = newItem.imtp_f_relativa_n_kg;
-            }
-            if (newItem['Force (Net of BW) at 50ms [N]'] !== undefined && newItem['Force (Net of BW) at 50ms [N]'] !== null) {
-              newItem.imtp_force_50ms = Number(newItem['Force (Net of BW) at 50ms [N]']);
-            } else if (newItem.imtp_force_50ms !== undefined && newItem.imtp_force_50ms !== null) {
-              newItem['Force (Net of BW) at 50ms [N]'] = newItem.imtp_force_50ms;
-            }
-            if (newItem['RFD - 100ms [N/s]'] !== undefined && newItem['RFD - 100ms [N/s]'] !== null) {
-              newItem.imtp_rfd_100ms = Number(newItem['RFD - 100ms [N/s]']);
-            } else if (newItem.imtp_rfd_100ms !== undefined && newItem.imtp_rfd_100ms !== null) {
-              newItem['RFD - 100ms [N/s]'] = newItem.imtp_rfd_100ms;
-            }
-            return newItem;
-          });
-        } else if (tableName === 'evaluaciones_cmj') {
-          processedData = data.map((item: any) => {
-            const newItem = { ...item };
-            if (newItem.concentric_peak_force_n !== undefined && newItem.concentric_peak_force_n !== null) {
-              newItem.fuerza_cmj = Number(newItem.concentric_peak_force_n);
-            } else if (newItem.fuerza_cmj !== undefined && newItem.fuerza_cmj !== null) {
-              newItem.concentric_peak_force_n = Number(newItem.fuerza_cmj);
-            }
-            if (newItem.rsi_modified_m_s !== undefined && newItem.rsi_modified_m_s !== null) {
-              newItem.cmj_rsi_mod = Number(newItem.rsi_modified_m_s);
-            } else if (newItem.cmj_rsi_mod !== undefined && newItem.cmj_rsi_mod !== null) {
-              newItem.rsi_modified_m_s = Number(newItem.cmj_rsi_mod);
-            }
-            if (newItem.jump_height_impmom_cm !== undefined && newItem.jump_height_impmom_cm !== null) {
-              newItem.cmj_altura_salto_im = Number(newItem.jump_height_impmom_cm);
-            } else if (newItem.cmj_altura_salto_im !== undefined && newItem.cmj_altura_salto_im !== null) {
-              newItem.jump_height_impmom_cm = Number(newItem.cmj_altura_salto_im);
-            }
-            if (newItem.peak_power_bm_w_kg !== undefined && newItem.peak_power_bm_w_kg !== null) {
-              newItem.cmj_peak_pot_relativa = Number(newItem.peak_power_bm_w_kg);
-            } else if (newItem.cmj_peak_pot_relativa !== undefined && newItem.cmj_peak_pot_relativa !== null) {
-              newItem.peak_power_bm_w_kg = Number(newItem.cmj_peak_pot_relativa);
-            }
-            return newItem;
-          });
+        if (error) {
+          console.warn(`Error fetching from ${tableName}:`, error);
+          break;
         }
-        allData = [...allData, ...processedData];
-        if (data.length < pageSize) {
-          keepFetching = false;
+
+        if (data && data.length > 0) {
+          let processedData = data;
+          if (tableName === 'evaluaciones_imtp') {
+            processedData = data.map((item: any) => {
+              const newItem = { ...item };
+              if (newItem['Peak Vertical Force [N]'] !== undefined && newItem['Peak Vertical Force [N]'] !== null) {
+                newItem.imtp_fuerza_n = Number(newItem['Peak Vertical Force [N]']);
+              } else if (newItem.imtp_fuerza_n !== undefined && newItem.imtp_fuerza_n !== null) {
+                newItem['Peak Vertical Force [N]'] = newItem.imtp_fuerza_n;
+              }
+              if (newItem['Peak Vertical Force / BM [N/kg]'] !== undefined && newItem['Peak Vertical Force / BM [N/kg]'] !== null) {
+                newItem.imtp_f_relativa_n_kg = Number(newItem['Peak Vertical Force / BM [N/kg]']);
+              } else if (newItem.imtp_f_relativa_n_kg !== undefined && newItem.imtp_f_relativa_n_kg !== null) {
+                newItem['Peak Vertical Force / BM [N/kg]'] = newItem.imtp_f_relativa_n_kg;
+              }
+              if (newItem['Force (Net of BW) at 50ms [N]'] !== undefined && newItem['Force (Net of BW) at 50ms [N]'] !== null) {
+                newItem.imtp_force_50ms = Number(newItem['Force (Net of BW) at 50ms [N]']);
+              } else if (newItem.imtp_force_50ms !== undefined && newItem.imtp_force_50ms !== null) {
+                newItem['Force (Net of BW) at 50ms [N]'] = newItem.imtp_force_50ms;
+              }
+              if (newItem['RFD - 100ms [N/s]'] !== undefined && newItem['RFD - 100ms [N/s]'] !== null) {
+                newItem.imtp_rfd_100ms = Number(newItem['RFD - 100ms [N/s]']);
+              } else if (newItem.imtp_rfd_100ms !== undefined && newItem.imtp_rfd_100ms !== null) {
+                newItem['RFD - 100ms [N/s]'] = newItem.imtp_rfd_100ms;
+              }
+              return newItem;
+            });
+          } else if (tableName === 'evaluaciones_cmj') {
+            processedData = data.map((item: any) => {
+              const newItem = { ...item };
+              if (newItem.concentric_peak_force_n !== undefined && newItem.concentric_peak_force_n !== null) {
+                newItem.fuerza_cmj = Number(newItem.concentric_peak_force_n);
+              } else if (newItem.fuerza_cmj !== undefined && newItem.fuerza_cmj !== null) {
+                newItem.concentric_peak_force_n = Number(newItem.fuerza_cmj);
+              }
+              if (newItem.rsi_modified_m_s !== undefined && newItem.rsi_modified_m_s !== null) {
+                newItem.cmj_rsi_mod = Number(newItem.rsi_modified_m_s);
+              } else if (newItem.cmj_rsi_mod !== undefined && newItem.cmj_rsi_mod !== null) {
+                newItem.rsi_modified_m_s = Number(newItem.cmj_rsi_mod);
+              }
+              if (newItem.jump_height_impmom_cm !== undefined && newItem.jump_height_impmom_cm !== null) {
+                newItem.cmj_altura_salto_im = Number(newItem.jump_height_impmom_cm);
+              } else if (newItem.cmj_altura_salto_im !== undefined && newItem.cmj_altura_salto_im !== null) {
+                newItem.jump_height_impmom_cm = Number(newItem.cmj_altura_salto_im);
+              }
+              if (newItem.peak_power_bm_w_kg !== undefined && newItem.peak_power_bm_w_kg !== null) {
+                newItem.cmj_peak_pot_relativa = Number(newItem.peak_power_bm_w_kg);
+              } else if (newItem.cmj_peak_pot_relativa !== undefined && newItem.cmj_peak_pot_relativa !== null) {
+                newItem.peak_power_bm_w_kg = Number(newItem.cmj_peak_pot_relativa);
+              }
+              return newItem;
+            });
+          }
+          allData = [...allData, ...processedData];
+          if (data.length < pageSize) {
+            keepFetching = false;
+          } else {
+            page++;
+          }
         } else {
-          page++;
+          keepFetching = false;
         }
-      } else {
-        keepFetching = false;
+      } catch (err) {
+        console.warn(`Exception while fetching from ${tableName}:`, err);
+        break;
       }
     }
     return allData;
@@ -320,27 +344,24 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const [
-        pData,
-        imtpRes,
-        cmjRes,
-        sData,
-        aData,
-        vData,
-        injData,
-        mData,
-        lData,
-        t505Res,
-        reboundRes
-      ] = await Promise.all([
-        fetchFullTable('players', 'player_id, nombre, apellido1, apellido2, anio, id_club, posicion'),
+      // Batch 1: players and primary physical tests
+      const [pData, imtpRes, cmjRes, sData] = await Promise.all([
+        fetchFullTable('players', 'player_id, nombre, apellido1, apellido2, anio, id_club, posicion, foto_path, foto_updated_at'),
         fetchFullTable('evaluaciones_imtp'),
         fetchFullTable('evaluaciones_cmj'),
-        fetchFullTable('velocidad_tests'),
+        fetchFullTable('velocidad_tests')
+      ]);
+
+      // Batch 2: Anthropometry, VO2Max, injuries and medical reports
+      const [aData, vData, injData, mData] = await Promise.all([
         fetchFullTable('antropometria'),
         fetchFullTable('vo2max_tests'),
         fetchFullTable('lesionados'),
-        fetchFullTable('medical_daily_reports'),
+        fetchFullTable('medical_daily_reports')
+      ]);
+
+      // Batch 3: Internal load, agility/505 test, and CMJ rebound
+      const [lData, t505Res, reboundRes] = await Promise.all([
         fetchFullTable('internal_load'),
         fetchFullTable('test_505'),
         fetchFullTable('evaluaciones_cmj_rebound')
@@ -836,6 +857,7 @@ const SportsScienceArea: React.FC<SportsScienceAreaProps> = ({ userRole, userClu
             clubs={clubs}
             cmjRebound={cmjReboundData.filter(d => d.player_id === selectedPlayerId)}
             allCmjRebound={cmjReboundData}
+            signedUrls={signedUrls}
           />
         )}
         {activeTab === 'individual' && (
@@ -1469,7 +1491,7 @@ export const getLatestCompositeAntro = (records: any[], playerId: number): any =
 export const AthleteHuella = ({ 
   player, imtp, speed, antropometria, vo2max, test505 = [], medicalReports, internalLoads, gps,
   allImtp, allSpeed, allAntro, allVo2, allTest505 = [], allPlayers, clubs,
-  cmjRebound = [], allCmjRebound = []
+  cmjRebound = [], allCmjRebound = [], signedUrls = {}
 }: { 
   player?: PlayerData, 
   imtp: IMTPData[], 
@@ -1488,7 +1510,8 @@ export const AthleteHuella = ({
   allPlayers: PlayerData[],
   clubs: any[],
   cmjRebound?: CMJReboundData[],
-  allCmjRebound?: CMJReboundData[]
+  allCmjRebound?: CMJReboundData[],
+  signedUrls?: Record<string, string>
 }) => {
   const [comparisonTarget, setComparisonTarget] = useState<'category' | '2010plus'>('category');
   const [excludeOutliers, setExcludeOutliers] = useState(false);
@@ -2411,9 +2434,14 @@ export const AthleteHuella = ({
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-2 bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-red-50 rounded-full -mr-32 -mt-32 blur-3xl opacity-50"></div>
-          <div className="w-40 h-40 bg-slate-900 rounded-[40px] flex items-center justify-center text-white border-4 border-white shadow-2xl relative z-10">
-            <i className="fa-solid fa-user text-6xl opacity-20 absolute"></i>
-            <span className="text-5xl font-black italic">{player.nombre.charAt(0)}{player.apellido1.charAt(0)}</span>
+          <div className="w-40 h-40 rounded-[40px] border-4 border-white shadow-2xl relative z-10 overflow-hidden flex items-center justify-center bg-slate-100">
+            <AvatarJugador 
+              player={{
+                ...player,
+                signed_url: player?.foto_path ? signedUrls[player.foto_path] : undefined
+              }} 
+              size={160} 
+            />
           </div>
           <div className="relative z-10 flex-1">
             <div className="flex items-center gap-3 mb-3">

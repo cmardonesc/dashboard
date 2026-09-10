@@ -6,6 +6,8 @@ import { useClubs } from '../lib/useClubs';
 import { FALLBACK_CLUB_NAMES } from '../constants';
 import ClubBadge from './ClubBadge';
 import { sortClubsByChileFirst } from '../lib/utils';
+import { AvatarJugador } from './AvatarJugador';
+import { getFotoUrls } from '../lib/fotos';
 
 interface LogisticaJugadoresProps {
   onRefresh?: () => void;
@@ -18,6 +20,22 @@ const LogisticaJugadores: React.FC<LogisticaJugadoresProps> = ({ onRefresh }) =>
   const [filterCategory, setFilterCategory] = useState<string>('TODAS');
   const [filterClub, setFilterClub] = useState<string>('TODOS');
   const [filterPosition, setFilterPosition] = useState<string>('TODAS');
+
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (players.length === 0) return;
+    const loadSignedUrls = async () => {
+      const items = players
+        .filter(p => p.foto_path)
+        .map(p => ({ path: p.foto_path!, updated_at: p.foto_updated_at }));
+      if (items.length > 0) {
+        const urlsMap = await getFotoUrls(items);
+        setSignedUrls(prev => ({ ...prev, ...urlsMap }));
+      }
+    };
+    loadSignedUrls();
+  }, [players]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Partial<User> | null>(null);
   const [saving, setSaving] = useState(false);
@@ -569,9 +587,13 @@ const LogisticaJugadores: React.FC<LogisticaJugadoresProps> = ({ onRefresh }) =>
                   <tr key={player.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 font-black italic text-xs group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
-                          {player.nombre?.charAt(0)}{player.apellido1?.charAt(0)}
-                        </div>
+                        <AvatarJugador
+                          player={{
+                            ...player,
+                            signed_url: player.foto_path ? signedUrls[player.foto_path] : undefined
+                          }}
+                          size={40}
+                        />
                         <div>
                           <p className="text-xs font-black text-slate-900 uppercase italic">{player.name}</p>
                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">ID: {player.player_id}</p>

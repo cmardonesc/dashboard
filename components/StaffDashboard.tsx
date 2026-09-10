@@ -454,7 +454,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(d);
       const dayLabels = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
       days.push({
         dateStr,
@@ -690,20 +690,35 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
               </div>
             ) : (
               filteredTasks.map((task, idx) => (
-                <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-100 group hover:bg-slate-100 transition-all">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[8px] font-black text-red-500 uppercase tracking-widest">{task.dinamica}</span>
-                      <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest bg-slate-200 px-1.5 py-0.5 rounded-md">
-                        {task.jornada || 'AM'}
-                      </span>
+                <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-100 group hover:bg-slate-100 transition-all flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[8px] font-black text-red-500 uppercase tracking-widest">{task.dinamica}</span>
+                        <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest bg-slate-200 px-1.5 py-0.5 rounded-md">
+                          {task.jornada || 'AM'}
+                        </span>
+                      </div>
+                      <i className="fa-solid fa-futbol text-[8px] text-slate-200 group-hover:text-slate-400 transition-colors"></i>
                     </div>
-                    <i className="fa-solid fa-futbol text-[8px] text-slate-200 group-hover:text-slate-400 transition-colors"></i>
+                    <p className="text-slate-900 text-[11px] font-black italic uppercase tracking-tight leading-none">{task.nombre}</p>
+                    {task.observacion && (
+                      <p className="text-slate-500 text-[9px] font-medium mt-2 line-clamp-2">{task.observacion}</p>
+                    )}
                   </div>
-                  <p className="text-slate-900 text-[11px] font-black italic uppercase tracking-tight leading-none">{task.nombre}</p>
-                  {task.observacion && (
-                    <p className="text-slate-500 text-[9px] font-medium mt-2 line-clamp-2">{task.observacion}</p>
-                  )}
+                  <div className="mt-3 pt-2 border-t border-slate-200/50 flex justify-end">
+                    <button
+                      onClick={() => {
+                        localStorage.setItem('selected_drill_name', task.nombre);
+                        window.dispatchEvent(new CustomEvent('selected_drill_changed', { detail: { name: task.nombre } }));
+                        window.dispatchEvent(new CustomEvent('navigate-to-menu', { detail: { menuId: 'dinamicas' } }));
+                      }}
+                      className="text-[8px] font-black uppercase text-red-600 hover:text-red-700 flex items-center gap-1.5 transition-colors tracking-wider"
+                    >
+                      <span>Ver Ficha Técnica</span>
+                      <i className="fa-solid fa-person-running"></i>
+                    </button>
+                  </div>
                 </div>
               ))
             )}

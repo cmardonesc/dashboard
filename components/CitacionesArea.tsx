@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase'
 import { triggerPushNotification } from '../lib/notifications'
 import { FEDERATION_LOGO, FALLBACK_CLUB_NAMES } from '../constants'
 import { getDriveDirectLink, sortClubsByChileFirst } from '../lib/utils'
+import { AvatarJugador } from './AvatarJugador'
+import { getFotoUrls } from '../lib/fotos'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import JSZip from 'jszip'
@@ -65,6 +67,22 @@ export default function CitacionesArea({
   const [allPlayers, setAllPlayers] = useState<User[]>([])
   const [citadosIds, setCitadosIds] = useState<number[]>([])
   const [clubContacts, setClubContacts] = useState<any[]>([])
+
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (allPlayers.length === 0) return;
+    const loadSignedUrls = async () => {
+      const items = allPlayers
+        .filter(p => p.foto_path)
+        .map(p => ({ path: p.foto_path!, updated_at: p.foto_updated_at }));
+      if (items.length > 0) {
+        const urlsMap = await getFotoUrls(items);
+        setSignedUrls(prev => ({ ...prev, ...urlsMap }));
+      }
+    };
+    loadSignedUrls();
+  }, [allPlayers]);
   
   // Mapping function to convert standard player object to User (as used in allPlayers state)
   const mapPlayerToUser = (p: any): User => {
@@ -135,7 +153,9 @@ export default function CitacionesArea({
       club: resolvedClubName,
       id_club: clubIdFromObj,
       position: p.position || p.posicion || 'N/A',
-      category: category as Category
+      category: category as Category,
+      foto_path: p.foto_path,
+      foto_updated_at: p.foto_updated_at,
     };
   };
 
@@ -684,7 +704,7 @@ export default function CitacionesArea({
       console.log("CitacionesArea: Fetching players with clubes join...");
       const { data, error } = await supabase
         .from('players')
-        .select(`player_id, nombre, apellido1, apellido2, posicion, anio, id_club, clubes!fk_players_clubes(id_club, nombre)`);
+        .select(`player_id, nombre, apellido1, apellido2, posicion, anio, id_club, foto_path, foto_updated_at, clubes!fk_players_clubes(id_club, nombre)`);
       
       if (error) throw error;
       
@@ -2232,9 +2252,13 @@ export default function CitacionesArea({
                 {players.sort((a,b) => a.name.localeCompare(b.name)).map(p => (
                   <div key={p.id} className="flex items-center justify-between p-3 rounded-2xl hover:bg-slate-50 transition-all border border-transparent hover:border-slate-100">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px] font-black italic">
-                        {p.name.charAt(0)}
-                      </div>
+                      <AvatarJugador
+                        player={{
+                          ...p,
+                          signed_url: p.foto_path ? signedUrls[p.foto_path] : undefined
+                        }}
+                        size={32}
+                      />
                       <span className="text-[11px] font-bold text-slate-700 uppercase">{p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.player_id}</span></span>
                     </div>
                     <span className="text-[9px] font-black text-red-600 uppercase tracking-widest bg-red-50 px-2.5 py-1 rounded-full">{p.position}</span>
@@ -2409,9 +2433,14 @@ export default function CitacionesArea({
 
                     <div className="flex items-center gap-5">
                       {/* Avatar Bubble */}
-                      <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center text-2xl font-black italic transition-all shadow-inner ${isCited ? 'bg-emerald-500 text-white' : 'bg-[#0b1220] text-white'}`}>
-                        {p.name?.charAt(0)}
-                      </div>
+                      <AvatarJugador
+                        player={{
+                          ...p,
+                          signed_url: p.foto_path ? signedUrls[p.foto_path] : undefined
+                        }}
+                        size={64}
+                        className="rounded-[24px] shadow-inner"
+                      />
                       <div className="overflow-hidden pr-4">
                         <div className={`text-[11px] font-black uppercase italic tracking-tighter leading-none mb-1 truncate ${isCited ? 'text-emerald-700' : 'text-slate-900'}`}>
                           {p.name} <span className="text-[7px] opacity-30 font-bold ml-1 tracking-normal">ID:{p.player_id}</span>

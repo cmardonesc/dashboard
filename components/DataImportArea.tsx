@@ -5,7 +5,7 @@ import { User } from '../types';
 
 import { fetchCatapultActivities, fetchCatapultActivityStats, fetchCatapultActivityDetail, testCatapultConnection } from '../services/catapultService';
 
-type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'cmj' | 'cmj_rebound' | 'slj' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api' | 'encoder_1rm';
+type ImportType = 'gps_totales' | 'gps_tareas' | 'antropometria' | 'imtp' | 'cmj' | 'cmj_rebound' | 'slj' | 'velocidad' | 'aceleracion' | 'vo2max' | 'wellness' | 'load' | 'catapult_api' | 'catapult_periods' | 'encoder_1rm';
 
 interface ImportConfig {
   label: string;
@@ -274,11 +274,22 @@ const IMPORT_CONFIGS: Record<ImportType, ImportConfig> = {
     ]
   },
   catapult_api: {
-    label: 'Catapult Cloud Sync',
+    label: 'Catapult Cloud Sync (Completo)',
     table: 'gps_import',
     icon: 'fa-solid fa-cloud-arrow-down',
-    description: 'Sincronización directa con la nube de Catapult Sports.',
+    description: 'Sincroniza la sesión (carga externa) y todas las tareas/periodos asociados desde Catapult en un solo clic.',
     conflictColumns: ['player_id', 'fecha'],
+    fields: [
+      { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
+      { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
+    ]
+  },
+  catapult_periods: {
+    label: 'Catapult Periodos (Dinámicas)',
+    table: 'gps_tareas',
+    icon: 'fa-solid fa-clock-rotate-left',
+    description: 'Sincronización de periodos/tareas desde la nube de Catapult Sports.',
+    conflictColumns: ['player_id', 'fecha', 'tarea'],
     fields: [
       { key: 'player_id', label: 'ID Jugador', required: true, type: 'number' },
       { key: 'fecha', label: 'Fecha', required: true, type: 'date' },
@@ -377,6 +388,7 @@ export default function DataImportArea() {
       return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
     });
   }, [players]);
+
   const [unmatchedRows, setUnmatchedRows] = useState<any[]>([]);
   const [resolvedIds, setResolvedIds] = useState<Record<number, number>>({}); // rowIndex -> playerId
   const [nameHeader, setNameHeader] = useState<string | null>(null);
@@ -388,6 +400,34 @@ export default function DataImportArea() {
   const [selectedMatcheados, setSelectedMatcheados] = useState<Record<string, boolean>>({});
   const [loadedSessionIds, setLoadedSessionIds] = useState<Set<string>>(new Set());
   const [sessionPreviews, setSessionPreviews] = useState<Record<string, any>>({});
+  const [generalPreview, setGeneralPreview] = useState<any>(null);
+  const [periodsPreview, setPeriodsPreview] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'general' | 'periods'>('general');
+  const [periodsConfirmSummary, setPeriodsConfirmSummary] = useState<{
+    upserted: number;
+    descartadas_por_formato: number;
+    descartadas_por_player_inexistente: number;
+    errores: any[];
+  } | null>(null);
+
+  const seriesPorDinamica = useMemo(() => {
+    if (!periodsPreview?.matcheados) return [];
+    const map = new Map<string, Set<string>>();
+    periodsPreview.matcheados.forEach((m: any) => {
+      const key = m.tarea_normalizada || m.drill_name || m.tarea || m.period_name || 'Sin Nombre';
+      // We identify distinct series by catapult_period_id, period_id, period_name, start_time etc.
+      const periodId = String(m.catapult_period_id || m.period_id || m.period_name || m.startTime || m.start_time || m.id_del_periodo || '1');
+      if (!map.has(key)) {
+        map.set(key, new Set());
+      }
+      map.get(key)!.add(periodId);
+    });
+    
+    return Array.from(map.entries()).map(([name, set]) => ({
+      name,
+      seriesCount: set.size
+    }));
+  }, [periodsPreview?.matcheados]);
 
   const [catapultAthletes, setCatapultAthletes] = useState<any[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<any>(null);
@@ -563,7 +603,9 @@ export default function DataImportArea() {
     const hours = Math.floor(total_seconds / (60 * 60));
     const minutes = Math.floor(total_seconds / 60) % 60;
     const d = new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
-    return d.toISOString().split('T')[0];
+    const offset = d.getTimezoneOffset();
+    const localD = new Date(d.getTime() - (offset * 60 * 1000));
+    return localD.toISOString().split('T')[0];
   };
 
   const parseCsvFloat = (val: any) => {
@@ -2026,6 +2068,13 @@ export default function DataImportArea() {
         });
       });
 
+      // Sort activities descending (most recent/closest date first)
+      deduplicatedActivities.sort((a, b) => {
+        const timeA = a.startTime ? new Date(a.startTime).getTime() : 0;
+        const timeB = b.startTime ? new Date(b.startTime).getTime() : 0;
+        return timeB - timeA;
+      });
+
       setCatapultActivities(deduplicatedActivities);
       
       if (deduplicatedActivities.length === 0) {
@@ -2072,6 +2121,7 @@ export default function DataImportArea() {
       });
     }
     setMessage(null);
+    setPeriodsConfirmSummary(null);
     setSelectedActivity(activity);
     
     try {
@@ -2082,40 +2132,68 @@ export default function DataImportArea() {
         throw new Error("La sesión aún se está procesando (Baking). Espera unos minutos y vuelve a intentar.");
       }
 
-      console.log(`Calling catapult-import-preview for activity_id: ${activityId}`);
-      const { data, error } = await supabase.functions.invoke('catapult-import-preview', {
-        body: { activity_id: activityId }
-      });
+      console.log(`Calling unified dual preview for activity_id: ${activityId}`);
+      
+      const [generalRes, periodsRes] = await Promise.allSettled([
+        supabase.functions.invoke('catapult-import-preview', { body: { activity_id: activityId } }),
+        supabase.functions.invoke('catapult-periods-preview', { body: { activity_id: activityId } })
+      ]);
 
-      if (error) {
-        throw new Error(error.message || "Error al obtener la vista previa de importación.");
+      let generalData: any = null;
+      let periodsData: any = null;
+
+      if (generalRes.status === 'fulfilled' && !generalRes.value.error) {
+        generalData = generalRes.value.data;
+      } else {
+        const errorMsg = generalRes.status === 'fulfilled' ? generalRes.value.error?.message : generalRes.reason?.message;
+        console.error("Error fetching general preview:", errorMsg);
       }
 
-      if (!data || !data.success) {
-        throw new Error(data?.error || "Error al procesar la vista previa en el servidor.");
+      if (periodsRes.status === 'fulfilled' && !periodsRes.value.error) {
+        periodsData = periodsRes.value.data;
+      } else {
+        const errorMsg = periodsRes.status === 'fulfilled' ? periodsRes.value.error?.message : periodsRes.reason?.message;
+        console.error("Error fetching periods preview:", errorMsg);
       }
 
-      console.log("catapult-import-preview response:", data);
+      if ((!generalData || !generalData.success) && (!periodsData || !periodsData.success)) {
+        throw new Error("No se pudo obtener la vista previa de la sesión general ni de las tareas.");
+      }
+
+      setGeneralPreview(generalData);
+      setPeriodsPreview(periodsData);
       
-      // Store preview response
-      setCurrentPreview(data);
-      
+      // Determine default active tab
+      const defaultTab = generalData?.success ? 'general' : 'periods';
+      setActiveTab(defaultTab);
+      setCurrentPreview(defaultTab === 'general' ? generalData : periodsData);
+
       // Save preview in map so we can access athlete counts in the card UI!
       if (activityId) {
         setSessionPreviews(prev => ({
           ...prev,
-          [activityId]: data
+          [activityId]: generalData || periodsData
         }));
       }
 
-      // Initialize checkbox selection for all matched athletes
+      // Initialize checkbox selection for all matched athletes across both previews
       const initialSelected: Record<string, boolean> = {};
-      (data.matcheados || []).forEach((m: any) => {
-        const key = m.athlete_uuid || m.athlete_name || String(m.player_id);
-        initialSelected[key] = true;
-      });
-      setSelectedMatcheados(initialSelected);
+      
+      if (generalData?.matcheados) {
+        generalData.matcheados.forEach((m: any) => {
+          const key = m.athlete_uuid || m.athlete_name || String(m.player_id);
+          initialSelected[key] = true;
+        });
+      }
+      
+      if (periodsData?.matcheados) {
+        periodsData.matcheados.forEach((m: any, idx: number) => {
+          const key = `${m.athlete_uuid || m.athlete_name || String(m.player_id)}_${m.drill_name || m.period_name || idx}`;
+          initialSelected[key] = true;
+        });
+      }
 
+      setSelectedMatcheados(initialSelected);
       setInspectingStats(true);
     } catch (err: any) {
       console.error("Error in handleInspectActivity:", err);
@@ -2133,71 +2211,137 @@ export default function DataImportArea() {
   const handleUpdatePlayerMapping = (athlete: any, newPlayerIdStr: string) => {
     const newPlayerId = newPlayerIdStr ? Number(newPlayerIdStr) : null;
     const player = players.find(p => p.player_id === newPlayerId);
-    
-    setCurrentPreview((prev: any) => {
+    const athleteKey = athlete.athlete_uuid || athlete.athlete_name;
+
+    const updatePreviewHelper = (prev: any, isPeriods: boolean) => {
       if (!prev) return prev;
       
       let nextMatcheados = [...(prev.matcheados || [])];
       let nextSinMapear = [...(prev.sin_mapear || [])];
-      
-      const athleteKey = athlete.athlete_uuid || athlete.athlete_name;
-      
-      const inMatchedIndex = nextMatcheados.findIndex(
-        m => (m.athlete_uuid || m.athlete_name) === athleteKey
-      );
-      
-      const inSinMapearIndex = nextSinMapear.findIndex(
-        sm => (sm.athlete_uuid || sm.athlete_name) === athleteKey
-      );
-      
-      if (newPlayerId === null) {
-        // Move to unlinked
-        if (inMatchedIndex !== -1) {
-          const removed = nextMatcheados[inMatchedIndex];
-          nextMatcheados.splice(inMatchedIndex, 1);
+
+      if (isPeriods) {
+        if (newPlayerId === null) {
+          // Move all period rows of this athlete to sin_mapear
+          const removedRows = nextMatcheados.filter(
+            m => (m.athlete_uuid || m.athlete_name) === athleteKey
+          );
+          nextMatcheados = nextMatcheados.filter(
+            m => (m.athlete_uuid || m.athlete_name) !== athleteKey
+          );
           
-          if (!nextSinMapear.some(sm => (sm.athlete_uuid || sm.athlete_name) === athleteKey)) {
+          removedRows.forEach(row => {
             nextSinMapear.push({
-              ...removed,
+              ...row,
               player_id: null,
               player_nombre: null
             });
-          }
-        }
-        
-        // Deselect
-        setSelectedMatcheados(prevSel => {
-          const nextSel = { ...prevSel };
-          delete nextSel[athleteKey];
-          return nextSel;
-        });
-      } else if (player) {
-        // Map to a player
-        if (inSinMapearIndex !== -1) {
-          const removed = nextSinMapear[inSinMapearIndex];
-          nextSinMapear.splice(inSinMapearIndex, 1);
-          
-          nextMatcheados.push({
-            ...removed,
-            player_id: player.player_id,
-            player_nombre: `${player.nombre} ${player.apellido1}`,
           });
-        } else if (inMatchedIndex !== -1) {
-          // Update existing
-          nextMatcheados[inMatchedIndex] = {
-            ...nextMatcheados[inMatchedIndex],
-            player_id: player.player_id,
-            player_nombre: `${player.nombre} ${player.apellido1}`,
-          };
+          
+          // Deselect checkboxes for this athlete's rows
+          setSelectedMatcheados(prevSel => {
+            const nextSel = { ...prevSel };
+            Object.keys(nextSel).forEach(k => {
+              if (k.startsWith(athleteKey)) {
+                delete nextSel[k];
+              }
+            });
+            return nextSel;
+          });
+        } else if (player) {
+          // Map all period rows of this athlete in sin_mapear to matcheados
+          const matchedFromSinMapear = nextSinMapear.filter(
+            sm => (sm.athlete_uuid || sm.athlete_name) === athleteKey
+          );
+          nextSinMapear = nextSinMapear.filter(
+            sm => (sm.athlete_uuid || sm.athlete_name) !== athleteKey
+          );
+          
+          matchedFromSinMapear.forEach(row => {
+            nextMatcheados.push({
+              ...row,
+              player_id: player.player_id,
+              player_nombre: `${player.nombre} ${player.apellido1}`,
+            });
+          });
+          
+          // Update player info for existing matched rows of this athlete
+          nextMatcheados = nextMatcheados.map(m => {
+            if ((m.athlete_uuid || m.athlete_name) === athleteKey) {
+              return {
+                ...m,
+                player_id: player.player_id,
+                player_nombre: `${player.nombre} ${player.apellido1}`
+              };
+            }
+            return m;
+          });
+          
+          // Auto select checkboxes for this athlete's rows
+          setSelectedMatcheados(prevSel => {
+            const nextSel = { ...prevSel };
+            nextMatcheados.forEach((m, idx) => {
+              if ((m.athlete_uuid || m.athlete_name) === athleteKey) {
+                const key = `${m.athlete_uuid || m.athlete_name || String(m.player_id)}_${m.drill_name || m.period_name || idx}`;
+                nextSel[key] = true;
+              }
+            });
+            return nextSel;
+          });
         }
+      } else {
+        // Standard single row per athlete mapping
+        const inMatchedIndex = nextMatcheados.findIndex(
+          m => (m.athlete_uuid || m.athlete_name) === athleteKey
+        );
         
-        // Auto select
-        setSelectedMatcheados(prevSel => ({
-          ...prevSel,
-          [athleteKey]: true
-        }));
+        const inSinMapearIndex = nextSinMapear.findIndex(
+          sm => (sm.athlete_uuid || sm.athlete_name) === athleteKey
+        );
+        
+        if (newPlayerId === null) {
+          if (inMatchedIndex !== -1) {
+            const removed = nextMatcheados[inMatchedIndex];
+            nextMatcheados.splice(inMatchedIndex, 1);
+            
+            if (!nextSinMapear.some(sm => (sm.athlete_uuid || sm.athlete_name) === athleteKey)) {
+              nextSinMapear.push({
+                ...removed,
+                player_id: null,
+                player_nombre: null
+              });
+            }
+          }
+          
+          setSelectedMatcheados(prevSel => {
+            const nextSel = { ...prevSel };
+            delete nextSel[athleteKey];
+            return nextSel;
+          });
+        } else if (player) {
+          if (inSinMapearIndex !== -1) {
+            const removed = nextSinMapear[inSinMapearIndex];
+            nextSinMapear.splice(inSinMapearIndex, 1);
+            
+            nextMatcheados.push({
+              ...removed,
+              player_id: player.player_id,
+              player_nombre: `${player.nombre} ${player.apellido1}`,
+            });
+          } else if (inMatchedIndex !== -1) {
+            nextMatcheados[inMatchedIndex] = {
+              ...nextMatcheados[inMatchedIndex],
+              player_id: player.player_id,
+              player_nombre: `${player.nombre} ${player.apellido1}`,
+            };
+          }
+          
+          setSelectedMatcheados(prevSel => ({
+            ...prevSel,
+            [athleteKey]: true
+          }));
+        }
       }
-      
+
       return {
         ...prev,
         matcheados: nextMatcheados,
@@ -2205,20 +2349,40 @@ export default function DataImportArea() {
         n_matcheados: nextMatcheados.length,
         n_sin_mapear: nextSinMapear.length
       };
+    };
+
+    setGeneralPreview((prev: any) => {
+      const updated = updatePreviewHelper(prev, false);
+      if (activeTab === 'general') {
+        setCurrentPreview(updated);
+      }
+      return updated;
+    });
+
+    setPeriodsPreview((prev: any) => {
+      const updated = updatePreviewHelper(prev, true);
+      if (activeTab === 'periods') {
+        setCurrentPreview(updated);
+      }
+      return updated;
     });
   };
 
   const handleConfirmImport = async () => {
-    if (!currentPreview || !currentPreview.matcheados) return;
-
-    // Filter only selected matcheados
-    const selectedRows = currentPreview.matcheados.filter((m: any) => {
+    // 1. Get selected rows for general session
+    const selectedGeneralRows = (generalPreview?.matcheados || []).filter((m: any) => {
       const key = m.athlete_uuid || m.athlete_name || String(m.player_id);
       return !!selectedMatcheados[key];
     });
 
-    if (selectedRows.length === 0) {
-      setMessage({ type: 'error', text: 'Debes seleccionar al menos un atleta vinculado para realizar la carga.' });
+    // 2. Get selected rows for periods
+    const selectedPeriodsRows = (periodsPreview?.matcheados || []).filter((m: any, idx: number) => {
+      const key = `${m.athlete_uuid || m.athlete_name || String(m.player_id)}_${m.drill_name || m.period_name || idx}`;
+      return !!selectedMatcheados[key];
+    });
+
+    if (selectedGeneralRows.length === 0 && selectedPeriodsRows.length === 0) {
+      setMessage({ type: 'error', text: 'Debes seleccionar al menos un registro vinculado para realizar la carga.' });
       return;
     }
 
@@ -2226,63 +2390,161 @@ export default function DataImportArea() {
     setMessage(null);
 
     try {
-      const filas = selectedRows.map((a: any) => ({
-        player_id: a.player_id,
-        fecha: a.fecha,
-        minutos: a.minutos,
-        dist_total_m: a.dist_total_m,
-        m_por_min: a.m_por_min,
-        dist_ai_m_15_kmh: a.dist_ai_m_15_kmh,
-        dist_mai_m_20_kmh: a.dist_mai_m_20_kmh,
-        dist_sprint_m_25_kmh: a.dist_sprint_m_25_kmh,
-        sprints_n: a.sprints_n,
-        vel_max_kmh: a.vel_max_kmh,
-        acc_decc_ai_n: a.acc_decc_ai_n,
-        nombre_sesion: a.nombre_sesion,
-        catapult_sync_id: a.catapult_sync_id
-      }));
+      let generalSuccessCount = 0;
+      let periodsSuccessCount = 0;
 
-      console.log("Calling catapult-import-confirm with payload:", filas);
-      const { data, error } = await supabase.functions.invoke('catapult-import-confirm', {
-        body: { filas }
-      });
+      // --- GENERAL SESSION LOAD ---
+      if (selectedGeneralRows.length > 0) {
+        const bodyPayload = {
+          filas: selectedGeneralRows.map((a: any) => ({
+            player_id: a.player_id,
+            fecha: a.fecha,
+            minutos: a.minutos,
+            dist_total_m: a.dist_total_m,
+            m_por_min: a.m_por_min,
+            dist_ai_m_15_kmh: a.dist_ai_m_15_kmh,
+            dist_mai_m_20_kmh: a.dist_mai_m_20_kmh,
+            dist_sprint_m_25_kmh: a.dist_sprint_m_25_kmh,
+            sprints_n: a.sprints_n,
+            vel_max_kmh: a.vel_max_kmh,
+            acc_decc_ai_n: a.acc_decc_ai_n,
+            nombre_sesion: a.nombre_sesion,
+            catapult_sync_id: a.catapult_sync_id
+          }))
+        };
 
-      if (error) {
-        throw new Error(error.message || "Error al confirmar la carga de datos.");
+        let data: any = null;
+        let invokeError: any = null;
+        try {
+          const res = await supabase.functions.invoke('catapult-import-confirm', { body: bodyPayload });
+          data = res.data;
+          invokeError = res.error;
+        } catch (err: any) {
+          invokeError = err;
+        }
+
+        if (invokeError || !data || !data.success) {
+          console.warn("Edge Function general confirm failed. Falling back to direct database insert.", invokeError);
+          const mappedFilas = selectedGeneralRows.map((a: any) => ({
+            player_id: Number(a.player_id),
+            fecha: a.fecha,
+            minutos: Number(a.minutos !== undefined ? a.minutos : 0),
+            dist_total_m: Number(a.dist_total_m !== undefined ? a.dist_total_m : 0),
+            m_por_min: Number(a.m_por_min !== undefined ? a.m_por_min : 0),
+            dist_ai_m_15_kmh: Number(a.dist_ai_m_15_kmh !== undefined ? a.dist_ai_m_15_kmh : 0),
+            dist_mai_m_20_kmh: Number(a.dist_mai_m_20_kmh !== undefined ? a.dist_mai_m_20_kmh : 0),
+            dist_sprint_m_25_kmh: Number(a.dist_sprint_m_25_kmh !== undefined ? a.dist_sprint_m_25_kmh : 0),
+            sprints_n: Number(a.sprints_n !== undefined ? a.sprints_n : 0),
+            vel_max_kmh: Number(a.vel_max_kmh !== undefined ? a.vel_max_kmh : 0),
+            acc_decc_ai_n: Number(a.acc_decc_ai_n !== undefined ? a.acc_decc_ai_n : 0),
+            nombre_sesion: a.nombre_sesion || 'Sesión',
+            catapult_sync_id: a.catapult_sync_id ? String(a.catapult_sync_id) : undefined
+          }));
+
+          const dedupedMap = new Map();
+          for (const row of mappedFilas) {
+            const key = `${row.player_id}_${row.fecha}_${row.nombre_sesion}`;
+            dedupedMap.set(key, row);
+          }
+          const uniqueMappedFilas = Array.from(dedupedMap.values());
+
+          const { error: insertError } = await supabase
+            .from('gps_import')
+            .upsert(uniqueMappedFilas, { onConflict: 'player_id,fecha,nombre_sesion' });
+          
+          if (insertError) {
+            console.warn("Upsert with onConflict failed on gps_import. Falling back to delete-insert.", insertError);
+            const batches = [];
+            for (let i = 0; i < uniqueMappedFilas.length; i += 30) {
+              batches.push(uniqueMappedFilas.slice(i, i + 30));
+            }
+            for (const batch of batches) {
+              await Promise.all(batch.map((row: any) => 
+                supabase.from('gps_import')
+                  .delete()
+                  .eq('player_id', row.player_id)
+                  .eq('fecha', row.fecha)
+                  .eq('nombre_sesion', row.nombre_sesion)
+              ));
+            }
+            const { error: fallbackError } = await supabase
+              .from('gps_import')
+              .insert(uniqueMappedFilas);
+
+            if (fallbackError) {
+              throw new Error(`Fallback insert into gps_import failed: ${fallbackError.message}`);
+            }
+          }
+          generalSuccessCount = uniqueMappedFilas.length;
+        } else {
+          generalSuccessCount = data.upserted ?? selectedGeneralRows.length;
+        }
       }
 
-      console.log("catapult-import-confirm response:", data);
-
-      if (data && data.success) {
-        const upsertedCount = data.upserted ?? selectedRows.length;
-        setMessage({ 
-          type: 'success', 
-          text: `✅ ${upsertedCount} sesiones cargadas correctamente` 
-        });
-
-        // Mark this session card as loaded
-        const sessionId = selectedActivity?.id || selectedActivity?.Identifier || selectedActivity?.activity_id;
-        if (sessionId) {
-          setLoadedSessionIds(prev => {
-            const next = new Set(prev);
-            next.add(sessionId);
-            return next;
+      // --- PERIODS / DRILLS LOAD ---
+      if (periodsPreview?.matcheados && periodsPreview.matcheados.length > 0) {
+        let responseData: any = null;
+        let invokeError: any = null;
+        try {
+          const res = await supabase.functions.invoke('catapult-periods-confirm', {
+            body: { filas: periodsPreview.matcheados }
           });
+          responseData = res.data;
+          invokeError = res.error;
+        } catch (err: any) {
+          invokeError = err;
         }
 
-        // Close wizard modal
-        setInspectingStats(false);
-        setCurrentPreview(null);
-      } else {
-        // Show errors or descartadas
-        let errorMsg = "Error al confirmar la importación.";
-        if (data?.errores && data.errores.length > 0) {
-          errorMsg += ` Detalles: ${data.errores.join(', ')}`;
-        } else if (data?.descartadas_por_player_inexistente > 0) {
-          errorMsg += ` ${data.descartadas_por_player_inexistente} descartadas por jugador inexistente.`;
+        if (invokeError) {
+          throw new Error(`Error en la llamada a la Edge Function: ${invokeError.message || JSON.stringify(invokeError)}`);
         }
-        throw new Error(errorMsg);
+
+        if (!responseData || responseData.success === false) {
+          const errMsg = responseData?.error || (responseData?.errores ? JSON.stringify(responseData.errores) : "Error desconocido en Edge Function");
+          throw new Error(`Sincronización de tareas fallida: ${errMsg}`);
+        }
+
+        const upserted = responseData.upserted ?? 0;
+        const descartadas_por_formato = responseData.descartadas_por_formato ?? 0;
+        const descartadas_por_player_inexistente = responseData.descartadas_por_player_inexistente ?? 0;
+        const errores = responseData.errores || [];
+
+        periodsSuccessCount = upserted;
+        setPeriodsConfirmSummary({
+          upserted,
+          descartadas_por_formato,
+          descartadas_por_player_inexistente,
+          errores
+        });
       }
+
+      // Generate success message
+      let successMsg = "✅ Sincronización completada.";
+      if (generalSuccessCount > 0 && periodsSuccessCount > 0) {
+        successMsg = `✅ ¡Carga Exitosa! Se sincronizaron la sesión general (${generalSuccessCount} atletas) y las tareas (${periodsSuccessCount} registros) simultáneamente.`;
+      } else if (generalSuccessCount > 0) {
+        successMsg = `✅ ¡Carga Exitosa! Se sincronizó la sesión general (${generalSuccessCount} registros).`;
+      } else if (periodsSuccessCount > 0) {
+        successMsg = `✅ ¡Carga Exitosa! Se sincronizó el desglose de tareas (${periodsSuccessCount} registros).`;
+      }
+
+      setMessage({ type: 'success', text: successMsg });
+
+      // Mark activity as loaded
+      const sessionId = selectedActivity?.id || selectedActivity?.Identifier || selectedActivity?.activity_id;
+      if (sessionId) {
+        setLoadedSessionIds(prev => {
+          const next = new Set(prev);
+          next.add(sessionId);
+          return next;
+        });
+      }
+
+      setInspectingStats(false);
+      setCurrentPreview(null);
+      setGeneralPreview(null);
+      setPeriodsPreview(null);
+
     } catch (err: any) {
       console.error("Error in handleConfirmImport:", err);
       setMessage({ type: 'error', text: err.message || "No se pudo realizar la carga de datos." });
@@ -2310,9 +2572,11 @@ export default function DataImportArea() {
 
       {!selectedType ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {(Object.keys(IMPORT_CONFIGS) as ImportType[]).map((type) => {
-            const config = IMPORT_CONFIGS[type];
-            const isCatapult = type === 'catapult_api';
+          {(Object.keys(IMPORT_CONFIGS) as ImportType[])
+            .filter(type => type !== 'catapult_periods')
+            .map((type) => {
+              const config = IMPORT_CONFIGS[type];
+              const isCatapult = type === 'catapult_api';
             
             return (
               <button
@@ -2332,7 +2596,7 @@ export default function DataImportArea() {
             );
           })}
         </div>
-      ) : selectedType === 'catapult_api' ? (
+      ) : (selectedType === 'catapult_api' || selectedType === 'catapult_periods') ? (
         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden min-h-[400px]">
           <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-sky-50/30">
             <div className="flex items-center gap-4">
@@ -2343,8 +2607,12 @@ export default function DataImportArea() {
                 <i className="fa-solid fa-arrow-left"></i>
               </button>
               <div>
-                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Catapult Cloud Sync</h3>
-                <p className="text-sky-600 text-[10px] font-bold uppercase tracking-widest italic">Conexión directa vía Catapult API</p>
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">
+                  {selectedType === 'catapult_periods' ? 'Catapult Periodos (Dinámicas)' : 'Catapult Cloud Sync'}
+                </h3>
+                <p className="text-sky-600 text-[10px] font-bold uppercase tracking-widest italic">
+                  {selectedType === 'catapult_periods' ? 'Importación desglosada por Periodos / Tareas' : 'Conexión directa vía Catapult API'}
+                </p>
               </div>
             </div>
             
@@ -2495,6 +2763,7 @@ export default function DataImportArea() {
                         onClick={() => {
                           setInspectingStats(false);
                           setCurrentPreview(null);
+                          setPeriodsConfirmSummary(null);
                         }}
                         className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
                       >
@@ -2519,6 +2788,72 @@ export default function DataImportArea() {
                       </p>
                     </div>
 
+                    {/* Pestañas de Navegación del Preview (Solo para Catapult API) */}
+                    <div className="flex border-b border-slate-100 mb-6 gap-2">
+                      <button
+                        onClick={() => {
+                          setActiveTab('general');
+                          setCurrentPreview(generalPreview);
+                        }}
+                        className={`px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
+                          activeTab === 'general'
+                            ? 'border-sky-600 text-sky-600'
+                            : 'border-transparent text-slate-400 hover:text-slate-600'
+                        }`}
+                      >
+                        <i className="fa-solid fa-file-invoice text-sm"></i>
+                        Sesión General (External Load)
+                        {generalPreview?.matcheados ? (
+                          <span className="bg-sky-50 text-sky-600 text-[10px] px-2 py-0.5 rounded-full font-black ml-1">
+                            {generalPreview.matcheados.length + (generalPreview.sin_mapear?.length || 0)}
+                          </span>
+                        ) : null}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveTab('periods');
+                          setCurrentPreview(periodsPreview);
+                        }}
+                        className={`px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
+                          activeTab === 'periods'
+                            ? 'border-sky-600 text-sky-600'
+                            : 'border-transparent text-slate-400 hover:text-slate-600'
+                        }`}
+                      >
+                        <i className="fa-solid fa-list-check text-sm"></i>
+                        Tareas / Ejercicios (GPS Periodos)
+                        {periodsPreview?.matcheados ? (
+                          <span className="bg-sky-50 text-sky-600 text-[10px] px-2 py-0.5 rounded-full font-black ml-1">
+                            {periodsPreview.matcheados.length + (periodsPreview.sin_mapear?.length || 0)}
+                          </span>
+                        ) : null}
+                      </button>
+                    </div>
+
+                    {activeTab === 'periods' && periodsPreview?.matcheados && (
+                      <div className="bg-sky-50/50 border border-sky-100 rounded-[32px] p-6 mb-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div>
+                            <h4 className="text-xs font-black text-slate-950 uppercase tracking-widest flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-sky-600 animate-pulse"></span>
+                              Resumen Analítico de Tareas a Enviar
+                            </h4>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none mt-1">
+                              Se enviarán <span className="text-sky-600 font-black">{periodsPreview.matcheados.length}</span> registros (filas atleta × periodo).
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {seriesPorDinamica.map((dyn) => (
+                              <span key={dyn.name} className="inline-flex items-center gap-1.5 bg-white border border-sky-100/80 px-3 py-1.5 rounded-2xl text-[10px] font-black uppercase text-sky-850 tracking-tight shadow-sm">
+                                <i className="fa-solid fa-layer-group text-[9px] text-sky-500"></i>
+                                {dyn.name}: <span className="bg-sky-600 text-white px-1.5 py-0.5 rounded-lg text-[9px] font-black">{dyn.seriesCount} series</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Tabla de Matcheados */}
                     {currentPreview.matcheados && currentPreview.matcheados.length > 0 ? (
                       <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
@@ -2529,12 +2864,19 @@ export default function DataImportArea() {
                                 <th className="px-4 py-4 text-center w-12">
                                   <input 
                                     type="checkbox" 
-                                    checked={currentPreview.matcheados.length > 0 && currentPreview.matcheados.every((m: any) => selectedMatcheados[m.athlete_uuid || m.athlete_name || String(m.player_id)])} 
+                                    checked={currentPreview.matcheados.length > 0 && currentPreview.matcheados.every((m: any, idx: number) => {
+                                      const key = activeTab === 'periods'
+                                        ? `${m.athlete_uuid || m.athlete_name || String(m.player_id)}_${m.drill_name || m.period_name || idx}`
+                                        : m.athlete_uuid || m.athlete_name || String(m.player_id);
+                                      return !!selectedMatcheados[key];
+                                    })} 
                                     onChange={(e) => {
                                       const checked = e.target.checked;
                                       const nextSelected = { ...selectedMatcheados };
-                                      currentPreview.matcheados.forEach((m: any) => {
-                                        const key = m.athlete_uuid || m.athlete_name || String(m.player_id);
+                                      currentPreview.matcheados.forEach((m: any, idx: number) => {
+                                        const key = activeTab === 'periods'
+                                          ? `${m.athlete_uuid || m.athlete_name || String(m.player_id)}_${m.drill_name || m.period_name || idx}`
+                                          : m.athlete_uuid || m.athlete_name || String(m.player_id);
                                         nextSelected[key] = checked;
                                       });
                                       setSelectedMatcheados(nextSelected);
@@ -2543,6 +2885,7 @@ export default function DataImportArea() {
                                   />
                                 </th>
                                 <th className="px-4 py-4">Atleta Catapult → Sistema</th>
+                                {activeTab === 'periods' && <th className="px-3 py-4 text-left">Periodo / Tarea</th>}
                                 <th className="px-3 py-4 text-right">Minutos</th>
                                 <th className="px-3 py-4 text-right">Dist. Total (m)</th>
                                 <th className="px-3 py-4 text-right">M/Min</th>
@@ -2555,9 +2898,22 @@ export default function DataImportArea() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
-                              {currentPreview.matcheados.map((m: any) => {
-                                const key = m.athlete_uuid || m.athlete_name || String(m.player_id);
+                              {currentPreview.matcheados.map((m: any, idx: number) => {
+                                const key = activeTab === 'periods'
+                                  ? `${m.athlete_uuid || m.athlete_name || String(m.player_id)}_${m.drill_name || m.period_name || idx}`
+                                  : m.athlete_uuid || m.athlete_name || String(m.player_id);
                                 const isChecked = !!selectedMatcheados[key];
+                                
+                                const valMinutos = m.duration_min !== undefined ? m.duration_min : (m.minutos !== undefined ? m.minutos : undefined);
+                                const valDistTotal = m.total_distance_m !== undefined ? m.total_distance_m : (m.dist_total_m !== undefined ? m.dist_total_m : undefined);
+                                const valMpm = m.meters_per_min !== undefined ? m.meters_per_min : (m.m_por_min !== undefined ? m.m_por_min : undefined);
+                                const valHI = m.dist_aint_15kmh !== undefined ? m.dist_aint_15kmh : (m.dist_ai_m_15_kmh !== undefined ? m.dist_ai_m_15_kmh : undefined);
+                                const valVHI = m.dist_maint_20kmh !== undefined ? m.dist_maint_20kmh : (m.dist_mai_m_20_kmh !== undefined ? m.dist_mai_m_20_kmh : undefined);
+                                const valSprint = m.dist_sprint_25kmh !== undefined ? m.dist_sprint_25kmh : (m.dist_sprint_m_25_kmh !== undefined ? m.dist_sprint_m_25_kmh : undefined);
+                                const valSprintsN = m.num_sprints !== undefined ? m.num_sprints : (m.sprints_n !== undefined ? m.sprints_n : undefined);
+                                const valVelMax = m.max_vel_kmh !== undefined ? m.max_vel_kmh : (m.vel_max_kmh !== undefined ? m.vel_max_kmh : undefined);
+                                const valAccDec = m.acc_decc_ai !== undefined ? m.acc_decc_ai : (m.acc_decc_ai_n !== undefined ? m.acc_decc_ai_n : undefined);
+
                                 return (
                                   <tr key={key} className={`hover:bg-slate-50/50 transition-colors ${isChecked ? '' : 'opacity-50'}`}>
                                     <td className="px-4 py-4 text-center">
@@ -2595,15 +2951,22 @@ export default function DataImportArea() {
                                         </div>
                                       </div>
                                     </td>
-                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.minutos !== undefined ? m.minutos.toFixed(1) : '-'}</td>
-                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.dist_total_m !== undefined ? m.dist_total_m.toFixed(0) : '-'}</td>
-                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.m_por_min !== undefined ? m.m_por_min.toFixed(1) : '-'}</td>
-                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.dist_ai_m_15_kmh !== undefined ? m.dist_ai_m_15_kmh.toFixed(0) : '-'}</td>
-                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.dist_mai_m_20_kmh !== undefined ? m.dist_mai_m_20_kmh.toFixed(0) : '-'}</td>
-                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.dist_sprint_m_25_kmh !== undefined ? m.dist_sprint_m_25_kmh.toFixed(0) : '-'}</td>
-                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.sprints_n !== undefined ? m.sprints_n : '-'}</td>
-                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.vel_max_kmh !== undefined ? m.vel_max_kmh.toFixed(1) : '-'}</td>
-                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{m.acc_decc_ai_n !== undefined ? m.acc_decc_ai_n : '-'}</td>
+                                    {activeTab === 'periods' && (
+                                      <td className="px-3 py-4 text-left font-black text-slate-800">
+                                        <span className="bg-slate-100 px-2 py-1 rounded-lg uppercase text-[9px] tracking-tight">
+                                          {m.drill_name || m.tarea || m.period_name || 'Sin Tarea'}
+                                        </span>
+                                      </td>
+                                    )}
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valMinutos !== undefined ? valMinutos.toFixed(1) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valDistTotal !== undefined ? valDistTotal.toFixed(0) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valMpm !== undefined ? valMpm.toFixed(1) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valHI !== undefined ? valHI.toFixed(0) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valVHI !== undefined ? valVHI.toFixed(0) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valSprint !== undefined ? valSprint.toFixed(0) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valSprintsN !== undefined ? valSprintsN : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valVelMax !== undefined ? valVelMax.toFixed(1) : '-'}</td>
+                                    <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valAccDec !== undefined ? valAccDec : '-'}</td>
                                   </tr>
                                 );
                               })}
@@ -2750,6 +3113,49 @@ export default function DataImportArea() {
                   <i className={`fa-solid ${message.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'} text-lg`}></i>
                   <p className="text-xs font-bold">{message.text}</p>
                 </div>
+
+                {periodsConfirmSummary && message.type === 'success' && (
+                  <div className="p-6 rounded-3xl bg-emerald-50/40 border border-emerald-100 text-emerald-950 space-y-4 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
+                        <i className="fa-solid fa-chart-line text-sm"></i>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black uppercase tracking-widest text-emerald-900">Métricas Detalladas del Lote (catapult-periods-confirm)</h4>
+                        <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mt-0.5">Sincronización procesada por la Edge de negocio de forma segura:</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-white p-4 rounded-2xl border border-emerald-100/50 shadow-sm">
+                        <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Registros Guardados (UPSERT)</span>
+                        <span className="text-lg font-black text-emerald-700">{periodsConfirmSummary.upserted}</span>
+                      </div>
+                      <div className="bg-white p-4 rounded-2xl border border-emerald-100/50 shadow-sm">
+                        <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Descartadas por Formato</span>
+                        <span className="text-lg font-black text-amber-600">{periodsConfirmSummary.descartadas_por_formato}</span>
+                      </div>
+                      <div className="bg-white p-4 rounded-2xl border border-emerald-100/50 shadow-sm">
+                        <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Descartadas (Atleta Inexistente)</span>
+                        <span className="text-lg font-black text-rose-600">{periodsConfirmSummary.descartadas_por_player_inexistente}</span>
+                      </div>
+                      <div className="bg-white p-4 rounded-2xl border border-emerald-100/50 shadow-sm">
+                        <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Errores / Incidencias</span>
+                        <span className="text-lg font-black text-slate-700">{periodsConfirmSummary.errores?.length || 0}</span>
+                      </div>
+                    </div>
+                    {periodsConfirmSummary.errores && periodsConfirmSummary.errores.length > 0 && (
+                      <div className="bg-rose-50/50 border border-rose-100 p-4 rounded-2xl text-[10px] font-bold text-rose-700 uppercase tracking-tight">
+                        <p className="font-black mb-1">Listado de Errores / Avisos Reportados:</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          {periodsConfirmSummary.errores.slice(0, 10).map((err: any, idx: number) => (
+                            <li key={idx}>{typeof err === 'object' ? JSON.stringify(err) : String(err)}</li>
+                          ))}
+                          {periodsConfirmSummary.errores.length > 10 && <li>... y {periodsConfirmSummary.errores.length - 10} errores más</li>}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {message.type === 'error' && (
                   message.text.includes('cmj_altura_salto_im') || 

@@ -316,8 +316,16 @@ export default function DesconvocatoriaArea({
           console.error("DesconvocatoriaArea: Error parsing custom clubs:", e);
         }
 
-        const mapped: User[] = data.filter((d: any) => d.players).map((d: any) => {
-          const p = d.players;
+        const seenPlayerIds = new Set();
+        const mapped: User[] = data
+          .filter((d: any) => d.players && d.players.player_id !== undefined && d.players.player_id !== null)
+          .filter((d: any) => {
+            if (seenPlayerIds.has(d.players.player_id)) return false;
+            seenPlayerIds.add(d.players.player_id);
+            return true;
+          })
+          .map((d: any) => {
+            const p = d.players;
           // Inferir categoría si falta
           let category = '';
           if (p.anio) {

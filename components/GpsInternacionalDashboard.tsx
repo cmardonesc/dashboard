@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Category, CATEGORY_ID_MAP, CATEGORY_COLORS } from '../types';
+import { Category, CATEGORY_ID_MAP, CATEGORY_COLORS, REVERSE_CATEGORY_ID_MAP } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   Legend, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -29,13 +29,12 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
   const [selectedMatchId, setSelectedMatchId] = useState<string>('');
   const [loadingMatches, setLoadingMatches] = useState(false);
   
-  // GPS Data
-  const [gpsData, setGpsData] = useState<any[]>([]);
-  const [loadingGps, setLoadingGps] = useState(false);
-  const [allPlayersGps, setAllPlayersGps] = useState<any[]>([]);
-
-  // Historical International Match GPS averages for trend analysis
-  const [historicalMatchAverages, setHistoricalMatchAverages] = useState<any[]>([]);
+  // Master GPS & Player preloaded cache
+  const [allGpsHistory, setAllGpsHistory] = useState<any[]>([]);
+  const [allPlayers, setAllPlayers] = useState<any[]>([]);
+  const [loadingMaster, setLoadingMaster] = useState(true);
+  const [allMicrocycles, setAllMicrocycles] = useState<any[]>([]);
+  const [allCitaciones, setAllCitaciones] = useState<any[]>([]);
 
   // UI Tabs
   const [activeTab, setActiveTab] = useState<'TEAM' | 'INDIVIDUAL'>('TEAM');
@@ -44,210 +43,503 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
   // Selected Metrics for charts
   const [selectedMetricId, setSelectedMetricId] = useState<string>('dist_total_m');
 
+  // Cascading Filter States
+  const [filterYear, setFilterYear] = useState<string>('TODOS');
+  const [filterCategory, setFilterCategory] = useState<string>('TODAS');
+  const [filterPosition, setFilterPosition] = useState<string>('TODAS');
+  const [filterClub, setFilterClub] = useState<string>('TODAS');
+  const [filterPlayerId, setFilterPlayerId] = useState<number | null>(null);
+
+  // Player history for selected player
+  const [playerHistory, setPlayerHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   // Categories helper
   const categoryList = ['TODAS', ...Object.values(Category)];
 
-  // 1. Fetch International Matches
+  // Keep filterCategory in sync with selectedCategory
   useEffect(() => {
-    const fetchInternationalMatches = async () => {
-      setLoadingMatches(true);
+    setFilterCategory(selectedCategory);
+  }, [selectedCategory]);
+
+  // Reset dependent filters when year changes
+  useEffect(() => {
+    setFilterPosition('TODAS');
+    setFilterClub('TODAS');
+    setFilterPlayerId(null);
+  }, [filterYear]);
+
+  // Reset dependent filters when category changes
+  useEffect(() => {
+    setFilterPosition('TODAS');
+    setFilterClub('TODAS');
+    setFilterPlayerId(null);
+  }, [filterCategory]);
+
+  // Reset dependent filters when position changes
+  useEffect(() => {
+    setFilterClub('TODAS');
+    setFilterPlayerId(null);
+  }, [filterPosition]);
+
+  // Reset dependent filters when club changes
+  useEffect(() => {
+    setFilterPlayerId(null);
+  }, [filterClub]);
+
+  // 1. Fetch Master Data on Mount
+  useEffect(() => {
+    const loadAllMasterData = async () => {
+      setLoadingMaster(true);
       try {
-        let query = supabase
+        // Fetch ALL matches that look international/mundial/sudamericano
+        const { data: matchesData, error: matchesError } = await supabase
           .from('matches')
           .select('*')
           .or('competition_type.ilike.%internacional%,competition_type.ilike.%mundial%,competition_type.ilike.%sudamericano%')
-          .order('date', { ascending: false });
+          .order('date', { ascending: true });
 
-        if (selectedCategory !== 'TODAS') {
-          const categoryId = CATEGORY_ID_MAP[selectedCategory.toLowerCase()];
-          if (categoryId) {
-            query = query.eq('category_id', categoryId);
-          }
-        }
+        if (matchesError) throw matchesError;
+        setMatches(matchesData || []);
 
-        const { data, error } = await query;
-        if (error) throw error;
-
-        setMatches(data || []);
-        if (data && data.length > 0) {
-          // Keep current if still available, else set first
-          const exists = data.some(m => m.id === selectedMatchId);
-          if (!exists) {
-            setSelectedMatchId(data[0].id);
-          }
-        } else {
-          setSelectedMatchId('');
-        }
-      } catch (err) {
-        console.error('Error fetching international matches:', err);
-      } finally {
-        setLoadingMatches(false);
-      }
-    };
-
-    fetchInternationalMatches();
-  }, [selectedCategory]);
-
-  const selectedMatch = useMemo(() => {
-    return matches.find(m => m.id === selectedMatchId) || null;
-  }, [matches, selectedMatchId]);
-
-  // 2. Fetch GPS import data for the selected match date
-  useEffect(() => {
-    if (!selectedMatch) {
-      setGpsData([]);
-      setAllPlayersGps([]);
-      return;
-    }
-
-    const fetchGpsDataForMatch = async () => {
-      setLoadingGps(true);
-      try {
-        // Query gps_import records matching the match date
-        const { data: gpsRaw, error: gpsError } = await supabase
-          .from('gps_import')
-          .select('*')
-          .eq('fecha', selectedMatch.date);
-
-        if (gpsError) throw gpsError;
-
-        if (!gpsRaw || gpsRaw.length === 0) {
-          setGpsData([]);
-          setAllPlayersGps([]);
-          setLoadingGps(false);
+        const matchDates = matchesData?.map(m => m.date) || [];
+        if (matchDates.length === 0) {
+          setLoadingMaster(false);
           return;
         }
 
-        // Fetch player names and positions to join
-        const playerIds = Array.from(new Set(gpsRaw.map(g => g.player_id)));
-        const { data: playersData, error: playersError } = await supabase
-          .from('players')
-          .select('player_id, nombre, apellido1, apellido2, posicion, club_name')
-          .in('player_id', playerIds);
-
-        if (playersError) throw playersError;
-
-        // Map and clean records
-        const mappedGps = gpsRaw.map(gps => {
-          const p = playersData?.find(pl => pl.player_id === gps.player_id);
-          const fullName = p ? `${p.nombre} ${p.apellido1}` : `ID: ${gps.player_id}`;
-          const posicionGeneral = p?.posicion?.toUpperCase() || 'VOLANTE';
-          
-          // Categorize position into tactically meaningful buckets
-          let tactica = 'VOLANTE';
-          if (posicionGeneral.includes('DEF') || posicionGeneral.includes('ZAG') || posicionGeneral.includes('LAT') || posicionGeneral.includes('LÍB')) {
-            tactica = 'DEFENSA';
-          } else if (posicionGeneral.includes('DEL') || posicionGeneral.includes('EXT') || posicionGeneral.includes('PUN') || posicionGeneral.includes('CER')) {
-            tactica = 'DELANTERO';
-          } else if (posicionGeneral.includes('ARQ') || posicionGeneral.includes('POR')) {
-            tactica = 'ARQUERO';
-          }
-
-          return {
-            ...gps,
-            fullName,
-            posicion: p?.posicion || 'Volante',
-            lineaTactica: tactica,
-            club_name: p?.club_name || 'Selección',
-            m_por_min: gps.minutos > 0 ? Number((gps.dist_total_m / gps.minutos).toFixed(1)) : 0
-          };
-        });
-
-        // If a player has multiple segments in the same day (rare for matches, but handles aggregate), group them
-        const aggregatedMap = new Map<number, any>();
-        mappedGps.forEach((item) => {
-          const pid = item.player_id;
-          if (!aggregatedMap.has(pid)) {
-            aggregatedMap.set(pid, { ...item });
-          } else {
-            const existing = aggregatedMap.get(pid);
-            existing.minutos += item.minutos;
-            existing.dist_total_m += item.dist_total_m;
-            existing.dist_ai_m_15_kmh += item.dist_ai_m_15_kmh;
-            existing.dist_mai_m_20_kmh += item.dist_mai_m_20_kmh;
-            existing.dist_sprint_m_25_kmh += item.dist_sprint_m_25_kmh;
-            existing.sprints_n += item.sprints_n;
-            existing.acc_decc_ai_n += item.acc_decc_ai_n;
-            existing.vel_max_kmh = Math.max(existing.vel_max_kmh, item.vel_max_kmh);
-            existing.m_por_min = existing.minutos > 0 ? Number((existing.dist_total_m / existing.minutos).toFixed(1)) : 0;
-          }
-        });
-
-        const finalGps = Array.from(aggregatedMap.values());
-        setGpsData(finalGps);
-        setAllPlayersGps(finalGps);
-
-        if (finalGps.length > 0) {
-          setSelectedPlayerId(finalGps[0].player_id);
-        }
-      } catch (err) {
-        console.error('Error fetching GPS match data:', err);
-      } finally {
-        setLoadingGps(false);
-      }
-    };
-
-    fetchGpsDataForMatch();
-  }, [selectedMatch]);
-
-  // 3. Fetch historical match averages for the selected category
-  useEffect(() => {
-    if (!selectedMatch) return;
-
-    const fetchHistoricalAverages = async () => {
-      try {
-        // Fetch all international matches in the same category
-        let matchQuery = supabase
-          .from('matches')
-          .select('id, date, opponent, competition_type')
-          .or('competition_type.ilike.%internacional%,competition_type.ilike.%mundial%,competition_type.ilike.%sudamericano%')
-          .eq('category_id', selectedMatch.category_id)
-          .order('date', { ascending: true })
-          .limit(8); // limit to last 8 games to keep chart readable
-
-        const { data: catMatches, error: matchErr } = await matchQuery;
-        if (matchErr) throw matchErr;
-
-        if (!catMatches || catMatches.length === 0) return;
-
-        const dates = catMatches.map(m => m.date);
-
-        // Fetch gps records for those dates
-        const { data: gpsHistory, error: gpsHistoryErr } = await supabase
+        // Fetch ALL GPS records matching those dates
+        const { data: gpsRaw, error: gpsError } = await supabase
           .from('gps_import')
-          .select('fecha, dist_total_m, minutos, dist_sprint_m_25_kmh, vel_max_kmh')
-          .in('fecha', dates);
+          .select('*')
+          .in('fecha', matchDates);
 
-        if (gpsHistoryErr) throw gpsHistoryErr;
+        if (gpsError) throw gpsError;
+        setAllGpsHistory(gpsRaw || []);
 
-        // Group by match date and calculate averages
-        const matchStats = catMatches.map(m => {
-          const matchGps = gpsHistory?.filter(g => g.fecha === m.date) || [];
-          if (matchGps.length === 0) return null;
+        // Fetch players for those GPS records
+        const playerIds = Array.from(new Set(gpsRaw?.map(g => g.player_id) || []));
+        if (playerIds.length > 0) {
+          const { data: playersData, error: playersError } = await supabase
+            .from('players')
+            .select('player_id, nombre, apellido1, apellido2, posicion, id_club, anio, clubes!fk_players_clubes(nombre)')
+            .in('player_id', playerIds);
 
-          const totalDistance = matchGps.reduce((acc, curr) => acc + (curr.dist_total_m || 0), 0);
-          const totalMinutos = matchGps.reduce((acc, curr) => acc + (curr.minutos || 0), 0);
-          const totalSprintsDist = matchGps.reduce((acc, curr) => acc + (curr.dist_sprint_m_25_kmh || 0), 0);
-          const avgMaxSpeed = matchGps.reduce((acc, curr) => acc + (curr.vel_max_kmh || 0), 0) / matchGps.length;
+          if (playersError) throw playersError;
+          setAllPlayers(playersData || []);
+        }
 
-          return {
-            dateStr: `${m.opponent} (${m.date.slice(5)})`,
-            opponent: m.opponent,
-            avgDistance: Math.round(totalDistance / matchGps.length),
-            avgIntensity: totalMinutos > 0 ? Number((totalDistance / totalMinutos).toFixed(1)) : 0,
-            avgSprint: Math.round(totalSprintsDist / matchGps.length),
-            maxSpeed: Number(avgMaxSpeed.toFixed(1))
-          };
-        }).filter(item => item !== null);
-
-        setHistoricalMatchAverages(matchStats);
+        // Fetch microcycles and citations for precise filtering
+        const { data: microcyclesData } = await supabase.from('microcycles').select('id, category_id');
+        const { data: citacionesData } = await supabase.from('citaciones').select('player_id, microcycle_id');
+        setAllMicrocycles(microcyclesData || []);
+        setAllCitaciones(citacionesData || []);
       } catch (err) {
-        console.error('Error fetching historical international GPS averages:', err);
+        console.error('Error loading master GPS performance data:', err);
+      } finally {
+        setLoadingMaster(false);
       }
     };
 
-    fetchHistoricalAverages();
-  }, [selectedMatch]);
+    loadAllMasterData();
+  }, []);
+
+  // Fetch full GPS history for the selected player
+  useEffect(() => {
+    if (!selectedPlayerId) {
+      setPlayerHistory([]);
+      return;
+    }
+
+    const fetchPlayerHistory = async () => {
+      setLoadingHistory(true);
+      try {
+        const { data, error } = await supabase
+          .from('gps_import')
+          .select('*')
+          .eq('player_id', selectedPlayerId)
+          .order('fecha', { ascending: true });
+
+        if (error) throw error;
+        setPlayerHistory(data || []);
+      } catch (err) {
+        console.error('Error fetching player history:', err);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+
+    fetchPlayerHistory();
+  }, [selectedPlayerId]);
+
+  // Helper to map player to their convocated categories
+  const playerCategoryMap = useMemo(() => {
+    const map = new Map<number, Set<string>>();
+    allCitaciones.forEach(c => {
+      const micro = allMicrocycles.find(m => m.id === c.microcycle_id);
+      if (micro) {
+        const catString = REVERSE_CATEGORY_ID_MAP[micro.category_id];
+        if (catString) {
+          if (!map.has(c.player_id)) {
+            map.set(c.player_id, new Set());
+          }
+          map.get(c.player_id)!.add(catString);
+        }
+      }
+    });
+    return map;
+  }, [allCitaciones, allMicrocycles]);
+
+  // Master fully-mapped GPS records with joined player metrics, positions, and categories
+  const masterGpsData = useMemo(() => {
+    if (allGpsHistory.length === 0 || allPlayers.length === 0) return [];
+
+    const getPlayerCategories = (p: any) => {
+      const citedCats = playerCategoryMap.get(p.player_id);
+      if (citedCats && citedCats.size > 0) {
+        return Array.from(citedCats);
+      }
+      if (p?.anio) {
+        const currentYear = new Date().getFullYear();
+        const age = currentYear - Number(p.anio);
+        let fallbackCat = 'sub_17';
+        if (age <= 13) fallbackCat = 'sub_13';
+        else if (age === 14) fallbackCat = 'sub_14';
+        else if (age === 15) fallbackCat = 'sub_15';
+        else if (age === 16) fallbackCat = 'sub_16';
+        else if (age === 17) fallbackCat = 'sub_17';
+        else if (age === 18) fallbackCat = 'sub_18';
+        else if (age <= 20) fallbackCat = 'sub_20';
+        else if (age <= 21) fallbackCat = 'sub_21';
+        else if (age <= 23) fallbackCat = 'sub_23';
+        else fallbackCat = 'adulta';
+        return [fallbackCat];
+      }
+      return ['sub_17'];
+    };
+
+    return allGpsHistory.map(gps => {
+      const p = allPlayers.find(pl => pl.player_id === gps.player_id);
+      const fullName = p ? `${p.nombre} ${p.apellido1}` : `ID: ${gps.player_id}`;
+      const posicionGeneral = p?.posicion?.toUpperCase() || 'VOLANTE';
+      
+      let category = 'sub_17'; // default
+      const playerCats = p ? getPlayerCategories(p) : ['sub_17'];
+
+      // Find all matches on this specific date
+      const matchesOnThisDate = matches.filter(m => m.date === gps.fecha);
+      
+      // 1. Try to find a match where the player was officially cited in its microcycle
+      const matchForPlayer = matchesOnThisDate.find(m => {
+        if (!m.microcycle_id) return false;
+        return allCitaciones.some(c => c.player_id === gps.player_id && c.microcycle_id === m.microcycle_id);
+      });
+
+      if (matchForPlayer) {
+        const catString = REVERSE_CATEGORY_ID_MAP[matchForPlayer.category_id];
+        if (catString) {
+          category = catString;
+        }
+      } else {
+        // 2. Try to find a match on this date that matches one of the player's categories (either cited or age-based)
+        const matchOfPlayerCategory = matchesOnThisDate.find(m => {
+          const catString = REVERSE_CATEGORY_ID_MAP[m.category_id];
+          return playerCats.includes(catString);
+        });
+
+        if (matchOfPlayerCategory) {
+          const catString = REVERSE_CATEGORY_ID_MAP[matchOfPlayerCategory.category_id];
+          if (catString) {
+            category = catString;
+          }
+        } else if (matchesOnThisDate.length > 0) {
+          // 3. Younger players brought up without explicit match-day citation mapping in DB,
+          // but we have a single match on this date (e.g. Sub-20 match for Bruno Torres).
+          // If the player's age/citation is younger, but there's a match, we map to that match's category
+          // only if they don't have other matching categories on this date.
+          const catString = REVERSE_CATEGORY_ID_MAP[matchesOnThisDate[0].category_id];
+          if (catString) {
+            category = catString;
+          }
+        } else {
+          // 4. Default fallback: use the player's first listed/assigned category
+          category = playerCats[0] || 'sub_17';
+        }
+      }
+      
+      // Categorize position into tactically meaningful buckets
+      let tactica = 'VOLANTE';
+      if (posicionGeneral.includes('DEF') || posicionGeneral.includes('ZAG') || posicionGeneral.includes('LAT') || posicionGeneral.includes('LÍB')) {
+        tactica = 'DEFENSA';
+      } else if (posicionGeneral.includes('DEL') || posicionGeneral.includes('EXT') || posicionGeneral.includes('PUN') || posicionGeneral.includes('CER')) {
+        tactica = 'DELANTERO';
+      } else if (posicionGeneral.includes('ARQ') || posicionGeneral.includes('POR')) {
+        tactica = 'ARQUERO';
+      }
+
+      const clubObj = Array.isArray(p?.clubes) ? p?.clubes[0] : p?.clubes;
+      const clubName = (clubObj as any)?.nombre || 'Selección';
+
+      return {
+        ...gps,
+        fullName,
+        posicion: p?.posicion || 'Volante',
+        lineaTactica: tactica,
+        category,
+        club_name: clubName,
+        m_por_min: gps.minutos > 0 ? Number((gps.dist_total_m / gps.minutos).toFixed(1)) : 0
+      };
+    });
+  }, [allGpsHistory, allPlayers, matches, allCitaciones, allMicrocycles, playerCategoryMap]);
+
+  // Filter matches based on the main category selector and year filter
+  const filteredMatches = useMemo(() => {
+    let result = matches;
+    if (selectedCategory !== 'TODAS') {
+      const categoryId = CATEGORY_ID_MAP[selectedCategory.toLowerCase()];
+      if (categoryId) {
+        result = result.filter(m => m.category_id === categoryId);
+      }
+    }
+    if (filterYear !== 'TODOS') {
+      result = result.filter(m => m.date.startsWith(filterYear));
+    }
+    return result;
+  }, [matches, selectedCategory, filterYear]);
+
+  const selectedMatch = useMemo(() => {
+    return filteredMatches.find(m => m.id === selectedMatchId) || filteredMatches[filteredMatches.length - 1] || null;
+  }, [filteredMatches, selectedMatchId]);
+
+  // Keep selectedMatchId valid and updated when category or matches change
+  useEffect(() => {
+    if (filteredMatches.length > 0) {
+      const exists = filteredMatches.some(m => m.id === selectedMatchId);
+      if (!exists) {
+        setSelectedMatchId(filteredMatches[filteredMatches.length - 1].id);
+      }
+    } else {
+      setSelectedMatchId('');
+    }
+  }, [filteredMatches, selectedMatchId]);
+
+  // GPS data for the currently selected match
+  const gpsData = useMemo(() => {
+    if (!selectedMatch) return [];
+    
+    // Filter masterGpsData for the selected match date
+    const matchGps = masterGpsData.filter(g => g.fecha === selectedMatch.date);
+    
+    // Aggregate by player in case of multiple sessions
+    const aggregatedMap = new Map<number, any>();
+    matchGps.forEach((item) => {
+      const pid = item.player_id;
+      if (!aggregatedMap.has(pid)) {
+        aggregatedMap.set(pid, { ...item });
+      } else {
+        const existing = aggregatedMap.get(pid);
+        existing.minutos += item.minutos;
+        existing.dist_total_m += item.dist_total_m;
+        existing.dist_ai_m_15_kmh += item.dist_ai_m_15_kmh;
+        existing.dist_mai_m_20_kmh += item.dist_mai_m_20_kmh;
+        existing.dist_sprint_m_25_kmh += item.dist_sprint_m_25_kmh;
+        existing.sprints_n += item.sprints_n;
+        existing.acc_decc_ai_n += item.acc_decc_ai_n;
+        existing.vel_max_kmh = Math.max(existing.vel_max_kmh, item.vel_max_kmh);
+        existing.m_por_min = existing.minutos > 0 ? Number((existing.dist_total_m / existing.minutos).toFixed(1)) : 0;
+      }
+    });
+    
+    return Array.from(aggregatedMap.values());
+  }, [masterGpsData, selectedMatch]);
+
+  // 1. Available Categories from loaded GPS players
+  const availableCategories = useMemo(() => {
+    const cats = new Set<string>();
+    masterGpsData.forEach(p => {
+      if (p.category) cats.add(p.category);
+    });
+    return ['TODAS', ...Array.from(cats).sort()];
+  }, [masterGpsData]);
+
+  // 1.5. Available Years from loaded GPS players
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    masterGpsData.forEach(p => {
+      if (p.fecha) {
+        years.add(p.fecha.slice(0, 4));
+      }
+    });
+    return ['TODOS', ...Array.from(years).sort().reverse()];
+  }, [masterGpsData]);
+
+  // 2. Available Positions based on selected category and year
+  const availablePositions = useMemo(() => {
+    const positions = new Set<string>();
+    masterGpsData.forEach(p => {
+      const matchCategory = filterCategory === 'TODAS' || p.category === filterCategory;
+      const matchYear = filterYear === 'TODOS' || p.fecha?.startsWith(filterYear);
+      if (matchCategory && matchYear && p.posicion) {
+        positions.add(p.posicion);
+      }
+    });
+    return ['TODAS', ...Array.from(positions).sort()];
+  }, [masterGpsData, filterCategory, filterYear]);
+
+  // 3. Available Clubs based on category, year and position
+  const availableClubs = useMemo(() => {
+    const clubsList = new Set<string>();
+    masterGpsData.forEach(p => {
+      const matchCategory = filterCategory === 'TODAS' || p.category === filterCategory;
+      const matchYear = filterYear === 'TODOS' || p.fecha?.startsWith(filterYear);
+      const matchPosition = filterPosition === 'TODAS' || p.posicion === filterPosition || p.lineaTactica === filterPosition;
+      if (matchCategory && matchYear && matchPosition && p.club_name) {
+        clubsList.add(p.club_name);
+      }
+    });
+    return ['TODAS', ...Array.from(clubsList).sort()];
+  }, [masterGpsData, filterCategory, filterYear, filterPosition]);
+
+  // 4. Available Players based on category, year, position, and club
+  const availablePlayers = useMemo(() => {
+    const seen = new Set<number>();
+    const list: any[] = [];
+    masterGpsData.forEach(p => {
+      const matchCategory = filterCategory === 'TODAS' || p.category === filterCategory;
+      const matchYear = filterYear === 'TODOS' || p.fecha?.startsWith(filterYear);
+      const matchPosition = filterPosition === 'TODAS' || p.posicion === filterPosition || p.lineaTactica === filterPosition;
+      const matchClub = filterClub === 'TODAS' || p.club_name === filterClub;
+      
+      if (matchCategory && matchYear && matchPosition && matchClub) {
+        if (!seen.has(p.player_id)) {
+          seen.add(p.player_id);
+          list.push(p);
+        }
+      }
+    });
+    return list.sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [masterGpsData, filterCategory, filterYear, filterPosition, filterClub]);
+
+  // Auto-select first player in list if none selected
+  useEffect(() => {
+    if (availablePlayers.length > 0) {
+      const exists = availablePlayers.some(p => p.player_id === filterPlayerId);
+      if (!exists) {
+        setFilterPlayerId(availablePlayers[0].player_id);
+      }
+    } else {
+      setFilterPlayerId(null);
+    }
+  }, [availablePlayers, filterPlayerId]);
+
+  // Synchronize with selectedPlayerId for radar chart & breakdowns
+  useEffect(() => {
+    if (filterPlayerId) {
+      setSelectedPlayerId(filterPlayerId);
+    }
+  }, [filterPlayerId]);
+
+  const playerMatchHistory = useMemo(() => {
+    if (!selectedPlayerId || playerHistory.length === 0 || filteredMatches.length === 0) return [];
+
+    const dailyMap = new Map<string, any>();
+    playerHistory.forEach(gps => {
+      const date = gps.fecha;
+      const match = filteredMatches.find(m => m.date === date);
+      if (!match) return; // Only keep dates with matches in active filter category
+
+      if (!dailyMap.has(date)) {
+        dailyMap.set(date, {
+          ...gps,
+          matchName: `${match.opponent.toUpperCase()} (${date.slice(5)})`,
+          matchDate: date,
+          minutos: gps.minutos || 0,
+          dist_total_m: gps.dist_total_m || 0,
+          dist_ai_m_15_kmh: gps.dist_ai_m_15_kmh || 0,
+          dist_mai_m_20_kmh: gps.dist_mai_m_20_kmh || 0,
+          dist_sprint_m_25_kmh: gps.dist_sprint_m_25_kmh || 0,
+          sprints_n: gps.sprints_n || 0,
+          acc_decc_ai_n: gps.acc_decc_ai_n || 0,
+          vel_max_kmh: gps.vel_max_kmh || 0,
+        });
+      } else {
+        const existing = dailyMap.get(date);
+        existing.minutos += (gps.minutos || 0);
+        existing.dist_total_m += (gps.dist_total_m || 0);
+        existing.dist_ai_m_15_kmh += (gps.dist_ai_m_15_kmh || 0);
+        existing.dist_mai_m_20_kmh += (gps.dist_mai_m_20_kmh || 0);
+        existing.dist_sprint_m_25_kmh += (gps.dist_sprint_m_25_kmh || 0);
+        existing.sprints_n += (gps.sprints_n || 0);
+        existing.acc_decc_ai_n += (gps.acc_decc_ai_n || 0);
+        existing.vel_max_kmh = Math.max(existing.vel_max_kmh, gps.vel_max_kmh || 0);
+      }
+    });
+
+    return Array.from(dailyMap.values()).map(item => ({
+      ...item,
+      m_por_min: item.minutos > 0 ? Number((item.dist_total_m / item.minutos).toFixed(1)) : 0
+    })).sort((a, b) => a.matchDate.localeCompare(b.matchDate));
+  }, [selectedPlayerId, playerHistory, filteredMatches]);
+
+  // Dynamic Average/Peak values per match for the active team/category/position/club filters
+  const filteredGroupMatchData = useMemo(() => {
+    if (filteredMatches.length === 0) return [];
+    
+    // Sort matches chronologically for timeline display
+    const sortedMatches = [...filteredMatches].sort((a, b) => a.date.localeCompare(b.date));
+
+    return sortedMatches.map(m => {
+      // Find all master GPS records for this match date
+      const matchRecords = masterGpsData.filter(gps => {
+        if (gps.fecha !== m.date) return false;
+        
+        const matchCategory = filterCategory === 'TODAS' || gps.category === filterCategory;
+        const matchPosition = filterPosition === 'TODAS' || gps.posicion === filterPosition || gps.lineaTactica === filterPosition;
+        const matchClub = filterClub === 'TODAS' || gps.club_name === filterClub;
+        
+        return matchCategory && matchPosition && matchClub;
+      });
+
+      if (matchRecords.length === 0) {
+        return null;
+      }
+
+      // Calculate average for the selected metric
+      const sum = matchRecords.reduce((acc, curr) => {
+        const val = curr[selectedMetricId] || 0;
+        return acc + val;
+      }, 0);
+      const avgValue = Number((sum / matchRecords.length).toFixed(1));
+
+      const sumDistance = matchRecords.reduce((acc, curr) => acc + (curr.dist_total_m || 0), 0);
+      const avgMinutos = Math.round(matchRecords.reduce((acc, curr) => acc + (curr.minutos || 0), 0) / matchRecords.length);
+      const sumAiDist = matchRecords.reduce((acc, curr) => acc + (curr.dist_ai_m_15_kmh || 0), 0);
+      const sumHsrDist = matchRecords.reduce((acc, curr) => acc + (curr.dist_mai_m_20_kmh || 0), 0);
+      const sumSprint = matchRecords.reduce((acc, curr) => acc + (curr.dist_sprint_m_25_kmh || 0), 0);
+      const sumSprintsCount = matchRecords.reduce((acc, curr) => acc + (curr.sprints_n || 0), 0);
+      const maxSpeed = Number(Math.max(...matchRecords.map(curr => curr.vel_max_kmh || 0)).toFixed(1));
+      const sumAcDc = matchRecords.reduce((acc, curr) => acc + (curr.acc_decc_ai_n || 0), 0);
+      const avgIntensity = Number((matchRecords.reduce((acc, curr) => acc + (curr.m_por_min || 0), 0) / matchRecords.length).toFixed(1));
+
+      return {
+        id: m.id,
+        matchDate: m.date,
+        opponent: m.opponent,
+        displayName: `VS ${m.opponent.toUpperCase()} (${m.date.slice(5)})`,
+        avgValue,
+        count: matchRecords.length,
+        sumDistance,
+        avgMinutos,
+        sumAiDist,
+        sumHsrDist,
+        sumSprint,
+        sumSprintsCount,
+        maxSpeed,
+        sumAcDc,
+        avgIntensity
+      };
+    }).filter(item => item !== null);
+  }, [filteredMatches, masterGpsData, filterCategory, filterPosition, filterClub, selectedMetricId]);
 
   // 4. Team Level Stats & KPIs
   const teamKPIs = useMemo(() => {
@@ -350,7 +642,7 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
         <div>
           <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex flex-wrap items-center gap-3">
             <span className="w-2 h-6 bg-red-600 rounded-full animate-pulse"></span>
@@ -364,105 +656,49 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
           </p>
         </div>
 
-        {/* SELECTOR DE CATEGORÍA */}
-        <div className="flex flex-wrap gap-1.5 bg-white p-1 rounded-2xl border border-slate-100 shadow-sm max-w-full overflow-x-auto">
-          {categoryList.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${
-                selectedCategory === cat 
-                  ? 'bg-red-600 text-white shadow-md' 
-                  : 'text-slate-400 hover:text-slate-950 hover:bg-slate-50'
-              }`}
-            >
-              {cat.replace('_', ' ')}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* RIVAL / MATCH SELECTOR */}
-      <div className="bg-[#0b1220] rounded-[32px] p-6 md:p-8 text-white relative overflow-hidden shadow-xl">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-red-600/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
-        <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-600/5 rounded-full blur-3xl -ml-32 -mb-32"></div>
-        
-        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex flex-col md:flex-row items-center gap-6 text-center md:text-left w-full md:w-auto">
-            <div className="w-16 h-16 bg-red-600 rounded-3xl flex items-center justify-center shadow-lg shadow-red-600/20">
-              <i className="fa-solid fa-earth-americas text-2xl text-white"></i>
-            </div>
-            <div className="space-y-2">
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500">Seleccionar Partido Internacional</p>
-              
-              {loadingMatches ? (
-                <div className="h-8 w-48 bg-white/10 rounded animate-pulse"></div>
-              ) : matches.length === 0 ? (
-                <h4 className="text-xl font-black italic uppercase tracking-tighter text-slate-400">
-                  Sin partidos registrados
-                </h4>
-              ) : (
-                <select
-                  value={selectedMatchId}
-                  onChange={(e) => setSelectedMatchId(e.target.value)}
-                  className="bg-slate-900 border border-white/10 rounded-2xl px-4 py-2 text-white font-black italic uppercase tracking-tight text-base md:text-lg focus:outline-none focus:ring-2 focus:ring-red-600 cursor-pointer max-w-xs md:max-w-md truncate"
-                >
-                  {matches.map(m => (
-                    <option key={m.id} value={m.id}>
-                      VS {m.opponent.toUpperCase()} — {m.date} ({m.competition_type})
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* SELECTOR DE CATEGORÍA */}
+          <div className="flex flex-wrap gap-1 bg-white p-1 rounded-2xl border border-slate-100 shadow-sm max-w-full overflow-x-auto">
+            {categoryList.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${
+                  selectedCategory === cat 
+                    ? 'bg-red-600 text-white shadow-md' 
+                    : 'text-slate-400 hover:text-slate-950 hover:bg-slate-50'
+                }`}
+              >
+                {cat.replace('_', ' ')}
+              </button>
+            ))}
           </div>
-
-          {selectedMatch && (
-            <div className="flex flex-wrap gap-4 items-center justify-center md:justify-end text-center">
-              <div className="px-4 py-3 bg-white/5 border border-white/5 rounded-2xl min-w-[100px]">
-                <p className="text-[8px] font-black uppercase text-slate-400 tracking-wider mb-1">Resultado</p>
-                <p className="text-base font-black italic tracking-tighter text-white">
-                  {selectedMatch.result || 'No disputado'}
-                </p>
-              </div>
-              <div className="px-4 py-3 bg-white/5 border border-white/5 rounded-2xl min-w-[100px]">
-                <p className="text-[8px] font-black uppercase text-slate-400 tracking-wider mb-1">Ciudad</p>
-                <p className="text-base font-black italic tracking-tighter text-white truncate max-w-[120px]">
-                  {selectedMatch.city || 'Desconocida'}
-                </p>
-              </div>
-              <div className="px-4 py-3 bg-white/5 border border-white/5 rounded-2xl min-w-[100px]">
-                <p className="text-[8px] font-black uppercase text-slate-400 tracking-wider mb-1">Sede</p>
-                <p className="text-base font-black italic tracking-tighter text-red-500 truncate max-w-[140px]">
-                  {selectedMatch.location || 'Complejo'}
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
       {/* CORE DATA CONDITIONAL */}
-      {loadingGps ? (
+      {loadingMaster ? (
         <div className="py-32 text-center bg-white rounded-[40px] border border-slate-100 shadow-sm animate-pulse flex flex-col items-center justify-center gap-4">
-          <i className="fa-solid fa-spinner animate-spin text-red-600 text-3xl"></i>
+          <i className="fa-solid fa-spinner animate-spin text-red-600 text-3xl animate-infinite"></i>
           <p className="text-xs font-black uppercase tracking-widest text-slate-400">Procesando registros de satélite GPS...</p>
         </div>
-      ) : gpsData.length === 0 ? (
+      ) : matches.length === 0 ? (
         <div className="py-24 text-center bg-white rounded-[40px] border border-slate-100 shadow-sm px-6">
           <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6 text-xl">
             <i className="fa-solid fa-satellite-dish animate-bounce"></i>
           </div>
           <h4 className="text-slate-900 font-black uppercase tracking-widest text-xs mb-2">
-            Sin datos GPS cargados para este encuentro
+            Sin encuentros registrados
           </h4>
           <p className="text-slate-400 text-[10px] font-bold uppercase tracking-tight max-w-md mx-auto leading-relaxed">
-            No se registran datos de GPS importados para la fecha del partido ({selectedMatch?.date || 'N/A'}).
-            Por favor, dirígete a la pestaña de <strong className="text-red-600">Importar Datos</strong> para cargar el archivo GPS del encuentro.
+            No se registran datos de GPS importados para encuentros internacionales.
+            Por favor, dirígete a la pestaña de <strong className="text-red-600">Importar Datos</strong> para cargar el archivo GPS.
           </p>
         </div>
       ) : (
         <div className="space-y-6">
+
+
           {/* TEAM SUMMARY CARDS (KPIs) */}
           {teamKPIs && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -538,192 +774,133 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
 
           {/* TEAM TAB VIEWS */}
           {activeTab === 'TEAM' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="space-y-6">
               
-              {/* PRIMARY METRIC CHART PANEL */}
-              <div className="lg:col-span-2 bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
-                      Desempeño Individual del Plantel
-                    </h4>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
-                      Comparativa física para la métrica seleccionada
-                    </p>
-                  </div>
-
-                  {/* METRIC CHANGER */}
-                  <select
-                    value={selectedMetricId}
-                    onChange={(e) => setSelectedMetricId(e.target.value)}
-                    className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-1.5 text-slate-700 font-black uppercase tracking-wider text-[10px] focus:outline-none focus:ring-2 focus:ring-red-600 cursor-pointer"
-                  >
-                    {METRICS.map(m => (
-                      <option key={m.id} value={m.id}>{m.name} ({m.unit})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="h-80 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={gpsData}
-                      margin={{ top: 10, right: 10, left: -20, bottom: 20 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis 
-                        dataKey="fullName" 
-                        tick={{ fill: '#64748b', fontSize: 9, fontWeight: 'bold' }} 
-                        axisLine={false}
-                        tickLine={false}
-                        angle={-30}
-                        textAnchor="end"
-                        interval={0}
-                        height={60}
-                      />
-                      <YAxis 
-                        tick={{ fill: '#64748b', fontSize: 9, fontWeight: 'bold' }} 
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#0b1220', border: 'none', borderRadius: '16px', color: '#fff' }}
-                        labelStyle={{ fontWeight: 'black', textTransform: 'uppercase', fontSize: '10px', color: '#ef4444' }}
-                        itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
-                        formatter={(value: any) => [`${value} ${metricConfig.unit}`, metricConfig.name]}
-                      />
-                      <Bar 
-                        dataKey={metricConfig.id} 
-                        fill={metricConfig.color}
-                        radius={[8, 8, 0, 0]}
-                        maxBarSize={45}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* TACTICAL LINE PERFORMANCE AVERAGES */}
-              <div className="bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm flex flex-col justify-between">
+              {/* CHART 1: Distancia Total y Minutos */}
+              <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
                 <div>
-                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
-                    Líneas Tácticas (Averages)
-                  </h4>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5 mb-6">
-                    Respuesta física media agrupada por zona de juego
-                  </p>
-                </div>
-
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={lineAverages}
-                      margin={{ top: 10, right: 10, left: -10, bottom: 10 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="line" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'black' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: '#64748b', fontSize: 9 }} axisLine={false} tickLine={false} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#0b1220', border: 'none', borderRadius: '16px', color: '#fff' }}
-                        itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
-                      />
-                      <Bar dataKey="Intensidad" fill="#10b981" name="Intensidad (m/min)" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="Velocidad Máxima" fill="#8b5cf6" name="Vmax (km/h)" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <p className="text-[9px] text-slate-400 font-semibold italic text-center mt-4">
-                  * Permite verificar la asimilación del ritmo físico según requerimiento posicional
-                </p>
-              </div>
-
-              {/* HISTORICAL TREND COMPOSITE */}
-              <div className="lg:col-span-3 bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-6">
-                <div>
-                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
-                    Evolución de Intensidad en Competencia Internacional
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                    <i className="fa-solid fa-chart-bar text-red-600"></i> 1. Volumen de Esfuerzo Grupal
                   </h4>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
-                    Historial de rendimiento físico promedio del plantel chileno contra rivales mundiales
+                    Distancia Total (Bar, Izq.) vs. Promedio de Minutos (Line, Der.)
                   </p>
                 </div>
-
-                {historicalMatchAverages.length === 0 ? (
+                {filteredGroupMatchData.length === 0 ? (
                   <div className="py-12 text-center text-slate-300 font-bold text-xs uppercase italic tracking-widest border border-dashed border-slate-100 rounded-2xl">
-                    Se requieren múltiples registros de partidos internacionales para renderizar la línea de tendencia.
+                    No se registran datos para esta categoría.
                   </div>
                 ) : (
                   <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart
-                        data={historicalMatchAverages}
-                        margin={{ top: 20, right: 20, left: -10, bottom: 10 }}
-                      >
-                        <CartesianGrid stroke="#f1f5f9" vertical={false} />
-                        <XAxis dataKey="dateStr" tick={{ fill: '#64748b', fontSize: 9, fontWeight: 'black' }} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="left" tick={{ fill: '#64748b', fontSize: 9 }} axisLine={false} tickLine={false} label={{ value: 'Volumen Distancia (m)', angle: -90, position: 'insideLeft', style: {fontSize: 8, fill: '#64748b', fontWeight: 'black', textTransform: 'uppercase'} }} />
-                        <YAxis yAxisId="right" orientation="right" tick={{ fill: '#64748b', fontSize: 9 }} axisLine={false} tickLine={false} label={{ value: 'Intensidad (m/min)', angle: 90, position: 'insideRight', style: {fontSize: 8, fill: '#10b981', fontWeight: 'black'} }} />
-                        <Tooltip contentStyle={{ backgroundColor: '#0b1220', border: 'none', borderRadius: '16px', color: '#fff' }} />
-                        <Legend wrapperStyle={{ fontSize: 10, fontWeight: 'bold' }} />
-                        <Bar yAxisId="left" dataKey="avgDistance" fill="#dc2626" name="Distancia Media (m)" radius={[4, 4, 0, 0]} maxBarSize={30} />
-                        <Line yAxisId="right" type="monotone" dataKey="avgIntensity" stroke="#10b981" name="Intensidad Media (m/min)" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                        <YAxis yAxisId="left" tick={{ fill: '#ef4444', fontSize: 8, fontWeight: 'bold' }} unit="m" />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fill: '#10b981', fontSize: 8, fontWeight: 'bold' }} unit="min" />
+                        <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
+                        <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                        <Bar yAxisId="left" dataKey="sumDistance" name="Distancia Total" fill="#fca5a5" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                        <Line yAxisId="right" type="monotone" dataKey="avgMinutos" name="Promedio de Minutos" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4 }} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 )}
               </div>
 
-              {/* COMPLETE SQUAD COMPARATIVE TABLE */}
-              <div className="lg:col-span-3 bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
+              {/* CHART 2: AI > 15 y HSR > 20 */}
+              <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
                 <div>
-                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
-                    Planilla de Rendimiento de Plantel
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                    <i className="fa-solid fa-bolt text-amber-500"></i> 2. Alta Intensidad Grupal (AI & HSR)
                   </h4>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
-                    Detalle absoluto de parámetros físicos de todos los jugadores que sumaron minutos
+                    Metros en Alta Intensidad &gt; 15 km/h (Bar) vs. High-Speed Running (HSR) &gt; 20 km/h (Line)
                   </p>
                 </div>
+                {filteredGroupMatchData.length === 0 ? (
+                  <div className="py-12 text-center text-slate-300 font-bold text-xs uppercase italic tracking-widest border border-dashed border-slate-100 rounded-2xl">
+                    No se registran datos para esta categoría.
+                  </div>
+                ) : (
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} unit="m" />
+                        <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
+                        <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                        <Bar dataKey="sumAiDist" name="AI > 15 km/h" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                        <Line type="monotone" dataKey="sumHsrDist" name="HSR > 20 km/h" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 4 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-slate-400 font-black uppercase tracking-wider text-[9px]">
-                        <th className="py-4">Jugador</th>
-                        <th className="py-4">Posición</th>
-                        <th className="py-4 text-center">Minutos</th>
-                        <th className="py-4 text-center">Dist. Total (m)</th>
-                        <th className="py-4 text-center">HSR Dist (m)</th>
-                        <th className="py-4 text-center">Sprint Dist (m)</th>
-                        <th className="py-4 text-center">Intensidad (m/min)</th>
-                        <th className="py-4 text-center">Vmax (km/h)</th>
-                        <th className="py-4 text-center">Acc/Dec</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50 font-bold text-slate-700">
-                      {gpsData.map((p, index) => (
-                        <tr key={index} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="py-4 font-black text-slate-900">{p.fullName}</td>
-                          <td className="py-4">
-                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                              p.lineaTactica === 'DEFENSA' ? 'bg-amber-50 text-amber-600' :
-                              p.lineaTactica === 'VOLANTE' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
-                            }`}>
-                              {p.posicion}
-                            </span>
-                          </td>
-                          <td className="py-4 text-center text-slate-500">{p.minutos} min</td>
-                          <td className="py-4 text-center">{p.dist_total_m.toLocaleString()} m</td>
-                          <td className="py-4 text-center text-amber-500">{p.dist_mai_m_20_kmh.toLocaleString()} m</td>
-                          <td className="py-4 text-center text-red-500">{p.dist_sprint_m_25_kmh.toLocaleString()} m</td>
-                          <td className="py-4 text-center text-emerald-600 italic">{p.m_por_min}</td>
-                          <td className="py-4 text-center text-purple-600 font-black">{p.vel_max_kmh}</td>
-                          <td className="py-4 text-center text-slate-400">{p.acc_decc_ai_n || 0}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {/* CHART 3: Sprint Dist y Cantidad de Sprints */}
+              <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                    <i className="fa-solid fa-gauge-high text-blue-600"></i> 3. Capacidad Explosiva del Plantel (Sprint)
+                  </h4>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
+                    Metros de Sprint (Bar, Izq.) vs. Cantidad de Sprints (Line, Der.)
+                  </p>
                 </div>
+                {filteredGroupMatchData.length === 0 ? (
+                  <div className="py-12 text-center text-slate-300 font-bold text-xs uppercase italic tracking-widest border border-dashed border-slate-100 rounded-2xl">
+                    No se registran datos para esta categoría.
+                  </div>
+                ) : (
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                        <YAxis yAxisId="left" tick={{ fill: '#1d4ed8', fontSize: 8, fontWeight: 'bold' }} unit="m" />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fill: '#ea580c', fontSize: 8, fontWeight: 'bold' }} />
+                        <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
+                        <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                        <Bar yAxisId="left" dataKey="sumSprint" name="Distancia de Sprint" fill="#93c5fd" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                        <Line yAxisId="right" type="monotone" dataKey="sumSprintsCount" name="Cantidad de Sprints" stroke="#ea580c" strokeWidth={2.5} dot={{ r: 4 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+
+              {/* CHART 4: Velocidad Máxima y AC/DC */}
+              <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                    <i className="fa-solid fa-circle-nodes text-purple-600"></i> 4. Velocidad y Aceleración del Equipo
+                  </h4>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
+                    Velocidad Máxima del Partido (Line, Izq.) vs. AC/DC (Bar, Der.)
+                  </p>
+                </div>
+                {filteredGroupMatchData.length === 0 ? (
+                  <div className="py-12 text-center text-slate-300 font-bold text-xs uppercase italic tracking-widest border border-dashed border-slate-100 rounded-2xl">
+                    No se registran datos para esta categoría.
+                  </div>
+                ) : (
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                        <YAxis yAxisId="left" tick={{ fill: '#8b5cf6', fontSize: 8, fontWeight: 'bold' }} unit="km/h" />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fill: '#3b82f6', fontSize: 8, fontWeight: 'bold' }} />
+                        <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
+                        <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                        <Bar yAxisId="right" dataKey="sumAcDc" name="AC/DC" fill="#93c5fd" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                        <Line yAxisId="left" type="monotone" dataKey="maxSpeed" name="Velocidad Máxima" stroke="#8b5cf6" strokeWidth={2.5} dot={{ r: 4 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
 
             </div>
@@ -731,124 +908,326 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
 
           {/* INDIVIDUAL TAB VIEWS */}
           {activeTab === 'INDIVIDUAL' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="space-y-6">
               
-              {/* SELECT JUGADOR SIDEBAR / CONTROL */}
-              <div className="bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-6">
-                <div>
-                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
-                    Atleta de Análisis
+              {/* CASCADING FILTER SELECTIONS FOR PLAYER */}
+              <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
+                <div className="border-b border-slate-50 pb-3">
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                    <i className="fa-solid fa-sliders text-red-600"></i> Filtros de Selección de Jugador
                   </h4>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
-                    Selecciona al jugador para perfilar su esfuerzo internacional
+                    Filtra la nómina de atletas por año de partido, club, posición y nombre para visualizar su evolución física
                   </p>
                 </div>
 
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
-                  {gpsData.map((p) => (
-                    <button
-                      key={p.player_id}
-                      onClick={() => setSelectedPlayerId(p.player_id)}
-                      className={`w-full flex items-center justify-between p-4 rounded-2xl border text-left transition-all ${
-                        selectedPlayerId === p.player_id 
-                          ? 'bg-[#0b1220] text-white border-[#0b1220] shadow-lg' 
-                          : 'bg-white border-slate-100 text-slate-700 hover:bg-slate-50'
-                      }`}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* FILTRO AÑO */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Temporada (Año)</label>
+                    <select
+                      value={filterYear}
+                      onChange={(e) => setFilterYear(e.target.value)}
+                      className="bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2.5 text-slate-700 font-black uppercase tracking-wider text-[10px] focus:outline-none focus:ring-2 focus:ring-red-600 cursor-pointer w-full"
                     >
-                      <div>
-                        <p className="font-black text-xs uppercase tracking-tight">{p.fullName}</p>
-                        <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${selectedPlayerId === p.player_id ? 'text-red-400' : 'text-slate-400'}`}>{p.posicion}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="font-black italic text-sm">{p.m_por_min}</p>
-                        <p className={`text-[8px] uppercase tracking-wider font-semibold ${selectedPlayerId === p.player_id ? 'text-slate-300' : 'text-slate-400'}`}>m/min</p>
-                      </div>
-                    </button>
-                  ))}
+                      {availableYears.map(year => (
+                        <option key={year} value={year}>{year === 'TODOS' ? 'TODOS LOS AÑOS' : year}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* FILTRO POSICION */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Posición Táctica</label>
+                    <select
+                      value={filterPosition}
+                      onChange={(e) => setFilterPosition(e.target.value)}
+                      className="bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2.5 text-slate-700 font-black uppercase tracking-wider text-[10px] focus:outline-none focus:ring-2 focus:ring-red-600 cursor-pointer w-full"
+                    >
+                      {availablePositions.map(pos => (
+                        <option key={pos} value={pos}>{pos === 'TODAS' ? 'TODAS LAS POSICIONES' : pos.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* FILTRO CLUB */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Club de Procedencia</label>
+                    <select
+                      value={filterClub}
+                      onChange={(e) => setFilterClub(e.target.value)}
+                      className="bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2.5 text-slate-700 font-black uppercase tracking-wider text-[10px] focus:outline-none focus:ring-2 focus:ring-red-600 cursor-pointer w-full"
+                    >
+                      {availableClubs.map(club => (
+                        <option key={club} value={club}>{club === 'TODAS' ? 'TODOS LOS CLUBES' : club.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* SELECTOR NOMBRE */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Seleccionar Jugador</label>
+                    <select
+                      value={selectedPlayerId || ''}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : null;
+                        setFilterPlayerId(val);
+                        setSelectedPlayerId(val);
+                      }}
+                      className="bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2.5 text-slate-700 font-black uppercase tracking-wider text-[10px] focus:outline-none focus:ring-2 focus:ring-red-600 cursor-pointer w-full"
+                    >
+                      {availablePlayers.length === 0 ? (
+                        <option value="">Sin jugadores coincidentes</option>
+                      ) : (
+                        availablePlayers.map(p => (
+                          <option key={p.player_id} value={p.player_id}>
+                            {p.fullName} ({p.posicion.toUpperCase()})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              {/* INDIVIDUAL RADAR - PROFILE VS POSITION STANDARD */}
-              <div className="bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm flex flex-col justify-between">
-                <div>
-                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
-                    Perfil Físico de Competencia
-                  </h4>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5 mb-2">
-                    Superposición relativa del atleta (%) contra el estándar táctico de su puesto en partidos de selección
-                  </p>
+              {/* 4 STACKED VERTICAL EVOLUTIVE CHARTS */}
+              <div className="space-y-6">
+                
+                {/* CHART 1: Volumen de Esfuerzo */}
+                <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                      <i className="fa-solid fa-chart-bar text-red-600"></i> 1. Volumen de Esfuerzo Individual
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
+                      Distancia Total (Bar, Izq.) vs. Minutos Jugados (Line, Der.)
+                    </p>
+                  </div>
+                  {loadingHistory ? (
+                    <div className="h-72 flex flex-col items-center justify-center gap-3 animate-pulse">
+                      <i className="fa-solid fa-spinner animate-spin text-red-600 text-xl"></i>
+                      <p className="text-[9px] font-black uppercase text-slate-400">Cargando...</p>
+                    </div>
+                  ) : playerMatchHistory.length === 0 ? (
+                    <div className="py-12 text-center text-slate-300 font-bold text-xs uppercase italic tracking-widest border border-dashed border-slate-100 rounded-2xl">
+                      No se registran datos para este jugador.
+                    </div>
+                  ) : (
+                    <div className="h-72 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                          <YAxis yAxisId="left" tick={{ fill: '#ef4444', fontSize: 8, fontWeight: 'bold' }} unit="m" />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fill: '#10b981', fontSize: 8, fontWeight: 'bold' }} unit="min" />
+                          <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
+                          <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                          <Bar yAxisId="left" dataKey="dist_total_m" name="Distancia Total" fill="#fca5a5" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                          <Line yAxisId="right" type="monotone" dataKey="minutos" name="Minutos Jugados" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
 
-                {selectedPlayerGps ? (
-                  <div className="h-64 w-full flex items-center justify-center">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart cx="50%" cy="50%" outerRadius="75%" data={playerRadarData}>
-                        <PolarGrid stroke="#e2e8f0" />
-                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
-                        <PolarRadiusAxis angle={30} domain={[0, 150]} tick={{ fill: '#94a3b8', fontSize: 7 }} />
-                        <Radar name={selectedPlayerGps.fullName} dataKey="Jugador (%)" stroke="#dc2626" fill="#dc2626" fillOpacity={0.25} />
-                        <Radar name={`Media ${selectedPlayerGps.lineaTactica}`} dataKey="Media Posición (%)" stroke="#64748b" fill="#64748b" fillOpacity={0.05} />
-                        <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
-                      </RadarChart>
-                    </ResponsiveContainer>
+                {/* CHART 2: Alta Intensidad */}
+                <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                      <i className="fa-solid fa-bolt text-amber-500"></i> 2. Alta Intensidad Individual (AI & HSR)
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
+                      Metros en Alta Intensidad &gt; 15 km/h (Bar) vs. High-Speed Running (HSR) &gt; 20 km/h (Line)
+                    </p>
                   </div>
-                ) : (
-                  <div className="h-64 flex items-center justify-center text-slate-300 italic text-xs font-bold uppercase">Selecciona un jugador</div>
-                )}
+                  {loadingHistory ? (
+                    <div className="h-72 flex flex-col items-center justify-center gap-3 animate-pulse">
+                      <i className="fa-solid fa-spinner animate-spin text-amber-500 text-xl"></i>
+                      <p className="text-[9px] font-black uppercase text-slate-400">Cargando...</p>
+                    </div>
+                  ) : playerMatchHistory.length === 0 ? (
+                    <div className="py-12 text-center text-slate-300 font-bold text-xs uppercase italic tracking-widest border border-dashed border-slate-100 rounded-2xl">
+                      No se registran datos para este jugador.
+                    </div>
+                  ) : (
+                    <div className="h-72 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                          <YAxis tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} unit="m" />
+                          <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
+                          <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                          <Bar dataKey="dist_ai_m_15_kmh" name="AI > 15 km/h" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                          <Line type="monotone" dataKey="dist_mai_m_20_kmh" name="HSR > 20 km/h" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 4 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
 
-                <p className="text-[9px] text-slate-400 font-semibold italic text-center">
-                  * Un valor superior al 100% indica rendimiento físico superior al promedio táctico internacional de su puesto.
-                </p>
+                {/* CHART 3: Capacidad Explosiva */}
+                <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                      <i className="fa-solid fa-gauge-high text-blue-600"></i> 3. Capacidad Explosiva Individual (Sprint)
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
+                      Metros de Sprint (Bar, Izq.) vs. Cantidad de Sprints (Line, Der.)
+                    </p>
+                  </div>
+                  {loadingHistory ? (
+                    <div className="h-72 flex flex-col items-center justify-center gap-3 animate-pulse">
+                      <i className="fa-solid fa-spinner animate-spin text-blue-600 text-xl"></i>
+                      <p className="text-[9px] font-black uppercase text-slate-400">Cargando...</p>
+                    </div>
+                  ) : playerMatchHistory.length === 0 ? (
+                    <div className="py-12 text-center text-slate-300 font-bold text-xs uppercase italic tracking-widest border border-dashed border-slate-100 rounded-2xl">
+                      No se registran datos para este jugador.
+                    </div>
+                  ) : (
+                    <div className="h-72 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                          <YAxis yAxisId="left" tick={{ fill: '#1d4ed8', fontSize: 8, fontWeight: 'bold' }} unit="m" />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fill: '#ea580c', fontSize: 8, fontWeight: 'bold' }} />
+                          <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
+                          <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                          <Bar yAxisId="left" dataKey="dist_sprint_m_25_kmh" name="Distancia de Sprint" fill="#93c5fd" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                          <Line yAxisId="right" type="monotone" dataKey="sprints_n" name="Cantidad de Sprints" stroke="#ea580c" strokeWidth={2.5} dot={{ r: 4 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+
+                {/* CHART 4: Velocidad y Aceleración */}
+                <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                      <i className="fa-solid fa-circle-nodes text-purple-600"></i> 4. Velocidad y Aceleración del Atleta
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">
+                      Velocidad Máxima del Partido (Line, Izq.) vs. AC/DC (Bar, Der.)
+                    </p>
+                  </div>
+                  {loadingHistory ? (
+                    <div className="h-72 flex flex-col items-center justify-center gap-3 animate-pulse">
+                      <i className="fa-solid fa-spinner animate-spin text-purple-600 text-xl"></i>
+                      <p className="text-[9px] font-black uppercase text-slate-400">Cargando...</p>
+                    </div>
+                  ) : playerMatchHistory.length === 0 ? (
+                    <div className="py-12 text-center text-slate-300 font-bold text-xs uppercase italic tracking-widest border border-dashed border-slate-100 rounded-2xl">
+                      No se registran datos para este jugador.
+                    </div>
+                  ) : (
+                    <div className="h-72 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                          <YAxis yAxisId="left" tick={{ fill: '#8b5cf6', fontSize: 8, fontWeight: 'bold' }} unit="km/h" />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fill: '#3b82f6', fontSize: 8, fontWeight: 'bold' }} />
+                          <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
+                          <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                          <Bar yAxisId="right" dataKey="acc_decc_ai_n" name="AC/DC" fill="#93c5fd" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                          <Line yAxisId="left" type="monotone" dataKey="vel_max_kmh" name="Velocidad Máxima" stroke="#8b5cf6" strokeWidth={2.5} dot={{ r: 4 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+
               </div>
 
-              {/* INDIVIDUAL CARD METRIC BREAKDOWNS */}
-              <div className="bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm flex flex-col justify-between">
-                <div>
-                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
-                    Rendimiento Físico Absoluto
-                  </h4>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5 mb-4">
-                    Detalle de esfuerzo absoluto del atleta en este partido
-                  </p>
-                </div>
+              {/* DETAILED RADAR & ABSOLUTE STATS CARD ROW */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-                {selectedPlayerGps ? (
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center border-b border-slate-50 pb-3">
-                      <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Distancia Total</span>
-                      <span className="font-black text-slate-900 text-sm">{selectedPlayerGps.dist_total_m.toLocaleString()} m</span>
-                    </div>
-                    <div className="flex justify-between items-center border-b border-slate-50 pb-3">
-                      <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Metros por Minuto</span>
-                      <span className="font-black text-emerald-600 text-sm">{selectedPlayerGps.m_por_min} m/min</span>
-                    </div>
-                    <div className="flex justify-between items-center border-b border-slate-50 pb-3">
-                      <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Alta Intensidad (HSR)</span>
-                      <span className="font-black text-amber-600 text-sm">{selectedPlayerGps.dist_mai_m_20_kmh.toLocaleString()} m</span>
-                    </div>
-                    <div className="flex justify-between items-center border-b border-slate-50 pb-3">
-                      <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Distancia Sprint</span>
-                      <span className="font-black text-red-600 text-sm">{selectedPlayerGps.dist_sprint_m_25_kmh.toLocaleString()} m</span>
-                    </div>
-                    <div className="flex justify-between items-center border-b border-slate-50 pb-3">
-                      <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Sprints Realizados</span>
-                      <span className="font-black text-blue-600 text-sm">{selectedPlayerGps.sprints_n} sprints</span>
-                    </div>
-                    <div className="flex justify-between items-center pb-1">
-                      <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Velocidad Máxima</span>
-                      <span className="font-black text-purple-600 text-sm">{selectedPlayerGps.vel_max_kmh} km/h</span>
-                    </div>
+                {/* INDIVIDUAL RADAR - PROFILE VS POSITION STANDARD */}
+                <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
+                      Perfil Físico de Competencia
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5 mb-2">
+                      Superposición relativa del atleta (%) contra el estándar táctico de su puesto en partidos de selección
+                    </p>
                   </div>
-                ) : (
-                  <div className="text-center text-slate-300 italic text-xs font-bold uppercase">Selecciona un jugador</div>
-                )}
 
-                <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-red-50 text-red-600 flex items-center justify-center text-xs shrink-0"><i className="fa-solid fa-medal"></i></div>
-                  <p className="text-[9px] text-slate-500 font-bold leading-tight">
-                    Métricas calibradas contra intensidades reales exigidas en copas internacionales de selecciones.
+                  {selectedPlayerGps ? (
+                    <div className="h-64 w-full flex items-center justify-center">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="75%" data={playerRadarData}>
+                          <PolarGrid stroke="#e2e8f0" />
+                          <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                          <PolarRadiusAxis angle={30} domain={[0, 150]} tick={{ fill: '#94a3b8', fontSize: 7 }} />
+                          <Radar name={selectedPlayerGps.fullName} dataKey="Jugador (%)" stroke="#dc2626" fill="#dc2626" fillOpacity={0.25} />
+                          <Radar name={`Media ${selectedPlayerGps.lineaTactica}`} dataKey="Media Posición (%)" stroke="#64748b" fill="#64748b" fillOpacity={0.05} />
+                          <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-slate-300 italic text-xs font-bold uppercase">Selecciona un jugador</div>
+                  )}
+
+                  <p className="text-[9px] text-slate-400 font-semibold italic text-center mt-2">
+                    * Un valor superior al 100% indica rendimiento físico superior al promedio táctico internacional de su puesto.
                   </p>
                 </div>
+
+                {/* INDIVIDUAL CARD METRIC BREAKDOWNS */}
+                <div className="bg-white rounded-[32px] p-6 md:p-8 border border-slate-100 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
+                      Rendimiento Físico Absoluto (Último Partido)
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5 mb-4">
+                      Detalle de esfuerzo absoluto del atleta en el último partido registrado
+                    </p>
+                  </div>
+
+                  {selectedPlayerGps ? (
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                        <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Distancia Total</span>
+                        <span className="font-black text-slate-900 text-sm">{selectedPlayerGps.dist_total_m.toLocaleString()} m</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                        <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Metros por Minuto</span>
+                        <span className="font-black text-emerald-600 text-sm">{selectedPlayerGps.m_por_min} m/min</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                        <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Alta Intensidad (HSR)</span>
+                        <span className="font-black text-amber-600 text-sm">{selectedPlayerGps.dist_mai_m_20_kmh.toLocaleString()} m</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                        <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Distancia Sprint</span>
+                        <span className="font-black text-red-600 text-sm">{selectedPlayerGps.dist_sprint_m_25_kmh.toLocaleString()} m</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                        <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Sprints Realizados</span>
+                        <span className="font-black text-blue-600 text-sm">{selectedPlayerGps.sprints_n} sprints</span>
+                      </div>
+                      <div className="flex justify-between items-center pb-1">
+                        <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Velocidad Máxima</span>
+                        <span className="font-black text-purple-600 text-sm">{selectedPlayerGps.vel_max_kmh} km/h</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center text-slate-300 italic text-xs font-bold uppercase">Selecciona un jugador</div>
+                  )}
+
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-red-50 text-red-600 flex items-center justify-center text-xs shrink-0"><i className="fa-solid fa-medal"></i></div>
+                    <p className="text-[9px] text-slate-500 font-bold leading-tight">
+                      Métricas calibradas contra intensidades reales exigidas en copas internacionales de selecciones.
+                    </p>
+                  </div>
+                </div>
+
               </div>
 
             </div>

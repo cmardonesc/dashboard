@@ -366,28 +366,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                     <span className="text-[10px] font-bold">Totales de Carga Externa</span>
                   </button>
                 )}
-                {isMenuAllowed('fisica_carga_externa_tareas') && (
-                  <button
-                    onClick={() => onMenuChange('fisica_carga_externa_tareas')}
-                    className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                      activeMenu === 'fisica_carga_externa_tareas' ? 'text-emerald-400 bg-emerald-900/20' : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_carga_externa_tareas' ? 'bg-emerald-400' : 'bg-slate-700'}`}></div>
-                    <span className="text-[10px] font-bold">Por Tarea</span>
-                  </button>
-                )}
-                {isMenuAllowed('fisica_gps_intelligence') && (
-                  <button
-                    onClick={() => onMenuChange('fisica_gps_intelligence')}
-                    className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                      activeMenu === 'fisica_gps_intelligence' ? 'text-emerald-400 bg-emerald-900/20' : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_gps_intelligence' ? 'bg-emerald-400' : 'bg-slate-700'}`}></div>
-                    <span className="text-[10px] font-bold italic">GPS Intelligence</span>
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -438,6 +416,32 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                       >
                         <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_reporte' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
                         <span className="text-[10px] font-bold">Reporte Sesión</span>
+                      </button>
+                    )}
+
+                    {/* POR TAREA */}
+                    {isMenuAllowed('fisica_carga_externa_tareas') && (
+                      <button
+                        onClick={() => onMenuChange('fisica_carga_externa_tareas')}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${
+                          activeMenu === 'fisica_carga_externa_tareas' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_carga_externa_tareas' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                        <span className="text-[10px] font-bold">Por Tarea</span>
+                      </button>
+                    )}
+
+                    {/* GPS INTELLIGENCE */}
+                    {isMenuAllowed('fisica_gps_intelligence') && (
+                      <button
+                        onClick={() => onMenuChange('fisica_gps_intelligence')}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${
+                          activeMenu === 'fisica_gps_intelligence' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_gps_intelligence' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                        <span className="text-[10px] font-bold italic">GPS Intelligence</span>
                       </button>
                     )}
 

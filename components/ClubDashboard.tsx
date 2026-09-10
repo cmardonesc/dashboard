@@ -89,7 +89,9 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ userClub, performanceReco
     for (let i = 0; i < 14; i++) {
       const date = new Date();
       date.setDate(date.getDate() - i);
-      d.push(date.toISOString().split('T')[0]);
+      const offset = date.getTimezoneOffset();
+      const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+      d.push(localDate.toISOString().split('T')[0]);
     }
     return d;
   }, []);
