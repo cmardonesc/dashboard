@@ -2253,13 +2253,13 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                 <StatCard label="Entrenamientos" value={stats.entrenamientos} icon="fa-person-running" color="emerald" />
                 <StatCard label="Partidos" value={stats.partidos} icon="fa-trophy" color="red" />
                 <StatCard 
-                  label="Distancia GPS" 
-                  value={`${(stats.distanciaGps / 1000).toFixed(1)}km`} 
-                  icon="fa-route" 
+                  label="Minutos Totales" 
+                  value={`${Math.round(stats.minutosGps)}`} 
+                  icon="fa-clock" 
                   color="slate" 
                   extra={
                     <div className="text-[7px] font-black opacity-50 mt-1 uppercase">
-                      {Math.round(stats.minutosGps)} MIN TOTALES
+                      MINUTOS TOTALES
                     </div>
                   }
                 />

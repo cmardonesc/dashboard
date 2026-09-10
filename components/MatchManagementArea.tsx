@@ -89,7 +89,7 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
     opponentLineup: OpponentPlayer[];
   }>({
     starters: Array(11).fill(''),
-    reserves: Array(7).fill(''),
+    reserves: Array(12).fill(''),
     opponentLineup: Array(11).fill(null).map(() => ({ number: '', name: '' }))
   });
 
@@ -102,6 +102,166 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
     'Partido Nacional (Liga/Copa)',
     'Otro'
   ];
+
+  // States for interactive lineup selection
+  const [activeSlot, setActiveSlot] = useState<{ type: 'starter' | 'reserve'; index: number } | null>(null);
+  const [manualName, setManualName] = useState('');
+  const [playerSearch, setPlayerSearch] = useState('');
+
+  const getPlayerGroup = (posicion: string = '') => {
+    const pos = posicion.toLowerCase().trim();
+    if (pos.includes('arq') || pos.includes('por') || pos.includes('gua')) return 'Arqueros';
+    if (pos.includes('media punta') || pos.includes('mediapunta') || pos.includes('mp') || pos.includes('media_punta')) return 'Volantes';
+    if (pos.includes('del') || pos.includes('punta') || pos.includes('9') || pos.includes('ariete')) return 'Delanteros';
+    if (pos.includes('ext') || pos.includes('punte') || pos.includes('wing')) return 'Extremos';
+    if (pos.includes('vol') || pos.includes('med') || pos.includes('cont') || pos.includes('mix') || pos.includes('crea') || pos.includes('eng')) return 'Volantes';
+    if (pos.includes('lat') || pos.includes('carri') || pos.includes('banda') || pos.includes('carrilero')) return 'Laterales';
+    if (pos.includes('def') || pos.includes('cent') || pos.includes('zag') || pos.includes('back') || pos.includes('stopp') || pos.includes('lib')) return 'Defensas';
+    return 'Otros';
+  };
+
+  const getPositionColors = (posicion: string = '') => {
+    const group = getPlayerGroup(posicion);
+    switch (group) {
+      case 'Defensas':
+        return {
+          text: 'text-blue-600 font-extrabold',
+          bg: 'bg-blue-50',
+          border: 'border-blue-200',
+          dot: 'bg-blue-500'
+        };
+      case 'Laterales':
+        return {
+          text: 'text-cyan-600 font-extrabold',
+          bg: 'bg-cyan-50',
+          border: 'border-cyan-200',
+          dot: 'bg-cyan-500'
+        };
+      case 'Volantes':
+        return {
+          text: 'text-emerald-600 font-extrabold',
+          bg: 'bg-emerald-50',
+          border: 'border-emerald-200',
+          dot: 'bg-emerald-500'
+        };
+      case 'Extremos':
+        return {
+          text: 'text-purple-600 font-extrabold',
+          bg: 'bg-purple-50',
+          border: 'border-purple-200',
+          dot: 'bg-purple-500'
+        };
+      case 'Delanteros':
+        return {
+          text: 'text-rose-600 font-extrabold',
+          bg: 'bg-rose-50',
+          border: 'border-rose-200',
+          dot: 'bg-rose-500'
+        };
+      case 'Arqueros':
+        return {
+          text: 'text-amber-600 font-extrabold',
+          bg: 'bg-amber-50',
+          border: 'border-amber-200',
+          dot: 'bg-amber-500'
+        };
+      default:
+        return {
+          text: 'text-slate-500 font-bold',
+          bg: 'bg-slate-50',
+          border: 'border-slate-200',
+          dot: 'bg-slate-400'
+        };
+    }
+  };
+
+  const handlePlayerCardClick = (player: any) => {
+    const playerId = String(player.player_id);
+    const isStarter = liveConfig.starters.includes(playerId);
+    const isReserve = liveConfig.reserves.includes(playerId);
+
+    if (isStarter) {
+      const copy = [...liveConfig.starters];
+      const idx = copy.indexOf(playerId);
+      if (idx !== -1) copy[idx] = '';
+      setLiveConfig({ ...liveConfig, starters: copy });
+      return;
+    }
+
+    if (isReserve) {
+      const copy = [...liveConfig.reserves];
+      const idx = copy.indexOf(playerId);
+      if (idx !== -1) copy[idx] = '';
+      setLiveConfig({ ...liveConfig, reserves: copy });
+      return;
+    }
+
+    if (activeSlot) {
+      const { type, index } = activeSlot;
+      const newStarters = liveConfig.starters.map(id => id === playerId ? '' : id);
+      const newReserves = liveConfig.reserves.map(id => id === playerId ? '' : id);
+      if (type === 'starter') {
+        newStarters[index] = playerId;
+      } else {
+        newReserves[index] = playerId;
+      }
+      setLiveConfig({ ...liveConfig, starters: newStarters, reserves: newReserves });
+      setActiveSlot(null);
+      return;
+    }
+
+    const firstEmptyStarter = liveConfig.starters.findIndex(id => !id);
+    if (firstEmptyStarter !== -1) {
+      const copy = [...liveConfig.starters];
+      copy[firstEmptyStarter] = playerId;
+      setLiveConfig({ ...liveConfig, starters: copy });
+      return;
+    }
+
+    const firstEmptyReserve = liveConfig.reserves.findIndex(id => !id);
+    if (firstEmptyReserve !== -1) {
+      const copy = [...liveConfig.reserves];
+      copy[firstEmptyReserve] = playerId;
+      setLiveConfig({ ...liveConfig, reserves: copy });
+      return;
+    }
+  };
+
+  const handleAddManualPlayer = (e?: React.FormEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
+    if (!manualName.trim()) return;
+
+    const val = manualName.trim().toUpperCase();
+
+    if (activeSlot) {
+      const { type, index } = activeSlot;
+      if (type === 'starter') {
+        const copy = [...liveConfig.starters];
+        copy[index] = val;
+        setLiveConfig({ ...liveConfig, starters: copy });
+      } else {
+        const copy = [...liveConfig.reserves];
+        copy[index] = val;
+        setLiveConfig({ ...liveConfig, reserves: copy });
+      }
+      setActiveSlot(null);
+    } else {
+      const firstEmptyStarter = liveConfig.starters.findIndex(id => !id);
+      if (firstEmptyStarter !== -1) {
+        const copy = [...liveConfig.starters];
+        copy[firstEmptyStarter] = val;
+        setLiveConfig({ ...liveConfig, starters: copy });
+      } else {
+        const firstEmptyReserve = liveConfig.reserves.findIndex(id => !id);
+        if (firstEmptyReserve !== -1) {
+          const copy = [...liveConfig.reserves];
+          copy[firstEmptyReserve] = val;
+          setLiveConfig({ ...liveConfig, reserves: copy });
+        }
+      }
+    }
+    setManualName('');
+  };
 
   // Sync category state with parent if provided
   useEffect(() => {
@@ -215,6 +375,35 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
     return categoryPlayers.length > 0 ? categoryPlayers : dbPlayers;
   }, [dbPlayers, form.category_id, form.microcycle_id, citations]);
 
+  const groupedCandidates = useMemo(() => {
+    const searchLower = playerSearch.toLowerCase().trim();
+    const filtered = matchCandidates.filter(p => {
+      const name = `${p.nombre} ${p.apellido1 || ''} ${p.apellido2 || ''}`.toLowerCase();
+      return name.includes(searchLower);
+    });
+    
+    const groups: { [key: string]: typeof matchCandidates } = {
+      'Arqueros': [],
+      'Defensas': [],
+      'Laterales': [],
+      'Volantes': [],
+      'Extremos': [],
+      'Delanteros': [],
+      'Otros': []
+    };
+    
+    filtered.forEach(p => {
+      const group = getPlayerGroup(p.posicion);
+      if (groups[group]) {
+        groups[group].push(p);
+      } else {
+        groups['Otros'].push(p);
+      }
+    });
+    
+    return groups;
+  }, [matchCandidates, playerSearch]);
+
   // Helper to translate player ID to human name
   const getPlayerName = (id: string | number) => {
     const pl = dbPlayers.find(p => String(p.player_id) === String(id) || String(p.id) === String(id));
@@ -251,7 +440,7 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
     // Reset live lineups as well
     setLiveConfig({
       starters: Array(11).fill(''),
-      reserves: Array(7).fill(''),
+      reserves: Array(12).fill(''),
       opponentLineup: Array(11).fill(null).map(() => ({ number: '', name: '' }))
     });
 
@@ -795,7 +984,7 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
               />
             </div>
 
-            {/* LIVE LINEUP SETUP (Optional layout) */}
+            {/* LIVE LINEUP SETUP (Interactive visual builder) */}
             <div className="bg-slate-50 rounded-[32px] p-6 space-y-6">
               <div>
                 <h4 className="text-xs font-black uppercase tracking-[0.1em] flex items-center gap-2 text-slate-800">
@@ -803,142 +992,367 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
                   Preparar Formación Inicial (Para Dashboard En Vivo)
                 </h4>
                 <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider">
-                  Configura de antemano los 11 jugadores titulares que disputarán el partido
+                  Configura de forma visual interactiva los titulares y suplentes que disputarán el partido. Haz clic en un slot vacío y luego selecciona un jugador disponible.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* SELECT STARTERS (11) */}
-                <div className="space-y-3">
-                  <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Alineación Inicial Titular:</h5>
-                  <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto pr-2">
-                    {Array(11).fill(null).map((_, idx) => (
-                      <div key={idx} className="flex items-center gap-2 bg-white rounded-xl p-2 border border-slate-100">
-                        <span className="text-[9px] font-black text-slate-400 w-5 text-right">{idx + 1}.</span>
-                        {(() => {
-                          const val = liveConfig.starters[idx] || '';
-                          const isManual = val === 'MANUAL' || (val && !dbPlayers.some(p => String(p.player_id) === String(val)));
-                          
-                          if (isManual) {
-                            return (
-                              <div className="flex-1 flex gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="Nombre del Jugador Manual..."
-                                  value={val === 'MANUAL' ? '' : val}
-                                  onChange={e => {
-                                    const copy = [...liveConfig.starters];
-                                    copy[idx] = e.target.value;
-                                    setLiveConfig({...liveConfig, starters: copy});
-                                  }}
-                                  className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-[10px] font-bold outline-none uppercase"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const copy = [...liveConfig.starters];
-                                    copy[idx] = '';
-                                    setLiveConfig({...liveConfig, starters: copy});
-                                  }}
-                                  className="text-slate-400 hover:text-red-500 font-bold px-1.5 py-0.5 rounded text-[8px] bg-slate-100 uppercase"
-                                >
-                                  ✕ Borrar
-                                </button>
-                              </div>
-                            );
-                          }
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                {/* COLUMN 1: STARTERS (11 SLOTS) */}
+                <div className="space-y-3 bg-white p-4 rounded-3xl border border-slate-100 flex flex-col">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                      <i className="fa-solid fa-shirt text-red-600"></i>
+                      Alineación Titular
+                    </h5>
+                    <span className="bg-red-50 text-red-600 px-2 py-0.5 rounded-full text-[9px] font-black">
+                      {liveConfig.starters.filter(id => id).length} / 11
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1 custom-scrollbar flex-1">
+                    {Array(11).fill(null).map((_, idx) => {
+                      const val = liveConfig.starters[idx] || '';
+                      const isActive = activeSlot?.type === 'starter' && activeSlot?.index === idx;
 
-                          return (
-                            <select
-                              value={val}
-                              onChange={e => {
-                                const copy = [...liveConfig.starters];
-                                copy[idx] = e.target.value;
-                                setLiveConfig({...liveConfig, starters: copy});
-                              }}
-                              className="flex-1 bg-slate-50 border-none rounded-lg px-2 py-1.5 text-[10px] font-bold outline-none"
-                            >
-                              <option value="">Seleccionar Jugador...</option>
-                              {matchCandidates.map(p => (
-                                <option key={p.player_id} value={p.player_id}>
-                                  {`${p.nombre} ${p.apellido1 || ''}`.toUpperCase().trim()} — {p.posicion || 'S/D'}
-                                </option>
-                              ))}
-                              <option value="MANUAL flex">✏️ OTRO (ESCRIBIR MANUALMENTE...)</option>
-                            </select>
-                          );
-                        })()}
-                      </div>
-                    ))}
+                      if (!val) {
+                        return (
+                          <div 
+                            key={`starter_empty_${idx}`}
+                            onClick={() => {
+                              if (isActive) {
+                                setActiveSlot(null);
+                              } else {
+                                setActiveSlot({ type: 'starter', index: idx });
+                              }
+                            }}
+                            className={`flex items-center justify-between p-2.5 rounded-2xl border-2 border-dashed transition-all cursor-pointer ${
+                              isActive 
+                                ? 'border-red-500 bg-red-50/20 text-red-600 scale-[1.01]' 
+                                : 'border-slate-150 bg-slate-50/30 hover:border-slate-300 text-slate-400 hover:text-slate-500'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full border border-dashed border-slate-300 flex items-center justify-center bg-white">
+                                <i className="fa-solid fa-user-plus text-[10px]"></i>
+                              </div>
+                              <div>
+                                <p className="text-[9.5px] font-black uppercase tracking-tight text-slate-600">
+                                  Titular #{idx + 1}
+                                </p>
+                                <p className="text-[7.5px] font-black text-slate-400 uppercase tracking-wider">
+                                  {isActive ? 'Esperando selección...' : 'Haga clic para asignar'}
+                                </p>
+                              </div>
+                            </div>
+                            {isActive && (
+                              <span className="animate-pulse bg-red-500 text-white text-[7px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                ACTIVO
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      const player = dbPlayers.find(p => String(p.player_id) === String(val));
+                      const isManual = !player;
+                      const displayName = isManual ? String(val).toUpperCase() : `${player.nombre} ${player.apellido1 || ''}`.toUpperCase().trim();
+                      const posColors = isManual 
+                        ? { text: 'text-slate-500 font-bold', bg: 'bg-slate-50', border: 'border-slate-200', dot: 'bg-slate-400' } 
+                        : getPositionColors(player.posicion);
+
+                      return (
+                        <div 
+                          key={`starter_filled_${idx}`}
+                          className={`p-2.5 rounded-2xl flex items-center justify-between transition-all border ${posColors.bg} ${posColors.border} hover:shadow-xs`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-full overflow-hidden bg-white border border-slate-200 flex items-center justify-center relative flex-shrink-0">
+                              {!isManual && player.foto_url ? (
+                                <img src={player.foto_url} alt={displayName} className="w-full h-full object-cover" />
+                              ) : (
+                                <i className={`fa-solid ${isManual ? 'fa-keyboard' : 'fa-user'} text-slate-400 text-[10px]`}></i>
+                              )}
+                              {!isManual && (
+                                <div className="absolute -bottom-1 -right-1">
+                                  <ClubBadge idClub={player.id_club} showName={false} logoSize="w-3.5 h-3.5" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-black uppercase tracking-tight text-[#0b1220] truncate">
+                                {idx + 1}. {displayName}
+                              </p>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className={`w-1 h-1 rounded-full ${posColors.dot}`}></span>
+                                <span className={`text-[7.5px] uppercase truncate ${posColors.text}`}>
+                                  {isManual ? 'Manual' : player.posicion || 'S/D'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const copy = [...liveConfig.starters];
+                              copy[idx] = '';
+                              setLiveConfig({ ...liveConfig, starters: copy });
+                            }}
+                            className="w-5.5 h-5.5 rounded-full bg-white hover:bg-red-50 text-slate-400 hover:text-red-500 border border-slate-150 flex items-center justify-center transition-all flex-shrink-0"
+                            title="Quitar jugador"
+                          >
+                            <i className="fa-solid fa-xmark text-[9px]"></i>
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* SELECT RESERVES (7) */}
-                <div className="space-y-3">
-                  <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Banca de Suplentes:</h5>
-                  <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto pr-2">
-                    {Array(7).fill(null).map((_, idx) => (
-                      <div key={idx} className="flex items-center gap-2 bg-white rounded-xl p-2 border border-slate-100">
-                        <span className="text-[9px] font-black text-slate-400 w-5 text-right">SUPL.</span>
-                        {(() => {
-                          const val = liveConfig.reserves[idx] || '';
-                          const isManual = val === 'MANUAL' || (val && !dbPlayers.some(p => String(p.player_id) === String(val)));
-                          
-                          if (isManual) {
-                            return (
-                              <div className="flex-1 flex gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="Nombre del Suplente Manual..."
-                                  value={val === 'MANUAL' ? '' : val}
-                                  onChange={e => {
-                                    const copy = [...liveConfig.reserves];
-                                    copy[idx] = e.target.value;
-                                    setLiveConfig({...liveConfig, reserves: copy});
-                                  }}
-                                  className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-[10px] font-bold outline-none uppercase"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const copy = [...liveConfig.reserves];
-                                    copy[idx] = '';
-                                    setLiveConfig({...liveConfig, reserves: copy});
-                                  }}
-                                  className="text-slate-400 hover:text-red-500 font-bold px-1.5 py-0.5 rounded text-[8px] bg-slate-100 uppercase"
-                                >
-                                  ✕ Borrar
-                                </button>
-                              </div>
-                            );
-                          }
+                {/* COLUMN 2: RESERVES (12 SLOTS) */}
+                <div className="space-y-3 bg-white p-4 rounded-3xl border border-slate-100 flex flex-col">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                      <i className="fa-solid fa-users-rectangle text-blue-600"></i>
+                      Banca de Suplentes
+                    </h5>
+                    <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full text-[9px] font-black">
+                      {liveConfig.reserves.filter(id => id).length} / 12
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1 custom-scrollbar flex-1">
+                    {Array(12).fill(null).map((_, idx) => {
+                      const val = liveConfig.reserves[idx] || '';
+                      const isActive = activeSlot?.type === 'reserve' && activeSlot?.index === idx;
 
-                          return (
-                            <select
-                              value={val}
-                              onChange={e => {
-                                const copy = [...liveConfig.reserves];
-                                copy[idx] = e.target.value;
-                                setLiveConfig({...liveConfig, reserves: copy});
-                              }}
-                              className="flex-1 bg-slate-50 border-none rounded-lg px-2 py-1.5 text-[10px] font-bold outline-none"
-                            >
-                              <option value="">Seleccionar Jugador...</option>
-                              {matchCandidates.map(p => (
-                                <option key={p.player_id} value={p.player_id}>
-                                  {`${p.nombre} ${p.apellido1 || ''}`.toUpperCase().trim()} — {p.posicion || 'S/D'}
-                                </option>
-                              ))}
-                              <option value="MANUAL">✏️ OTRO (ESCRIBIR MANUALMENTE...)</option>
-                            </select>
-                          );
-                        })()}
+                      if (!val) {
+                        return (
+                          <div 
+                            key={`reserve_empty_${idx}`}
+                            onClick={() => {
+                              if (isActive) {
+                                setActiveSlot(null);
+                              } else {
+                                setActiveSlot({ type: 'reserve', index: idx });
+                              }
+                            }}
+                            className={`flex items-center justify-between p-2.5 rounded-2xl border-2 border-dashed transition-all cursor-pointer ${
+                              isActive 
+                                ? 'border-red-500 bg-red-50/20 text-red-600 scale-[1.01]' 
+                                : 'border-slate-150 bg-slate-50/30 hover:border-slate-300 text-slate-400 hover:text-slate-500'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full border border-dashed border-slate-300 flex items-center justify-center bg-white">
+                                <i className="fa-solid fa-circle-plus text-[10px]"></i>
+                              </div>
+                              <div>
+                                <p className="text-[9.5px] font-black uppercase tracking-tight text-slate-600">
+                                  Suplente #{idx + 1}
+                                </p>
+                                <p className="text-[7.5px] font-black text-slate-400 uppercase tracking-wider">
+                                  {isActive ? 'Esperando selección...' : 'Haga clic para asignar'}
+                                </p>
+                              </div>
+                            </div>
+                            {isActive && (
+                              <span className="animate-pulse bg-red-500 text-white text-[7px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                ACTIVO
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      const player = dbPlayers.find(p => String(p.player_id) === String(val));
+                      const isManual = !player;
+                      const displayName = isManual ? String(val).toUpperCase() : `${player.nombre} ${player.apellido1 || ''}`.toUpperCase().trim();
+                      const posColors = isManual 
+                        ? { text: 'text-slate-500 font-bold', bg: 'bg-slate-50', border: 'border-slate-200', dot: 'bg-slate-400' } 
+                        : getPositionColors(player.posicion);
+
+                      return (
+                        <div 
+                          key={`reserve_filled_${idx}`}
+                          className={`p-2.5 rounded-2xl flex items-center justify-between transition-all border ${posColors.bg} ${posColors.border} hover:shadow-xs`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-full overflow-hidden bg-white border border-slate-200 flex items-center justify-center relative flex-shrink-0">
+                              {!isManual && player.foto_url ? (
+                                <img src={player.foto_url} alt={displayName} className="w-full h-full object-cover" />
+                              ) : (
+                                <i className={`fa-solid ${isManual ? 'fa-keyboard' : 'fa-user'} text-slate-400 text-[10px]`}></i>
+                              )}
+                              {!isManual && (
+                                <div className="absolute -bottom-1 -right-1">
+                                  <ClubBadge idClub={player.id_club} showName={false} logoSize="w-3.5 h-3.5" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-black uppercase tracking-tight text-[#0b1220] truncate">
+                                SUPL. {displayName}
+                              </p>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className={`w-1 h-1 rounded-full ${posColors.dot}`}></span>
+                                <span className={`text-[7.5px] uppercase truncate ${posColors.text}`}>
+                                  {isManual ? 'Manual' : player.posicion || 'S/D'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const copy = [...liveConfig.reserves];
+                              copy[idx] = '';
+                              setLiveConfig({ ...liveConfig, reserves: copy });
+                            }}
+                            className="w-5.5 h-5.5 rounded-full bg-white hover:bg-red-50 text-slate-400 hover:text-red-500 border border-slate-150 flex items-center justify-center transition-all flex-shrink-0"
+                            title="Quitar suplente"
+                          >
+                            <i className="fa-solid fa-xmark text-[9px]"></i>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* COLUMN 3: CANDIDATES POOL (GROUPED) */}
+                <div className="space-y-4 bg-white p-4 rounded-3xl border border-slate-100 flex flex-col xl:col-span-1">
+                  <div className="border-b border-slate-100 pb-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <i className="fa-solid fa-users text-emerald-600"></i>
+                        Jugadores Disponibles
+                      </h5>
+                      <span className="bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full text-[9px] font-black">
+                        {matchCandidates.filter(p => !liveConfig.starters.includes(String(p.player_id)) && !liveConfig.reserves.includes(String(p.player_id))).length} Libres
+                      </span>
+                    </div>
+
+                    {/* PLAYER SEARCH INPUT */}
+                    <div className="flex items-center gap-2 bg-slate-50 rounded-2xl px-3 py-2 border border-slate-100">
+                      <i className="fa-solid fa-magnifying-glass text-slate-400 text-[10px]"></i>
+                      <input
+                        type="text"
+                        placeholder="BUSCAR JUGADOR..."
+                        value={playerSearch}
+                        onChange={e => setPlayerSearch(e.target.value)}
+                        className="bg-transparent border-none outline-none text-[9.5px] font-black uppercase tracking-wider flex-1 placeholder:text-slate-400"
+                      />
+                      {playerSearch && (
+                        <button type="button" onClick={() => setPlayerSearch('')} className="text-slate-400 hover:text-slate-600">
+                          <i className="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* SCROLLABLE POOL OF PLAYERS GROUPED BY POSITIONS */}
+                  <div className="space-y-4 max-h-[380px] overflow-y-auto pr-1 custom-scrollbar flex-1">
+                    {Object.entries(groupedCandidates).map(([groupName, players]) => {
+                      if (players.length === 0) return null;
+                      return (
+                        <div key={groupName} className="space-y-1.5">
+                          <h6 className="text-[8.5px] font-black uppercase tracking-widest text-slate-400 bg-slate-50 px-2.5 py-1 rounded-xl flex items-center justify-between">
+                            <span>{groupName}</span>
+                            <span className="bg-slate-200/60 text-slate-600 px-1.5 py-0.2 rounded-md text-[7.5px]">{players.length}</span>
+                          </h6>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-1 gap-1.5">
+                            {players.map((player) => {
+                              const playerId = String(player.player_id);
+                              const isStarter = liveConfig.starters.includes(playerId);
+                              const isReserve = liveConfig.reserves.includes(playerId);
+                              const isAssigned = isStarter || isReserve;
+                              const posColors = getPositionColors(player.posicion);
+
+                              return (
+                                <div
+                                  key={`candidate_${player.player_id}`}
+                                  onClick={() => handlePlayerCardClick(player)}
+                                  className={`p-2 rounded-2xl flex items-center justify-between transition-all border cursor-pointer select-none ${
+                                    isAssigned
+                                      ? 'bg-slate-50 border-slate-100 opacity-40 hover:opacity-75'
+                                      : `${posColors.bg} ${posColors.border} hover:scale-[1.01] hover:shadow-xs`
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="w-7 h-7 rounded-full overflow-hidden bg-white border border-slate-200 flex items-center justify-center relative flex-shrink-0">
+                                      {player.foto_url ? (
+                                        <img src={player.foto_url} alt={player.nombre} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <i className="fa-solid fa-user text-slate-400 text-[10px]"></i>
+                                      )}
+                                      <div className="absolute -bottom-1 -right-1">
+                                        <ClubBadge idClub={player.id_club} showName={false} logoSize="w-3.5 h-3.5" />
+                                      </div>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-[9.5px] font-black uppercase tracking-tight text-[#0b1220] truncate">
+                                        {player.nombre} {player.apellido1}
+                                      </p>
+                                      <div className="flex items-center gap-1 mt-0.5">
+                                        <span className={`w-1 h-1 rounded-full ${posColors.dot}`}></span>
+                                        <span className={`text-[7.5px] uppercase truncate ${posColors.text}`}>
+                                          {player.posicion || 'S/D'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {isAssigned && (
+                                    <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider ${isStarter ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-700'}`}>
+                                      {isStarter ? 'TITULAR' : 'SUPLENTE'}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {Object.values(groupedCandidates).every(g => g.length === 0) && (
+                      <div className="text-center py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <i className="fa-solid fa-user-slash text-slate-300 text-xl mb-1 block"></i>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">No se encontraron jugadores disponibles</p>
                       </div>
-                    ))}
+                    )}
+                  </div>
+
+                  {/* MANUAL ENTRY ROW AT THE BOTTOM OF THE POOL */}
+                  <div className="border-t border-slate-100 pt-3">
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="✏️ AGREGAR JUGADOR MANUAL..."
+                        value={manualName}
+                        onChange={e => setManualName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddManualPlayer(e);
+                          }
+                        }}
+                        className="flex-1 bg-slate-50 border border-dashed border-slate-200 rounded-xl px-2.5 py-1.5 text-[8.5px] font-black outline-none uppercase placeholder:text-slate-400 focus:border-red-500 focus:bg-white transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddManualPlayer()}
+                        className="bg-[#0b1220] hover:bg-red-600 text-white rounded-xl px-2.5 py-1.5 text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 flex-shrink-0"
+                      >
+                        <span>AÑADIR</span>
+                        <i className="fa-solid fa-plus text-[7.5px]"></i>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+
 
             <div className="border-t border-slate-100 pt-6 flex justify-end gap-4">
               <button 
