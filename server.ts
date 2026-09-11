@@ -229,9 +229,9 @@ async function startServer() {
   });
 
   // POST /api/dinamicas-planificaciones
-  app.post("/api/dinamicas-planificaciones", (req, res) => {
+  app.post("/api/dinamicas-planificaciones", async (req, res) => {
     try {
-      const { microcycleId, dateKey, assignments } = req.body;
+      const { microcycleId, dateKey, assignments, citedPlayers, dayNumber, sessionTitle } = req.body;
       if (!microcycleId || !dateKey) {
         return res.status(400).json({ error: "Missing microcycleId or dateKey" });
       }
@@ -246,6 +246,81 @@ async function startServer() {
 
       if (!success) {
         return res.status(500).json({ error: "Failed to write data file" });
+      }
+
+      // Guardar participación de jugadores en Supabase usando el rol administrador (bypasseando RLS)
+      if (supabaseAdmin && citedPlayers && Array.isArray(citedPlayers) && Array.isArray(assignments)) {
+        try {
+          const dinamicaIds = assignments.map(s => s.dinamicaId).filter(Boolean);
+          
+          if (dinamicaIds.length > 0) {
+            // 1. Eliminar registros anteriores para estas dinámicas en esta fecha
+            const { error: deleteError } = await supabaseAdmin
+              .from('participacion_dinamicas')
+              .delete()
+              .eq('fecha', dateKey)
+              .in('dinamica_id', dinamicaIds);
+
+            if (deleteError) {
+              console.error("[SUPABASE ADMIN] Error al eliminar participaciones antiguas:", deleteError);
+            }
+
+            // 2. Construir los nuevos registros de participación
+            const participaciones: any[] = [];
+            const ROLES = [
+              { id: 'A', label: 'Equipo A' },
+              { id: 'B', label: 'Equipo B' },
+              { id: 'C', label: 'Comodín' },
+              { id: 'GK', label: 'Arquero' },
+              { id: 'GKC', label: 'Arq. Comodín' },
+              { id: 'EXT', label: 'Exterior' },
+              { id: 'PROF', label: 'Profundo' },
+              { id: 'FIN', label: 'Finalizador' }
+            ];
+
+            assignments.forEach((session: any) => {
+              if (!session.dinamicaId) return;
+              
+              citedPlayers.forEach((player: any) => {
+                const roleId = (session.assignments && session.assignments[String(player.player_id)]) || 'none';
+                
+                let equipoVal = 'NO_PARTICIPA';
+                if (roleId === 'A') equipoVal = 'EQUIPO_A';
+                else if (roleId === 'B') equipoVal = 'EQUIPO_B';
+                else if (roleId === 'C') equipoVal = 'COMODIN';
+                else if (roleId !== 'none') equipoVal = roleId.toUpperCase();
+
+                const roleLabel = ROLES.find(r => r.id === roleId)?.label || 'Sin Asignar';
+
+                participaciones.push({
+                  player_id: player.player_id,
+                  dinamica_id: session.dinamicaId,
+                  fecha: dateKey,
+                  session_title: sessionTitle || 'Planificación',
+                  jornada: dayNumber ? `DÍA ${dayNumber}` : 'Jornada',
+                  equipo: equipoVal,
+                  posicion_rol: roleLabel,
+                  observaciones: session.observaciones || ''
+                });
+              });
+            });
+
+            // 3. Insertar registros en lote
+            if (participaciones.length > 0) {
+              const { error: insertError } = await supabaseAdmin
+                .from('participacion_dinamicas')
+                .insert(participaciones);
+
+              if (insertError) {
+                console.error("[SUPABASE ADMIN] Error al insertar participaciones en Supabase:", insertError);
+              } else {
+                console.log("[SUPABASE ADMIN] Participaciones de jugadores guardadas exitosamente:", participaciones.length);
+              }
+            }
+          }
+        } catch (dbErr) {
+          console.error("[SUPABASE ADMIN] Error en flujo de base de datos de participación:", dbErr);
+        }
       }
 
       res.json({ success: true, message: "Planning saved successfully" });

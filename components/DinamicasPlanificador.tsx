@@ -524,70 +524,14 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
         body: JSON.stringify({
           microcycleId: microcycle.id,
           dateKey,
-          assignments: sessions
+          assignments: sessions,
+          citedPlayers,
+          dayNumber,
+          sessionTitle: microcycle.nombre_display
         })
       });
 
       if (res.ok) {
-        // Guardar participación de jugadores en Supabase
-        try {
-          const dinamicaIds = sessions.map(s => s.dinamicaId);
-          
-          // 1. Eliminar registros anteriores para estas dinámicas en esta fecha
-          const { error: deleteError } = await supabase
-            .from('participacion_dinamicas')
-            .delete()
-            .eq('fecha', dateKey)
-            .in('dinamica_id', dinamicaIds);
-
-          if (deleteError) {
-            console.error("Error al eliminar participaciones antiguas:", deleteError);
-          }
-
-          // 2. Construir los nuevos registros de participación
-          const participaciones: any[] = [];
-          
-          sessions.forEach((session) => {
-            citedPlayers.forEach((player) => {
-              const roleId = session.assignments[String(player.player_id)] || 'none';
-              
-              let equipoVal = 'NO_PARTICIPA';
-              if (roleId === 'A') equipoVal = 'EQUIPO_A';
-              else if (roleId === 'B') equipoVal = 'EQUIPO_B';
-              else if (roleId === 'C') equipoVal = 'COMODIN';
-              else if (roleId !== 'none') equipoVal = roleId.toUpperCase();
-
-              const roleLabel = ROLES.find(r => r.id === roleId)?.label || 'Sin Asignar';
-
-              participaciones.push({
-                player_id: player.player_id,
-                dinamica_id: session.dinamicaId,
-                fecha: dateKey,
-                session_title: microcycle.nombre_display,
-                jornada: `DÍA ${dayNumber}`,
-                equipo: equipoVal,
-                posicion_rol: roleLabel,
-                observaciones: session.observaciones || ''
-              });
-            });
-          });
-
-          // 3. Insertar registros en lote si hay alguno
-          if (participaciones.length > 0) {
-            const { error: insertError } = await supabase
-              .from('participacion_dinamicas')
-              .insert(participaciones);
-
-            if (insertError) {
-              console.error("Error al insertar participaciones en Supabase:", insertError);
-            } else {
-              console.log("Participaciones de jugadores guardadas en Supabase exitosamente:", participaciones.length);
-            }
-          }
-        } catch (dbErr) {
-          console.error("Error en flujo de base de datos de participación:", dbErr);
-        }
-
         logActivity('Planificación Dinámicas Guardada', {
           microcycle: microcycle.nombre_display,
           dateKey,
