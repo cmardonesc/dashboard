@@ -135,14 +135,17 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     const fetchCatalog = async () => {
       setLoadingCatalog(true);
       try {
-        const { data, error } = await supabase
-          .from('tareas')
-          .select('*')
-          .order('nombre', { ascending: true });
-
-        if (error) throw error;
+        const response = await fetch('/api/tareas');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
         if (data) {
-          const mapped: CatalogDinamica[] = data.map((t: any) => ({
+          // Ordenar alfabéticamente por nombre
+          const sortedData = [...data].sort((a: any, b: any) =>
+            (a.nombre || '').localeCompare(b.nombre || '')
+          );
+          const mapped: CatalogDinamica[] = sortedData.map((t: any) => ({
             id: t.id.toString(),
             nombre: t.nombre,
             tipo: t.tipo || 'cerrada',
@@ -158,7 +161,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
           setCatalog(mapped);
         }
       } catch (err) {
-        console.error("Error loading dynamics catalog:", err);
+        console.error("Error loading dynamics catalog via API proxy:", err);
       } finally {
         setLoadingCatalog(false);
       }

@@ -400,12 +400,11 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const fetchBiblioteca = async () => {
     setLoadingBiblioteca(true);
     try {
-      const { data, error } = await supabase
-        .from('tareas')
-        .select('*')
-        .order('nombre', { ascending: true });
-
-      if (error) throw error;
+      const response = await fetch('/api/tareas');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
       if (data) {
         const mapTipoDinamica = (tipo: string) => {
           const t = (tipo || '').toLowerCase();
@@ -417,7 +416,12 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
           return 'General';
         };
 
-        const mapped: Tarea[] = data.map((t: any) => ({
+        // Ordenar alfabéticamente por nombre
+        const sortedData = [...data].sort((a: any, b: any) =>
+          (a.nombre || '').localeCompare(b.nombre || '')
+        );
+
+        const mapped: Tarea[] = sortedData.map((t: any) => ({
           id: t.id.toString(),
           nombre: t.nombre,
           tipoDinamica: mapTipoDinamica(t.tipo || t.tipo_dinamica || 'General'),
@@ -426,7 +430,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         setBiblioteca(mapped);
       }
     } catch (err) {
-      console.error("Error cargando biblioteca de tareas:", err);
+      console.error("Error cargando biblioteca de tareas via API proxy:", err);
     } finally {
       setLoadingBiblioteca(false);
     }
