@@ -430,7 +430,36 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         setBiblioteca(mapped);
       }
     } catch (err) {
-      console.error("Error cargando biblioteca de tareas via API proxy:", err);
+      console.error("Error cargando biblioteca de tareas via API proxy, intentando Supabase directo:", err);
+      try {
+        const { data, error } = await supabase
+          .from('tareas')
+          .select('*')
+          .order('nombre', { ascending: true });
+
+        if (error) throw error;
+        if (data) {
+          const mapTipoDinamica = (tipo: string) => {
+            const t = (tipo || '').toLowerCase();
+            if (t === 'cuadrado' || t === 'cuadrados') return 'Cuadrados';
+            if (t === 'cerrada' || t === 'cerradas' || t.includes('cerrada')) return 'Dinámicas Cerradas';
+            if (t === 'abierta' || t === 'abiertas' || t.includes('abierta')) return 'Dinámicas Abiertas';
+            if (t === 'partido' || t.includes('partido')) return 'Dinámicas de Partido';
+            if (t === 'tmi' || t.includes('tmi') || t.includes('mejora individual')) return 'TMI (Tarea Mejora Individual)';
+            return 'General';
+          };
+
+          const mapped: Tarea[] = data.map((t: any) => ({
+            id: t.id.toString(),
+            nombre: t.nombre,
+            tipoDinamica: mapTipoDinamica(t.tipo || t.tipo_dinamica || 'General'),
+            descripcion: t.descripcion
+          }));
+          setBiblioteca(mapped);
+        }
+      } catch (fallbackErr) {
+        console.error("Fallo definitivo cargando biblioteca:", fallbackErr);
+      }
     } finally {
       setLoadingBiblioteca(false);
     }

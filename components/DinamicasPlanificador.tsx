@@ -161,7 +161,33 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
           setCatalog(mapped);
         }
       } catch (err) {
-        console.error("Error loading dynamics catalog via API proxy:", err);
+        console.error("Error loading dynamics catalog via API proxy, falling back to direct Supabase query:", err);
+        try {
+          const { data, error } = await supabase
+            .from('tareas')
+            .select('*')
+            .order('nombre', { ascending: true });
+
+          if (error) throw error;
+          if (data) {
+            const mapped: CatalogDinamica[] = data.map((t: any) => ({
+              id: t.id.toString(),
+              nombre: t.nombre,
+              tipo: t.tipo || 'cerrada',
+              descripcion: t.descripcion,
+              contenidos_ofensivos: t.contenidos_ofensivos,
+              contenidos_defensivos: t.contenidos_defensivos,
+              consignas: t.consignas,
+              reglas: t.reglas,
+              variantes: t.variantes,
+              link_foto: t.link_foto,
+              link_video: t.link_video
+            }));
+            setCatalog(mapped);
+          }
+        } catch (fallbackErr) {
+          console.error("Fallo definitivo cargando catálogo desde Supabase:", fallbackErr);
+        }
       } finally {
         setLoadingCatalog(false);
       }
@@ -233,6 +259,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
 
     const fetchSavedPlanning = async () => {
       setLoadingPlanning(true);
+      let initialized = false;
       try {
         const res = await fetch(`/api/dinamicas-planificaciones?microcycleId=${microcycle.id}&dateKey=${dateKey}`);
         if (res.ok) {
@@ -300,55 +327,60 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
             
             setSessions(alignedSessions);
             setActiveSessionIndex(0);
-          } else if (dayTasks && dayTasks.length > 0) {
-            // No hay planificación previa de roles, pre-poblar usando las dinámicas ya agendadas
-            const initialSessions: PlanningSession[] = dayTasks.map((task, idx) => {
-              const matchedCatalog = findMatchedCatalog(task.nombre);
-              const nameToUse = matchedCatalog ? matchedCatalog.nombre : task.nombre;
-              const idToUse = matchedCatalog ? matchedCatalog.id : task.id;
-              const { targetA, targetB, targetComodines, targetArqueros } = parseTargetQuotas(nameToUse);
-
-              return {
-                dinamicaId: idToUse,
-                nombre: nameToUse,
-                order: idx + 1,
-                observaciones: '',
-                targetA,
-                targetB,
-                targetComodines,
-                targetArqueros,
-                assignments: {}
-              };
-            });
-            setSessions(initialSessions);
-            setActiveSessionIndex(0);
-          } else {
-            // Si dayTasks está vacío, auto-inicializar con catalog[0] por defecto para ir directo al diseñador sin "Workspace Vacío"
-            if (catalog && catalog.length > 0) {
-              const defaultDyn = catalog[0];
-              const { targetA, targetB, targetComodines, targetArqueros } = parseTargetQuotas(defaultDyn.nombre);
-              setSessions([{
-                dinamicaId: defaultDyn.id,
-                nombre: defaultDyn.nombre,
-                order: 1,
-                observaciones: '',
-                targetA,
-                targetB,
-                targetComodines,
-                targetArqueros,
-                assignments: {}
-              }]);
-              setActiveSessionIndex(0);
-            } else {
-              setSessions([]);
-            }
+            initialized = true;
           }
         }
       } catch (err) {
         console.error("Error fetching saved planning:", err);
-      } finally {
-        setLoadingPlanning(false);
       }
+
+      // Si no se pudo inicializar desde la API (ej: error 404/500 o fallo de red), inicializar localmente usando dayTasks o catálogo
+      if (!initialized) {
+        if (dayTasks && dayTasks.length > 0) {
+          // No hay planificación previa de roles, pre-poblar usando las dinámicas ya agendadas
+          const initialSessions: PlanningSession[] = dayTasks.map((task, idx) => {
+            const matchedCatalog = findMatchedCatalog(task.nombre);
+            const nameToUse = matchedCatalog ? matchedCatalog.nombre : task.nombre;
+            const idToUse = matchedCatalog ? matchedCatalog.id : task.id;
+            const { targetA, targetB, targetComodines, targetArqueros } = parseTargetQuotas(nameToUse);
+
+            return {
+              dinamicaId: idToUse,
+              nombre: nameToUse,
+              order: idx + 1,
+              observaciones: '',
+              targetA,
+              targetB,
+              targetComodines,
+              targetArqueros,
+              assignments: {}
+            };
+          });
+          setSessions(initialSessions);
+          setActiveSessionIndex(0);
+        } else {
+          // Si dayTasks está vacío, auto-inicializar con catalog[0] por defecto para ir directo al diseñador sin "Workspace Vacío"
+          if (catalog && catalog.length > 0) {
+            const defaultDyn = catalog[0];
+            const { targetA, targetB, targetComodines, targetArqueros } = parseTargetQuotas(defaultDyn.nombre);
+            setSessions([{
+              dinamicaId: defaultDyn.id,
+              nombre: defaultDyn.nombre,
+              order: 1,
+              observaciones: '',
+              targetA,
+              targetB,
+              targetComodines,
+              targetArqueros,
+              assignments: {}
+            }]);
+            setActiveSessionIndex(0);
+          } else {
+            setSessions([]);
+          }
+        }
+      }
+      setLoadingPlanning(false);
     };
 
     fetchSavedPlanning();
