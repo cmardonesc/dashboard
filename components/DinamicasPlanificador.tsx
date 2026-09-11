@@ -706,9 +706,8 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     list.push({ id: 'A', nombre: 'Equipo A', color: 'red', target: session.targetA || 4 });
     list.push({ id: 'B', nombre: 'Equipo B', color: 'blue', target: session.targetB || 4 });
     
-    if (session.targetComodines > 0 || Object.values(session.assignments).some(role => role === 'C')) {
-      list.push({ id: 'C', nombre: 'Comodines', color: 'amber', target: session.targetComodines || 1 });
-    }
+    // Comodines: Always available so that users can increase their slot count if needed.
+    list.push({ id: 'C', nombre: 'Comodines', color: 'amber', target: session.targetComodines || 0 });
 
     // Custom Teams
     if (session.teams && session.teams.length > 0) {
@@ -2342,7 +2341,15 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                                       });
                                     }
 
-                                    return orderedTeams.map(team => {
+                                    const filteredTeams = orderedTeams.filter(team => {
+                                      if (team.id === 'C') {
+                                        const playersInC = citedPlayers.filter(p => session.assignments[String(p.player_id)] === 'C');
+                                        return team.target > 0 || playersInC.length > 0;
+                                      }
+                                      return true;
+                                    });
+
+                                    return filteredTeams.map(team => {
                                       const teamColors = getTeamColors(team.color);
                                       const playersInTeam = team.id === 'UNASSIGNED'
                                         ? unassignedPlayers
