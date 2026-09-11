@@ -1,7 +1,20 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Cell,
+  Legend,
+  PieChart,
+  Pie
+} from 'recharts';
 import { MOCK_PLAYERS } from '../mockData';
-import { ItineraryActivity, Category, MicrocicloDB, CATEGORY_ID_MAP, AthletePerformanceRecord } from '../types';
+import { ItineraryActivity, Category, MicrocicloDB, CATEGORY_ID_MAP, REVERSE_CATEGORY_ID_MAP, AthletePerformanceRecord } from '../types';
 import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activityLogger';
 import { getDriveDirectLink } from '../lib/utils';
@@ -15,7 +28,7 @@ import ClubBadge from './ClubBadge';
 import { DinamicasPlanificador } from './DinamicasPlanificador';
 
 type ViewMode = 'selection' | 'management';
-type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia' | 'partidos' | 'convocatoria';
+type SubTab = 'cronograma' | 'tareas' | 'evaluacion' | 'competencia' | 'partidos' | 'convocatoria' | 'analisis';
 
 interface Tarea {
   id: string;
@@ -44,6 +57,7 @@ const DINAMICAS_OFICIALES = [
   'Dinámicas Cerradas',
   'Dinámicas Abiertas',
   'Dinámicas de Partido',
+  'TMI (Tarea Mejora Individual)',
   'General'
 ];
 
@@ -132,6 +146,19 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     direction: 'asc' | 'desc' | null;
   }>({ column: null, direction: null });
 
+  // Estados para Análisis de Tareas
+  const [allWeeklyTasks, setAllWeeklyTasks] = useState<any[]>([]);
+  const [allCitaciones, setAllCitaciones] = useState<any[]>([]);
+  const [dbPlayers, setDbPlayers] = useState<any[]>([]);
+  const [loadingAnalisis, setLoadingAnalisis] = useState(false);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('TODOS LOS PROCESOS');
+  const [selectedMicroIdFilter, setSelectedMicroIdFilter] = useState<string>('TODOS');
+  const [analisisSearchQuery, setAnalisisSearchQuery] = useState<string>('');
+  const [analisisSort, setAnalisisSort] = useState<{
+    column: 'fecha' | 'categoria' | 'microciclo' | 'nombre' | 'dinamica' | 'jornada';
+    direction: 'asc' | 'desc';
+  }>({ column: 'fecha', direction: 'desc' });
+
   const getSortedCompetenciaReports = (reports: any[]) => {
     if (!competenciaSort.column || !competenciaSort.direction) return reports;
     const { column: col, direction: dir } = competenciaSort;
@@ -219,10 +246,49 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     }
   };
 
+  const fetchAnalisisData = async () => {
+    setLoadingAnalisis(true);
+    try {
+      const { data: tasksData, error: tasksError } = await supabase
+        .from('tareas_semanales')
+        .select('*');
+      if (tasksError) throw tasksError;
+      if (tasksData) {
+        setAllWeeklyTasks(tasksData);
+      }
+
+      const { data: citData, error: citError } = await supabase
+        .from('citaciones')
+        .select('player_id, microcycle_id');
+      if (citError) throw citError;
+      if (citData) {
+        setAllCitaciones(citData);
+      }
+
+      const { data: pData, error: pError } = await supabase
+        .from('players')
+        .select('player_id, nombre, apellido1, posicion');
+      if (pError) throw pError;
+      if (pData) {
+        setDbPlayers(pData);
+      }
+    } catch (err) {
+      console.error("Error cargando tareas para análisis:", err);
+    } finally {
+      setLoadingAnalisis(false);
+    }
+  };
+
   useEffect(() => {
     fetchMicrocycles();
     fetchBiblioteca();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'analisis') {
+      fetchAnalisisData();
+    }
+  }, [activeTab]);
 
   const COMP_TYPES = [
     'Amistoso Nacional',
@@ -341,10 +407,20 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
 
       if (error) throw error;
       if (data) {
+        const mapTipoDinamica = (tipo: string) => {
+          const t = (tipo || '').toLowerCase();
+          if (t === 'cuadrado' || t === 'cuadrados') return 'Cuadrados';
+          if (t === 'cerrada' || t === 'cerradas' || t.includes('cerrada')) return 'Dinámicas Cerradas';
+          if (t === 'abierta' || t === 'abiertas' || t.includes('abierta')) return 'Dinámicas Abiertas';
+          if (t === 'partido' || t.includes('partido')) return 'Dinámicas de Partido';
+          if (t === 'tmi' || t.includes('tmi') || t.includes('mejora individual')) return 'TMI (Tarea Mejora Individual)';
+          return 'General';
+        };
+
         const mapped: Tarea[] = data.map((t: any) => ({
           id: t.id.toString(),
           nombre: t.nombre,
-          tipoDinamica: t.tipo_dinamica || 'General',
+          tipoDinamica: mapTipoDinamica(t.tipo || t.tipo_dinamica || 'General'),
           descripcion: t.descripcion
         }));
         setBiblioteca(mapped);
@@ -1066,9 +1142,19 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
     e.preventDefault();
     setLoading(true);
     try {
+      const mapDisplayToDBTipo = (display: string) => {
+        const d = (display || '').toLowerCase();
+        if (d.includes('cuadrados') || d.includes('cuadrado') || d.includes('rondo')) return 'cuadrado';
+        if (d.includes('cerrada') || d.includes('cerradas')) return 'cerrada';
+        if (d.includes('abierta') || d.includes('abiertas')) return 'abierta';
+        if (d.includes('partido')) return 'partido';
+        if (d.includes('tmi') || d.includes('mejora individual')) return 'tmi';
+        return 'general';
+      };
+
       const payload = {
         nombre: newBibliotecaTarea.nombre,
-        tipo_dinamica: newBibliotecaTarea.tipoDinamica,
+        tipo: mapDisplayToDBTipo(newBibliotecaTarea.tipoDinamica),
         descripcion: newBibliotecaTarea.descripcion
       };
 
@@ -2299,13 +2385,31 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   };
 
   const getDinamicaStyle = (dinamica: string) => {
-    const d = dinamica.toLowerCase();
-    if (d.includes('cuadrados')) return 'bg-blue-600 text-white';
-    if (d.includes('cerradas')) return 'bg-orange-500 text-white';
-    if (d.includes('abiertas')) return 'bg-emerald-500 text-white';
-    if (d.includes('partido')) return 'bg-slate-900 text-white';
-    if (d.includes('dinámica') || d.includes('dinamica')) return 'bg-indigo-600 text-white';
-    return 'bg-slate-400 text-white';
+    const d = (dinamica || '').toLowerCase();
+    
+    // TMI (Tarea Mejora Individual)
+    if (d.includes('tmi') || d.includes('mejora individual')) {
+      return 'bg-amber-500 text-amber-950 font-black';
+    }
+    // Cuadrados / Rondos
+    if (d.includes('cuadrados') || d.includes('rondo')) {
+      return 'bg-emerald-600 text-white font-black';
+    }
+    // Dinámicas Cerradas
+    if (d.includes('cerrada') || d.includes('cerradas')) {
+      return 'bg-orange-500 text-white font-black';
+    }
+    // Dinámicas Abiertas
+    if (d.includes('abierta') || d.includes('abiertas')) {
+      return 'bg-indigo-600 text-white font-black';
+    }
+    // Dinámicas de Partido
+    if (d.includes('partido')) {
+      return 'bg-red-600 text-white font-black';
+    }
+    
+    // Default / General
+    return 'bg-slate-500 text-white font-black';
   };
 
   const filteredMicrociclos = useMemo(() => {
@@ -2317,6 +2421,709 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       });
     });
   }, [microciclos, selectedCategories]);
+
+  // --- ANÁLISIS DE TAREAS LOGIC & VIEW ---
+  const enhancedTasks = useMemo(() => {
+    const formatDinamicaLabel = (dinamica: string) => {
+      const d = (dinamica || '').toLowerCase();
+      if (d === 'cuadrado' || d === 'cuadrados') return 'Cuadrados';
+      if (d === 'cerrada' || d === 'cerradas') return 'Dinámicas Cerradas';
+      if (d === 'abierta' || d === 'abiertas') return 'Dinámicas Abiertas';
+      if (d === 'partido') return 'Dinámicas de Partido';
+      if (d === 'tmi') return 'TMI (Tarea Mejora Individual)';
+      return dinamica || 'General';
+    };
+
+    return allWeeklyTasks.map(task => {
+      const mc = microciclos.find(m => m.id === task.id_microcycles);
+      const catId = mc?.category_id;
+      const catEnum = catId ? REVERSE_CATEGORY_ID_MAP[catId] : null;
+      const catLabel = catEnum ? formatCategoryLabel(catEnum) : 'GENERAL';
+      
+      return {
+        ...task,
+        dinamica: formatDinamicaLabel(task.dinamica),
+        microcycleName: mc?.nombre_display || `MICROCICLO #${mc?.micro_number || ''}`,
+        microcycleNumber: mc?.micro_number || 0,
+        categoryId: catId,
+        categoryEnum: catEnum,
+        categoryLabel: catLabel,
+      };
+    });
+  }, [allWeeklyTasks, microciclos]);
+
+  const filterableMicrocycles = useMemo(() => {
+    if (selectedCategoryFilter === 'TODOS LOS PROCESOS') return microciclos;
+    const catKey = Object.keys(Category).find(k => formatCategoryLabel(Category[k as keyof typeof Category]) === selectedCategoryFilter);
+    const selectedCatEnum = catKey ? Category[catKey as keyof typeof Category] : null;
+    const catId = selectedCatEnum ? CATEGORY_ID_MAP[selectedCatEnum] : null;
+    return microciclos.filter(m => m.category_id === catId);
+  }, [microciclos, selectedCategoryFilter]);
+
+  const filteredAnalisisTasks = useMemo(() => {
+    return enhancedTasks.filter(task => {
+      // 1. Category Filter
+      if (selectedCategoryFilter !== 'TODOS LOS PROCESOS') {
+        const matched = Object.values(Category).find(cVal => formatCategoryLabel(cVal) === selectedCategoryFilter);
+        if (task.categoryEnum !== matched) return false;
+      }
+      
+      // 2. Microcycle Filter
+      if (selectedMicroIdFilter !== 'TODOS') {
+        if (String(task.id_microcycles) !== String(selectedMicroIdFilter)) return false;
+      }
+      
+      // 3. Search Query
+      if (analisisSearchQuery.trim()) {
+        const query = analisisSearchQuery.toLowerCase();
+        const nameMatch = (task.nombre || '').toLowerCase().includes(query);
+        const typeMatch = (task.dinamica || '').toLowerCase().includes(query);
+        const obsMatch = (task.observacion || '').toLowerCase().includes(query);
+        if (!nameMatch && !typeMatch && !obsMatch) return false;
+      }
+      
+      return true;
+    });
+  }, [enhancedTasks, selectedCategoryFilter, selectedMicroIdFilter, analisisSearchQuery]);
+
+  const sortedAnalisisTasks = useMemo(() => {
+    const { column, direction } = analisisSort;
+    return [...filteredAnalisisTasks].sort((a, b) => {
+      let valA: any = '';
+      let valB: any = '';
+      if (column === 'fecha') {
+        valA = a.fecha || '';
+        valB = b.fecha || '';
+      } else if (column === 'categoria') {
+        valA = a.categoryLabel || '';
+        valB = b.categoryLabel || '';
+      } else if (column === 'microciclo') {
+        valA = a.microcycleNumber || 0;
+        valB = b.microcycleNumber || 0;
+      } else if (column === 'nombre') {
+        valA = a.nombre || '';
+        valB = b.nombre || '';
+      } else if (column === 'dinamica') {
+        valA = a.dinamica || '';
+        valB = b.dinamica || '';
+      } else if (column === 'jornada') {
+        valA = a.jornada || 'AM';
+        valB = b.jornada || 'AM';
+      }
+      if (valA < valB) return direction === 'asc' ? -1 : 1;
+      if (valA > valB) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredAnalisisTasks, analisisSort]);
+
+  const handleExportCSV = () => {
+    const headers = ['Fecha', 'Categoria', 'Microciclo', 'Tarea', 'Tipo Dinamica', 'Jornada', 'Observacion'];
+    const rows = sortedAnalisisTasks.map(t => [
+      t.fecha || '',
+      t.categoryLabel || '',
+      t.microcycleName || '',
+      `"${(t.nombre || '').replace(/"/g, '""')}"`,
+      t.dinamica || '',
+      t.jornada || 'AM',
+      `"${(t.observacion || '').replace(/"/g, '""')}"`
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Analisis_Metodologico_${selectedCategoryFilter.replace(/\s+/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCategoryFilterChange = (cat: string) => {
+    setSelectedCategoryFilter(cat);
+    setSelectedMicroIdFilter('TODOS');
+  };
+
+  if (activeTab === 'analisis') {
+    const totalCount = filteredAnalisisTasks.length;
+    const closedCount = filteredAnalisisTasks.filter(t => (t.dinamica || '').toLowerCase().includes('cerrada') || (t.dinamica || '').toLowerCase().includes('cerradas')).length;
+    const closedPercent = totalCount > 0 ? Math.round((closedCount / totalCount) * 100) : 0;
+    
+    // Unique microcycles analyzed
+    const uniqueMicros = Array.from(new Set(filteredAnalisisTasks.map(t => t.id_microcycles))).length;
+
+    // Distribution metrics
+    const typeCounts = {
+      'cuadrados': 0,
+      'cerradas': 0,
+      'abiertas': 0,
+      'partido': 0,
+      'tmi': 0,
+      'general': 0
+    };
+    
+    filteredAnalisisTasks.forEach(t => {
+      const d = (t.dinamica || '').toLowerCase();
+      if (d.includes('cuadrados') || d.includes('rondo')) typeCounts.cuadrados++;
+      else if (d.includes('cerrada') || d.includes('cerradas')) typeCounts.cerradas++;
+      else if (d.includes('abierta') || d.includes('abiertas')) typeCounts.abiertas++;
+      else if (d.includes('partido')) typeCounts.partido++;
+      else if (d.includes('tmi') || d.includes('mejora individual')) typeCounts.tmi++;
+      else typeCounts.general++;
+    });
+
+    const typePercents = {
+      cuadrados: totalCount > 0 ? Math.round((typeCounts.cuadrados / totalCount) * 100) : 0,
+      cerradas: totalCount > 0 ? Math.round((typeCounts.cerradas / totalCount) * 100) : 0,
+      abiertas: totalCount > 0 ? Math.round((typeCounts.abiertas / totalCount) * 100) : 0,
+      partido: totalCount > 0 ? Math.round((typeCounts.partido / totalCount) * 100) : 0,
+      tmi: totalCount > 0 ? Math.round((typeCounts.tmi / totalCount) * 100) : 0,
+      general: totalCount > 0 ? Math.round((typeCounts.general / totalCount) * 100) : 0,
+    };
+
+    // Rankings of exercises (Top 10)
+    const taskFrequencyMap: Record<string, { count: number; type: string }> = {};
+    filteredAnalisisTasks.forEach(t => {
+      const nameNorm = (t.nombre || '').trim();
+      if (!nameNorm) return;
+      if (!taskFrequencyMap[nameNorm]) {
+        taskFrequencyMap[nameNorm] = { count: 0, type: t.dinamica || 'General' };
+      }
+      taskFrequencyMap[nameNorm].count++;
+    });
+    
+    const sortedRankings = Object.entries(taskFrequencyMap)
+      .map(([nombre, data]) => ({ nombre, ...data }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+        {/* HEADER */}
+        <div className="bg-white rounded-[40px] p-10 border border-slate-100 shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/5 rotate-45 translate-x-12 -translate-y-12 rounded-[40px]"></div>
+          <div className="flex items-center gap-6 z-10">
+            <div className="w-16 h-16 bg-[#CF1B2B] rounded-3xl flex items-center justify-center text-white shadow-xl">
+              <i className="fa-solid fa-chart-line text-2xl"></i>
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter">
+                ANÁLISIS METODOLÓGICO DE TAREAS
+              </h2>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">
+                Auditoría, volumen y distribución metodológica de las sesiones de entrenamiento.
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={fetchAnalisisData}
+            disabled={loadingAnalisis}
+            className="px-6 py-3.5 rounded-2xl bg-slate-50 text-slate-600 hover:bg-[#0b1220] hover:text-white transition-all text-xs font-bold uppercase tracking-wider flex items-center gap-2 self-start md:self-center shadow-sm disabled:opacity-50"
+          >
+            <i className={`fa-solid fa-rotate ${loadingAnalisis ? 'animate-spin' : ''}`}></i>
+            Sincronizar Datos
+          </button>
+        </div>
+
+        {/* METRICS GRID */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {/* KPI 1 */}
+          <div className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-4 right-4 text-slate-100 text-5xl font-black select-none"><i className="fa-solid fa-clipboard-list"></i></div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">TOTAL PLANIFICADO</p>
+              <h3 className="text-4xl font-black text-slate-900 tracking-tight italic">{totalCount} Tareas</h3>
+            </div>
+            <p className="text-xs font-bold text-slate-500 mt-4 border-t border-slate-50 pt-4 uppercase tracking-wider">
+              En todas las dinámicas evaluadas
+            </p>
+          </div>
+
+          {/* KPI 2 */}
+          <div className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-4 right-4 text-slate-100 text-5xl font-black select-none"><i className="fa-solid fa-percent"></i></div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">DINÁMICAS CERRADAS</p>
+              <div className="flex items-baseline gap-2">
+                <h3 className="text-4xl font-black text-orange-500 tracking-tight italic">{closedCount}</h3>
+                <span className="text-xl font-bold text-slate-400">({closedPercent}%)</span>
+              </div>
+            </div>
+            <div className="mt-4 border-t border-slate-50 pt-4">
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="bg-orange-500 h-full transition-all duration-500" style={{ width: `${closedPercent}%` }}></div>
+              </div>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-2">
+                Recomendado metodológicamente: &lt;30% analítico
+              </p>
+            </div>
+          </div>
+
+          {/* KPI 3 */}
+          <div className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-4 right-4 text-slate-100 text-5xl font-black select-none"><i className="fa-solid fa-calendar-day"></i></div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">MICROCICLOS AUDITADOS</p>
+              <h3 className="text-4xl font-black text-blue-600 tracking-tight italic">{uniqueMicros} Periodos</h3>
+            </div>
+            <p className="text-xs font-bold text-slate-500 mt-4 border-t border-slate-50 pt-4 uppercase tracking-wider">
+              Con sesiones activas programadas
+            </p>
+          </div>
+        </div>
+
+        {/* FILTERS */}
+        <div className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6">
+            <div className="flex flex-wrap items-center gap-4 flex-1">
+              {/* Category Filter */}
+              <div className="flex flex-col gap-1.5 min-w-[200px]">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <i className="fa-solid fa-filter text-red-600"></i> PROCESO / CATEGORÍA
+                </label>
+                <select 
+                  value={selectedCategoryFilter}
+                  onChange={(e) => handleCategoryFilterChange(e.target.value)}
+                  className="bg-slate-50 border border-slate-100 text-xs font-bold text-slate-800 rounded-xl px-4 py-3 outline-none focus:border-red-600 transition-colors"
+                >
+                  <option value="TODOS LOS PROCESOS">TODOS LOS PROCESOS</option>
+                  {Object.values(Category).map(cat => (
+                    <option key={cat} value={formatCategoryLabel(cat)}>
+                      {formatCategoryLabel(cat)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Microcycle Filter */}
+              <div className="flex flex-col gap-1.5 min-w-[240px]">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <i className="fa-solid fa-calendar-week text-red-600"></i> MICROCICLO DE TRABAJO
+                </label>
+                <select 
+                  value={selectedMicroIdFilter}
+                  onChange={(e) => setSelectedMicroIdFilter(e.target.value)}
+                  className="bg-slate-50 border border-slate-100 text-xs font-bold text-slate-800 rounded-xl px-4 py-3 outline-none focus:border-red-600 transition-colors"
+                >
+                  <option value="TODOS">TODOS LOS MICROCICLOS</option>
+                  {filterableMicrocycles.map(mc => (
+                    <option key={mc.id} value={mc.id.toString()}>
+                      {mc.nombre_display} - MC #{mc.micro_number || ''} ({mc.start_date})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div className="flex flex-col gap-1.5 min-w-[280px]">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                BUSCADOR DE TAREAS
+              </label>
+              <div className="relative">
+                <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input 
+                  type="text"
+                  placeholder="Ej: Cuadrado 4vs4, Tarea..."
+                  value={analisisSearchQuery}
+                  onChange={(e) => setAnalisisSearchQuery(e.target.value)}
+                  className="bg-slate-50 border border-slate-100 text-xs font-bold text-slate-800 rounded-xl pl-11 pr-4 py-3 outline-none focus:border-red-600 transition-colors w-full"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {loadingAnalisis ? (
+          <div className="py-20 text-center text-slate-400 font-black uppercase italic tracking-widest animate-pulse">
+            Consultando registros técnicos de campo...
+          </div>
+        ) : (
+          <>
+            {totalCount === 0 ? (
+              <div className="bg-white rounded-[40px] p-20 text-center border border-slate-100 shadow-sm">
+                <i className="fa-solid fa-folder-open text-slate-200 text-5xl mb-6"></i>
+                <h4 className="text-lg font-black text-slate-800 uppercase italic tracking-tight">Sin registros disponibles</h4>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">
+                  No se encontraron tareas planificadas bajo los filtros seleccionados.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* INTERACTIVE GRAPHS SECTION */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* METODOLOGICAL DISTRIBUTION */}
+                  <div className="bg-white rounded-[40px] p-10 border border-slate-100 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2 mb-8">
+                        <span className="w-1.5 h-4 bg-red-600 rounded-full"></span>
+                        Distribución Metodológica de Dinámicas
+                      </h4>
+
+                      <div className="space-y-6">
+                        {/* Cuadrados */}
+                        <div>
+                          <div className="flex justify-between text-xs font-bold uppercase mb-2">
+                            <span className="text-slate-600 flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span> Cuadrados / Rondos
+                            </span>
+                            <span className="text-slate-900">{typeCounts.cuadrados} ({typePercents.cuadrados}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-50 h-3.5 rounded-full overflow-hidden">
+                            <div className="bg-emerald-600 h-full transition-all duration-500" style={{ width: `${typePercents.cuadrados}%` }}></div>
+                          </div>
+                        </div>
+
+                        {/* Cerradas */}
+                        <div>
+                          <div className="flex justify-between text-xs font-bold uppercase mb-2">
+                            <span className="text-slate-600 flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span> Dinámicas Cerradas
+                            </span>
+                            <span className="text-slate-900">{typeCounts.cerradas} ({typePercents.cerradas}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-50 h-3.5 rounded-full overflow-hidden">
+                            <div className="bg-orange-500 h-full transition-all duration-500" style={{ width: `${typePercents.cerradas}%` }}></div>
+                          </div>
+                        </div>
+
+                        {/* Abiertas */}
+                        <div>
+                          <div className="flex justify-between text-xs font-bold uppercase mb-2">
+                            <span className="text-slate-600 flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span> Dinámicas Abiertas
+                            </span>
+                            <span className="text-slate-900">{typeCounts.abiertas} ({typePercents.abiertas}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-50 h-3.5 rounded-full overflow-hidden">
+                            <div className="bg-indigo-600 h-full transition-all duration-500" style={{ width: `${typePercents.abiertas}%` }}></div>
+                          </div>
+                        </div>
+
+                        {/* Partido */}
+                        <div>
+                          <div className="flex justify-between text-xs font-bold uppercase mb-2">
+                            <span className="text-slate-600 flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-red-600"></span> Dinámicas de Partido
+                            </span>
+                            <span className="text-slate-900">{typeCounts.partido} ({typePercents.partido}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-50 h-3.5 rounded-full overflow-hidden">
+                            <div className="bg-red-600 h-full transition-all duration-500" style={{ width: `${typePercents.partido}%` }}></div>
+                          </div>
+                        </div>
+
+                        {/* TMI */}
+                        <div>
+                          <div className="flex justify-between text-xs font-bold uppercase mb-2">
+                            <span className="text-slate-600 flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Tarea Mejora Individual (TMI)
+                            </span>
+                            <span className="text-slate-900">{typeCounts.tmi} ({typePercents.tmi}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-50 h-3.5 rounded-full overflow-hidden">
+                            <div className="bg-amber-500 h-full transition-all duration-500" style={{ width: `${typePercents.tmi}%` }}></div>
+                          </div>
+                        </div>
+
+                        {/* General */}
+                        <div>
+                          <div className="flex justify-between text-xs font-bold uppercase mb-2">
+                            <span className="text-slate-600 flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-slate-500"></span> General / Estándar
+                            </span>
+                            <span className="text-slate-900">{typeCounts.general} ({typePercents.general}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-50 h-3.5 rounded-full overflow-hidden">
+                            <div className="bg-slate-500 h-full transition-all duration-500" style={{ width: `${typePercents.general}%` }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* MOST PERFORMED TASKS */}
+                  <div className="bg-white rounded-[40px] p-10 border border-slate-100 shadow-sm">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2 mb-8">
+                      <span className="w-1.5 h-4 bg-red-600 rounded-full"></span>
+                      Ejercicios Más Recurrentes (Top 10)
+                    </h4>
+
+                    {sortedRankings.length === 0 ? (
+                      <div className="py-12 text-center text-slate-300 text-xs font-black uppercase tracking-wider">
+                        Sin datos suficientes de frecuencia
+                      </div>
+                    ) : (
+                      <div className="space-y-4 max-h-[420px] overflow-y-auto custom-scrollbar pr-2">
+                        {sortedRankings.map((task, idx) => {
+                          const styleStr = getDinamicaStyle(task.type);
+                          return (
+                            <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all">
+                              <div className="flex items-center gap-4">
+                                <span className="w-8 h-8 rounded-xl bg-slate-200/50 text-slate-700 flex items-center justify-center font-black text-xs">
+                                  #{idx + 1}
+                                </span>
+                                <div>
+                                  <p className="text-xs font-black text-slate-800 uppercase tracking-tight line-clamp-1">
+                                    {task.nombre}
+                                  </p>
+                                  <span className={`inline-block text-[8px] font-black uppercase px-2 py-0.5 rounded-md mt-1 ${styleStr}`}>
+                                    {task.type}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-xs font-black text-slate-900 uppercase italic">
+                                  {task.count} {task.count === 1 ? 'Sesión' : 'Sesiones'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* DETAILED PLAYER AND DYNAMIC PARTICIPATION ANALYSIS */}
+                <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden p-10 space-y-10">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                      <span className="w-1.5 h-4 bg-red-600 rounded-full"></span>
+                      Participación Cruzada: Atletas & Tipos de Dinámicas
+                    </h4>
+                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-1">
+                      Análisis detallado de la carga metodológica completada por atleta en las sesiones de entrenamiento.
+                    </p>
+                  </div>
+
+                  {(() => {
+                    const playersChartData = (() => {
+                      const playerBreakdown: Record<number, {
+                        cuadrados: number;
+                        cerradas: number;
+                        abiertas: number;
+                        partido: number;
+                        tmi: number;
+                        general: number;
+                        total: number;
+                      }> = {};
+
+                      filteredAnalisisTasks.forEach(task => {
+                        const microId = task.id_microcycles;
+                        const dinamica = (task.dinamica || '').toLowerCase();
+                        
+                        let key: 'cuadrados' | 'cerradas' | 'abiertas' | 'partido' | 'tmi' | 'general' = 'general';
+                        if (dinamica.includes('cuadrado') || dinamica.includes('rondo')) key = 'cuadrados';
+                        else if (dinamica.includes('cerrada') || dinamica.includes('cerradas')) key = 'cerradas';
+                        else if (dinamica.includes('abierta') || dinamica.includes('abiertas')) key = 'abiertas';
+                        else if (dinamica.includes('partido')) key = 'partido';
+                        else if (dinamica.includes('tmi') || dinamica.includes('mejora individual')) key = 'tmi';
+
+                        const citationsForMicro = allCitaciones.filter(c => c.microcycle_id === microId);
+                        citationsForMicro.forEach(c => {
+                          if (c.player_id) {
+                            if (!playerBreakdown[c.player_id]) {
+                              playerBreakdown[c.player_id] = { cuadrados: 0, cerradas: 0, abiertas: 0, partido: 0, tmi: 0, general: 0, total: 0 };
+                            }
+                            playerBreakdown[c.player_id][key]++;
+                            playerBreakdown[c.player_id].total++;
+                          }
+                        });
+                      });
+
+                      return Object.entries(playerBreakdown)
+                        .map(([pIdStr, data]) => {
+                          const pId = Number(pIdStr);
+                          const realP = dbPlayers.find(p => p.player_id === pId);
+                          const mockP = MOCK_PLAYERS.find(p => p.player_id === pId);
+
+                          let name = `Jugador #${pId}`;
+                          if (realP) {
+                            name = `${realP.nombre} ${realP.apellido1 || ''}`.trim();
+                          } else if (mockP) {
+                            name = mockP.name;
+                          }
+
+                          let position = 'S/C';
+                          if (realP?.posicion) {
+                            position = realP.posicion;
+                          } else if (mockP?.position) {
+                            position = mockP.position;
+                          }
+
+                          let category = 'S/C';
+                          if (realP?.category_id) {
+                            category = String(realP.category_id);
+                          } else if (mockP?.category) {
+                            category = mockP.category;
+                          }
+
+                          return {
+                            id: pId,
+                            name: name.toUpperCase(),
+                            position: position,
+                            category: category,
+                            ...data
+                          };
+                        })
+                        .filter(player => {
+                          const pos = player.position.toLowerCase();
+                          return !pos.includes('portero') && 
+                                 !pos.includes('arquero') && 
+                                 !pos.includes('goalkeeper') && 
+                                 !pos.includes('gk') && 
+                                 !pos.includes('guardameta');
+                        })
+                        .sort((a, b) => b.total - a.total)
+                        .slice(0, 10);
+                    })();
+
+                    if (playersChartData.length === 0) {
+                      return (
+                        <div className="py-20 text-center text-slate-300 text-xs font-black uppercase tracking-wider">
+                          Sin datos de participación para los filtros seleccionados
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+                        {/* LEFT COLUMN: STACKED BAR CHART */}
+                        <div className="lg:col-span-7 space-y-6">
+                          <div>
+                            <span className="text-[10px] font-black uppercase text-[#CF1B2B] tracking-wider">Visualización de Carga</span>
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-tight mt-0.5">Distribución Acumulada de Dinámicas</h5>
+                          </div>
+
+                          <div className="h-[400px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={playersChartData}
+                                layout="vertical"
+                                margin={{ top: 10, right: 10, left: 20, bottom: 0 }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                                <XAxis 
+                                  type="number"
+                                  tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 900 }} 
+                                  axisLine={false}
+                                  tickLine={false}
+                                />
+                                <YAxis 
+                                  type="category"
+                                  dataKey="name" 
+                                  tick={{ fill: '#1e293b', fontSize: 8, fontWeight: 900 }} 
+                                  axisLine={false}
+                                  tickLine={false}
+                                  width={110}
+                                />
+                                <Tooltip
+                                  content={({ active, payload }) => {
+                                    if (active && payload && payload.length) {
+                                      const data = payload[0].payload;
+                                      return (
+                                        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl space-y-2 text-xs">
+                                          <p className="font-black text-white uppercase tracking-wider border-b border-slate-800 pb-1.5">{data.name}</p>
+                                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{data.position} • {data.category.replace('_', ' ')}</p>
+                                          <div className="space-y-1 pt-1">
+                                            {data.cuadrados > 0 && <p className="text-[#10b981] font-bold">Cuadrados: <span className="text-white font-black">{data.cuadrados}</span></p>}
+                                            {data.cerradas > 0 && <p className="text-[#f97316] font-bold">D. Cerradas: <span className="text-white font-black">{data.cerradas}</span></p>}
+                                            {data.abiertas > 0 && <p className="text-[#4f46e5] font-bold">D. Abiertas: <span className="text-white font-black">{data.abiertas}</span></p>}
+                                            {data.partido > 0 && <p className="text-[#ef4444] font-bold">D. Partido: <span className="text-white font-black">{data.partido}</span></p>}
+                                            {data.tmi > 0 && <p className="text-[#f59e0b] font-bold">TMI: <span className="text-white font-black">{data.tmi}</span></p>}
+                                            {data.general > 0 && <p className="text-[#64748b] font-bold">General: <span className="text-white font-black">{data.general}</span></p>}
+                                          </div>
+                                          <p className="text-red-500 font-black border-t border-slate-800 pt-1.5">Total: <span className="text-white">{data.total} Sesiones</span></p>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Legend 
+                                  verticalAlign="top" 
+                                  height={36}
+                                  content={() => (
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[9px] font-black uppercase tracking-wider text-slate-500 pb-4">
+                                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded bg-[#10b981]"></span> Cuadrados</span>
+                                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded bg-[#f97316]"></span> D. Cerradas</span>
+                                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded bg-[#4f46e5]"></span> D. Abiertas</span>
+                                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded bg-[#ef4444]"></span> D. Partido</span>
+                                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded bg-[#f59e0b]"></span> TMI</span>
+                                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded bg-[#64748b]"></span> General</span>
+                                    </div>
+                                  )}
+                                />
+                                <Bar dataKey="cuadrados" stackId="a" fill="#10b981" />
+                                <Bar dataKey="cerradas" stackId="a" fill="#f97316" />
+                                <Bar dataKey="abiertas" stackId="a" fill="#4f46e5" />
+                                <Bar dataKey="partido" stackId="a" fill="#ef4444" />
+                                <Bar dataKey="tmi" stackId="a" fill="#f59e0b" />
+                                <Bar dataKey="general" stackId="a" fill="#64748b" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* RIGHT COLUMN: COMPARATIVE METRIC TABLE */}
+                        <div className="lg:col-span-5 space-y-6">
+                          <div>
+                            <span className="text-[10px] font-black uppercase text-[#CF1B2B] tracking-wider">Tabla Comparativa</span>
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-tight mt-0.5">Desglose Técnico de Sesiones</h5>
+                          </div>
+
+                          <div className="overflow-hidden border border-slate-100 rounded-3xl">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-400 text-[8px] font-black uppercase tracking-widest border-b border-slate-100">
+                                  <th className="py-4 px-5">Atleta</th>
+                                  <th className="py-4 px-3 text-center">Cua</th>
+                                  <th className="py-4 px-3 text-center">Cer</th>
+                                  <th className="py-4 px-3 text-center">Abi</th>
+                                  <th className="py-4 px-3 text-center">Par</th>
+                                  <th className="py-4 px-3 text-center">Tmi</th>
+                                  <th className="py-4 px-4 text-center">Tot</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50 text-slate-700 text-xs font-bold">
+                                {playersChartData.map((p, idx) => (
+                                  <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="py-3 px-5">
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-[10px] font-black text-slate-400 w-4">#{idx + 1}</span>
+                                        <div>
+                                          <p className="text-[10px] font-black text-slate-900 uppercase tracking-tight line-clamp-1">{p.name}</p>
+                                          <p className="text-[8px] text-slate-400 uppercase tracking-wider">{p.position}</p>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-3 text-center text-[#10b981] font-black">{p.cuadrados || '-'}</td>
+                                    <td className="py-3 px-3 text-center text-[#f97316] font-black">{p.cerradas || '-'}</td>
+                                    <td className="py-3 px-3 text-center text-[#4f46e5] font-black">{p.abiertas || '-'}</td>
+                                    <td className="py-3 px-3 text-center text-[#ef4444] font-black">{p.partido || '-'}</td>
+                                    <td className="py-3 px-3 text-center text-[#f59e0b] font-black">{p.tmi || '-'}</td>
+                                    <td className="py-3 px-4 text-center bg-slate-50/50">
+                                      <span className="px-2 py-1 rounded bg-[#CF1B2B]/5 text-[#CF1B2B] text-[10px] font-black">
+                                        {p.total}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
 
   if (viewMode === 'selection') {
     return (
@@ -2671,9 +3478,18 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
               <h3 className="text-2xl font-black uppercase italic tracking-tighter">Asignar Tarea Técnica</h3>
             </div>
             <div className="p-10 space-y-6">
-              <div className="relative">
-                <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
-                <input type="text" placeholder="Buscar tarea..." className="w-full bg-slate-50 border-none rounded-2xl px-12 py-4 text-sm font-bold outline-none" value={searchTermBiblioteca} onChange={e => setSearchTermBiblioteca(e.target.value)} />
+              <div className="flex gap-3">
+                <div className="relative flex-1">
+                  <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
+                  <input type="text" placeholder="Buscar tarea..." className="w-full bg-slate-50 border-none rounded-2xl px-12 py-4 text-sm font-bold outline-none" value={searchTermBiblioteca} onChange={e => setSearchTermBiblioteca(e.target.value)} />
+                </div>
+                <button 
+                  onClick={() => setShowBibliotecaAddModal(true)}
+                  className="bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[10px] tracking-wider px-6 py-4 rounded-2xl transition-all flex items-center gap-2 shrink-0 shadow-lg shadow-red-900/10"
+                >
+                  <i className="fa-solid fa-plus"></i>
+                  <span>Crear Tarea</span>
+                </button>
               </div>
               <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
                 {biblioteca.filter(t => t.nombre.toLowerCase().includes(searchTermBiblioteca.toLowerCase())).map(tarea => (
@@ -2689,7 +3505,7 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       )}
 
       {showBibliotecaAddModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-[#0b1220]/95 transform-gpu animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-6 bg-[#0b1220]/95 transform-gpu animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-xl rounded-[48px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 transform-gpu">
             <div className="bg-red-600 p-10 text-white relative">
               <button onClick={() => setShowBibliotecaAddModal(false)} className="absolute top-8 right-8 text-white/40 hover:text-white transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>

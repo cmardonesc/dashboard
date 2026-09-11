@@ -321,17 +321,10 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
         };
       });
 
-      // 4. Fetch citations
-      const { data: citData, error: citErr } = await supabase
-        .from('citaciones')
-        .select('player_id, microcycle_id');
-        
-      if (citErr) throw citErr;
-
       setDbMatches(matchesData || []);
       setMicrocycles(mcData || []);
       setDbPlayers(mappedPlayers);
-      setCitations(citData || []);
+      setCitations([]);
     } catch (err) {
       console.error("Error loading matches & metadata in Competencia:", err);
     } finally {
@@ -342,6 +335,29 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Load citations dynamically whenever form.microcycle_id changes to bypass the 1000 database row limit
+  useEffect(() => {
+    const fetchCitationsForMicro = async () => {
+      if (!form.microcycle_id) {
+        setCitations([]);
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from('citaciones')
+          .select('player_id, microcycle_id')
+          .eq('microcycle_id', form.microcycle_id);
+        
+        if (error) throw error;
+        setCitations(data || []);
+      } catch (err) {
+        console.error("Error fetching citations dynamically:", err);
+      }
+    };
+    
+    fetchCitationsForMicro();
+  }, [form.microcycle_id]);
 
   // Filter matches based on selected category state
   const filteredMatches = useMemo(() => {
@@ -364,12 +380,10 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
     if (form.microcycle_id) {
       const citedPlayerIdsInMicro = citations
         .filter(c => String(c.microcycle_id) === String(form.microcycle_id))
-        .map(c => Number(c.player_id));
+        .map(c => String(c.player_id));
       
-      const filteredByMicro = dbPlayers.filter(p => citedPlayerIdsInMicro.includes(Number(p.player_id)));
-      
-      // Fallback: if no players are cited, show all category players to ensure robustness.
-      return filteredByMicro.length > 0 ? filteredByMicro : categoryPlayers;
+      // Strictly filter and show only the players cited to this microcycle
+      return dbPlayers.filter(p => citedPlayerIdsInMicro.includes(String(p.player_id)));
     }
     
     return categoryPlayers.length > 0 ? categoryPlayers : dbPlayers;

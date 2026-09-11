@@ -90,6 +90,7 @@ export type MenuId =
   | 'planificacion_semanal'
   | 'tecnica'
   | 'tecnica_biblioteca'
+  | 'tecnica_analisis'
   | 'tecnica_convocatoria'
   | 'tecnica_partidos'
   | 'tecnica_competencia'

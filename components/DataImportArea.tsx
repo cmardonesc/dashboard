@@ -410,6 +410,26 @@ export default function DataImportArea() {
     errores: any[];
   } | null>(null);
 
+  const [dbDynamics, setDbDynamics] = useState<any[]>([]);
+  const [dynamicMappings, setDynamicMappings] = useState<Record<string, string>>({});
+
+  const uniqueDrillsInFile = useMemo(() => {
+    const names = new Set<string>();
+    if (periodsPreview?.matcheados) {
+      periodsPreview.matcheados.forEach((m: any) => {
+        const key = m.tarea_normalizada || m.drill_name || m.tarea || m.period_name || 'Sin Nombre';
+        if (key) names.add(key);
+      });
+    }
+    if (periodsPreview?.sin_mapear) {
+      periodsPreview.sin_mapear.forEach((m: any) => {
+        const key = m.tarea_normalizada || m.drill_name || m.tarea || m.period_name || 'Sin Nombre';
+        if (key) names.add(key);
+      });
+    }
+    return Array.from(names);
+  }, [periodsPreview?.matcheados, periodsPreview?.sin_mapear]);
+
   const seriesPorDinamica = useMemo(() => {
     if (!periodsPreview?.matcheados) return [];
     const map = new Map<string, Set<string>>();
@@ -437,11 +457,17 @@ export default function DataImportArea() {
 
   useEffect(() => {
     fetchPlayers();
+    fetchDynamics();
   }, []);
 
   const fetchPlayers = async () => {
     const { data } = await supabase.from('players').select('*');
     if (data) setPlayers(data);
+  };
+
+  const fetchDynamics = async () => {
+    const { data } = await supabase.from('tareas').select('id, nombre, dinamica');
+    if (data) setDbDynamics(data);
   };
 
   const normalizeString = (str: any) => {
@@ -2162,6 +2188,37 @@ export default function DataImportArea() {
 
       setGeneralPreview(generalData);
       setPeriodsPreview(periodsData);
+
+      // Auto-map loaded drills/periods
+      if (periodsData?.matcheados) {
+        const drills = new Set<string>();
+        periodsData.matcheados.forEach((m: any) => {
+          const key = m.tarea_normalizada || m.drill_name || m.tarea || m.period_name || 'Sin Nombre';
+          if (key) drills.add(key);
+        });
+        if (periodsData?.sin_mapear) {
+          periodsData.sin_mapear.forEach((m: any) => {
+            const key = m.tarea_normalizada || m.drill_name || m.tarea || m.period_name || 'Sin Nombre';
+            if (key) drills.add(key);
+          });
+        }
+        
+        const initialMappings: Record<string, string> = {};
+        drills.forEach(drill => {
+          // Fuzzy match against dbDynamics
+          const drillLower = drill.toLowerCase().trim();
+          const match = dbDynamics.find(dyn => {
+            const dynNameLower = (dyn.nombre || '').toLowerCase().trim();
+            return dynNameLower.includes(drillLower) || drillLower.includes(dynNameLower);
+          });
+          if (match) {
+            initialMappings[drill] = match.nombre;
+          } else {
+            initialMappings[drill] = '';
+          }
+        });
+        setDynamicMappings(prev => ({ ...initialMappings, ...prev }));
+      }
       
       // Determine default active tab
       const defaultTab = generalData?.success ? 'general' : 'periods';
@@ -2483,11 +2540,24 @@ export default function DataImportArea() {
 
       // --- PERIODS / DRILLS LOAD ---
       if (periodsPreview?.matcheados && periodsPreview.matcheados.length > 0) {
+        // Map the drill/tarea names to the standardized ones selected by the user
+        const mappedPeriodsRows = periodsPreview.matcheados.map((m: any) => {
+          const originalKey = m.tarea_normalizada || m.drill_name || m.tarea || m.period_name || 'Sin Nombre';
+          const standardizedName = dynamicMappings[originalKey] || originalKey;
+          return {
+            ...m,
+            drill_name: standardizedName,
+            period_name: standardizedName,
+            tarea: standardizedName,
+            tarea_normalizada: standardizedName,
+          };
+        });
+
         let responseData: any = null;
         let invokeError: any = null;
         try {
           const res = await supabase.functions.invoke('catapult-periods-confirm', {
-            body: { filas: periodsPreview.matcheados }
+            body: { filas: mappedPeriodsRows }
           });
           responseData = res.data;
           invokeError = res.error;
@@ -2832,7 +2902,7 @@ export default function DataImportArea() {
 
                     {activeTab === 'periods' && periodsPreview?.matcheados && (
                       <div className="bg-sky-50/50 border border-sky-100 rounded-[32px] p-6 mb-6">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                           <div>
                             <h4 className="text-xs font-black text-slate-950 uppercase tracking-widest flex items-center gap-2">
                               <span className="w-2.5 h-2.5 rounded-full bg-sky-600 animate-pulse"></span>
@@ -2851,6 +2921,52 @@ export default function DataImportArea() {
                             ))}
                           </div>
                         </div>
+
+                        {uniqueDrillsInFile.length > 0 && (
+                          <div className="mt-5 pt-5 border-t border-sky-100/70">
+                            <h5 className="text-[10px] font-black text-sky-900 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                              <i className="fa-solid fa-sliders text-sky-600"></i> Sincronización de Períodos con Base de Datos (Tabla Tareas)
+                            </h5>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase mb-3">
+                              Asocia cada ejercicio del GPS con una dinámica oficial para estandarizar las cargas analíticas.
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                              {uniqueDrillsInFile.map(drill => (
+                                <div key={drill} className="bg-white p-3 rounded-2xl border border-sky-100/50 shadow-sm flex flex-col justify-between gap-2 transition-all hover:shadow-md">
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <span className="text-[10px] font-mono font-black text-slate-700 truncate max-w-[120px]" title={drill}>{drill}</span>
+                                    {dynamicMappings[drill] ? (
+                                      <span className="bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider flex items-center gap-1">
+                                        <i className="fa-solid fa-circle-check"></i> Sincronizado
+                                      </span>
+                                    ) : (
+                                      <span className="bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider flex items-center gap-1">
+                                        <i className="fa-solid fa-triangle-exclamation"></i> Mantener Original
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="relative">
+                                    <select
+                                      value={dynamicMappings[drill] || ''}
+                                      onChange={(e) => setDynamicMappings(prev => ({ ...prev, [drill]: e.target.value }))}
+                                      className="w-full text-[9px] font-bold uppercase bg-slate-50 hover:bg-slate-100/80 border border-slate-200/85 text-slate-800 rounded-xl px-2.5 py-1.5 pr-7 appearance-none outline-none focus:border-sky-500 cursor-pointer transition-colors truncate"
+                                    >
+                                      <option value="" className="text-slate-400 font-semibold">⚠️ Mantener Original (Sin mapear)</option>
+                                      {dbDynamics.map(dyn => (
+                                        <option key={dyn.id} value={dyn.nombre} className="text-slate-900 font-bold">
+                                          {dyn.nombre} ({dyn.dinamica || 'Dinámica'})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[8px]">
+                                      <i className="fa-solid fa-chevron-down"></i>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -2953,9 +3069,23 @@ export default function DataImportArea() {
                                     </td>
                                     {activeTab === 'periods' && (
                                       <td className="px-3 py-4 text-left font-black text-slate-800">
-                                        <span className="bg-slate-100 px-2 py-1 rounded-lg uppercase text-[9px] tracking-tight">
-                                          {m.drill_name || m.tarea || m.period_name || 'Sin Tarea'}
-                                        </span>
+                                        <div className="flex flex-col gap-1">
+                                          <span className="bg-slate-100 px-2 py-1 rounded-lg uppercase text-[9px] tracking-tight w-fit">
+                                            {m.drill_name || m.tarea || m.period_name || 'Sin Tarea'}
+                                          </span>
+                                          {(() => {
+                                            const originalKey = m.tarea_normalizada || m.drill_name || m.tarea || m.period_name || 'Sin Nombre';
+                                            const mappedVal = dynamicMappings[originalKey];
+                                            if (mappedVal && mappedVal !== originalKey) {
+                                              return (
+                                                <span className="text-[8px] font-black text-emerald-600 uppercase flex items-center gap-0.5 tracking-tight">
+                                                  <i className="fa-solid fa-arrow-right-long"></i> {mappedVal}
+                                                </span>
+                                              );
+                                            }
+                                            return null;
+                                          })()}
+                                        </div>
                                       </td>
                                     )}
                                     <td className="px-3 py-4 text-right font-mono font-bold text-slate-600">{valMinutos !== undefined ? valMinutos.toFixed(1) : '-'}</td>

@@ -52,7 +52,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const [planificacionOpen, setPlanificacionOpen] = useState(isPlanificacionActive);
 
   // Estado para Área Técnica y sus submenús
-  const TECNICA_IDS = ['tecnica', 'tecnica_biblioteca', 'tecnica_convocatoria', 'tecnica_competencia'];
+  const TECNICA_IDS = ['tecnica', 'tecnica_biblioteca', 'tecnica_analisis', 'tecnica_convocatoria', 'tecnica_competencia'];
   const isTecnicaActive = TECNICA_IDS.includes(activeMenu);
   const [tecnicaOpen, setTecnicaOpen] = useState(isTecnicaActive);
 
@@ -164,6 +164,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
       )) return true;
       if (allowedMenus.includes('tecnica') && (
         menuId === 'tecnica_biblioteca' || 
+        menuId === 'tecnica_analisis' || 
         menuId === 'tecnica_competencia'
       )) return true;
       if (allowedMenus.includes('competencia') && (menuId === 'tecnica_competencia' || menuId === 'competencia' || menuId === 'gps_internacional')) return true;
@@ -619,7 +620,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
         )}
 
         {/* ÁREA TÉCNICA COLLAPSIBLE */}
-        {userRole !== 'club' && (isMenuAllowed('tecnica_biblioteca') || isMenuAllowed('tecnica_competencia')) && (
+        {userRole !== 'club' && (isMenuAllowed('tecnica_biblioteca') || isMenuAllowed('tecnica_analisis') || isMenuAllowed('tecnica_competencia')) && (
           <div className="pt-2">
             <button
               onClick={() => handleSubmenuClick(setTecnicaOpen, !tecnicaOpen)}
@@ -646,6 +647,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                   >
                     <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_biblioteca' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
                     <span className="text-[10px] font-bold">Base de Tareas</span>
+                  </button>
+                )}
+                {isMenuAllowed('tecnica_analisis') && (
+                  <button
+                    onClick={() => onMenuChange('tecnica_analisis')}
+                    className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                      activeMenu === 'tecnica_analisis' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'tecnica_analisis' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                    <span className="text-[10px] font-bold">Análisis de Tareas</span>
                   </button>
                 )}
                 {isMenuAllowed('tecnica_competencia') && (
