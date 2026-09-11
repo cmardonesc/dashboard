@@ -59,6 +59,7 @@ interface PlanningSession {
   targetArqueros: number;
   assignments: { [playerId: string]: string }; // playerId -> role
   teams?: { id: string; nombre: string; color: string; target: number }[];
+  teamOrders?: { [teamId: string]: number[] }; // teamId -> playerIds in order
 }
 
 const ROLES = [
@@ -84,6 +85,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
 }) => {
   const [catalog, setCatalog] = useState<CatalogDinamica[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [loadingPlanning, setLoadingPlanning] = useState(true);
   const [sessions, setSessions] = useState<PlanningSession[]>([]);
   const [activeSessionIndex, setActiveSessionIndex] = useState<number>(0);
   const [saving, setSaving] = useState(false);
@@ -200,24 +202,105 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     return { targetA, targetB, targetComodines, targetArqueros };
   };
 
-  // Cargar planificación guardada para este día o inicializar desde dayTasks
+  // Cargar planificación guardada para este día o inicializar desde dayTasks con alineación inteligente
   useEffect(() => {
     if (loadingCatalog) return;
 
+    const normalizeStringForMatch = (str: string) => {
+      return str
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+    };
+
+    const findMatchedCatalog = (taskName: string) => {
+      const normTask = normalizeStringForMatch(taskName);
+      // 1. Coincidencia exacta normalizada
+      let matched = catalog.find(c => normalizeStringForMatch(c.nombre) === normTask);
+      if (matched) return matched;
+      
+      // 2. Coincidencia parcial
+      matched = catalog.find(c => {
+        const normCatalog = normalizeStringForMatch(c.nombre);
+        return normCatalog.includes(normTask) || normTask.includes(normCatalog);
+      });
+      return matched;
+    };
+
     const fetchSavedPlanning = async () => {
+      setLoadingPlanning(true);
       try {
         const res = await fetch(`/api/dinamicas-planificaciones?microcycleId=${microcycle.id}&dateKey=${dateKey}`);
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
-            setSessions(data);
+            // Sincronizar sesiones guardadas con las tareas actuales del calendario (dayTasks)
+            let alignedSessions = [...data];
+            
+            if (dayTasks && dayTasks.length > 0) {
+              alignedSessions = data.map((session, idx) => {
+                const currentTask = dayTasks[idx];
+                if (currentTask) {
+                  const sessionNameNorm = session.nombre.toLowerCase().trim();
+                  const taskNameNorm = currentTask.nombre.toLowerCase().trim();
+                  
+                  if (sessionNameNorm !== taskNameNorm) {
+                    // Desajuste detectado. Sincronizar el nombre y propiedades de la sesión con la tarea de la agenda actual
+                    const matchedCatalog = findMatchedCatalog(currentTask.nombre);
+                    const nameToUse = matchedCatalog ? matchedCatalog.nombre : currentTask.nombre;
+                    const idToUse = matchedCatalog ? matchedCatalog.id : currentTask.id;
+                    const { targetA, targetB, targetComodines, targetArqueros } = parseTargetQuotas(nameToUse);
+                    
+                    return {
+                      ...session,
+                      dinamicaId: idToUse,
+                      nombre: nameToUse,
+                      targetA,
+                      targetB,
+                      targetComodines,
+                      targetArqueros,
+                    };
+                  }
+                }
+                return session;
+              });
+
+              // Si hay más tareas en dayTasks que sesiones guardadas, agregamos las que faltan
+              if (dayTasks.length > data.length) {
+                for (let i = data.length; i < dayTasks.length; i++) {
+                  const task = dayTasks[i];
+                  const matchedCatalog = findMatchedCatalog(task.nombre);
+                  const nameToUse = matchedCatalog ? matchedCatalog.nombre : task.nombre;
+                  const idToUse = matchedCatalog ? matchedCatalog.id : task.id;
+                  const { targetA, targetB, targetComodines, targetArqueros } = parseTargetQuotas(nameToUse);
+                  
+                  alignedSessions.push({
+                    dinamicaId: idToUse,
+                    nombre: nameToUse,
+                    order: i + 1,
+                    observaciones: '',
+                    targetA,
+                    targetB,
+                    targetComodines,
+                    targetArqueros,
+                    assignments: {}
+                  });
+                }
+              }
+
+              // Si hay más sesiones guardadas que las de dayTasks actual, recortar al número correcto de la agenda
+              if (alignedSessions.length > dayTasks.length) {
+                alignedSessions = alignedSessions.slice(0, dayTasks.length);
+              }
+            }
+            
+            setSessions(alignedSessions);
             setActiveSessionIndex(0);
           } else if (dayTasks && dayTasks.length > 0) {
             // No hay planificación previa de roles, pre-poblar usando las dinámicas ya agendadas
             const initialSessions: PlanningSession[] = dayTasks.map((task, idx) => {
-              const matchedCatalog = catalog.find(
-                c => c.nombre.toLowerCase().trim() === task.nombre.toLowerCase().trim()
-              );
+              const matchedCatalog = findMatchedCatalog(task.nombre);
               const nameToUse = matchedCatalog ? matchedCatalog.nombre : task.nombre;
               const idToUse = matchedCatalog ? matchedCatalog.id : task.id;
               const { targetA, targetB, targetComodines, targetArqueros } = parseTargetQuotas(nameToUse);
@@ -237,11 +320,31 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
             setSessions(initialSessions);
             setActiveSessionIndex(0);
           } else {
-            setSessions([]);
+            // Si dayTasks está vacío, auto-inicializar con catalog[0] por defecto para ir directo al diseñador sin "Workspace Vacío"
+            if (catalog && catalog.length > 0) {
+              const defaultDyn = catalog[0];
+              const { targetA, targetB, targetComodines, targetArqueros } = parseTargetQuotas(defaultDyn.nombre);
+              setSessions([{
+                dinamicaId: defaultDyn.id,
+                nombre: defaultDyn.nombre,
+                order: 1,
+                observaciones: '',
+                targetA,
+                targetB,
+                targetComodines,
+                targetArqueros,
+                assignments: {}
+              }]);
+              setActiveSessionIndex(0);
+            } else {
+              setSessions([]);
+            }
           }
         }
       } catch (err) {
         console.error("Error fetching saved planning:", err);
+      } finally {
+        setLoadingPlanning(false);
       }
     };
 
@@ -311,6 +414,9 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     const updated = [...sessions];
     const active = { ...updated[activeSessionIndex] };
     const assignments = { ...active.assignments };
+    const teamOrders = active.teamOrders ? { ...active.teamOrders } : {};
+
+    const oldRole = assignments[String(playerId)] || 'none';
 
     if (roleId === 'none') {
       delete assignments[String(playerId)];
@@ -318,7 +424,20 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
       assignments[String(playerId)] = roleId;
     }
 
+    if (oldRole !== 'none' && teamOrders[oldRole]) {
+      teamOrders[oldRole] = teamOrders[oldRole].filter(id => id !== playerId);
+    }
+
+    if (roleId !== 'none') {
+      if (!teamOrders[roleId]) {
+        teamOrders[roleId] = [];
+      }
+      teamOrders[roleId] = teamOrders[roleId].filter(id => id !== playerId);
+      teamOrders[roleId].push(playerId);
+    }
+
     active.assignments = assignments;
+    active.teamOrders = teamOrders;
     updated[activeSessionIndex] = active;
     setSessions(updated);
   };
@@ -329,6 +448,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     const updated = [...sessions];
     const active = { ...updated[activeSessionIndex] };
     const assignments = { ...active.assignments };
+    const teamOrders: { [teamId: string]: number[] } = {};
 
     // Limpiar asignaciones anteriores
     const playersToAssign = [...citedPlayers];
@@ -341,6 +461,8 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     gks.forEach(gk => {
       if (assignedGKs < active.targetArqueros) {
         assignments[String(gk.player_id)] = 'GK';
+        if (!teamOrders['GK']) teamOrders['GK'] = [];
+        teamOrders['GK'].push(gk.player_id);
         assignedGKs++;
       } else {
         assignments[String(gk.player_id)] = 'none';
@@ -355,12 +477,18 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     fieldPlayers.forEach(p => {
       if (assignedA < active.targetA) {
         assignments[String(p.player_id)] = 'A';
+        if (!teamOrders['A']) teamOrders['A'] = [];
+        teamOrders['A'].push(p.player_id);
         assignedA++;
       } else if (assignedB < active.targetB) {
         assignments[String(p.player_id)] = 'B';
+        if (!teamOrders['B']) teamOrders['B'] = [];
+        teamOrders['B'].push(p.player_id);
         assignedB++;
       } else if (assignedC < active.targetComodines) {
         assignments[String(p.player_id)] = 'C';
+        if (!teamOrders['C']) teamOrders['C'] = [];
+        teamOrders['C'].push(p.player_id);
         assignedC++;
       } else {
         assignments[String(p.player_id)] = 'none';
@@ -368,6 +496,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     });
 
     active.assignments = assignments;
+    active.teamOrders = teamOrders;
     updated[activeSessionIndex] = active;
     setSessions(updated);
   };
@@ -378,6 +507,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     const updated = [...sessions];
     const active = { ...updated[activeSessionIndex] };
     active.assignments = {};
+    active.teamOrders = {};
     updated[activeSessionIndex] = active;
     setSessions(updated);
   };
@@ -950,17 +1080,153 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     return groups;
   }, [unassignedPlayers]);
 
-  const getTeamSlots = (teamId: string, target: number, assignments: { [playerId: string]: string }) => {
+  const getFormattedName = (nombre: string, apellido: string) => {
+    if (!nombre) return apellido || '';
+    const initial = nombre.trim().charAt(0).toUpperCase();
+    const cleanApellido = (apellido || '').trim().toUpperCase();
+    return `${initial}. ${cleanApellido}`;
+  };
+
+  const getTeamSlots = (teamId: string, target: number, session: PlanningSession) => {
+    const assignments = session.assignments || {};
+    const teamOrders = session.teamOrders || {};
+    const orderedIds = teamOrders[teamId] || [];
+
     const assigned = citedPlayers.filter(p => assignments[String(p.player_id)] === teamId);
-    const emptyCount = Math.max(1, target - assigned.length);
+
+    const sortedAssigned = [...assigned].sort((a, b) => {
+      const indexA = orderedIds.indexOf(a.player_id);
+      const indexB = orderedIds.indexOf(b.player_id);
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      return 0;
+    });
+
     const slots = [];
-    assigned.forEach(p => {
+    sortedAssigned.forEach(p => {
       slots.push({ type: 'player', player: p });
     });
+
+    const emptyCount = Math.max(1, target - sortedAssigned.length);
     for (let i = 0; i < emptyCount; i++) {
       slots.push({ type: 'empty', id: i });
     }
     return slots;
+  };
+
+  // Drag and Drop Helpers
+  const handleDragStart = (e: React.DragEvent, player: Player, sourceTeamId: string) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ playerId: player.player_id, sourceTeamId }));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDropOnTeam = (e: React.DragEvent, targetTeamId: string) => {
+    e.preventDefault();
+    try {
+      const rawData = e.dataTransfer.getData('text/plain');
+      if (!rawData) return;
+      const { playerId, sourceTeamId } = JSON.parse(rawData);
+      
+      if (sourceTeamId === targetTeamId) return;
+
+      handleMovePlayerToTeam(playerId, sourceTeamId, targetTeamId);
+    } catch (err) {
+      console.error("Drop on team error:", err);
+    }
+  };
+
+  const handleDropOnPlayer = (e: React.DragEvent, targetPlayer: Player, targetTeamId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const rawData = e.dataTransfer.getData('text/plain');
+      if (!rawData) return;
+      const { playerId, sourceTeamId } = JSON.parse(rawData);
+      
+      handleMovePlayerTargeted(playerId, sourceTeamId, targetPlayer.player_id, targetTeamId);
+    } catch (err) {
+      console.error("Drop on player error:", err);
+    }
+  };
+
+  const handleDropOnUnassigned = (e: React.DragEvent) => {
+    e.preventDefault();
+    try {
+      const rawData = e.dataTransfer.getData('text/plain');
+      if (!rawData) return;
+      const { playerId, sourceTeamId } = JSON.parse(rawData);
+      if (sourceTeamId === 'none') return;
+
+      handleMovePlayerToTeam(playerId, sourceTeamId, 'none');
+    } catch (err) {
+      console.error("Drop on unassigned error:", err);
+    }
+  };
+
+  const handleMovePlayerToTeam = (playerId: number, sourceTeamId: string, targetTeamId: string) => {
+    if (sessions.length === 0) return;
+    const updated = [...sessions];
+    const active = { ...updated[activeSessionIndex] };
+    const assignments = { ...active.assignments };
+    const teamOrders = active.teamOrders ? { ...active.teamOrders } : {};
+
+    assignments[String(playerId)] = targetTeamId;
+
+    if (sourceTeamId !== 'none' && teamOrders[sourceTeamId]) {
+      teamOrders[sourceTeamId] = teamOrders[sourceTeamId].filter(id => id !== playerId);
+    }
+
+    if (targetTeamId !== 'none') {
+      if (!teamOrders[targetTeamId]) {
+        teamOrders[targetTeamId] = [];
+      }
+      teamOrders[targetTeamId] = teamOrders[targetTeamId].filter(id => id !== playerId);
+      teamOrders[targetTeamId].push(playerId);
+    }
+
+    active.assignments = assignments;
+    active.teamOrders = teamOrders;
+    updated[activeSessionIndex] = active;
+    setSessions(updated);
+  };
+
+  const handleMovePlayerTargeted = (playerId: number, sourceTeamId: string, targetPlayerId: number, targetTeamId: string) => {
+    if (sessions.length === 0) return;
+    const updated = [...sessions];
+    const active = { ...updated[activeSessionIndex] };
+    const assignments = { ...active.assignments };
+    const teamOrders = active.teamOrders ? { ...active.teamOrders } : {};
+
+    assignments[String(playerId)] = targetTeamId;
+
+    if (sourceTeamId !== 'none' && teamOrders[sourceTeamId]) {
+      teamOrders[sourceTeamId] = teamOrders[sourceTeamId].filter(id => id !== playerId);
+    }
+
+    if (!teamOrders[targetTeamId]) {
+      const assigned = citedPlayers.filter(p => assignments[String(p.player_id)] === targetTeamId && p.player_id !== playerId);
+      teamOrders[targetTeamId] = assigned.map(p => p.player_id);
+    } else {
+      teamOrders[targetTeamId] = teamOrders[targetTeamId].filter(id => id !== playerId);
+    }
+
+    const targetIdx = teamOrders[targetTeamId].indexOf(targetPlayerId);
+    if (targetIdx !== -1) {
+      teamOrders[targetTeamId].splice(targetIdx, 0, playerId);
+    } else {
+      teamOrders[targetTeamId].push(playerId);
+    }
+
+    active.assignments = assignments;
+    active.teamOrders = teamOrders;
+    updated[activeSessionIndex] = active;
+    setSessions(updated);
   };
 
   return (
@@ -1083,32 +1349,19 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
 
       {/* MAIN WORKSPACE */}
       <div className="flex-1 overflow-hidden">
-        {sessions.length === 0 ? (
-          <div className="h-full flex items-center justify-center p-8 overflow-y-auto">
-            <div className="bg-white rounded-3xl border border-slate-100 p-12 text-center shadow-sm space-y-6 max-w-xl w-full flex flex-col items-center justify-center">
-              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center text-red-600 text-2xl">
-                <i className="fa-solid fa-people-group"></i>
-              </div>
-              <div>
-                <h3 className="text-base font-black uppercase italic tracking-tight text-[#0b1220]">WORKSPACE VACÍO</h3>
-                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                  Para comenzar con el diseño de la sesión y la asignación táctica de roles, añade una dinámica desde la biblioteca de la izquierda.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-3 w-full max-w-md pt-4">
-                <button 
-                  onClick={() => handleAddDinamica(catalog[0] || { id: '1', nombre: 'Cuadrados', tipo: 'cerrada' })}
-                  className="px-4 py-3 rounded-2xl bg-slate-900 hover:bg-[#CF1B2B] text-white text-[11px] font-black uppercase tracking-wider transition-all"
-                >
-                  Dinámica Rápida
-                </button>
-                <button 
-                  onClick={onBack}
-                  className="px-4 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-black uppercase tracking-wider transition-all"
-                >
-                  Volver al Calendario
-                </button>
-              </div>
+        {loadingPlanning ? (
+          <div className="h-full flex flex-col items-center justify-center p-8">
+            <i className="fa-solid fa-circle-notch fa-spin text-red-600 text-3xl mb-3"></i>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-400">Cargando Diseñador...</p>
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto space-y-4">
+            <i className="fa-solid fa-triangle-exclamation text-amber-500 text-3xl"></i>
+            <div>
+              <h3 className="text-base font-black uppercase italic tracking-tight text-[#0b1220]">Sin Dinámicas Disponibles</h3>
+              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                Por favor, asegúrate de añadir una dinámica desde el catálogo de la izquierda o tener una tarea asignada en el calendario.
+              </p>
             </div>
           </div>
         ) : (
@@ -1302,23 +1555,27 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
             </div>
 
             {/* 2. CITADOS POR POSICIÓN */}
-            <div className={`bg-white rounded-3xl border p-6 shadow-sm flex flex-col transition-all duration-300 ${
-              activeSlotSelection 
-                ? 'ring-2 ring-red-500/20 border-red-200 bg-red-50/5' 
-                : 'border-slate-100'
-            }`}>
-              <h3 className="text-xs font-black uppercase tracking-widest text-[#0b1220] border-b border-slate-100 pb-3 flex items-center justify-between mb-4 shrink-0">
+            <div 
+              onDragOver={handleDragOver}
+              onDrop={handleDropOnUnassigned}
+              className={`bg-white rounded-3xl border p-6 shadow-sm flex flex-col transition-all duration-300 ${
+                activeSlotSelection 
+                  ? 'ring-2 ring-red-500/20 border-red-200 bg-red-50/5' 
+                  : 'border-slate-100 hover:border-slate-200'
+              }`}
+            >
+              <h3 className="text-[11px] font-black uppercase tracking-wider text-[#0b1220] border-b border-slate-100 pb-2.5 flex items-center justify-between mb-3 shrink-0">
                 <span>{activeSlotSelection ? 'SELECCIONA EL JUGADOR' : 'CITADOS POR POSICIÓN'}</span>
                 {activeSlotSelection ? (
                   <button 
                     onClick={() => setActiveSlotSelection(null)}
-                    className="bg-red-600 text-white hover:bg-red-700 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all"
+                    className="bg-red-600 text-white hover:bg-red-700 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-wider flex items-center gap-1 transition-all"
                   >
                     <span>Cancelar</span>
                     <i className="fa-solid fa-xmark"></i>
                   </button>
                 ) : (
-                  <span className="bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full text-[10px] font-black">
+                  <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[9px] font-black">
                     {citedPlayers.filter(p => !activeSession?.assignments[String(p.player_id)] || activeSession.assignments[String(p.player_id)] === 'none').length} Libres
                   </span>
                 )}
@@ -1329,7 +1586,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                   if (players.length === 0) return null;
                   return (
                     <div key={groupName} className="space-y-2">
-                      <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl flex items-center justify-between">
+                      <h4 className="text-[9px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-lg flex items-center justify-between">
                         <span>{groupName}</span>
                         <span>{players.length}</span>
                       </h4>
@@ -1344,6 +1601,8 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                           return (
                             <div 
                               key={`cited_${player.player_id}_${pIdx}`}
+                              draggable={!isAssigned}
+                              onDragStart={(e) => handleDragStart(e, player, 'none')}
                               onClick={() => {
                                 if (activeSlotSelection) {
                                   handleAssignPlayer(player.player_id, activeSlotSelection.teamId);
@@ -1352,55 +1611,57 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                                   setSelectedPlayerForStatus(player);
                                 }
                               }}
-                              className={`p-2.5 rounded-2xl flex items-center justify-between transition-all border ${
+                              className={`p-2 rounded-xl flex items-center justify-between transition-all border ${
+                                isAssigned ? '' : 'cursor-grab active:cursor-grabbing'
+                              } ${
                                 activeSlotSelection 
                                   ? 'cursor-pointer border-red-300 bg-red-50/10 hover:border-red-500 hover:bg-red-50/30 hover:scale-[1.02]' 
                                   : isAssigned 
                                     ? 'bg-slate-50/50 border-slate-100 opacity-60 cursor-pointer hover:opacity-100 hover:border-slate-300' 
-                                    : `${posColors.bg} ${posColors.border} hover:scale-[1.01] hover:shadow-xs cursor-pointer`
+                                    : `${posColors.bg} ${posColors.border} hover:scale-[1.01] hover:shadow-xs`
                               }`}
                             >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center relative flex-shrink-0">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center relative flex-shrink-0">
                                   {player.foto_url ? (
                                     <img src={player.foto_url} alt={player.nombre} className="w-full h-full object-cover" />
                                   ) : (
-                                    <i className="fa-solid fa-user text-slate-400 text-[10px]"></i>
+                                    <i className="fa-solid fa-user text-slate-400 text-[8px]"></i>
                                   )}
                                   <div className="absolute -bottom-1 -right-1">
-                                    <ClubBadge idClub={player.id_club} showName={false} logoSize="w-4 h-4" />
+                                    <ClubBadge idClub={player.id_club} showName={false} logoSize="w-3.5 h-3.5" />
                                   </div>
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="text-[10px] font-black uppercase tracking-tight text-[#0b1220] truncate">
-                                    {player.nombre} {player.apellido1}
+                                  <p className="text-[9px] font-black uppercase tracking-tight text-[#0b1220] truncate">
+                                    {getFormattedName(player.nombre, player.apellido1)}
                                   </p>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${posColors.dot}`}></span>
-                                    <span className={`text-[8px] uppercase truncate ${posColors.text}`}>
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <span className={`w-1 h-1 rounded-full ${posColors.dot}`}></span>
+                                    <span className={`text-[7px] font-bold uppercase truncate ${posColors.text}`}>
                                       {player.posicion || 'Campo'}
                                     </span>
                                   </div>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1">
                                 {isAssigned ? (
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); handleAssignPlayer(player.player_id, 'none'); }}
                                     title="Remover"
-                                    className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all ${teamColors?.badge} hover:bg-red-600 hover:text-white`}
+                                    className={`px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-wider flex items-center gap-1 transition-all ${teamColors?.badge} hover:bg-red-600 hover:text-white`}
                                   >
                                     <span>{activeTeam?.nombre.split(' ')[1] || activeTeam?.nombre}</span>
-                                    <i className="fa-solid fa-xmark text-[8px]"></i>
+                                    <i className="fa-solid fa-xmark text-[7px]"></i>
                                   </button>
                                 ) : (
                                   activeSlotSelection ? (
-                                    <span className="text-[8px] font-black uppercase tracking-wider text-red-600 bg-red-100 px-2.5 py-1 rounded-lg animate-pulse">
+                                    <span className="text-[7px] font-black uppercase tracking-wider text-red-600 bg-red-100 px-1.5 py-0.5 rounded-md animate-pulse">
                                       Asignar
                                     </span>
                                   ) : (
-                                    <span className="text-[8px] font-black uppercase tracking-wider text-slate-300 bg-slate-50 px-2 py-1 rounded-lg border border-dashed border-slate-200">
+                                    <span className="text-[7px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded-md border border-dashed border-slate-200">
                                       Libre
                                     </span>
                                   )
@@ -1495,25 +1756,27 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
 
                 return orderedActiveTeams.map(team => {
                   const colors = getTeamColors(team.color);
-                  const slots = getTeamSlots(team.id, team.target, activeSession.assignments);
+                  const slots = getTeamSlots(team.id, team.target, activeSession);
 
                   return (
                     <div 
                       key={team.id} 
-                      className={`bg-white rounded-3xl border ${colors.border} p-6 shadow-sm flex flex-col md:flex-row md:items-center gap-6`}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDropOnTeam(e, team.id)}
+                      className={`bg-white rounded-3xl border ${colors.border} p-5 shadow-sm flex flex-col md:flex-row md:items-center gap-5 transition-all duration-200`}
                     >
                       {/* Left: Team Config */}
-                      <div className="w-full md:w-56 shrink-0 md:border-r md:border-dashed md:border-slate-200 md:pr-6 flex items-center md:items-start justify-between md:flex-col md:gap-3">
-                        <div className="flex items-center gap-2.5">
+                      <div className="w-full md:w-56 shrink-0 md:border-r md:border-dashed md:border-slate-200 md:pr-5 flex items-center md:items-start justify-between md:flex-col md:gap-2">
+                        <div className="flex items-center gap-2">
                           <span className={`w-3.5 h-3.5 rounded-full ${team.color === 'red' ? 'bg-[#CF1B2B]' : team.color === 'blue' ? 'bg-blue-600' : team.color === 'amber' ? 'bg-amber-500' : team.color === 'emerald' ? 'bg-emerald-500' : 'bg-purple-500'}`}></span>
-                          <h4 className="text-sm font-black uppercase italic tracking-tight text-slate-800">{team.nombre}</h4>
+                          <h4 className="text-xs font-black uppercase italic tracking-tight text-slate-800">{team.nombre}</h4>
                         </div>
 
                         {/* Slot Adjuster */}
-                        <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100">
-                          <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest">Slots:</span>
+                        <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Slots:</span>
                           <span className="text-xs font-black text-slate-700">{team.target}</span>
-                          <div className="flex items-center gap-1 ml-1.5">
+                          <div className="flex items-center gap-1 ml-1">
                             <button 
                               onClick={() => handleUpdateTeamTarget(team.id, -1)}
                               className="w-4 h-4 rounded bg-white border border-slate-200 hover:bg-slate-100 flex items-center justify-center text-[8px]"
@@ -1532,7 +1795,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
 
                       {/* Right: Slots Grid */}
                       <div className="flex-1">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
                           {slots.map((slot, sIdx) => {
                             if (slot.type === 'player' && slot.player) {
                               const player = slot.player;
@@ -1540,27 +1803,31 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                               return (
                                 <div 
                                   key={`filled_${player.player_id}_${sIdx}`}
+                                  draggable={true}
+                                  onDragStart={(e) => handleDragStart(e, player, team.id)}
+                                  onDragOver={handleDragOver}
+                                  onDrop={(e) => handleDropOnPlayer(e, player, team.id)}
                                   onClick={() => setSelectedPlayerForStatus(player)}
-                                  className={`p-3 rounded-2xl flex items-center justify-between border ${posColors.border} ${posColors.bg} transition-all shadow-xs cursor-pointer hover:scale-[1.01] hover:shadow-sm`}
+                                  className={`p-2 rounded-xl flex items-center justify-between border ${posColors.border} ${posColors.bg} transition-all shadow-xs cursor-grab active:cursor-grabbing hover:scale-[1.01] hover:shadow-sm`}
                                 >
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center relative flex-shrink-0">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center relative flex-shrink-0">
                                       {player.foto_url ? (
                                         <img src={player.foto_url} alt={player.nombre} className="w-full h-full object-cover" />
                                       ) : (
-                                        <i className="fa-solid fa-user text-slate-400 text-[9px]"></i>
+                                        <i className="fa-solid fa-user text-slate-400 text-[8px]"></i>
                                       )}
                                       <div className="absolute -bottom-1 -right-1">
-                                        <ClubBadge idClub={player.id_club} showName={false} logoSize="w-4 h-4" />
+                                        <ClubBadge idClub={player.id_club} showName={false} logoSize="w-3.5 h-3.5" />
                                       </div>
                                     </div>
                                     <div className="min-w-0">
-                                      <p className="text-[10px] font-black uppercase tracking-tight text-[#0b1220] truncate">
-                                        {player.nombre} {player.apellido1}
+                                      <p className="text-[9px] font-black uppercase tracking-tight text-[#0b1220] truncate">
+                                        {getFormattedName(player.nombre, player.apellido1)}
                                       </p>
-                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                      <div className="flex items-center gap-1 mt-0.5">
                                         <span className={`w-1.5 h-1.5 rounded-full ${posColors.dot}`}></span>
-                                        <span className={`text-[8px] uppercase truncate ${posColors.text}`}>
+                                        <span className={`text-[7px] font-bold uppercase truncate ${posColors.text}`}>
                                           {player.posicion || 'Campo'}
                                         </span>
                                       </div>
@@ -1572,10 +1839,10 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                                       e.stopPropagation();
                                       handleAssignPlayer(player.player_id, 'none');
                                     }}
-                                    className="w-7 h-7 rounded-full hover:bg-red-50 text-slate-300 hover:text-red-500 flex items-center justify-center transition-all border border-transparent hover:border-red-100"
+                                    className="w-6 h-6 rounded-full hover:bg-red-50 text-slate-300 hover:text-red-500 flex items-center justify-center transition-all border border-transparent hover:border-red-100 cursor-pointer"
                                     title="Quitar jugador"
                                   >
-                                    <i className="fa-solid fa-trash-can text-xs"></i>
+                                    <i className="fa-solid fa-trash-can text-[10px]"></i>
                                   </button>
                                 </div>
                               );
@@ -1584,6 +1851,8 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                               return (
                                 <button
                                   key={`empty_${team.id}_${sIdx}`}
+                                  onDragOver={handleDragOver}
+                                  onDrop={(e) => handleDropOnTeam(e, team.id)}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     if (isThisSlotSelected) {
@@ -1592,7 +1861,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                                       setActiveSlotSelection({ teamId: team.id, slotIndex: sIdx });
                                     }
                                   }}
-                                  className={`w-full p-3 rounded-2xl border-2 border-dashed hover:scale-[1.01] transition-all text-left flex items-center justify-center gap-2 ${
+                                  className={`w-full p-2 rounded-xl border border-dashed hover:scale-[1.01] transition-all text-left flex items-center justify-center gap-1.5 cursor-pointer ${
                                     isThisSlotSelected 
                                       ? 'border-red-500 bg-red-50/20 text-red-600 shadow-inner animate-pulse' 
                                       : 'border-slate-200 hover:border-slate-300 bg-slate-50/20 hover:bg-slate-50 text-slate-400 hover:text-slate-600'
@@ -1600,13 +1869,13 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                                 >
                                   {isThisSlotSelected ? (
                                     <>
-                                      <i className="fa-solid fa-spinner animate-spin text-red-500 text-xs"></i>
-                                      <span className="text-[9px] font-black uppercase tracking-widest text-red-600">Selecciona arriba...</span>
+                                      <i className="fa-solid fa-spinner animate-spin text-red-500 text-[9px]"></i>
+                                      <span className="text-[8px] font-black uppercase tracking-widest text-red-600">Selecciona arriba...</span>
                                     </>
                                   ) : (
                                     <>
-                                      <i className="fa-solid fa-circle-plus text-slate-300"></i>
-                                      <span className="text-[9px] font-black uppercase tracking-widest">Presiona para asignar</span>
+                                      <i className="fa-solid fa-circle-plus text-slate-300 text-[10px]"></i>
+                                      <span className="text-[8px] font-black uppercase tracking-widest">Presiona para asignar</span>
                                     </>
                                   )}
                                 </button>
