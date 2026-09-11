@@ -691,8 +691,8 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
     const pos = posicion.toLowerCase().trim();
     if (pos.includes('arq') || pos.includes('por') || pos.includes('gua')) return 'Arqueros';
     if (pos.includes('media punta') || pos.includes('mediapunta') || pos.includes('mp') || pos.includes('media_punta')) return 'Volantes';
+    if (pos.includes('ext') || pos.includes('punte') || pos.includes('wing')) return 'Delanteros Extremos';
     if (pos.includes('del') || pos.includes('punta') || pos.includes('9') || pos.includes('ariete')) return 'Delanteros';
-    if (pos.includes('ext') || pos.includes('punte') || pos.includes('wing')) return 'Extremos';
     if (pos.includes('vol') || pos.includes('med') || pos.includes('cont') || pos.includes('mix') || pos.includes('crea') || pos.includes('eng')) return 'Volantes';
     if (pos.includes('lat') || pos.includes('carri') || pos.includes('banda') || pos.includes('carrilero')) return 'Laterales';
     if (pos.includes('def') || pos.includes('cent') || pos.includes('zag') || pos.includes('back') || pos.includes('stopp') || pos.includes('lib')) return 'Defensas';
@@ -993,7 +993,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
           border: 'border-emerald-200',
           dot: 'bg-emerald-500'
         };
-      case 'Extremos':
+      case 'Delanteros Extremos':
         return {
           text: 'text-purple-600 font-extrabold',
           bg: 'bg-purple-50',
@@ -1029,7 +1029,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
       'Defensas': [],
       'Laterales': [],
       'Volantes': [],
-      'Extremos': [],
+      'Delanteros Extremos': [],
       'Delanteros': [],
       'Arqueros': [],
       'Otros': []
@@ -1062,7 +1062,7 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
       'Defensas': [],
       'Laterales': [],
       'Volantes': [],
-      'Extremos': [],
+      'Delanteros Extremos': [],
       'Delanteros': [],
       'Arqueros': [],
       'Otros': []
@@ -1355,17 +1355,120 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
             <p className="text-xs font-black uppercase tracking-widest text-slate-400">Cargando Diseñador...</p>
           </div>
         ) : sessions.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto space-y-4">
-            <i className="fa-solid fa-triangle-exclamation text-amber-500 text-3xl"></i>
-            <div>
-              <h3 className="text-base font-black uppercase italic tracking-tight text-[#0b1220]">Sin Dinámicas Disponibles</h3>
-              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                Por favor, asegúrate de añadir una dinámica desde el catálogo de la izquierda o tener una tarea asignada en el calendario.
-              </p>
+          <div className="h-full flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-100 bg-white">
+            {/* Left/Middle: Info & Instructions */}
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center max-w-xl mx-auto space-y-4">
+              <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500">
+                <i className="fa-solid fa-triangle-exclamation text-2xl"></i>
+              </div>
+              <div>
+                <h3 className="text-lg font-black uppercase italic tracking-tight text-[#0b1220]">Sin Dinámicas Asignadas</h3>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed max-w-md">
+                  No hay dinámicas asignadas en la agenda para este día. Selecciona una dinámica del catálogo a la derecha para iniciar la planificación directamente, o regresa y asigna una tarea en el calendario.
+                </p>
+              </div>
+              <button
+                onClick={onBack}
+                className="px-5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <i className="fa-solid fa-chevron-left"></i>
+                <span>Volver al Calendario</span>
+              </button>
+            </div>
+
+            {/* Right: Inline Catalog Selector to initialize */}
+            <div className="w-full md:w-[480px] shrink-0 bg-slate-50/50 flex flex-col overflow-hidden h-full">
+              <div className="p-6 border-b border-slate-100 bg-white shrink-0">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <i className="fa-solid fa-book-open text-[#CF1B2B] text-sm"></i>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Catálogo de Dinámicas</h3>
+                </div>
+                
+                {/* Search & Filters */}
+                <div className="space-y-2">
+                  <div className="relative">
+                    <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <input
+                      type="text"
+                      placeholder="Buscar dinámica..."
+                      value={catalogFilter}
+                      onChange={(e) => setCatalogFilter(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs font-bold text-slate-700 placeholder-slate-400 outline-none focus:border-red-500/50 transition-all"
+                    />
+                  </div>
+                  
+                  {/* Tipo filter badges */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full custom-scrollbar">
+                    {['todos', 'cerrada', 'abierta', 'partido'].map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setCatalogTypeFilter(type)}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider shrink-0 transition-all cursor-pointer ${
+                          catalogTypeFilter === type
+                            ? 'bg-[#CF1B2B] text-white'
+                            : 'bg-white border border-slate-100 text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        {type === 'todos' ? 'TODAS' : type === 'cerrada' ? 'CERRADAS' : type === 'abierta' ? 'ABIERTAS' : 'PARTIDOS'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* List of dynamics */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+                {filteredCatalog.length === 0 ? (
+                  <div className="py-12 text-center">
+                    <i className="fa-solid fa-folder-open text-slate-300 text-xl mb-1.5 block"></i>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">No se encontraron dinámicas</span>
+                  </div>
+                ) : (
+                  filteredCatalog.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleAddDinamica(item)}
+                      className="p-3 bg-white rounded-2xl border border-slate-100 hover:border-red-500/40 hover:scale-[1.01] transition-all cursor-pointer shadow-xs hover:shadow-sm flex items-start gap-3"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
+                        {item.link_foto ? (
+                          <img
+                            src={getDriveDirectLink(item.link_foto)}
+                            alt={item.nombre}
+                            className="w-full h-full object-cover rounded-xl"
+                          />
+                        ) : (
+                          <i className="fa-solid fa-person-running text-slate-400 text-xs"></i>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded ${
+                            item.tipo === 'cerrada' 
+                              ? 'bg-red-50 text-red-600 border border-red-100/45' 
+                              : item.tipo === 'abierta'
+                                ? 'bg-blue-50 text-blue-600 border border-blue-100/45'
+                                : 'bg-emerald-50 text-emerald-600 border border-emerald-100/45'
+                          }`}>
+                            {item.tipo === 'cerrada' ? 'Cerrada' : item.tipo === 'abierta' ? 'Abierta' : 'Partido'}
+                          </span>
+                        </div>
+                        <h4 className="text-[11px] font-black uppercase italic text-slate-800 leading-tight mt-1">{item.nombre}</h4>
+                        {item.descripcion && (
+                          <p className="text-[9px] text-slate-400 mt-0.5 line-clamp-2 leading-tight">{item.descripcion}</p>
+                        )}
+                      </div>
+                      <button className="w-6 h-6 rounded-full bg-red-50 text-[#CF1B2B] hover:bg-red-100 flex items-center justify-center transition-all shrink-0 cursor-pointer">
+                        <i className="fa-solid fa-plus text-[10px]"></i>
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         ) : (
-          <div className="max-w-7xl mx-auto w-full space-y-6 p-8 overflow-y-auto h-[calc(100vh-210px)] custom-scrollbar">
+          <div className="max-w-7xl mx-auto w-full space-y-6 p-8 overflow-y-auto h-[calc(100vh-140px)] custom-scrollbar">
             
             {/* 1. DINÁMICA SELECCIONADA */}
             <div className="bg-white rounded-3xl border border-slate-100 p-4 shadow-sm">
@@ -1900,7 +2003,6 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                 className="w-full h-20 bg-white border border-slate-100 rounded-xl p-3 text-[10px] font-bold outline-none placeholder-slate-400 resize-none"
               />
             </div>
-
           </div>
         )}
       </div>
@@ -2227,9 +2329,24 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                                       ...allTeams.filter(t => t.id === 'C')
                                     ];
 
+                                    const unassignedPlayers = citedPlayers.filter(p => {
+                                      const role = session.assignments[String(p.player_id)];
+                                      return !role || role === 'none' || role === 'lesionado' || role === 'carga' || !orderedTeams.some(t => t.id === role);
+                                    });
+                                    if (unassignedPlayers.length > 0) {
+                                      orderedTeams.push({
+                                        id: 'UNASSIGNED',
+                                        nombre: 'SIN EQUIPO',
+                                        color: 'slate',
+                                        target: unassignedPlayers.length
+                                      });
+                                    }
+
                                     return orderedTeams.map(team => {
                                       const teamColors = getTeamColors(team.color);
-                                      const playersInTeam = citedPlayers.filter(p => session.assignments[String(p.player_id)] === team.id);
+                                      const playersInTeam = team.id === 'UNASSIGNED'
+                                        ? unassignedPlayers
+                                        : citedPlayers.filter(p => session.assignments[String(p.player_id)] === team.id);
                                       
                                       return (
                                         <div key={team.id} className={`${teamColors.bg} border ${teamColors.border} rounded-xl p-2 flex items-center gap-4`}>
@@ -2237,7 +2354,9 @@ export const DinamicasPlanificador: React.FC<DinamicasPlanificadorProps> = ({
                                           <div className="w-28 shrink-0 border-r border-slate-200/40 pr-2">
                                             <h5 className={`text-[9px] font-black ${teamColors.accent} uppercase tracking-wider flex flex-col`}>
                                               <span>{team.nombre}</span>
-                                              <span className="text-[7.5px] font-bold text-slate-400 normal-case mt-0.5">({playersInTeam.length} / {team.target})</span>
+                                              <span className="text-[7.5px] font-bold text-slate-400 normal-case mt-0.5">
+                                                {team.id === 'UNASSIGNED' ? `(${playersInTeam.length})` : `(${playersInTeam.length} / ${team.target})`}
+                                              </span>
                                             </h5>
                                           </div>
                                           

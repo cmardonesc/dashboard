@@ -112,8 +112,8 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
     const pos = posicion.toLowerCase().trim();
     if (pos.includes('arq') || pos.includes('por') || pos.includes('gua')) return 'Arqueros';
     if (pos.includes('media punta') || pos.includes('mediapunta') || pos.includes('mp') || pos.includes('media_punta')) return 'Volantes';
+    if (pos.includes('ext') || pos.includes('punte') || pos.includes('wing')) return 'Delanteros Extremos';
     if (pos.includes('del') || pos.includes('punta') || pos.includes('9') || pos.includes('ariete')) return 'Delanteros';
-    if (pos.includes('ext') || pos.includes('punte') || pos.includes('wing')) return 'Extremos';
     if (pos.includes('vol') || pos.includes('med') || pos.includes('cont') || pos.includes('mix') || pos.includes('crea') || pos.includes('eng')) return 'Volantes';
     if (pos.includes('lat') || pos.includes('carri') || pos.includes('banda') || pos.includes('carrilero')) return 'Laterales';
     if (pos.includes('def') || pos.includes('cent') || pos.includes('zag') || pos.includes('back') || pos.includes('stopp') || pos.includes('lib')) return 'Defensas';
@@ -144,7 +144,7 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
           border: 'border-emerald-200',
           dot: 'bg-emerald-500'
         };
-      case 'Extremos':
+      case 'Delanteros Extremos':
         return {
           text: 'text-purple-600 font-extrabold',
           bg: 'bg-purple-50',
@@ -401,7 +401,7 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
       'Defensas': [],
       'Laterales': [],
       'Volantes': [],
-      'Extremos': [],
+      'Delanteros Extremos': [],
       'Delanteros': [],
       'Otros': []
     };
