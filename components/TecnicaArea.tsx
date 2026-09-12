@@ -235,7 +235,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
   const [newBibliotecaTarea, setNewBibliotecaTarea] = useState({
     nombre: '',
     tipoDinamica: DINAMICAS_OFICIALES[0],
-    descripcion: ''
+    descripcion: '',
+    momento: '',
+    posicion: ''
   });
 
   const handleTaskClick = (taskNombre: string) => {
@@ -1185,11 +1187,17 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
         return 'general';
       };
 
-      const payload = {
+      const dbTipo = mapDisplayToDBTipo(newBibliotecaTarea.tipoDinamica);
+      const payload: any = {
         nombre: newBibliotecaTarea.nombre,
-        tipo: mapDisplayToDBTipo(newBibliotecaTarea.tipoDinamica),
+        tipo: dbTipo,
         descripcion: newBibliotecaTarea.descripcion
       };
+
+      if (dbTipo === 'tmi') {
+        payload.momento = newBibliotecaTarea.momento;
+        payload.posicion = newBibliotecaTarea.posicion;
+      }
 
       const { error } = await supabase
         .from('tareas')
@@ -1203,7 +1211,9 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
       setNewBibliotecaTarea({ 
         nombre: '', 
         tipoDinamica: DINAMICAS_OFICIALES[0], 
-        descripcion: '' 
+        descripcion: '',
+        momento: '',
+        posicion: ''
       });
     } catch (err: any) {
       console.error("Error guardando tarea:", err);
@@ -3549,7 +3559,15 @@ const TecnicaArea: React.FC<TecnicaAreaProps> = ({ performanceRecords, onMenuCha
               <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={newBibliotecaTarea.tipoDinamica} onChange={e => setNewBibliotecaTarea({...newBibliotecaTarea, tipoDinamica: e.target.value})}>
                 {DINAMICAS_OFICIALES.map(d => <option key={d} value={d}>{d.toUpperCase()}</option>)}
               </select>
-              <textarea rows={3} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold resize-none" value={newBibliotecaTarea.descripcion} onChange={e => setNewBibliotecaTarea({...newBibliotecaTarea, descripcion: e.target.value})} />
+              <textarea rows={3} placeholder="Objetivo" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold resize-none" value={newBibliotecaTarea.descripcion} onChange={e => setNewBibliotecaTarea({...newBibliotecaTarea, descripcion: e.target.value})} />
+              
+              {newBibliotecaTarea.tipoDinamica === 'TMI (Tarea Mejora Individual)' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-top-4 duration-300 transform-gpu">
+                  <input required type="text" placeholder="Momento" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={newBibliotecaTarea.momento} onChange={e => setNewBibliotecaTarea({...newBibliotecaTarea, momento: e.target.value})} />
+                  <input required type="text" placeholder="Posición" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold" value={newBibliotecaTarea.posicion} onChange={e => setNewBibliotecaTarea({...newBibliotecaTarea, posicion: e.target.value})} />
+                </div>
+              )}
+              
               <button type="submit" className="w-full py-5 bg-[#0b1220] text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-xl">Guardar en Sistema</button>
             </form>
           </div>
