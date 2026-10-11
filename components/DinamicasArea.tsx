@@ -124,26 +124,13 @@ const DEFAULT_TAREAS_FALLBACK = [
   }
 ];
 
-// Fallback metrics list matching the positions specified in the image
-const POSITION_BUTTONS = [
-  { label: 'TODAS LAS POSICIONES', value: 'all' },
-  { label: '1. D.CENTRAL', value: 'Defensa Central' },
-  { label: '2. D.LATERAL', value: 'Defensa Lateral' },
-  { label: '3. VOLANTE', value: 'Volante' },
-  { label: '4. MEDIAPUNTA', value: 'Mediapunta' },
-  { label: '5. DEL.CENTRO', value: 'Centro Delantero' },
-  { label: '6. EXTREMO', value: 'Delantero Extremo' }
-];
-
 export default function DinamicasArea() {
   const [loading, setLoading] = useState(true);
   const [tareas, setTareas] = useState<any[]>([]);
-  const [sesionPosicion, setSesionPosicion] = useState<any[]>([]);
 
-  // Filtering states matching the screenshot controls
+  // Filtering states
   const [selectedType, setSelectedType] = useState('all');
   const [selectedTareaName, setSelectedTareaName] = useState('');
-  const [selectedPosition, setSelectedPosition] = useState('all');
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
 
   // Reset video playback state on task or type change
@@ -193,17 +180,6 @@ export default function DinamicasArea() {
           setSelectedTareaName(activeTareas[0].nombre);
         }
       }
-
-      // 2. Fetch Positional GPS metrics
-      try {
-        const { data: posData } = await supabase.from('v_dinamica_sesion_posicion').select('*');
-        if (posData && posData.length > 0) {
-          setSesionPosicion(posData);
-        }
-      } catch (err) {
-        console.warn("Failed fetching positional GPS metrics:", err);
-      }
-
     } catch (e) {
       console.error("Error general loading data:", e);
       setTareas(DEFAULT_TAREAS_FALLBACK);
@@ -269,74 +245,14 @@ export default function DinamicasArea() {
     return tareas.find(t => t.nombre.toLowerCase() === selectedTareaName.toLowerCase()) || tareas[0];
   }, [tareas, selectedTareaName]);
 
-  // Calculate dynamic metrics based on database sessions and stable calculations for catalog support
-  const calculatedMetrics = useMemo(() => {
-    if (!selectedTareaName) {
-      return { sesionesGps: 0, distancia: 0, intensidad: 0, sprints: 0, aceleraciones: 0 };
-    }
-
-    // Filter relevant rows from DB if populated
-    const matchingRows = sesionPosicion.filter(r => {
-      const tName = r.tarea_normalizada || r.tarea;
-      const matchTarea = tName?.toLowerCase() === selectedTareaName.toLowerCase();
-      if (!matchTarea) return false;
-      if (selectedPosition !== 'all') {
-        const rowPos = r.posicion?.toLowerCase() || '';
-        const targetPos = selectedPosition.toLowerCase();
-        return rowPos.includes(targetPos) || targetPos.includes(rowPos);
-      }
-      return true;
-    });
-
-    let countObs = matchingRows.reduce((acc, r) => acc + (r.n_obs ?? r.n_jugadores ?? 10), 0);
-    let avgDist = 0;
-    let avgInt = 0;
-    let avgSprints = 0;
-    let avgAccel = 0;
-
-    if (matchingRows.length > 0) {
-      avgDist = matchingRows.reduce((acc, r) => acc + (r.dist_total_prom ?? 0), 0) / matchingRows.length;
-      avgInt = matchingRows.reduce((acc, r) => acc + (r.m_por_min_prom ?? 0), 0) / matchingRows.length;
-      avgSprints = matchingRows.reduce((acc, r) => acc + (r.sprints_prom ?? r.sprint_m_prom ?? 0), 0) / matchingRows.length;
-      avgAccel = matchingRows.reduce((acc, r) => acc + (r.accdec_prom ?? r.acc_decc_ai_n ?? 0), 0) / matchingRows.length;
-    }
-
-    // fallback generator for visual completeness matching the screenshot exactly
-    if (countObs === 0 || avgDist === 0) {
-      const charSum = Array.from(selectedTareaName).reduce((acc, c) => acc + c.charCodeAt(0), 0);
-      let posFactor = 1.0;
-      if (selectedPosition !== 'all') {
-        if (selectedPosition.toLowerCase().includes('central')) posFactor = 0.88;
-        else if (selectedPosition.toLowerCase().includes('lateral')) posFactor = 0.95;
-        else if (selectedPosition.toLowerCase().includes('volante')) posFactor = 1.05;
-        else if (selectedPosition.toLowerCase().includes('delantero') || selectedPosition.toLowerCase().includes('extremo')) posFactor = 1.15;
-      }
-
-      // Consistent pseudo-random math based on name
-      countObs = 120 + (charSum % 80);
-      avgDist = (280 + (charSum % 95)) * posFactor;
-      avgInt = (82 + (charSum % 18)) * posFactor;
-      avgSprints = (0.5 + ((charSum % 15) / 10)) * posFactor;
-      avgAccel = (4 + (charSum % 6)) * posFactor;
-    }
-
-    return {
-      sesionesGps: countObs,
-      distancia: avgDist,
-      intensidad: avgInt,
-      sprints: avgSprints,
-      aceleraciones: avgAccel
-    };
-  }, [sesionPosicion, selectedTareaName, selectedPosition]);
-
   return (
     <div className="space-y-10 animate-in fade-in duration-500 pb-24 max-w-[1600px] mx-auto px-4 md:px-0">
       
       {/* 1. SECCIÓN DE CABECERA Y FILTROS */}
-      <div className="bg-white rounded-[48px] p-8 md:p-10 border border-slate-100 shadow-sm space-y-8">
+      <div className="bg-white rounded-[48px] p-8 md:p-10 border border-slate-100 shadow-sm">
         
         {/* TÍTULO Y BADGE EN DESARROLLO */}
-        <div className="flex flex-col xl:flex-row items-center justify-between gap-6 border-b border-slate-100 pb-6">
+        <div className="flex flex-col xl:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-6">
             <div className="w-16 h-16 bg-[#0b1220] rounded-[24px] flex items-center justify-center text-white shadow-2xl relative overflow-hidden group">
               <div className="absolute inset-0 bg-red-600 translate-y-full group-hover:translate-y-0 transition-transform duration-500"></div>
@@ -400,101 +316,6 @@ export default function DinamicasArea() {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* COMPONENTE DE FILTRO POR DEMARCACIÓN / POSICIÓN */}
-        <div className="space-y-3">
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">
-            FILTRAR POR DEMARCACIÓN / POSICIÓN DE LOS JUGADORES:
-          </span>
-          <div className="flex flex-wrap gap-2">
-            {POSITION_BUTTONS.map((btn) => (
-              <button
-                key={btn.value}
-                onClick={() => setSelectedPosition(btn.value)}
-                className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all duration-300 border ${
-                  selectedPosition === btn.value
-                    ? 'bg-red-600 border-red-600 text-white shadow-md shadow-red-100'
-                    : 'bg-slate-50 hover:bg-slate-100 border-slate-100 text-slate-600'
-                }`}
-              >
-                {btn.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* TARJETAS DE MÉTRICAS (KPIs) EN UNA SOLA FILA */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4">
-          
-          {/* SESIONES GPS */}
-          <div className="bg-slate-50/50 border border-slate-100 rounded-3xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-600">
-              <i className="fa-solid fa-chart-line text-lg"></i>
-            </div>
-            <div>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Sesiones GPS</p>
-              <p className="text-xl font-black italic tracking-tighter text-slate-900">
-                {calculatedMetrics.sesionesGps}
-              </p>
-            </div>
-          </div>
-
-          {/* DISTANCIA PROM */}
-          <div className="bg-slate-50/50 border border-slate-100 rounded-3xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-500">
-              <i className="fa-solid fa-arrows-left-right text-lg"></i>
-            </div>
-            <div>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Distancia Prom</p>
-              <p className="text-xl font-black italic tracking-tighter text-blue-600">
-                {calculatedMetrics.distancia.toFixed(0)}
-                <span className="text-[10px] not-italic font-bold opacity-60 ml-0.5">m</span>
-              </p>
-            </div>
-          </div>
-
-          {/* INTENSIDAD PROM */}
-          <div className="bg-slate-50/50 border border-slate-100 rounded-3xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center text-red-500">
-              <i className="fa-solid fa-fire text-lg"></i>
-            </div>
-            <div>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Intensidad Prom</p>
-              <p className="text-xl font-black italic tracking-tighter text-red-600">
-                {calculatedMetrics.intensidad.toFixed(1)}
-                <span className="text-[10px] not-italic font-bold opacity-60 ml-0.5">m/min</span>
-              </p>
-            </div>
-          </div>
-
-          {/* SPRINTS PROM */}
-          <div className="bg-slate-50/50 border border-slate-100 rounded-3xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-500">
-              <i className="fa-solid fa-bolt text-lg"></i>
-            </div>
-            <div>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Sprints Prom</p>
-              <p className="text-xl font-black italic tracking-tighter text-amber-600">
-                {calculatedMetrics.sprints.toFixed(1)}
-                <span className="text-[10px] not-italic font-bold opacity-60 ml-0.5">m</span>
-              </p>
-            </div>
-          </div>
-
-          {/* ACELERACIONES */}
-          <div className="bg-slate-50/50 border border-slate-100 rounded-3xl p-5 flex items-center gap-4 shadow-sm col-span-2 md:col-span-1">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500">
-              <i className="fa-solid fa-angles-up text-lg"></i>
-            </div>
-            <div>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Aceleraciones</p>
-              <p className="text-xl font-black italic tracking-tighter text-emerald-600">
-                {calculatedMetrics.aceleraciones.toFixed(0)}
-              </p>
-            </div>
-          </div>
-
         </div>
 
       </div>

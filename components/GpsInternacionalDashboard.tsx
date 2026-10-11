@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Category, CATEGORY_ID_MAP, CATEGORY_COLORS, REVERSE_CATEGORY_ID_MAP } from '../types';
 import { 
@@ -190,33 +190,35 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
     return map;
   }, [allCitaciones, allMicrocycles]);
 
+  // Helper to map player to their convocated categories (extracted at component level)
+  const getPlayerCategories = useCallback((p: any) => {
+    if (!p) return ['sub_17'];
+    const citedCats = playerCategoryMap.get(p.player_id);
+    if (citedCats && citedCats.size > 0) {
+      return Array.from(citedCats);
+    }
+    if (p?.anio) {
+      const currentYear = new Date().getFullYear();
+      const age = currentYear - Number(p.anio);
+      let fallbackCat = 'sub_17';
+      if (age <= 13) fallbackCat = 'sub_13';
+      else if (age === 14) fallbackCat = 'sub_14';
+      else if (age === 15) fallbackCat = 'sub_15';
+      else if (age === 16) fallbackCat = 'sub_16';
+      else if (age === 17) fallbackCat = 'sub_17';
+      else if (age === 18) fallbackCat = 'sub_18';
+      else if (age <= 20) fallbackCat = 'sub_20';
+      else if (age <= 21) fallbackCat = 'sub_21';
+      else if (age <= 23) fallbackCat = 'sub_23';
+      else fallbackCat = 'adulta';
+      return [fallbackCat];
+    }
+    return ['sub_17'];
+  }, [playerCategoryMap]);
+
   // Master fully-mapped GPS records with joined player metrics, positions, and categories
   const masterGpsData = useMemo(() => {
     if (allGpsHistory.length === 0 || allPlayers.length === 0) return [];
-
-    const getPlayerCategories = (p: any) => {
-      const citedCats = playerCategoryMap.get(p.player_id);
-      if (citedCats && citedCats.size > 0) {
-        return Array.from(citedCats);
-      }
-      if (p?.anio) {
-        const currentYear = new Date().getFullYear();
-        const age = currentYear - Number(p.anio);
-        let fallbackCat = 'sub_17';
-        if (age <= 13) fallbackCat = 'sub_13';
-        else if (age === 14) fallbackCat = 'sub_14';
-        else if (age === 15) fallbackCat = 'sub_15';
-        else if (age === 16) fallbackCat = 'sub_16';
-        else if (age === 17) fallbackCat = 'sub_17';
-        else if (age === 18) fallbackCat = 'sub_18';
-        else if (age <= 20) fallbackCat = 'sub_20';
-        else if (age <= 21) fallbackCat = 'sub_21';
-        else if (age <= 23) fallbackCat = 'sub_23';
-        else fallbackCat = 'adulta';
-        return [fallbackCat];
-      }
-      return ['sub_17'];
-    };
 
     return allGpsHistory.map(gps => {
       const p = allPlayers.find(pl => pl.player_id === gps.player_id);
@@ -373,24 +375,28 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
     return ['TODOS', ...Array.from(years).sort().reverse()];
   }, [masterGpsData]);
 
-  // 2. Available Positions based on selected category and year
+  // 2. Available Positions based on selected category and year (filtered by actual player category)
   const availablePositions = useMemo(() => {
     const positions = new Set<string>();
     masterGpsData.forEach(p => {
-      const matchCategory = filterCategory === 'TODAS' || p.category === filterCategory;
+      const pObj = allPlayers.find(pl => pl.player_id === p.player_id);
+      const playerCats = pObj ? getPlayerCategories(pObj) : ['sub_17'];
+      const matchCategory = filterCategory === 'TODAS' || playerCats.includes(filterCategory);
       const matchYear = filterYear === 'TODOS' || p.fecha?.startsWith(filterYear);
       if (matchCategory && matchYear && p.posicion) {
         positions.add(p.posicion);
       }
     });
     return ['TODAS', ...Array.from(positions).sort()];
-  }, [masterGpsData, filterCategory, filterYear]);
+  }, [masterGpsData, filterCategory, filterYear, allPlayers, getPlayerCategories]);
 
-  // 3. Available Clubs based on category, year and position
+  // 3. Available Clubs based on category, year and position (filtered by actual player category)
   const availableClubs = useMemo(() => {
     const clubsList = new Set<string>();
     masterGpsData.forEach(p => {
-      const matchCategory = filterCategory === 'TODAS' || p.category === filterCategory;
+      const pObj = allPlayers.find(pl => pl.player_id === p.player_id);
+      const playerCats = pObj ? getPlayerCategories(pObj) : ['sub_17'];
+      const matchCategory = filterCategory === 'TODAS' || playerCats.includes(filterCategory);
       const matchYear = filterYear === 'TODOS' || p.fecha?.startsWith(filterYear);
       const matchPosition = filterPosition === 'TODAS' || p.posicion === filterPosition || p.lineaTactica === filterPosition;
       if (matchCategory && matchYear && matchPosition && p.club_name) {
@@ -398,14 +404,16 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
       }
     });
     return ['TODAS', ...Array.from(clubsList).sort()];
-  }, [masterGpsData, filterCategory, filterYear, filterPosition]);
+  }, [masterGpsData, filterCategory, filterYear, filterPosition, allPlayers, getPlayerCategories]);
 
-  // 4. Available Players based on category, year, position, and club
+  // 4. Available Players based on category, year, position, and club (filtered by actual player category)
   const availablePlayers = useMemo(() => {
     const seen = new Set<number>();
     const list: any[] = [];
     masterGpsData.forEach(p => {
-      const matchCategory = filterCategory === 'TODAS' || p.category === filterCategory;
+      const pObj = allPlayers.find(pl => pl.player_id === p.player_id);
+      const playerCats = pObj ? getPlayerCategories(pObj) : ['sub_17'];
+      const matchCategory = filterCategory === 'TODAS' || playerCats.includes(filterCategory);
       const matchYear = filterYear === 'TODOS' || p.fecha?.startsWith(filterYear);
       const matchPosition = filterPosition === 'TODAS' || p.posicion === filterPosition || p.lineaTactica === filterPosition;
       const matchClub = filterClub === 'TODAS' || p.club_name === filterClub;
@@ -418,7 +426,7 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
       }
     });
     return list.sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [masterGpsData, filterCategory, filterYear, filterPosition, filterClub]);
+  }, [masterGpsData, filterCategory, filterYear, filterPosition, filterClub, allPlayers, getPlayerCategories]);
 
   // Auto-select first player in list if none selected
   useEffect(() => {
@@ -793,9 +801,9 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
                 ) : (
                   <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 50 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold', angle: -45, textAnchor: 'end' }} interval={0} />
                         <YAxis yAxisId="left" tick={{ fill: '#ef4444', fontSize: 8, fontWeight: 'bold' }} unit="m" />
                         <YAxis yAxisId="right" orientation="right" tick={{ fill: '#10b981', fontSize: 8, fontWeight: 'bold' }} unit="min" />
                         <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
@@ -825,9 +833,9 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
                 ) : (
                   <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 50 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold', angle: -45, textAnchor: 'end' }} interval={0} />
                         <YAxis tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} unit="m" />
                         <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
                         <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -856,9 +864,9 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
                 ) : (
                   <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 50 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold', angle: -45, textAnchor: 'end' }} interval={0} />
                         <YAxis yAxisId="left" tick={{ fill: '#1d4ed8', fontSize: 8, fontWeight: 'bold' }} unit="m" />
                         <YAxis yAxisId="right" orientation="right" tick={{ fill: '#ea580c', fontSize: 8, fontWeight: 'bold' }} />
                         <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
@@ -888,9 +896,9 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
                 ) : (
                   <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <ComposedChart data={filteredGroupMatchData} margin={{ top: 10, right: 10, left: -20, bottom: 50 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                        <XAxis dataKey="displayName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold', angle: -45, textAnchor: 'end' }} interval={0} />
                         <YAxis yAxisId="left" tick={{ fill: '#8b5cf6', fontSize: 8, fontWeight: 'bold' }} unit="km/h" />
                         <YAxis yAxisId="right" orientation="right" tick={{ fill: '#3b82f6', fontSize: 8, fontWeight: 'bold' }} />
                         <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
@@ -1015,9 +1023,9 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
                   ) : (
                     <div className="h-72 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 50 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold', angle: -45, textAnchor: 'end' }} interval={0} />
                           <YAxis yAxisId="left" tick={{ fill: '#ef4444', fontSize: 8, fontWeight: 'bold' }} unit="m" />
                           <YAxis yAxisId="right" orientation="right" tick={{ fill: '#10b981', fontSize: 8, fontWeight: 'bold' }} unit="min" />
                           <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
@@ -1052,9 +1060,9 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
                   ) : (
                     <div className="h-72 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 50 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold', angle: -45, textAnchor: 'end' }} interval={0} />
                           <YAxis tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} unit="m" />
                           <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
                           <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -1088,9 +1096,9 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
                   ) : (
                     <div className="h-72 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 50 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold', angle: -45, textAnchor: 'end' }} interval={0} />
                           <YAxis yAxisId="left" tick={{ fill: '#1d4ed8', fontSize: 8, fontWeight: 'bold' }} unit="m" />
                           <YAxis yAxisId="right" orientation="right" tick={{ fill: '#ea580c', fontSize: 8, fontWeight: 'bold' }} />
                           <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />
@@ -1125,9 +1133,9 @@ export default function GpsInternacionalDashboard({ clubs = [], userRole, userCl
                   ) : (
                     <div className="h-72 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <ComposedChart data={playerMatchHistory} margin={{ top: 10, right: 10, left: -20, bottom: 50 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold' }} />
+                          <XAxis dataKey="matchName" tick={{ fill: '#64748b', fontSize: 8, fontWeight: 'bold', angle: -45, textAnchor: 'end' }} interval={0} />
                           <YAxis yAxisId="left" tick={{ fill: '#8b5cf6', fontSize: 8, fontWeight: 'bold' }} unit="km/h" />
                           <YAxis yAxisId="right" orientation="right" tick={{ fill: '#3b82f6', fontSize: 8, fontWeight: 'bold' }} />
                           <Tooltip contentStyle={{ fontSize: 9, borderRadius: 8, fontWeight: 'bold' }} />

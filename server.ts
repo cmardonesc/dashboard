@@ -8,6 +8,10 @@ import nodemailer from "nodemailer";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
+import dns from "dns";
+
+// Priorizar IPv4 para resolver problemas de red en contenedores e impedir "fetch failed"
+dns.setDefaultResultOrder("ipv4first");
  
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1074,6 +1078,514 @@ Proporciona un diagnóstico del estado de potencia, fuerza-velocidad y capacidad
     }
   });
 
+  // 1. SOLICITUD DE APROBACIÓN DE REGISTRO (Envia correo al Admin y crea token único)
+  app.post("/api/register-approval-request", async (req, res) => {
+    const { userId, email, role, clubName, playerId } = req.body;
+    if (!userId || !email) {
+      return res.status(400).json({ error: "Faltan parámetros requeridos (userId, email)." });
+    }
+
+    try {
+      const crypto = require("crypto");
+      const token = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
+
+      // Guardar el token_aprobacion y setear estado_aprobacion a 'pendiente' en public.profiles
+      const { error: dbError } = await supabaseAdmin
+        .from("profiles")
+        .update({
+          estado_aprobacion: "pendiente",
+          token_aprobacion: token
+        })
+        .eq("id", userId);
+
+      if (dbError) {
+        console.error("[APPROVAL REQ] Error guardando token de aprobación:", dbError.message);
+        return res.status(500).json({ error: "Error al actualizar el perfil en la base de datos." });
+      }
+
+      // Enviar correo de notificación al administrador (mardones.camilo@gmail.com)
+      const mailTransporter = getTransporter();
+      if (mailTransporter) {
+        const protocol = req.protocol;
+        const host = req.get("host");
+        const domain = `${protocol}://${host}`;
+
+        const approveUrl = `${domain}/api/usuarios/aprobar?id=${userId}&token=${token}`;
+        const rejectUrl = `${domain}/api/usuarios/rechazar?id=${userId}&token=${token}`;
+
+        let detailHtml = `
+          <p style="margin: 0 0 8px 0;"><b>Rol Solicitado:</b> ${role?.toUpperCase() || "N/A"}</p>
+        `;
+        if (role === "club") {
+          detailHtml += `<p style="margin: 0 0 8px 0;"><b>Club Asociado:</b> ${clubName || "N/A"}</p>`;
+        } else if (role === "player") {
+          detailHtml += `<p style="margin: 0 0 8px 0;"><b>ID Jugador Vinculado:</b> ${playerId || "N/A"}</p>`;
+        }
+
+        const mailOptions = {
+          from: `"La Roja Performance" <${process.env.SMTP_USER}>`,
+          to: "mardones.camilo@gmail.com",
+          subject: "🟢 Nueva Solicitud de Registro en la Plataforma - " + email,
+          html: `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+              <div style="background-color: #CF1B2B; padding: 24px; text-align: center;">
+                <h2 style="color: #ffffff; margin: 0; text-transform: uppercase; font-size: 20px; letter-spacing: 1px;">Solicitud de Registro</h2>
+              </div>
+              <div style="padding: 32px; color: #1e293b; line-height: 1.6;">
+                <p style="font-size: 15px; margin-top: 0;">Hola Administrador,</p>
+                <p style="font-size: 15px;">Se ha registrado un nuevo usuario que requiere tu aprobación para acceder a la plataforma:</p>
+                
+                <div style="background-color: #f8fafc; border-radius: 8px; padding: 20px; margin: 24px 0; border-left: 4px solid #CF1B2B;">
+                  <p style="margin: 0 0 8px 0;"><b>Correo Electrónico:</b> ${email}</p>
+                  ${detailHtml}
+                  <p style="margin: 0 0 8px 0;"><b>Fecha de Registro:</b> ${new Date().toLocaleString("es-CL", { timeZone: "America/Santiago" })}</p>
+                </div>
+
+                <p style="font-size: 14px; text-align: center; font-weight: bold; margin-bottom: 24px;">¿Cómo deseas proceder con esta solicitud?</p>
+
+                <div style="text-align: center; margin: 30px 0;">
+                  <!-- Botón Aprobar -->
+                  <a href="${approveUrl}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; font-weight: bold; text-decoration: none; border-radius: 8px; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2); margin-right: 12px;">🟢 APROBAR ACCESO</a>
+                  <!-- Botón Rechazar -->
+                  <a href="${rejectUrl}" style="display: inline-block; background-color: #ef4444; color: white; padding: 12px 24px; font-weight: bold; text-decoration: none; border-radius: 8px; font-size: 14px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);">🔴 RECHAZAR ACCESO</a>
+                </div>
+
+                <p style="font-size: 12px; color: #64748b; margin-top: 32px;">Si apruebas la solicitud, el usuario recibirá un correo con el aviso de activación. De lo contrario, se le notificará el rechazo y su cuenta quedará suspendida.</p>
+              </div>
+              <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+                <p style="margin: 0;">© 2026 CMSPORTECH | La Roja Performance</p>
+              </div>
+            </div>
+          `
+        };
+
+        await mailTransporter.sendMail(mailOptions);
+        console.log(`✉️ [APPROVAL REQ] Correo enviado al administrador para el usuario ${email}`);
+      } else {
+        console.warn("⚠️ [APPROVAL REQ] Transporter de correo no disponible, se omitió el envío.");
+      }
+
+      return res.json({ success: true, message: "Solicitud registrada y correo enviado." });
+    } catch (err: any) {
+      console.error("[APPROVAL REQ EXCEPTION]:", err);
+      return res.status(500).json({ error: "Error interno procesando la solicitud.", details: err.message });
+    }
+  });
+
+  // 2. ENDPOINT DIRECTO DE APROBACIÓN (Opción A)
+  app.get("/api/usuarios/aprobar", async (req, res) => {
+    const { id, token } = req.query;
+    if (!id || !token) {
+      return res.status(400).send("Faltan parámetros requeridos (id, token).");
+    }
+
+    try {
+      // Validar el token y el perfil
+      const { data: profile, error: fetchErr } = await supabaseAdmin
+        .from("profiles")
+        .select("*, email")
+        .eq("id", id)
+        .eq("token_aprobacion", token)
+        .maybeSingle();
+
+      if (fetchErr || !profile) {
+        return res.status(400).send(`
+          <div style="font-family: sans-serif; text-align: center; padding: 50px; background-color: #fff1f2; color: #be123c; border: 1px solid #fecdd3; border-radius: 12px; max-width: 500px; margin: 40px auto; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <h2 style="margin: 0 0 10px 0;">Error de Validación</h2>
+            <p>El enlace de aprobación es inválido, ha expirado o ya ha sido procesado anteriormente.</p>
+            <a href="/" style="display: inline-block; margin-top: 15px; padding: 8px 16px; background-color: #be123c; color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: bold;">Ir a la plataforma</a>
+          </div>
+        `);
+      }
+
+      // Obtener el correo real del usuario de Auth para la confirmación
+      let userEmail = profile.email || profile.display_name;
+      if (!userEmail) {
+        try {
+          const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(id as string);
+          if (authUser?.user?.email) {
+            userEmail = authUser.user.email;
+          }
+        } catch (authErr) {
+          console.error("Error obteniendo email de auth:", authErr);
+        }
+      }
+
+      // Actualizar perfil a aprobado y limpiar token
+      const { error: updateErr } = await supabaseAdmin
+        .from("profiles")
+        .update({
+          estado_aprobacion: "aprobado",
+          token_aprobacion: null
+        })
+        .eq("id", id);
+
+      if (updateErr) {
+        return res.status(500).send("Error al actualizar el estado en la base de datos.");
+      }
+
+      // Enviar correo de éxito al usuario aprobado
+      const mailTransporter = getTransporter();
+      if (mailTransporter && userEmail) {
+        const userMailOptions = {
+          from: `"La Roja Performance" <${process.env.SMTP_USER}>`,
+          to: userEmail,
+          subject: "🎉 ¡Tu cuenta en La Roja Performance ha sido aprobada!",
+          html: `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+              <div style="background-color: #10b981; padding: 24px; text-align: center;">
+                <h2 style="color: #ffffff; margin: 0; text-transform: uppercase; font-size: 20px; letter-spacing: 1px;">¡Cuenta Activada!</h2>
+              </div>
+              <div style="padding: 32px; color: #1e293b; line-height: 1.6;">
+                <p style="font-size: 15px; margin-top: 0; font-weight: bold;">¡Felicidades!</p>
+                <p style="font-size: 15px;">Tu solicitud de registro en <b>La Roja Performance</b> ha sido revisada y aprobada por el administrador.</p>
+                <p style="font-size: 15px;">A partir de este momento, puedes iniciar sesión con tu correo electrónico y contraseña registrados.</p>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${req.protocol}://${req.get("host")}" style="display: inline-block; background-color: #0b1220; color: white; padding: 12px 28px; font-weight: bold; text-decoration: none; border-radius: 8px; font-size: 14px; box-shadow: 0 4px 6px rgba(11, 18, 32, 0.25);">INICIAR SESIÓN AHORA</a>
+                </div>
+
+                <p style="font-size: 12px; color: #64748b; margin-top: 32px;">Si tienes inconvenientes para ingresar, recuerda que dispones de la clave de respaldo "laroja2026" para acceder temporalmente.</p>
+              </div>
+              <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+                <p style="margin: 0;">© 2026 CMSPORTECH | La Roja Performance</p>
+              </div>
+            </div>
+          `
+        };
+        await mailTransporter.sendMail(userMailOptions);
+      }
+
+      // Servir página HTML estilizada de éxito
+      return res.send(`
+        <div style="font-family: sans-serif; text-align: center; padding: 50px; background-color: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; border-radius: 12px; max-width: 500px; margin: 40px auto; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+          <div style="font-size: 40px; margin-bottom: 15px;">🟢</div>
+          <h2 style="margin: 0 0 10px 0;">¡Usuario Aprobado!</h2>
+          <p>El registro de <b>${userEmail}</b> ha sido aprobado con éxito.</p>
+          <p style="font-size: 13px; color: #4b5563;">Se ha enviado una notificación automática a su bandeja de entrada para que inicie sesión.</p>
+          <a href="/" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #15803d; color: white; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: bold;">Ir a la plataforma</a>
+        </div>
+      `);
+    } catch (err: any) {
+      console.error("[APPROVE ENDPOINT ERROR]:", err);
+      return res.status(500).send("Error de servidor procesando aprobación.");
+    }
+  });
+
+  // 3. ENDPOINT DIRECTO DE RECHAZO (Opción A)
+  app.get("/api/usuarios/rechazar", async (req, res) => {
+    const { id, token } = req.query;
+    if (!id || !token) {
+      return res.status(400).send("Faltan parámetros requeridos (id, token).");
+    }
+
+    try {
+      // Validar el token y el perfil
+      const { data: profile, error: fetchErr } = await supabaseAdmin
+        .from("profiles")
+        .select("*, email")
+        .eq("id", id)
+        .eq("token_aprobacion", token)
+        .maybeSingle();
+
+      if (fetchErr || !profile) {
+        return res.status(400).send(`
+          <div style="font-family: sans-serif; text-align: center; padding: 50px; background-color: #fff1f2; color: #be123c; border: 1px solid #fecdd3; border-radius: 12px; max-width: 500px; margin: 40px auto; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <h2 style="margin: 0 0 10px 0;">Error de Validación</h2>
+            <p>El enlace de rechazo es inválido, ha expirado o ya ha sido procesado anteriormente.</p>
+            <a href="/" style="display: inline-block; margin-top: 15px; padding: 8px 16px; background-color: #be123c; color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: bold;">Ir a la plataforma</a>
+          </div>
+        `);
+      }
+
+      // Obtener el correo del usuario
+      let userEmail = profile.email || profile.display_name;
+      if (!userEmail) {
+        try {
+          const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(id as string);
+          if (authUser?.user?.email) {
+            userEmail = authUser.user.email;
+          }
+        } catch (authErr) {
+          console.error("Error obteniendo email de auth:", authErr);
+        }
+      }
+
+      // Actualizar perfil a rechazado y limpiar token
+      const { error: updateErr } = await supabaseAdmin
+        .from("profiles")
+        .update({
+          estado_aprobacion: "rechazado",
+          token_aprobacion: null
+        })
+        .eq("id", id);
+
+      if (updateErr) {
+        return res.status(500).send("Error al actualizar el estado en la base de datos.");
+      }
+
+      // Enviar correo de rechazo al usuario
+      const mailTransporter = getTransporter();
+      if (mailTransporter && userEmail) {
+        const userMailOptions = {
+          from: `"La Roja Performance" <${process.env.SMTP_USER}>`,
+          to: userEmail,
+          subject: "Notificación sobre tu solicitud de registro - La Roja Performance",
+          html: `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+              <div style="background-color: #ef4444; padding: 24px; text-align: center;">
+                <h2 style="color: #ffffff; margin: 0; text-transform: uppercase; font-size: 20px; letter-spacing: 1px;">Solicitud Rechazada</h2>
+              </div>
+              <div style="padding: 32px; color: #1e293b; line-height: 1.6;">
+                <p style="font-size: 15px; margin-top: 0;">Hola,</p>
+                <p style="font-size: 15px;">Lamentamos informarte que tu solicitud de registro en <b>La Roja Performance</b> ha sido rechazada por el administrador del sistema.</p>
+                <p style="font-size: 15px;">Por motivos de seguridad y control de privacidad de los datos de la selección nacional, solo se aprueban perfiles que corresponden al personal y atletas autorizados formalmente.</p>
+                <p style="font-size: 14px; color: #64748b; margin-top: 24px;">Si crees que esto ha sido un error, ponte en contacto con el cuerpo técnico o con el administrador soporte en mardones.camilo@gmail.com.</p>
+              </div>
+              <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+                <p style="margin: 0;">© 2026 CMSPORTECH | La Roja Performance</p>
+              </div>
+            </div>
+          `
+        };
+        await mailTransporter.sendMail(userMailOptions);
+      }
+
+      // Servir página HTML de rechazo
+      return res.send(`
+        <div style="font-family: sans-serif; text-align: center; padding: 50px; background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-radius: 12px; max-width: 500px; margin: 40px auto; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+          <div style="font-size: 40px; margin-bottom: 15px;">🔴</div>
+          <h2 style="margin: 0 0 10px 0;">Registro Rechazado</h2>
+          <p>La solicitud de <b>${userEmail}</b> ha sido rechazada.</p>
+          <p style="font-size: 13px; color: #4b5563;">Se ha enviado una notificación de aviso al usuario.</p>
+          <a href="/" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #991b1b; color: white; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: bold;">Ir a la plataforma</a>
+        </div>
+      `);
+    } catch (err: any) {
+      console.error("[REJECT ENDPOINT ERROR]:", err);
+      return res.status(500).send("Error de servidor procesando rechazo.");
+    }
+  });
+
+  // 4. CAMBIO DE ESTADO DESDE PANEL DE CONTROL (Opción B)
+  app.post("/api/admin/usuarios/set-status", async (req, res) => {
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: "Servicio de administración no configurado." });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "No autorizado." });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const { userId, status } = req.body;
+
+    if (!userId || !status) {
+      return res.status(400).json({ error: "Parámetros requeridos faltantes (userId, status)." });
+    }
+
+    try {
+      // 1. Validar que el solicitante sea admin o staff
+      const { data: { user: adminUser }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+      if (authErr || !adminUser) {
+        return res.status(401).json({ error: "Sesión inválida." });
+      }
+
+      const { data: adminProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", adminUser.id)
+        .maybeSingle();
+
+      if (!adminProfile || (adminProfile.role !== "admin" && adminProfile.role !== "staff" && adminUser.email !== "mardones.camilo@gmail.com")) {
+        return res.status(403).json({ error: "Privilegios insuficientes." });
+      }
+
+      // 2. Obtener datos del usuario objetivo
+      const { data: targetProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("*, email")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (!targetProfile) {
+        return res.status(404).json({ error: "Usuario no encontrado." });
+      }
+
+      let userEmail = targetProfile.email || targetProfile.display_name;
+      if (!userEmail) {
+        const { data: au } = await supabaseAdmin.auth.admin.getUserById(userId);
+        userEmail = au?.user?.email;
+      }
+
+      // 3. Actualizar base de datos
+      const { error: dbError } = await supabaseAdmin
+        .from("profiles")
+        .update({
+          estado_aprobacion: status,
+          token_aprobacion: null // Limpiar token al procesar
+        })
+        .eq("id", userId);
+
+      if (dbError) throw dbError;
+
+      // 4. Enviar correo correspondiente al usuario
+      const mailTransporter = getTransporter();
+      if (mailTransporter && userEmail) {
+        let subject = "";
+        let htmlBody = "";
+
+        if (status === "aprobado") {
+          subject = "🎉 ¡Tu cuenta en La Roja Performance ha sido aprobada!";
+          htmlBody = `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+              <div style="background-color: #10b981; padding: 24px; text-align: center;">
+                <h2 style="color: #ffffff; margin: 0; text-transform: uppercase; font-size: 20px; letter-spacing: 1px;">¡Cuenta Activada!</h2>
+              </div>
+              <div style="padding: 32px; color: #1e293b; line-height: 1.6;">
+                <p style="font-size: 15px; margin-top: 0; font-weight: bold;">¡Hola!</p>
+                <p style="font-size: 15px;">Tu cuenta en <b>La Roja Performance</b> ha sido aprobada por el administrador y ya está activa.</p>
+                <p style="font-size: 15px;">Puedes iniciar sesión ahora mismo con tus datos de acceso.</p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${req.protocol}://${req.get("host")}" style="display: inline-block; background-color: #0b1220; color: white; padding: 12px 28px; font-weight: bold; text-decoration: none; border-radius: 8px; font-size: 14px;">INICIAR SESIÓN AHORA</a>
+                </div>
+              </div>
+              <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+                <p style="margin: 0;">© 2026 CMSPORTECH | La Roja Performance</p>
+              </div>
+            </div>
+          `;
+        } else if (status === "rechazado") {
+          subject = "Notificación sobre tu solicitud de registro - La Roja Performance";
+          htmlBody = `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+              <div style="background-color: #ef4444; padding: 24px; text-align: center;">
+                <h2 style="color: #ffffff; margin: 0; text-transform: uppercase; font-size: 20px; letter-spacing: 1px;">Solicitud Rechazada</h2>
+              </div>
+              <div style="padding: 32px; color: #1e293b; line-height: 1.6;">
+                <p style="font-size: 15px; margin-top: 0;">Hola,</p>
+                <p style="font-size: 15px;">Tu solicitud de registro en <b>La Roja Performance</b> ha sido rechazada por el administrador del sistema.</p>
+                <p style="font-size: 14px; color: #64748b; margin-top: 24px;">Si crees que esto ha sido un error, ponte en contacto con mardones.camilo@gmail.com.</p>
+              </div>
+              <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+                <p style="margin: 0;">© 2026 CMSPORTECH | La Roja Performance</p>
+              </div>
+            </div>
+          `;
+        }
+
+        if (subject && htmlBody) {
+          await mailTransporter.sendMail({
+            from: `"La Roja Performance" <${process.env.SMTP_USER}>`,
+            to: userEmail,
+            subject,
+            html: htmlBody
+          });
+        }
+      }
+
+      console.log(`👤 [STATUS CHANGE] Estado cambiado a ${status} para usuario ${userId} por ${adminUser.email}`);
+      return res.json({ success: true, message: `Usuario marcado como ${status} exitosamente.` });
+    } catch (error: any) {
+      console.error("[SET STATUS ERROR]:", error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET ENRICHED PROFILES WITH EMAILS
+  app.get("/api/admin/profiles", async (req, res) => {
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: "El servicio de administrador de Supabase no está configurado (falta SUPABASE_SERVICE_ROLE_KEY)." });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "No autorizado. Token faltante." });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+
+    try {
+      // 1. Obtener la sesión del usuario que solicita
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+      if (authError || !user) {
+        return res.status(401).json({ error: "Sesión inválida o expirada." });
+      }
+
+      // 2. Verificar que el rol sea 'staff' o 'admin'
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError || !profile || (profile.role !== "staff" && profile.role !== "admin")) {
+        const emailLower = user.email?.toLowerCase() || '';
+        const isOfficialStaff = emailLower.endsWith('@anfpchile.cl') || emailLower.endsWith('@anfp.cl') || emailLower === 'mardones.camilo@gmail.com';
+        if (!isOfficialStaff) {
+          return res.status(403).json({ error: "Acceso denegado. Se requieren privilegios de Staff técnico." });
+        }
+      }
+
+      // 3. Obtener perfiles de la base de datos
+      const { data: dbProfiles, error: dbProfilesError } = await supabaseAdmin
+        .from("profiles")
+        .select("*, club_name");
+
+      if (dbProfilesError) {
+        return res.status(400).json({ error: dbProfilesError.message });
+      }
+
+      // 4. Obtener todos los usuarios de Auth (paginado hasta 1000 usuarios en una sola consulta)
+      let authUsers: any[] = [];
+      try {
+        const { data: authData, error: authUsersError } = await supabaseAdmin.auth.admin.listUsers({
+          page: 1,
+          perPage: 1000
+        });
+        if (!authUsersError && authData?.users) {
+          authUsers = authData.users;
+        } else if (authUsersError) {
+          console.error("Error listing auth users:", authUsersError.message);
+        }
+      } catch (err: any) {
+        console.error("Error in listUsers:", err.message);
+      }
+
+      // 5. Enriquecer los perfiles con correos electrónicos
+      const enrichedProfiles = (dbProfiles || []).map(p => {
+        const matchingAuth = authUsers.find(au => au.id === p.id);
+        const emailVal = p.email || matchingAuth?.email || p.display_name || 'N/A';
+        return {
+          ...p,
+          email: emailVal
+        };
+      });
+
+      // 6. Curación/Auto-saneamiento en segundo plano: Guardar correos faltantes en la tabla profiles (usando la columna display_name)
+      const missingEmails = (dbProfiles || []).filter(p => !p.display_name);
+      if (missingEmails.length > 0) {
+        (async () => {
+          for (const p of missingEmails) {
+            const matchingAuth = authUsers.find(au => au.id === p.id);
+            if (matchingAuth?.email) {
+              await supabaseAdmin
+                .from("profiles")
+                .update({ display_name: matchingAuth.email })
+                .eq("id", p.id);
+            }
+          }
+        })().catch(err => console.error("Error in background email synchronization:", err));
+      }
+
+      return res.json({ profiles: enrichedProfiles });
+    } catch (err: any) {
+      console.error("[ADMIN PROFILES ERROR]:", err);
+      return res.status(500).json({ error: "Error interno del servidor.", details: err.message });
+    }
+  });
+
   // SUPABASE CLIENT PROXY
   app.all("/api/supabase-proxy", async (req, res) => {
     const targetUrl = req.headers['x-target-url'] as string;
@@ -1083,33 +1595,75 @@ Proporciona un diagnóstico del estado de potencia, fuerza-velocidad y capacidad
 
     try {
       const headers: Record<string, string> = {};
+      
+      // Filtrar cabeceras estrictas permitidas para evitar que Undici (fetch nativo de Node) 
+      // falle por validaciones de caracteres en cabeceras propietarias del navegador (ej. sec-ch-ua).
+      const allowedHeaders = [
+        'apikey',
+        'authorization',
+        'content-type',
+        'prefer',
+        'x-client-info',
+        'range',
+        'accept',
+        'cache-control',
+        'pragma'
+      ];
+
       Object.entries(req.headers).forEach(([key, val]) => {
         const keyLower = key.toLowerCase();
-        if (!['host', 'connection', 'content-length', 'x-target-url', 'accept-encoding'].includes(keyLower) && typeof val === 'string') {
-          headers[key] = val;
+        if (allowedHeaders.includes(keyLower) && typeof val === 'string') {
+          headers[keyLower] = val;
         }
       });
 
-      const response = await axios({
-        method: req.method as any,
-        url: targetUrl,
+      // Añadir un User-Agent limpio por defecto
+      headers['user-agent'] = 'LaRojaSync/2.0';
+
+      // Re-serialize body correctly based on Content-Type
+      let body: any = undefined;
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        const contentType = (headers['content-type'] || '').toLowerCase();
+        
+        if (contentType.includes('application/json')) {
+          if (req.body && Object.keys(req.body).length > 0) {
+            body = JSON.stringify(req.body);
+          }
+        } else if (contentType.includes('application/x-www-form-urlencoded')) {
+          if (req.body && Object.keys(req.body).length > 0) {
+            const params = new URLSearchParams();
+            Object.entries(req.body).forEach(([k, v]) => params.append(k, String(v)));
+            body = params.toString();
+          }
+        } else {
+          // Fallback to raw string or JSON representation
+          if (typeof req.body === 'string') {
+            body = req.body;
+          } else if (req.body && Object.keys(req.body).length > 0) {
+            body = JSON.stringify(req.body);
+          }
+        }
+      }
+
+      const response = await fetch(targetUrl, {
+        method: req.method,
         headers,
-        data: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
-        responseType: 'arraybuffer',
-        validateStatus: () => true
+        body
       });
 
-      Object.entries(response.headers).forEach(([key, val]) => {
+      // Copy headers from response
+      response.headers.forEach((val, key) => {
         const keyLower = key.toLowerCase();
         if (!['transfer-encoding', 'content-encoding', 'connection', 'content-length'].includes(keyLower)) {
-          res.setHeader(key, val as any);
+          res.setHeader(key, val);
         }
       });
 
-      res.status(response.status).send(response.data);
+      const resBuffer = await response.arrayBuffer();
+      res.status(response.status).send(Buffer.from(resBuffer));
     } catch (err: any) {
-      console.error("Supabase proxy error:", err.message);
-      res.status(500).json({ error: "Supabase proxy failed", details: err.message });
+      console.error("Supabase proxy error:", err.message, err.cause ? "Cause: " + JSON.stringify(err.cause) : "");
+      res.status(500).json({ error: "Supabase proxy failed", details: err.message, cause: err.cause?.message });
     }
   });
  

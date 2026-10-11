@@ -43,7 +43,16 @@ export async function getFotoUrl(
       .createSignedUrl(fotoPath, SIGNED_URL_EXPIRY_SEC);
 
     if (error || !data?.signedUrl) {
-      console.error(`Error creating signed URL for ${fotoPath}:`, error);
+      const errorMessage = error?.message || String(error);
+      const isNotFound = errorMessage.toLowerCase().includes('object not found') || 
+                         errorMessage.toLowerCase().includes('not found') ||
+                         (error as any)?.status === 404;
+
+      if (isNotFound) {
+        console.warn(`Player photo not found in storage (using initials fallback): ${fotoPath}`);
+      } else {
+        console.error(`Error creating signed URL for ${fotoPath}:`, error);
+      }
       return null;
     }
 
@@ -62,7 +71,12 @@ export async function getFotoUrl(
 
     return url;
   } catch (err) {
-    console.error('getFotoUrl exception:', err);
+    const errMessage = (err as any)?.message || String(err);
+    if (errMessage.toLowerCase().includes('object not found') || errMessage.toLowerCase().includes('not found')) {
+      console.warn(`Player photo not found in storage (exception): ${fotoPath}`);
+    } else {
+      console.error('getFotoUrl exception:', err);
+    }
     return null;
   }
 }
@@ -104,7 +118,16 @@ export async function getFotoUrls(
       .createSignedUrls(pathsOnly, SIGNED_URL_EXPIRY_SEC);
 
     if (error || !data) {
-      console.error('Error in batch createSignedUrls:', error);
+      const errorMessage = error?.message || String(error);
+      const isNotFound = errorMessage.toLowerCase().includes('object not found') || 
+                         errorMessage.toLowerCase().includes('not found') ||
+                         (error as any)?.status === 404;
+
+      if (isNotFound) {
+        console.warn('Some or all player photos not found in batch createSignedUrls');
+      } else {
+        console.error('Error in batch createSignedUrls:', error);
+      }
       return result;
     }
 
@@ -128,7 +151,12 @@ export async function getFotoUrls(
       }
     }
   } catch (err) {
-    console.error('getFotoUrls exception:', err);
+    const errMessage = (err as any)?.message || String(err);
+    if (errMessage.toLowerCase().includes('object not found') || errMessage.toLowerCase().includes('not found')) {
+      console.warn('Batch getFotoUrls exception (not found):', err);
+    } else {
+      console.error('getFotoUrls exception:', err);
+    }
   }
 
   return result;

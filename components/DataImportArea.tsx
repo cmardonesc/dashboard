@@ -412,6 +412,31 @@ export default function DataImportArea() {
 
   const [dbDynamics, setDbDynamics] = useState<any[]>([]);
   const [dynamicMappings, setDynamicMappings] = useState<Record<string, string>>({});
+  const [creatingDynamic, setCreatingDynamic] = useState<Record<string, boolean>>({});
+
+  const handleCreateDynamicFromDrill = async (drillName: string) => {
+    setCreatingDynamic(prev => ({ ...prev, [drillName]: true }));
+    try {
+      const { data, error } = await supabase
+        .from('tareas')
+        .insert([{
+          nombre: drillName,
+          tipo: 'general',
+          descripcion: 'Creado automáticamente desde Catapult'
+        }])
+        .select('*');
+
+      if (error) throw error;
+
+      await fetchDynamics();
+      setDynamicMappings(prev => ({ ...prev, [drillName]: drillName }));
+    } catch (err: any) {
+      console.error("Error creating dynamic from drill:", err);
+      alert("Error al crear la dinámica: " + err.message);
+    } finally {
+      setCreatingDynamic(prev => ({ ...prev, [drillName]: false }));
+    }
+  };
 
   const uniqueDrillsInFile = useMemo(() => {
     const names = new Set<string>();
@@ -466,8 +491,20 @@ export default function DataImportArea() {
   };
 
   const fetchDynamics = async () => {
-    const { data } = await supabase.from('tareas').select('id, nombre, dinamica');
-    if (data) setDbDynamics(data);
+    try {
+      const { data, error } = await supabase.from('tareas').select('id, nombre, tipo');
+      if (error) throw error;
+      if (data) {
+        const mapped = data.map((d: any) => ({
+          id: d.id,
+          nombre: d.nombre,
+          dinamica: d.tipo || 'General'
+        }));
+        setDbDynamics(mapped);
+      }
+    } catch (err) {
+      console.error("Error fetching dynamics catalog in DataImportArea:", err);
+    }
   };
 
   const normalizeString = (str: any) => {
@@ -2962,6 +2999,25 @@ export default function DataImportArea() {
                                       <i className="fa-solid fa-chevron-down"></i>
                                     </div>
                                   </div>
+
+                                  {!dynamicMappings[drill] && (
+                                    <button
+                                      type="button"
+                                      disabled={creatingDynamic[drill]}
+                                      onClick={() => handleCreateDynamicFromDrill(drill)}
+                                      className="w-full py-1.5 px-2 bg-sky-50 hover:bg-sky-100/80 active:bg-sky-100 text-sky-700 disabled:opacity-55 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1 transition-all border border-sky-100/70 mt-1 active:scale-[0.98]"
+                                    >
+                                      {creatingDynamic[drill] ? (
+                                        <>
+                                          <i className="fa-solid fa-circle-notch animate-spin text-[7px]"></i> Guardando...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <i className="fa-solid fa-cloud-arrow-up text-[7px]"></i> Registrar Dinámica en Supabase
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
                                 </div>
                               ))}
                             </div>

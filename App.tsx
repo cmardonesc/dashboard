@@ -71,6 +71,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [allowedMenus, setAllowedMenus] = useState<string[]>(['*'])
   const [isRecoveryMode, setIsRecoveryMode] = useState(false)
+  const [loginMessage, setLoginMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const handleGlobalNavigation = (e: any) => {
@@ -317,8 +318,26 @@ export default function App() {
           jugador_nombre: n.nombre_raw || n.jugador_nombre
         }))
       }));
-    } catch (err) {
-      console.error("Error cargando datos de rendimiento, usando mock de respaldo:", err);
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      console.warn("Error cargando datos de rendimiento, usando mock de respaldo:", errMsg);
+      
+      // Auto-logout si se detecta un error real de expiración o invalidez de la sesión
+      const lowerMsg = errMsg.toLowerCase();
+      const isAuthError = lowerMsg.includes("invalid refresh token") || 
+                           lowerMsg.includes("refresh_token_not_found") || 
+                           lowerMsg.includes("refresh token not found") || 
+                           lowerMsg.includes("invalid_grant") || 
+                           lowerMsg.includes("session not found") || 
+                           lowerMsg.includes("session_not_found") || 
+                           lowerMsg.includes("jwt expired");
+      
+      if (isAuthError) {
+        console.warn("Authentication error detected in fetchPerformanceData, resetting session...");
+        setTimeout(() => {
+          handleSignOut();
+        }, 100);
+      }
       try {
         const mockResponse = generateMockData();
         const mappedWellness = mockResponse.wellness.map((w: any) => {
@@ -431,12 +450,12 @@ export default function App() {
       ])
 
       if (playersError) {
-        console.error("App: Players fetch failed:", playersError);
+        console.warn("App: Players fetch failed:", playersError);
         throw playersError;
       }
       
       if (clubesError) {
-        console.error('App: Error al cargar clubes:', clubesError);
+        console.warn('App: Error al cargar clubes:', clubesError);
         throw clubesError;
       }
 
@@ -452,7 +471,26 @@ export default function App() {
 
       processPlayerData(playersData || [], finalClubsData);
     } catch (err: any) {
-      console.error("App: Error crítico en fetchRealPlayers, usando mock de respaldo:", err);
+      const errMsg = err?.message || String(err);
+      console.warn("App: Error crítico en fetchRealPlayers, usando mock de respaldo:", errMsg);
+      
+      // Auto-logout si se detecta un error real de expiración o invalidez de la sesión
+      const lowerMsg = errMsg.toLowerCase();
+      const isAuthError = lowerMsg.includes("invalid refresh token") || 
+                           lowerMsg.includes("refresh_token_not_found") || 
+                           lowerMsg.includes("refresh token not found") || 
+                           lowerMsg.includes("invalid_grant") || 
+                           lowerMsg.includes("session not found") || 
+                           lowerMsg.includes("session_not_found") || 
+                           lowerMsg.includes("jwt expired");
+      
+      if (isAuthError) {
+        console.warn("Authentication error detected in fetchRealPlayers, resetting session...");
+        setTimeout(() => {
+          handleSignOut();
+        }, 100);
+      }
+
       // USAR MOCK_PLAYERS COMO RESPALDO DE EMERGENCIA
       setDbClubs(FALLBACK_CLUBS);
       processPlayerData(MOCK_PLAYERS.map(p => ({
@@ -841,6 +879,47 @@ export default function App() {
 
       const emailLower = session.user.email?.toLowerCase();
 
+      // CHECK REGISTRATION APPROVAL STATUS (Avoid lockout of Superadmin / Bypass Staff / Club Table Logins)
+      const isSuperadmin = emailLower === 'mardones.camilo@gmail.com' || emailLower === 'cmardones@anfpchile.cl';
+      const isBypassStaff = emailLower === 'ifabres@anfpchile.cl' || (emailLower && (emailLower.endsWith('@anfpchile.cl') || emailLower.endsWith('@anfp.cl')));
+      
+      if (!isSuperadmin && !isBypassStaff && !session.user.isTableLogin) {
+        const { data: profileCheck, error: checkErr } = await supabase
+          .from('profiles')
+          .select('estado_aprobacion')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (!checkErr && profileCheck) {
+          const status = profileCheck.estado_aprobacion;
+          if (status === 'pendiente') {
+            console.warn(`[resolveUserAndLoad] Bloqueando acceso a usuario pendiente: ${emailLower}`);
+            setLoginMessage('Tu cuenta se encuentra en revisión por el administrador. Recibirás un correo electrónico de confirmación una vez aprobada.');
+            setRole(null);
+            setSessionUser(null);
+            resolvingUserRef.current = null;
+            try {
+              await supabase.auth.signOut();
+            } catch (signOutErr) {
+              console.error("Error signing out pending user:", signOutErr);
+            }
+            return;
+          } else if (status === 'rechazado') {
+            console.warn(`[resolveUserAndLoad] Bloqueando acceso a usuario rechazado: ${emailLower}`);
+            setLoginMessage('Tu solicitud de registro ha sido rechazada por el administrador. Si crees que se trata de un error, por favor contacta al soporte.');
+            setRole(null);
+            setSessionUser(null);
+            resolvingUserRef.current = null;
+            try {
+              await supabase.auth.signOut();
+            } catch (signOutErr) {
+              console.error("Error signing out rejected user:", signOutErr);
+            }
+            return;
+          }
+        }
+      }
+
       // 1. SUPERADMIN OVERRIDE
       if (emailLower === 'mardones.camilo@gmail.com' || emailLower === 'cmardones@anfpchile.cl') {
         setRole('admin');
@@ -1024,8 +1103,19 @@ export default function App() {
         if (error) {
           console.error("Error obteniendo sesión de Supabase:", error.message);
           const lowerMsg = error.message?.toLowerCase() || "";
-          if (lowerMsg.includes("refresh token") || lowerMsg.includes("not found") || lowerMsg.includes("token") || lowerMsg.includes("fetch") || lowerMsg.includes("invalid") || lowerMsg.includes("expired")) {
-            console.warn("Invalid session token or fetch error, cleaning local auth keys...");
+          // No cerrar sesión por errores de red temporales (como "Failed to fetch")
+          const isNetworkError = lowerMsg.includes("fetch") || lowerMsg.includes("network") || lowerMsg.includes("timeout") || lowerMsg.includes("load failed") || lowerMsg.includes("abort");
+          
+          if (!isNetworkError && (
+            lowerMsg.includes("refresh_token_not_found") || 
+            lowerMsg.includes("invalid_grant") || 
+            lowerMsg.includes("invalid refresh token") || 
+            lowerMsg.includes("session not found") || 
+            lowerMsg.includes("session_not_found") ||
+            lowerMsg.includes("user not found") ||
+            (lowerMsg.includes("expired") && lowerMsg.includes("token"))
+          )) {
+            console.warn("Invalid session token detected, cleaning local auth keys...");
             localStorage.removeItem('lr-performance-auth-v1');
             localStorage.removeItem('lr-performance-ui-cache');
             await supabase.auth.signOut().catch(() => {});
@@ -1517,7 +1607,7 @@ export default function App() {
 
   if (!role) return (
     <div className="min-h-screen flex items-center justify-center bg-[#0b1220] px-6 relative">
-      <LoginCard onLoginSuccess={handleLoginSuccess} />
+      <LoginCard onLoginSuccess={handleLoginSuccess} initialMessage={loginMessage} onClearInitialMessage={() => setLoginMessage(null)} />
       {/* Watermark */}
       <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none opacity-20">
         <span className="text-[10px] font-black tracking-widest text-white uppercase">CMSPORTECH</span>
@@ -1650,7 +1740,15 @@ export default function App() {
   )
 }
 
-function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void }) {
+function LoginCard({ 
+  onLoginSuccess, 
+  initialMessage, 
+  onClearInitialMessage 
+}: { 
+  onLoginSuccess: (session: any) => void; 
+  initialMessage?: string | null;
+  onClearInitialMessage?: () => void;
+}) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [showForgotPassword, setShowForgotPassword] = useState(false)
   const [email, setEmail] = useState('')
@@ -1662,6 +1760,13 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
   const [loadingClubs, setLoadingClubs] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (initialMessage) {
+      setMsg(initialMessage);
+      if (onClearInitialMessage) onClearInitialMessage();
+    }
+  }, [initialMessage, onClearInitialMessage]);
 
   useEffect(() => {
     if (mode === 'signup' && signupRole === 'club') {
@@ -1928,25 +2033,51 @@ function LoginCard({ onLoginSuccess }: { onLoginSuccess: (session: any) => void 
            setMsg(error.message); 
         }
       } else { 
-        if (data?.session === null || data?.session === undefined) {
-          // El email no ha sido confirmado aún (no hay sesión activa)
-          setMsg(`Te enviamos un correo a ${cleanedEmail}. Haz clic en el enlace para activar tu cuenta.`);
-        } else {
-          // El usuario ya tiene sesión activa (confirmado o en desarrollo)
-          if (data?.user) {
-            try {
-              await supabase.from('profiles').upsert({
-                id: data.user.id,
+        if (data?.user) {
+          // 1. Crear el perfil en Supabase (si es que no se creó por el trigger)
+          try {
+            await supabase.from('profiles').upsert({
+              id: data.user.id,
+              role: signupRole,
+              player_id: verifiedPlayerId,
+              club_name: signupRole === 'club' ? selectedClub : null,
+              estado_aprobacion: 'pendiente' // Forzar explícitamente pendiente
+            });
+          } catch (e) {
+            console.error("Error creando perfil:", e);
+          }
+
+          // 2. Enviar la solicitud de correo de aprobación al backend
+          try {
+            await fetch('/api/register-approval-request', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                userId: data.user.id,
+                email: cleanedEmail,
                 role: signupRole,
-                player_id: verifiedPlayerId,
-                club_name: signupRole === 'club' ? selectedClub : null
-              });
-            } catch (e) {
-              console.error("Error creando perfil:", e);
-            }
-            
-            setMsg('¡REGISTRO COMPLETO! Iniciando sesión automáticamente...');
-            onLoginSuccess(data.session);
+                clubName: signupRole === 'club' ? selectedClub : null,
+                playerId: signupRole === 'player' ? verifiedPlayerId : null
+              })
+            });
+          } catch (errApi) {
+            console.error("Error enviando solicitud de aprobación de registro:", errApi);
+          }
+
+          // 3. Forzar el cierre de sesión de cualquier sesión automática para que no bypassen
+          try {
+            await supabase.auth.signOut();
+          } catch (signOutErr) {
+            console.error("Error signing out user:", signOutErr);
+          }
+
+          // 4. Mostrar el mensaje correspondiente
+          if (data?.session === null || data?.session === undefined) {
+            setMsg(`¡REGISTRO EXITOSO! Te enviamos un correo de confirmación de cuenta a ${cleanedEmail}. Además, tu cuenta ha sido enviada al administrador para su aprobación. Recibirás un correo cuando esté activa.`);
+          } else {
+            setMsg('¡REGISTRO EXITOSO! Tu solicitud ha sido enviada al administrador para su revisión. Recibirás una notificación por correo electrónico una vez aprobada.');
           }
         }
       }

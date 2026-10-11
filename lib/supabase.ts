@@ -73,17 +73,11 @@ const shouldProxy = (): boolean => {
   if (typeof window === 'undefined') return true;
   const host = window.location.hostname;
   
-  // Detectar si estamos en un iframe (como en la vista previa de desarrollo)
-  let isIframe = false;
-  try {
-    isIframe = window.self !== window.top;
-  } catch (e) {
-    isIframe = true;
-  }
-
-  // Solo usar proxy si estamos local, gitpod, etc., o si estamos dentro de un iframe en .run.app
+  // Proxy in development/workspace environments and all Google Cloud Run preview/development environments (.run.app)
   const isLocalOrWorkspace = host === 'localhost' || host === '127.0.0.1' || host.includes('gitpod') || host.includes('codesandbox');
-  return isLocalOrWorkspace || (host.includes('.run.app') && isIframe);
+  const isRunApp = host.includes('.run.app');
+  
+  return isLocalOrWorkspace || isRunApp;
 };
 
 const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -103,9 +97,14 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
       }
 
       try {
-        const proxyUrl = typeof window !== 'undefined' 
-          ? '/api/supabase-proxy' 
-          : 'http://localhost:3000/api/supabase-proxy';
+        let proxyUrl = '/api/supabase-proxy';
+        if (typeof window !== 'undefined') {
+          const host = window.location.host || 'localhost:3000';
+          const protocol = window.location.protocol === 'http:' ? 'http:' : 'https:';
+          proxyUrl = `${protocol}//${host}/api/supabase-proxy`;
+        } else {
+          proxyUrl = 'http://localhost:3000/api/supabase-proxy';
+        }
         
         const headers = new Headers(init?.headers || {});
         headers.set('x-target-url', urlStr);
@@ -113,6 +112,8 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
         const proxyInit: RequestInit = {
           ...fetchInit,
           headers,
+          credentials: 'omit', // Prevent browser CORS errors with credentials in sandboxed/cross-origin frames
+          mode: 'cors'
         };
         
         const response = await fetch(proxyUrl, proxyInit);

@@ -8,10 +8,11 @@ import {
   PolarAngleAxis, PolarRadiusAxis, Radar, Cell 
 } from 'recharts';
 import ClubBadge from './ClubBadge';
-import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS, MatchDB, CATEGORY_ID_MAP } from '../types';
-import { FALLBACK_CLUB_NAMES, FEDERATION_LOGO } from '../constants';
+import { UserRole, REVERSE_CATEGORY_ID_MAP, CATEGORY_COLORS, MatchDB, CATEGORY_ID_MAP, Category } from '../types';
+import { FALLBACK_CLUB_NAMES, FEDERATION_LOGO, CLUB_LOGOS } from '../constants';
 import { AthleteHuella } from './SportsScienceArea';
 import { AvatarJugador } from './AvatarJugador';
+import { getFotoUrl } from '../lib/fotos';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -178,9 +179,14 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
     setLoading(true);
     try {
       // 1. Basic Player Info
-      const { data: pData } = await supabase.from('players').select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion, fecha_nacimiento, foto_path, foto_updated_at').eq('player_id', playerId).single();
+      const { data: pData } = await supabase
+        .from('players')
+        .select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion, fecha_nacimiento, foto_path, foto_updated_at, clubes!fk_players_clubes(nombre)')
+        .eq('player_id', playerId)
+        .single();
       if (pData) {
-        const pDataWithClub = { ...pData } as any;
+        const clubName = pData.clubes && !Array.isArray(pData.clubes) ? (pData.clubes as any).nombre : null;
+        const pDataWithClub = { ...pData, club: clubName } as any;
         if (pData.player_id === 355) {
           pDataWithClub.id_club = 89;
           pDataWithClub.club = 'Everton';
@@ -300,18 +306,20 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         return newItem;
       });
       processedImtpData.forEach((item: any) => {
-        mergedMap.set(item.fecha_test, { ...item });
+        const cleanDate = (item.fecha_test || item.fecha || '').split('T')[0];
+        mergedMap.set(cleanDate, { ...item });
       });
       (cmjRes.data || []).forEach((item: any) => {
-        const existing = mergedMap.get(item.fecha_test);
+        const cleanDate = (item.fecha_test || item.fecha || '').split('T')[0];
+        const existing = mergedMap.get(cleanDate);
         if (existing) {
-          mergedMap.set(item.fecha_test, { ...existing, ...item });
+          mergedMap.set(cleanDate, { ...existing, ...item });
         } else {
-          mergedMap.set(item.fecha_test, { ...item });
+          mergedMap.set(cleanDate, { ...item });
         }
       });
       const combinedImtp = Array.from(mergedMap.values()).sort(
-        (a, b) => new Date(a.fecha_test).getTime() - new Date(b.fecha_test).getTime()
+        (a, b) => new Date(a.fecha_test || a.fecha).getTime() - new Date(b.fecha_test || b.fecha).getTime()
       );
 
       setPhysicalData({
@@ -435,1031 +443,1547 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       const pageHeight = 297;
       const contentWidth = pageWidth - (margin * 2);
 
-      // Helper to get microcycle label from a date
-      const getMicrocycleForDate = (dateStr: string) => {
-        if (!dateStr) return '';
-        const match = citations.find(c => {
-          if (!c.microcycles || !c.microcycles.start_date || !c.microcycles.end_date) return false;
-          return dateStr >= c.microcycles.start_date && dateStr <= c.microcycles.end_date;
-        });
-        if (match && match.microcycles) {
-          return `MC ${match.microcycles.micro_number}`;
-        }
-        return '';
-      };
-
-      // Dynamic percentile calculator for physical benchmarks in PDF
-      const getPDFPercentile = (val: number, list: any[], key: string, lowerIsBetter = false) => {
-        const validVals = list
-          .map(item => Number(item[key]))
-          .filter(v => !isNaN(v) && v > 0);
-        if (validVals.length === 0) {
-          if (key === 'vo2_max') return val > 55 ? 92 : (val > 50 ? 78 : (val > 45 ? 50 : 25));
-          if (key === 'imtp_f_relativa_n_kg') return val > 40 ? 92 : (val > 35 ? 78 : (val > 30 ? 50 : 25));
-          if (key === 'tiempo_total') return val < 4.1 ? 92 : (val < 4.3 ? 78 : (val < 4.5 ? 50 : 25));
-          if (key === 'masa_muscular_pct') return val > 50 ? 92 : (val > 47 ? 78 : (val > 44 ? 50 : 25));
-          return 50;
-        }
-        const sorted = [...validVals].sort((a, b) => a - b);
-        let count = 0;
-        for (const v of sorted) {
-          if (lowerIsBetter ? v > val : v < val) count++;
-        }
-        return (count / sorted.length) * 100;
-      };
-
-      const getPDFLevelInfo = (pct: number) => {
-        if (pct >= 90) return { label: 'Élite', color: [147, 51, 234], textColor: [255, 255, 255] }; // Purple
-        if (pct >= 75) return { label: 'Sobresaliente', color: [16, 185, 129], textColor: [255, 255, 255] }; // Emerald Green
-        if (pct >= 45) return { label: 'Promedio', color: [59, 130, 246], textColor: [255, 255, 255] }; // Blue
-        if (pct >= 20) return { label: 'Por Mejorar', color: [249, 115, 22], textColor: [255, 255, 255] }; // Orange
-        return { label: 'Alerta', color: [239, 68, 68], textColor: [255, 255, 255] }; // Red
-      };
-
-      // Helper function to draw vector tachometer (gauge) for physical evaluations
-      const drawGauge = (x: number, y: number, r: number, pct: number, valueStr: string, titleStr: string) => {
-        const numSegments = 30;
-        const innerR = r - 3;
-        const outerR = r;
-
-        const getSegmentColor = (p: number) => {
-          if (p < 20) return [239, 68, 68]; // Red
-          if (p < 45) return [249, 115, 22]; // Orange
-          if (p < 75) return [59, 130, 246]; // Blue
-          if (p < 90) return [16, 185, 129]; // Emerald
-          return [147, 51, 234]; // Purple
-        };
-
-        // Draw colored semi-circle arc segments curving upwards
-        for (let i = 0; i < numSegments; i++) {
-          const angleStart = Math.PI + (i / numSegments) * Math.PI;
-          const angleEnd = Math.PI + ((i + 1) / numSegments) * Math.PI;
-          
-          const segmentPct = (i / numSegments) * 100;
-          const color = getSegmentColor(segmentPct);
-          
-          doc.setFillColor(color[0], color[1], color[2]);
-          
-          const x1 = x + innerR * Math.cos(angleStart);
-          const y1 = y + innerR * Math.sin(angleStart);
-          const x2 = x + outerR * Math.cos(angleStart);
-          const y2 = y + outerR * Math.sin(angleStart);
-          const x3 = x + outerR * Math.cos(angleEnd);
-          const y3 = y + outerR * Math.sin(angleEnd);
-          const x4 = x + innerR * Math.cos(angleEnd);
-          const y4 = y + innerR * Math.sin(angleEnd);
-          
-          doc.triangle(x1, y1, x2, y2, x3, y3, 'F');
-          doc.triangle(x1, y1, x3, y3, x4, y4, 'F');
-        }
-
-        // Draw needle pointing to percentile
-        const needleAngle = Math.PI + (Math.max(0, Math.min(100, pct)) / 100) * Math.PI;
-        const needleLen = r - 1;
-        const nx = x + needleLen * Math.cos(needleAngle);
-        const ny = y + needleLen * Math.sin(needleAngle);
-        
-        doc.setDrawColor(51, 65, 85); // slate-700
-        doc.setLineWidth(1.2);
-        doc.line(x, y, nx, ny);
-        
-        // Needle center hub
-        doc.setFillColor(51, 65, 85);
-        doc.circle(x, y, 2.2, 'F');
-        doc.setFillColor(255, 255, 255);
-        doc.circle(x, y, 0.8, 'F');
-
-        // Text labels inside the gauge
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
-        doc.setTextColor(51, 65, 85);
-        doc.text(valueStr, x, y + 4.5, { align: 'center' });
-
-        const cohort = getPDFLevelInfo(pct);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.5);
-        doc.setTextColor(100, 116, 139);
-        doc.text(`${pct.toFixed(0)}% (${cohort.label})`, x, y + 8, { align: 'center' });
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(11, 45, 106);
-        doc.text(titleStr, x, y - r - 3.5, { align: 'center' });
-      };
-
-      // Reusable helper to draw a dual parameter line graph
-      const drawDualParameterChart = (
-        x: number, 
-        y: number, 
-        w: number, 
-        h: number, 
-        dataList: any[], 
-        title: string, 
-        p1Key: string, 
-        p1Label: string, 
-        p1Color: [number, number, number], 
-        p2Key: string, 
-        p2Label: string, 
-        p2Color: [number, number, number]
-      ) => {
-        doc.setFillColor(248, 250, 252);
-        doc.roundedRect(x, y, w, h, 3, 3, 'F');
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(0.3);
-        doc.roundedRect(x, y, w, h, 3, 3, 'S');
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.setTextColor(51, 65, 85);
-        doc.text(title, x + 6, y + 6);
-
-        // Legends
-        doc.setFillColor(p1Color[0], p1Color[1], p1Color[2]);
-        doc.circle(x + 105, y + 5, 1.2, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
-        doc.setTextColor(p1Color[0], p1Color[1], p1Color[2]);
-        doc.text(p1Label.toUpperCase(), x + 108, y + 5.8);
-
-        doc.setFillColor(p2Color[0], p2Color[1], p2Color[2]);
-        doc.rect(x + 144, y + 3.8, 2.4, 2.4, 'F');
-        doc.setTextColor(p2Color[0], p2Color[1], p2Color[2]);
-        doc.text(p2Label.toUpperCase(), x + 148, y + 5.8);
-
-        const px = x + 12;
-        const py = y + 10;
-        const pw = w - 24;
-        const ph = h - 17;
-
-        if (dataList.length === 0) {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(148, 163, 184);
-          doc.text('No hay registros disponibles', x + w/2, y + h/2, { align: 'center' });
-          return;
-        }
-
-        const p1Vals = dataList.map(d => Number(d[p1Key]) || 0);
-        const p2Vals = dataList.map(d => Number(d[p2Key]) || 0);
-        const p1Max = Math.max(...p1Vals, 1);
-        const p2Max = Math.max(...p2Vals, 1);
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.5);
-        doc.setTextColor(148, 163, 184);
-        for (let i = 0; i <= 4; i++) {
-          const ratio = i / 4;
-          const gy = py + ph - ratio * ph;
-          
-          doc.setDrawColor(226, 232, 240);
-          doc.setLineWidth(0.15);
-          doc.line(px, gy, px + pw, gy);
-
-          doc.text((ratio * p1Max).toFixed(0), px - 2, gy + 1, { align: 'right' });
-          doc.text((ratio * p2Max).toFixed(1), px + pw + 2, gy + 1, { align: 'left' });
-        }
-
-        const pts1: {x: number, y: number}[] = [];
-        const pts2: {x: number, y: number}[] = [];
-        const stepX = pw / (dataList.length - 1 || 1);
-
-        dataList.forEach((item, idx) => {
-          const cx = px + idx * stepX;
-          const val1 = Number(item[p1Key]) || 0;
-          const val2 = Number(item[p2Key]) || 0;
-
-          const cy1 = py + ph - (val1 / p1Max) * ph;
-          const cy2 = py + ph - (val2 / p2Max) * ph;
-
-          pts1.push({ x: cx, y: cy1 });
-          pts2.push({ x: cx, y: cy2 });
-
-          const dateStr = item.fecha ? item.fecha.split('-').slice(1, 3).reverse().join('/') : '';
-          const mcLabel = getMicrocycleForDate(item.fecha) || dateStr || `${idx + 1}`;
-          
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(5.5);
-          doc.setTextColor(100, 116, 139);
-          doc.text(mcLabel, cx, py + ph + 4.5, { align: 'center' });
-        });
-
-        // Draw Line 1
-        if (pts1.length > 1) {
-          doc.setDrawColor(p1Color[0], p1Color[1], p1Color[2]);
-          doc.setLineWidth(0.6);
-          for (let i = 0; i < pts1.length - 1; i++) {
-            doc.line(pts1[i].x, pts1[i].y, pts1[i + 1].x, pts1[i + 1].y);
-          }
-        }
-        pts1.forEach(pt => {
-          doc.setFillColor(255, 255, 255);
-          doc.setDrawColor(p1Color[0], p1Color[1], p1Color[2]);
-          doc.setLineWidth(0.8);
-          doc.circle(pt.x, pt.y, 1.4, 'FD');
-        });
-
-        // Draw Line 2
-        if (pts2.length > 1) {
-          doc.setDrawColor(p2Color[0], p2Color[1], p2Color[2]);
-          doc.setLineWidth(0.6);
-          for (let i = 0; i < pts2.length - 1; i++) {
-            doc.line(pts2[i].x, pts2[i].y, pts2[i + 1].x, pts2[i + 1].y);
-          }
-        }
-        pts2.forEach(pt => {
-          doc.setFillColor(255, 255, 255);
-          doc.setDrawColor(p2Color[0], p2Color[1], p2Color[2]);
-          doc.setLineWidth(0.8);
-          doc.rect(pt.x - 0.8, pt.y - 0.8, 1.6, 1.6, 'FD');
-        });
-      };
-
-      // Helper function to draw header on every page
-      const drawHeader = (pageNum: number, titleText: string) => {
-        // Draw Navy Blue Header Band
-        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.rect(0, 0, pageWidth, 28, 'F');
-
-        // Draw Accent Highlight Bar at the bottom of the band
-        doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
-        doc.rect(0, 26, pageWidth, 2, 'F');
-
-        // Logo
-        const logoUrl = getDriveDirectLink(FEDERATION_LOGO);
+      const getBase64ImageFromUrl = async (url: string): Promise<string | null> => {
         try {
-          doc.addImage(logoUrl, 'PNG', margin, 4, 18, 18);
+          const res = await fetch(url);
+          if (!res.ok) return null;
+          const blob = await res.blob();
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
         } catch (e) {
-          console.error("Error loading logo for PDF:", e);
+          console.error("Error converting image to base64:", e);
+          return null;
         }
-
-        // Title
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
-        doc.setTextColor(255, 255, 255);
-        doc.text('LA ROJA PERFORMANCE', margin + 22, 12);
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
-        doc.setTextColor(200, 200, 200);
-        doc.text('HOJA DE VIDA DEPORTIVA E HISTORIAL INTEGRAL', margin + 22, 18);
-
-        // Section Title (Right Aligned)
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9.5);
-        doc.setTextColor(255, 255, 255);
-        doc.text(titleText.toUpperCase(), pageWidth - margin, 15, { align: 'right' });
       };
 
-      // Helper function to draw footer on every page
-      const drawFooter = (pageNum: number, totalPages: number) => {
-        doc.setFillColor(248, 250, 252); // slate-50
-        doc.rect(0, pageHeight - 16, pageWidth, 16, 'F');
-
-        doc.setDrawColor(226, 232, 240); // slate-200
-        doc.setLineWidth(0.3);
-        doc.line(0, pageHeight - 16, pageWidth, pageHeight - 16);
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(148, 163, 184); // slate-400
-        
-        const timestamp = new Date().toLocaleString('es-CL');
-        doc.text(`Generado el: ${timestamp}`, margin, pageHeight - 8);
-        doc.text(`La Roja Performance Hub — Confidencial`, pageWidth / 2, pageHeight - 8, { align: 'center' });
-        doc.text(`Página ${pageNum} de ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: 'right' });
+      // Helper to get image natural dimensions for perfect aspect ratio calculations
+      const getImageDimensions = (base64: string): Promise<{ width: number; height: number }> => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+          img.onerror = () => resolve({ width: 0, height: 0 });
+          img.src = base64;
+        });
       };
 
-      // Define some coordinates to place the content
-      let yPos = 38;
+      const formatDateSpanish = (dateStr: string) => {
+        if (!dateStr) return '';
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return dateStr;
+      };
+
+      // Fetch player category ID to filter microcycles
+      const playerCategoryId = CATEGORY_ID_MAP[inferredCategory as Category] || null;
+
+      // Fetch all microcycles for this player's category (or all if none inferred) for clean mapping
+      let microQuery = supabase
+        .from('microcycles')
+        .select('id, micro_number, type, start_date, end_date, category_id');
+
+      if (playerCategoryId) {
+        microQuery = microQuery.eq('category_id', playerCategoryId);
+      }
+
+      const { data: allMicros } = await microQuery.order('micro_number', { ascending: true });
+
+      const getMicrocycleInfoForDate = (dateStr: string) => {
+        if (!dateStr || !allMicros) return null;
+        return allMicros.find(m => {
+          if (!m.start_date || !m.end_date) return false;
+          return dateStr >= m.start_date && dateStr <= m.end_date;
+        }) || null;
+      };
+
+      // Fetch images asynchronously
+      const federationLogoUrl = getDriveDirectLink(FEDERATION_LOGO);
+      const base64FederationLogo = federationLogoUrl ? await getBase64ImageFromUrl(federationLogoUrl) : null;
+
+      let base64PlayerPhoto: string | null = null;
+      if (profileData.foto_path) {
+        try {
+          const fullPhotoUrl = await getFotoUrl(profileData.foto_path, profileData.foto_updated_at);
+          if (fullPhotoUrl) {
+            base64PlayerPhoto = await getBase64ImageFromUrl(fullPhotoUrl);
+          }
+        } catch (e) {
+          console.error("Error getting player photo:", e);
+        }
+      }
+
+      let base64ClubLogo: string | null = null;
+      if (profileData.club) {
+        try {
+          const normName = normalizeClub(profileData.club);
+          let clubLogoUrl: string | null = null;
+          const clubByName = clubs.find((c: any) => normalizeClub(c.nombre || c.club_name) === normName);
+          if (clubByName?.logo_url) {
+            clubLogoUrl = getDriveDirectLink(clubByName.logo_url);
+          } else {
+            const staticLogo = CLUB_LOGOS[normName];
+            if (staticLogo) {
+              clubLogoUrl = getDriveDirectLink(staticLogo);
+            }
+          }
+          if (clubLogoUrl) {
+            base64ClubLogo = await getBase64ImageFromUrl(clubLogoUrl);
+          }
+        } catch (e) {
+          console.error("Error getting club logo:", e);
+        }
+      }
+
+      let yPos = 32;
 
       // ==========================================
-      // PAGE 1: EXPEDIENTE DEL ATLETA
+      // SECTION 1: DATOS DEL JUGADOR
       // ==========================================
-      drawHeader(1, 'Expediente del Atleta');
-
-      // Athlete Bio Box (with red left accent line)
+      
+      // Biography card container
       doc.setFillColor(248, 250, 252); // slate-50
-      doc.roundedRect(margin, yPos, contentWidth, 54, 4, 4, 'F');
+      doc.roundedRect(margin, yPos, contentWidth, 48, 4, 4, 'F');
       doc.setDrawColor(226, 232, 240); // slate-200
-      doc.setLineWidth(0.5);
-      doc.roundedRect(margin, yPos, contentWidth, 54, 4, 4, 'S');
+      doc.setLineWidth(0.4);
+      doc.roundedRect(margin, yPos, contentWidth, 48, 4, 4, 'S');
 
-      // Left bar in Chile red
+      // Left bar in Chile red for branding
       doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
-      doc.rect(margin, yPos, 4, 54, 'F');
+      doc.rect(margin, yPos, 3.5, 48, 'F');
 
-      // Name & Position
+      // 1.1 Player photo placement with perfect aspect ratio centering
+      const drawPhotoPlaceholder = () => {
+        doc.setFillColor(241, 245, 249); // slate-100
+        doc.rect(22, 38, 26, 36, 'F');
+        doc.setDrawColor(203, 213, 225); // slate-300
+        doc.setLineWidth(0.3);
+        doc.rect(22, 38, 26, 36, 'S');
+        
+        // Initials as fallback
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.setTextColor(100, 116, 139);
+        const initials = `${profileData.nombre?.[0] || ''}${profileData.apellido1?.[0] || ''}`.toUpperCase();
+        doc.text(initials, 35, 58, { align: 'center' });
+      };
+
+      if (base64PlayerPhoto) {
+        try {
+          const imgSize = await getImageDimensions(base64PlayerPhoto);
+          if (imgSize.width > 0 && imgSize.height > 0) {
+            const containerW = 26;
+            const containerH = 36;
+            const imgAspect = imgSize.width / imgSize.height;
+            const containerAspect = containerW / containerH;
+
+            let drawW = containerW;
+            let drawH = containerH;
+            let drawX = 22;
+            let drawY = 38;
+
+            if (imgAspect > containerAspect) {
+              drawW = containerW;
+              drawH = containerW / imgAspect;
+              drawY = 38 + (containerH - drawH) / 2;
+            } else {
+              drawH = containerH;
+              drawW = containerH * imgAspect;
+              drawX = 22 + (containerW - drawW) / 2;
+            }
+
+            doc.setFillColor(241, 245, 249);
+            doc.rect(22, 38, 26, 36, 'F');
+            doc.addImage(base64PlayerPhoto, 'JPEG', drawX, drawY, drawW, drawH);
+            doc.setDrawColor(203, 213, 225);
+            doc.setLineWidth(0.3);
+            doc.rect(22, 38, 26, 36, 'S');
+          } else {
+            drawPhotoPlaceholder();
+          }
+        } catch (err) {
+          console.error("Failed to add player photo to PDF:", err);
+          drawPhotoPlaceholder();
+        }
+      } else {
+        drawPhotoPlaceholder();
+      }
+
+      // 1.2 Text details
+      const fullname = `${profileData.nombre} ${profileData.apellido1} ${profileData.apellido2 || ''}`.toUpperCase();
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
+      doc.setFontSize(14);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text(`${profileData.nombre} ${profileData.apellido1} ${profileData.apellido2 || ''}`.toUpperCase(), margin + 10, yPos + 10);
+      doc.text(fullname, 52, 41);
 
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+      const positionAndCategory = `${profileData.posicion ? profileData.posicion.toUpperCase() : 'SIN POSICIÓN'} · CATEGORÍA ${(inferredCategory || 'S/D').toUpperCase().replace('_', ' ')}`;
+      doc.text(positionAndCategory, 52, 46);
+
+      // Divider line
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(52, 49, margin + contentWidth - 6, 49);
+
+      // Metadata details grid
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text('CLUB DE ORIGEN:', 52, 55);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(51, 65, 85);
+      let clubNameX = 82;
+      if (base64ClubLogo) {
+        try {
+          const logoSize = await getImageDimensions(base64ClubLogo);
+          let drawW = 5;
+          let drawH = 5;
+          let drawX = 82;
+          let drawY = 51.5;
+
+          if (logoSize.width > 0 && logoSize.height > 0) {
+            const aspect = logoSize.width / logoSize.height;
+            if (aspect > 1) {
+              drawW = 5;
+              drawH = 5 / aspect;
+              drawY = 51.5 + (5 - drawH) / 2;
+            } else {
+              drawH = 5;
+              drawW = 5 * aspect;
+              drawX = 82 + (5 - drawW) / 2;
+            }
+          }
+          doc.addImage(base64ClubLogo, 'PNG', drawX, drawY, drawW, drawH);
+          clubNameX = 82 + drawW + 2;
+        } catch (e) {
+          console.error("Failed to add club logo image to PDF:", e);
+        }
+      }
+      doc.text(profileData.club || 'S/D', clubNameX, 55);
+
+      // Row 2: Birth year / Birthday
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text('CLASE / NACIMIENTO:', 52, 61);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(51, 65, 85);
+      doc.text(String(profileData.anio || 'N/A'), 82, 61);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text('F. NACIMIENTO:', 116, 61);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(51, 65, 85);
+      doc.text(profileData.fecha_nacimiento || 'S/D', 142, 61);
+
+      // Row 3: ID / Profile Leg
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text('ID ÚNICO ATLETA:', 52, 67);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(51, 65, 85);
+      doc.text(String(profileData.player_id), 82, 67);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text('PIERNA HÁBIL:', 116, 67);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(51, 65, 85);
+      doc.text(profileData.perfil_pierna ? profileData.perfil_pierna.toUpperCase() : 'S/D', 142, 67);
+
+      yPos = 87;
+
+      // ==========================================
+      // SECTION 2: CONTROL DE CARGA INTERNO POR MICROCICLO
+      // ==========================================
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10.5);
-      doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
-      doc.text(profileData.posicion ? profileData.posicion.toUpperCase() : 'S/D', margin + 10, yPos + 16);
-
-      // Bio detail grid in Spanish
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139); // slate-500
-
-      // Column 1
-      doc.text('Club de Origen:', margin + 10, yPos + 26);
-      doc.text('Clase (Año de nacimiento):', margin + 10, yPos + 32);
-      doc.text('Categoría Inferida:', margin + 10, yPos + 38);
-      doc.text('ID Único de Atleta:', margin + 10, yPos + 44);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(51, 65, 85); // slate-700
-      doc.text(profileData.club || 'S/D', margin + 55, yPos + 26);
-      doc.text(String(profileData.anio || 'N/A'), margin + 55, yPos + 32);
-      doc.text((inferredCategory || 'S/D').toUpperCase().replace('_', ' '), margin + 55, yPos + 38);
-      doc.text(String(profileData.player_id), margin + 55, yPos + 44);
-
-      // Column 2
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 116, 139); // slate-500
-      doc.text('Fecha de Nacimiento:', margin + 100, yPos + 26);
-      doc.text('Perfil de Pierna (I/D/S/D):', margin + 100, yPos + 32);
-      doc.text('Última Actualización:', margin + 100, yPos + 38);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(51, 65, 85); // slate-700
-      doc.text(profileData.fecha_nacimiento || 'S/D', margin + 142, yPos + 26);
-      doc.text(profileData.perfil_pierna || 'S/D', margin + 142, yPos + 32);
-      doc.text(new Date().toLocaleDateString('es-CL'), margin + 142, yPos + 38);
-
-      yPos += 66;
-
-      // TÍTULO 1: RESUMEN ESTADÍSTICO DE RENDIMIENTO
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO 1: RESUMEN ESTADÍSTICO DE RENDIMIENTO', margin, yPos);
+      doc.text('CONTROL DE CARGA INTERNA (CHECK-IN / CHECK-OUT) - RESUMEN POR MICROCICLO', margin, yPos);
+      
       doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.setLineWidth(0.8);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+      doc.setLineWidth(0.6);
+      doc.line(margin, yPos + 2, margin + contentWidth, yPos + 2);
 
-      yPos += 8;
+      // Group wellness & load metrics by microcycle
+      interface MicrocycleGroup {
+        microNumber: number | string;
+        type: string;
+        startDate: string;
+        endDate: string;
+        checkIns: number[];
+        checkOuts: number[];
+      }
 
-      // Table of consolidated metrics
-      const statsRows = [
-        [
-          { content: 'CONVOCATORIA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.citaciones} Citaciones (Número de Citaciones)`, styles: { fontStyle: 'bold' } }
-        ],
-        [
-          { content: 'HISTORIAL FÍSICO (GPS)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.entrenamientos} Sesiones de entrenamiento`, styles: { fontStyle: 'bold' } }
-        ],
-        [
-          { content: 'COMPETENCIA', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
-          { content: `${stats.partidos} Partidos Jugados`, styles: { fontStyle: 'bold' } }
-        ]
-      ];
+      const groupsMap = new Map<string, MicrocycleGroup>();
 
-      autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        body: statsRows as any,
-        theme: 'grid',
-        styles: {
-          fontSize: 8.5,
-          cellPadding: 4.5,
-          valign: 'middle',
-          textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
-        },
-        columnStyles: {
-          0: { cellWidth: 55 },
-          1: { cellWidth: 127 }
+      // Pre-populate with all official microcycles of the player's category so empty ones are still listed
+      if (allMicros) {
+        allMicros.forEach(mc => {
+          const groupKey = `mc_${mc.micro_number}`;
+          groupsMap.set(groupKey, {
+            microNumber: mc.micro_number,
+            type: mc.type || '',
+            startDate: mc.start_date || '',
+            endDate: mc.end_date || '',
+            checkIns: [],
+            checkOuts: []
+          });
+        });
+      }
+
+      combinedChartData.forEach(item => {
+        const mc = getMicrocycleInfoForDate(item.date);
+        const groupKey = mc ? `mc_${mc.micro_number}` : 'no_mc';
+        
+        let group = groupsMap.get(groupKey);
+        if (!group) {
+          group = {
+            microNumber: mc ? mc.micro_number : 'Otros / Fuera de MC',
+            type: mc ? (mc.type || '') : '',
+            startDate: mc ? mc.start_date : '',
+            endDate: mc ? mc.end_date : '',
+            checkIns: [],
+            checkOuts: []
+          };
+          groupsMap.set(groupKey, group);
+        }
+
+        if (item.checkIn > 0) {
+          group.checkIns.push(item.checkIn);
+        }
+        if (item.checkOutRPE > 0) {
+          group.checkOuts.push(item.checkOutRPE);
         }
       });
 
-      yPos = (doc as any).lastAutoTable.finalY + 12;
+      const groupedRows = Array.from(groupsMap.values())
+        .map(g => {
+          const minCheckIn = g.checkIns.length > 0 ? Math.min(...g.checkIns) : null;
+          const maxCheckIn = g.checkIns.length > 0 ? Math.max(...g.checkIns) : null;
+          const avgCheckIn = g.checkIns.length > 0 ? g.checkIns.reduce((sum, v) => sum + v, 0) / g.checkIns.length : null;
 
-      // TÍTULO 2: HUELLAS Y UMBRALES DE EVALUACIÓN FÍSICA
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO 2: HUELLAS Y UMBRALES DE EVALUACIÓN FÍSICA', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+          const minCheckOut = g.checkOuts.length > 0 ? Math.min(...g.checkOuts) : null;
+          const maxCheckOut = g.checkOuts.length > 0 ? Math.max(...g.checkOuts) : null;
+          const avgCheckOut = g.checkOuts.length > 0 ? g.checkOuts.reduce((sum, v) => sum + v, 0) / g.checkOuts.length : null;
 
-      yPos += 8;
+          return {
+            microNumber: g.microNumber,
+            type: g.type,
+            minCheckIn,
+            avgCheckIn,
+            maxCheckIn,
+            minCheckOut,
+            avgCheckOut,
+            maxCheckOut,
+            sortVal: typeof g.microNumber === 'number' ? g.microNumber : 999999
+          };
+        })
+        .filter(g => g.avgCheckIn !== null || g.avgCheckOut !== null)
+        .sort((a, b) => a.sortVal - b.sortVal);
 
-      // Calculate cohort levels for physical benchmarks
-      const pctAnthro = latestAnthro ? getPDFPercentile(Number(latestAnthro.masa_muscular_pct), globalAntro, 'masa_muscular_pct') : 50;
-      const pctVo2 = latestVo2 ? getPDFPercentile(Number(latestVo2.vo2_max), globalVo2, 'vo2_max') : 50;
-      const pctImtp = latestImtp ? getPDFPercentile(Number(latestImtp.imtp_f_relativa_n_kg), globalImtp, 'imtp_f_relativa_n_kg') : 50;
-      const pctSpeed = latestSpeed ? getPDFPercentile(Number(latestSpeed.tiempo_total), globalSpeed, 'tiempo_total', true) : 50;
+      const tableRows = groupedRows.map(g => {
+        const mcLabel = typeof g.microNumber === 'number' 
+          ? `MICROCICLO ${g.microNumber} ${g.type ? `(${g.type})` : ''}`.trim()
+          : g.microNumber;
+        
+        // Only display the micro name/label, not the dates, per request
+        const displayMC = mcLabel;
 
-      // Draw background card container for the tachometers
-      doc.setFillColor(248, 250, 252);
-      doc.roundedRect(margin, yPos, contentWidth, 44, 4, 4, 'F');
-      doc.setDrawColor(226, 232, 240);
-      doc.setLineWidth(0.4);
-      doc.roundedRect(margin, yPos, contentWidth, 44, 4, 4, 'S');
-
-      // Draw 4 vector tachometers horizontally
-      const gaugeY = yPos + 28;
-      const r = 12.5;
-      
-      drawGauge(margin + 22.75, gaugeY, r, pctAnthro, latestAnthro ? `${latestAnthro.masa_muscular_pct}%` : 'S/D', 'Antropometría (Masa)');
-      drawGauge(margin + 68.25, gaugeY, r, pctVo2, latestVo2 ? `${latestVo2.vo2_max}` : 'S/D', 'Capacidad (VO2 Máx)');
-      drawGauge(margin + 113.75, gaugeY, r, pctImtp, latestImtp ? `${latestImtp.imtp_f_relativa_n_kg}` : 'S/D', 'Fuerza (IMTP Rel.)');
-      drawGauge(margin + 159.25, gaugeY, r, pctSpeed, latestSpeed ? `${latestSpeed.tiempo_total}s` : 'S/D', 'Velocidad (Sprint)');
-
-      drawFooter(1, 6);
-
-      // ==========================================
-      // PAGE 2: CITACIONES Y CONVOCATORIAS
-      // ==========================================
-      doc.addPage();
-      yPos = 38;
-      drawHeader(2, 'Citaciones y Convocatorias');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO: CONVOCATORIAS Y PARTICIPACIÓN DEL ATLETA', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
-
-      yPos += 8;
-
-      const citationRows = citations.map(c => [
-        c.fecha_citacion || 'S/D',
-        c.microcycles ? `Microciclo #${c.microcycles.micro_number} - ${c.microcycles.type || 'S/T'}` : 'S/D',
-        c.microcycles?.category_id ? (REVERSE_CATEGORY_ID_MAP[c.microcycles.category_id] || `CAT ${c.microcycles.category_id}`).toUpperCase().replace('_', ' ') : 'S/D',
-        c.microcycles ? `${c.microcycles.start_date || ''} al ${c.microcycles.end_date || ''}` : 'S/D',
-        c.microcycles?.city || 'S/D',
-        c.observacion || 'Sin observaciones'
-      ]);
+        return [
+          displayMC,
+          g.minCheckIn !== null ? `${g.minCheckIn.toFixed(1)}` : '-',
+          g.avgCheckIn !== null ? `${g.avgCheckIn.toFixed(1)}` : '-',
+          g.maxCheckIn !== null ? `${g.maxCheckIn.toFixed(1)}` : '-',
+          g.minCheckOut !== null ? `${g.minCheckOut.toFixed(1)}` : '-',
+          g.avgCheckOut !== null ? `${g.avgCheckOut.toFixed(1)}` : '-',
+          g.maxCheckOut !== null ? `${g.maxCheckOut.toFixed(1)}` : '-'
+        ];
+      });
 
       autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        head: [['FECHA CITACIÓN', 'MICROCICLO', 'CATEGORÍA', 'PERIODO', 'CIUDAD / SEDE', 'OBSERVACIÓN']],
-        body: citationRows.length > 0 ? citationRows : [['-', 'No se registran convocatorias para este atleta', '-', '-', '-', '-']],
+        startY: yPos + 6,
+        margin: { left: margin, right: margin, bottom: 18 },
+        head: [['MICROCICLO', 'MÍN CHECK-IN\n(1-5)', 'PROM CHECK-IN\n(1-5)', 'MÁX CHECK-IN\n(1-5)', 'MÍN CHECK-OUT\n(1-10)', 'PROM CHECK-OUT\n(1-10)', 'MÁX CHECK-OUT\n(1-10)']],
+        body: tableRows.length > 0 ? tableRows : [['-', '-', 'No se registran datos de carga para este atleta', '-', '-', '-', '-']],
         theme: 'striped',
         headStyles: {
           fillColor: primaryColor,
           textColor: [255, 255, 255],
-          fontSize: 8.5,
-          fontStyle: 'bold'
+          fontSize: 7.0,
+          fontStyle: 'bold',
+          halign: 'center'
         },
         styles: {
           fontSize: 8,
           cellPadding: 4,
           textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
+          lineColor: [226, 232, 240],
+          valign: 'middle'
         },
         columnStyles: {
-          0: { cellWidth: 26 },
-          1: { cellWidth: 38 },
-          2: { cellWidth: 24 },
-          3: { cellWidth: 34 },
-          4: { cellWidth: 24 },
-          5: { cellWidth: 36 }
+          0: { cellWidth: 50, halign: 'left' },
+          1: { cellWidth: 22, halign: 'center' },
+          2: { cellWidth: 22, halign: 'center' },
+          3: { cellWidth: 22, halign: 'center' },
+          4: { cellWidth: 22, halign: 'center' },
+          5: { cellWidth: 22, halign: 'center' },
+          6: { cellWidth: 22, halign: 'center' }
+        },
+        didParseCell: function(data) {
+          if (data.section === 'body') {
+            const colIndex = data.column.index;
+            if (colIndex >= 1 && colIndex <= 6) {
+              const rawVal = data.cell.raw;
+              const cellVal = parseFloat(String(rawVal));
+              if (!isNaN(cellVal)) {
+                let t = 0;
+                if (colIndex >= 1 && colIndex <= 3) {
+                  // Check-in (scale 1 to 5): 1 is Red, 5 is Green
+                  t = Math.max(0, Math.min(1, (5 - cellVal) / 4));
+                } else if (colIndex >= 4 && colIndex <= 6) {
+                  // Check-out (scale 1 to 10): 1 is Green, 10 is Red
+                  t = Math.max(0, Math.min(1, (cellVal - 1) / 9));
+                } else {
+                  return;
+                }
+                
+                // Color scale interpolation (Light Green -> Light Yellow -> Light Red)
+                let r = 255, g = 255, b = 255;
+                if (t <= 0.5) {
+                  const factor = t / 0.5;
+                  r = Math.round(232 + (255 - 232) * factor);
+                  g = Math.round(245 + (249 - 245) * factor);
+                  b = Math.round(233 + (196 - 233) * factor);
+                } else {
+                  const factor = (t - 0.5) / 0.5;
+                  r = Math.round(255 + (255 - 255) * factor);
+                  g = Math.round(249 + (235 - 249) * factor);
+                  b = Math.round(196 + (238 - 196) * factor);
+                }
+                data.cell.styles.fillColor = [r, g, b];
+              }
+            }
+          }
         }
       });
 
-      drawFooter(2, 6);
-
       // ==========================================
-      // PAGE 3: FÍSICA Y DATOS GPS
+      // SECTION 3: VALORES MÁXIMOS DE GPS
       // ==========================================
-      doc.addPage();
-      yPos = 38;
-      drawHeader(3, 'Física y Datos GPS');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO 1: MÁXIMOS HISTÓRICOS Y PUNTAS DE GPS', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
-
-      yPos += 8;
-
-      const maxDist = safeMax(gpsStats.map(g => Number(g.dist_total_m) || 0));
-      const maxVelGPS = safeMax(gpsStats.map(g => Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0));
-      const maxMMin = safeMax(gpsStats.map(g => Number(g.m_por_min) || (Number(g.minutos) > 0 ? (Number(g.dist_total_m) / Number(g.minutos)) : 0)));
+      const maxDistance = safeMax(gpsStats.map(g => Number(g.dist_total_m) || 0));
+      const maxVelocity = safeMax(gpsStats.map(g => Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0));
+      const maxRelative = safeMax(gpsStats.map(g => Number(g.m_por_min) || (Number(g.minutos) > 0 ? (Number(g.dist_total_m) / Number(g.minutos)) : 0)));
       const maxHsr = safeMax(gpsStats.map(g => Number(g.dist_mai_m_20_kmh) || 0));
       const maxSprintDist = safeMax(gpsStats.map(g => Number(g.dist_sprint_m_25_kmh) || 0));
       const maxSprints = safeMax(gpsStats.map(g => Number(g.sprints_n) || 0));
       const maxAccDec = safeMax(gpsStats.map(g => Number(g.acc_decc_ai_n) || 0));
 
-      const gpsMaxRows = [
-        ['Distancia Máxima en Sesión (Metros)', `${maxDist.toLocaleString('es-CL')} m`, 'Velocidad Máxima (Velocidad Punta) (km/h)', `${maxVelGPS.toFixed(1)} km/h`],
-        ['Densidad Máxima (m/min)', `${maxMMin.toFixed(1)} m/min`, 'HSR Máximo (>20 km/h) (Metros)', `${maxHsr.toLocaleString('es-CL')} m`],
-        ['Distancia Sprint Máxima (>25 km/h)', `${maxSprintDist.toLocaleString('es-CL')} m`, 'Cantidad de Sprints en una Sesión', `${maxSprints}`],
-        ['Aceleración/Deceleración de Alta Intensidad (Eventos)', `${maxAccDec}`, 'Estado General del Perfil', 'Perfil Completo']
-      ];
+      let gpsYPos = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 12 : yPos + 100;
+      const boxesHeight = gpsStats.length > 0 ? 44 : 20;
 
-      autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        body: gpsMaxRows,
-        theme: 'grid',
-        styles: {
-          fontSize: 8.5,
-          cellPadding: 4,
-          textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
-        },
-        columnStyles: {
-          0: { fontStyle: 'bold', fillColor: [248, 250, 252], cellWidth: 46 },
-          1: { cellWidth: 45 },
-          2: { fontStyle: 'bold', fillColor: [248, 250, 252], cellWidth: 46 },
-          3: { cellWidth: 45 }
-        }
-      });
-
-      yPos = (doc as any).lastAutoTable.finalY + 10;
-
-      // TÍTULO 2: HISTORIAL DE REGISTROS DE SESIONES GPS with dual parameters
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO 2: HISTORIAL DE REGISTROS DE SESIONES GPS', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
-
-      yPos += 8;
-
-      const last8Gps = [...gpsStats]
-        .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
-        .slice(-8);
-
-      const gpsChartData = last8Gps.map(g => {
-        const dist = Number(g.dist_total_m) || 0;
-        const mins = Number(g.minutos) || 0;
-        const d = Number(g.m_por_min) || (mins > 0 ? dist / mins : 0);
-        const hsr = Number(g.dist_mai_m_20_kmh) || 0;
-        const vmax = Number(g.vel_max_kmh) || Number(g.velocidad_max) || 0;
-        return {
-          fecha: g.fecha,
-          dist_total_m: dist,
-          m_por_min: d,
-          dist_mai_m_20_kmh: hsr,
-          vel_max_kmh: vmax
-        };
-      });
-
-      // Draw two dual line charts stacked
-      drawDualParameterChart(
-        margin, 
-        yPos, 
-        contentWidth, 
-        48, 
-        gpsChartData, 
-        'VOLUMEN Y DENSIDAD HISTÓRICA GPS', 
-        'dist_total_m', 
-        'Dist. Total (m)', 
-        primaryColor, 
-        'm_por_min', 
-        'Densidad (m/min)', 
-        accentColor
-      );
-
-      drawDualParameterChart(
-        margin, 
-        yPos + 53, 
-        contentWidth, 
-        48, 
-        gpsChartData, 
-        'INTENSIDAD Y VELOCIDAD DE SESIONES GPS', 
-        'dist_mai_m_20_kmh', 
-        'HSR (>20 km/h) (m)', 
-        [16, 185, 129], // Emerald
-        'vel_max_kmh', 
-        'Vel. Máxima (km/h)', 
-        [147, 51, 234] // Purple
-      );
-
-      drawFooter(3, 6);
-
-      // ==========================================
-      // PAGE 4: BIENESTAR Y CARGAS
-      // ==========================================
-      doc.addPage();
-      yPos = 38;
-      drawHeader(4, 'Bienestar y Cargas');
-
-      // Group Wellness & Internal Load by Microcycle
-      const mcs = citations
-        .map(c => c.microcycles)
-        .filter(Boolean)
-        .filter((mc, index, self) => self.findIndex(m => m.id === mc.id) === index)
-        .sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''));
-
-      const groupedMicrocycles: any[] = mcs.map(mc => {
-        const wellnessInMc = wellnessData.filter(w => w.date && w.date >= mc.start_date && w.date <= mc.end_date);
-        const wellnessScores = wellnessInMc.map(w => {
-          const s = [w.fatiga, w.sueno, w.dolor, w.estres, w.animo].filter(v => v > 0);
-          return s.length > 0 ? s.reduce((sum, v) => sum + v, 0) / s.length : 0;
-        }).filter(v => v > 0);
-        const avgWellness = wellnessScores.length > 0 ? wellnessScores.reduce((sum, v) => sum + v, 0) / wellnessScores.length : null;
-
-        const loadsInMc = [...trainingData, ...matchData].filter(l => l.session_date && l.session_date >= mc.start_date && l.session_date <= mc.end_date);
-        const rpeScores = loadsInMc.map(l => Number(l.rpe)).filter(v => !isNaN(v) && v > 0);
-        const avgRpe = rpeScores.length > 0 ? rpeScores.reduce((sum, v) => sum + v, 0) / rpeScores.length : null;
-
-        return {
-          label: `MC ${mc.micro_number}`,
-          avgWellness,
-          avgRpe
-        };
-      }).filter(item => item.avgWellness !== null || item.avgRpe !== null).slice(-6); // Last 6 microcycles
-
-      // Fallback if no microcycles found to show beautiful layout
-      if (groupedMicrocycles.length === 0) {
-        const fallbackDates = [...new Set([...wellnessData.map(w => w.date), ...trainingData.map(t => t.session_date)])]
-          .filter(Boolean)
-          .sort()
-          .slice(-6);
-        fallbackDates.forEach((d, idx) => {
-          const wEntries = wellnessData.filter(w => w.date === d);
-          const wScores = wEntries.map(w => {
-            const s = [w.fatiga, w.sueno, w.dolor, w.estres, w.animo].filter(v => v > 0);
-            return s.length > 0 ? s.reduce((sum, v) => sum + v, 0) / s.length : 0;
-          }).filter(v => v > 0);
-          const avgW = wScores.length > 0 ? wScores.reduce((sum, v) => sum + v, 0) / wScores.length : 6.5 + idx * 0.3;
-
-          const lEntries = [...trainingData, ...matchData].filter(l => l.session_date === d);
-          const rScores = lEntries.map(l => Number(l.rpe)).filter(v => !isNaN(v) && v > 0);
-          const avgR = rScores.length > 0 ? rScores.reduce((sum, v) => sum + v, 0) / rScores.length : 5.0 + idx * 0.4;
-
-          groupedMicrocycles.push({
-            label: `MC ${10 + idx}`,
-            avgWellness: avgW,
-            avgRpe: avgR
-          });
-        });
+      // Page budget check: if it goes beyond page height minus margins, push to next page
+      if (gpsYPos + boxesHeight + 10 > pageHeight - 16) {
+        doc.addPage();
+        gpsYPos = 32; // Reset Y position for page 2 (below the top brand banner header)
       }
 
-      // TÍTULO 1: DETALLE DE BIENESTAR DIARIO (CHECK-IN) por microciclo
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
+      doc.setFontSize(10.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO 1: DETALLE DE BIENESTAR DIARIO (CHECK-IN) POR MICROCICLO', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+      doc.text('VALORES MÁXIMOS DE GPS (CARGA EXTERNA HISTÓRICA)', margin, gpsYPos);
+      
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(0.6);
+      doc.line(margin, gpsYPos + 2, margin + contentWidth, gpsYPos + 2);
 
-      yPos += 8;
+      if (gpsStats.length > 0) {
+        // Render 7 metrics in beautiful vector boxes
+        const gpsCards = [
+          {
+            label: 'DISTANCIA TOTAL',
+            value: maxDistance > 0 ? maxDistance.toLocaleString('es-cl', { maximumFractionDigits: 0 }) : '-',
+            unit: 'm',
+            accentColor: [16, 185, 129] // Emerald
+          },
+          {
+            label: 'VELOCIDAD MÁXIMA',
+            value: maxVelocity > 0 ? maxVelocity.toFixed(1) : '-',
+            unit: 'km/h',
+            accentColor: [244, 63, 94] // Rose
+          },
+          {
+            label: 'DISTANCIA RELATIVA',
+            value: maxRelative > 0 ? maxRelative.toFixed(1) : '-',
+            unit: 'm/min',
+            accentColor: [59, 130, 246] // Blue
+          },
+          {
+            label: 'HSR (>20 KM/H)',
+            value: maxHsr > 0 ? maxHsr.toLocaleString('es-cl', { maximumFractionDigits: 0 }) : '-',
+            unit: 'm',
+            accentColor: [245, 158, 11] // Amber
+          },
+          {
+            label: 'DIST. SPRINT (>25)',
+            value: maxSprintDist > 0 ? maxSprintDist.toLocaleString('es-cl', { maximumFractionDigits: 0 }) : '-',
+            unit: 'm',
+            accentColor: [139, 92, 246] // Violet
+          },
+          {
+            label: 'SPRINTS',
+            value: maxSprints > 0 ? String(maxSprints) : '-',
+            unit: 'n',
+            accentColor: [217, 70, 239] // Fuchsia
+          },
+          {
+            label: 'ACC / DEC (A/D)',
+            value: maxAccDec > 0 ? String(maxAccDec) : '-',
+            unit: 'n',
+            accentColor: [14, 165, 233] // Sky
+          }
+        ];
 
-      // Draw single line chart for Wellness (Check-In)
-      const drawSingleLineChart = (
-        x: number, 
-        y: number, 
-        w: number, 
-        h: number, 
-        dataList: any[], 
-        title: string, 
-        key: string, 
-        label: string, 
-        color: [number, number, number],
-        rangeMax = 10
-      ) => {
-        doc.setFillColor(248, 250, 252);
-        doc.roundedRect(x, y, w, h, 3, 3, 'F');
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(0.3);
-        doc.roundedRect(x, y, w, h, 3, 3, 'S');
+        const boxW = 42.5;
+        const boxH = 18;
+        const gap = 4;
+        const row1Y = gpsYPos + 6;
+        const row2Y = gpsYPos + 6 + boxH + gap;
 
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.setTextColor(51, 65, 85);
-        doc.text(title, x + 6, y + 6);
-
-        doc.setFillColor(color[0], color[1], color[2]);
-        doc.circle(x + w - 35, y + 5, 1.2, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
-        doc.setTextColor(color[0], color[1], color[2]);
-        doc.text(label.toUpperCase(), x + w - 32, y + 5.8);
-
-        const px = x + 10;
-        const py = y + 10;
-        const pw = w - 16;
-        const ph = h - 17;
-
-        if (dataList.length === 0) {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(148, 163, 184);
-          doc.text('No hay registros disponibles', x + w/2, y + h/2, { align: 'center' });
-          return;
-        }
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.5);
-        doc.setTextColor(148, 163, 184);
-        for (let i = 0; i <= 5; i++) {
-          const ratio = i / 5;
-          const gy = py + ph - ratio * ph;
+        // Row 1: 4 cards
+        for (let i = 0; i < 4; i++) {
+          const card = gpsCards[i];
+          const x = margin + i * (boxW + gap);
+          
+          doc.setFillColor(248, 250, 252);
+          doc.roundedRect(x, row1Y, boxW, boxH, 2, 2, 'F');
           
           doc.setDrawColor(226, 232, 240);
-          doc.setLineWidth(0.15);
-          doc.line(px, gy, px + pw, gy);
-
-          doc.text((ratio * rangeMax).toFixed(0), px - 2, gy + 1, { align: 'right' });
-        }
-
-        const pts: {x: number, y: number, val: number}[] = [];
-        const stepX = pw / (dataList.length - 1 || 1);
-
-        dataList.forEach((item, idx) => {
-          const cx = px + idx * stepX;
-          const val = Number(item[key]) || 0;
-          const cy = py + ph - (val / rangeMax) * ph;
-
-          if (val > 0) {
-            pts.push({ x: cx, y: cy, val: val });
-          }
-
+          doc.setLineWidth(0.35);
+          doc.roundedRect(x, row1Y, boxW, boxH, 2, 2, 'S');
+          
+          doc.setFillColor(card.accentColor[0], card.accentColor[1], card.accentColor[2]);
+          doc.rect(x, row1Y + 1.5, 2.5, boxH - 3, 'F');
+          
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(5.5);
+          doc.setFontSize(6.0);
           doc.setTextColor(100, 116, 139);
-          doc.text(item.label, cx, py + ph + 4.5, { align: 'center' });
-        });
-
-        if (pts.length > 1) {
-          doc.setDrawColor(color[0], color[1], color[2]);
-          doc.setLineWidth(0.8);
-          for (let i = 0; i < pts.length - 1; i++) {
-            doc.line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y);
-          }
-        }
-        pts.forEach(pt => {
-          doc.setFillColor(255, 255, 255);
-          doc.setDrawColor(color[0], color[1], color[2]);
-          doc.setLineWidth(0.8);
-          doc.circle(pt.x, pt.y, 1.6, 'FD');
-
+          doc.text(card.label, x + 5, row1Y + 5.5);
+          
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(5);
-          doc.setTextColor(color[0], color[1], color[2]);
-          doc.text(pt.val.toFixed(1), pt.x, pt.y - 2.5, { align: 'center' });
-        });
-      };
+          doc.setFontSize(10.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text(card.value, x + 5, row1Y + 12.5);
+          
+          const valW = doc.getTextWidth(card.value);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.0);
+          doc.setTextColor(148, 163, 184);
+          doc.text(card.unit, x + 5 + valW + 1.5, row1Y + 12.5);
+        }
 
-      drawSingleLineChart(
-        margin, 
-        yPos, 
-        contentWidth, 
-        44, 
-        groupedMicrocycles, 
-        'CONTROL PROMEDIO DE BIENESTAR DIARIO POR MICROCICLO', 
-        'avgWellness', 
-        'Bienestar (1-10)', 
-        primaryColor,
-        10
-      );
-
-      // Wellness summary table underneath
-      yPos += 48;
-      const wellnessMicroTable = groupedMicrocycles.map(gm => [
-        gm.label,
-        gm.avgWellness ? `${gm.avgWellness.toFixed(1)} / 10` : 'S/D',
-        gm.avgWellness >= 7 ? 'EXCELENTE / SALUDABLE' : (gm.avgWellness >= 5 ? 'PROMEDIO' : 'ALERTA / CUIDADO')
-      ]);
-
-      autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        head: [['MICROCICLO', 'PROM. BIENESTAR', 'ESTADO DE CONTROL']],
-        body: wellnessMicroTable,
-        theme: 'striped',
-        headStyles: { fillColor: primaryColor, fontSize: 8, fontStyle: 'bold' },
-        styles: { fontSize: 7.5, cellPadding: 3, lineColor: [226, 232, 240] }
-      });
-
-      yPos = (doc as any).lastAutoTable.finalY + 10;
-
-      // TÍTULO 2: DETALLE DE ESFUERZO PERCIBIDO (CHECK-OUT) por microciclo
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO 2: DETALLE DE ESFUERZO PERCIBIDO (CHECK-OUT) POR MICROCICLO', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
-
-      yPos += 8;
-
-      drawSingleLineChart(
-        margin, 
-        yPos, 
-        contentWidth, 
-        44, 
-        groupedMicrocycles, 
-        'CONTROL PROMEDIO DE ESFUERZO PERCIBIDO POR MICROCICLO', 
-        'avgRpe', 
-        'RPE Promedio (1-10)', 
-        accentColor,
-        10
-      );
-
-      // Esfuerzo summary table underneath
-      yPos += 48;
-      const loadMicroTable = groupedMicrocycles.map(gm => [
-        gm.label,
-        gm.avgRpe ? `${gm.avgRpe.toFixed(1)} / 10` : 'S/D',
-        gm.avgRpe >= 7 ? 'ALTA INTENSIDAD' : (gm.avgRpe >= 4 ? 'MODERADA' : 'RECUPERACIÓN')
-      ]);
-
-      autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        head: [['MICROCICLO', 'PROM. ESFUERZO (RPE)', 'ESTADO DE CARGA']],
-        body: loadMicroTable,
-        theme: 'striped',
-        headStyles: { fillColor: accentColor, fontSize: 8, fontStyle: 'bold' },
-        styles: { fontSize: 7.5, cellPadding: 3, lineColor: [226, 232, 240] }
-      });
-
-      drawFooter(4, 6);
+        // Row 2: 3 cards centered
+        const groupWidth = 3 * boxW + 2 * gap;
+        const startRow2X = margin + (contentWidth - groupWidth) / 2;
+        
+        for (let i = 0; i < 3; i++) {
+          const card = gpsCards[4 + i];
+          const x = startRow2X + i * (boxW + gap);
+          
+          doc.setFillColor(248, 250, 252);
+          doc.roundedRect(x, row2Y, boxW, boxH, 2, 2, 'F');
+          
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.35);
+          doc.roundedRect(x, row2Y, boxW, boxH, 2, 2, 'S');
+          
+          doc.setFillColor(card.accentColor[0], card.accentColor[1], card.accentColor[2]);
+          doc.rect(x, row2Y + 1.5, 2.5, boxH - 3, 'F');
+          
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.0);
+          doc.setTextColor(100, 116, 139);
+          doc.text(card.label, x + 5, row2Y + 5.5);
+          
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text(card.value, x + 5, row2Y + 12.5);
+          
+          const valW = doc.getTextWidth(card.value);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.0);
+          doc.setTextColor(148, 163, 184);
+          doc.text(card.unit, x + 5 + valW + 1.5, row2Y + 12.5);
+        }
+        
+        (doc as any).lastAutoTable = { finalY: row2Y + boxH };
+      } else {
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(margin, gpsYPos + 6, contentWidth, 16, 2, 2, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.35);
+        doc.roundedRect(margin, gpsYPos + 6, contentWidth, 16, 2, 2, 'S');
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text('No se registran datos de GPS para este atleta', margin + contentWidth / 2, gpsYPos + 15, { align: 'center' });
+        
+        (doc as any).lastAutoTable = { finalY: gpsYPos + 22 };
+      }
 
       // ==========================================
-      // PAGE 5: PARTIDOS Y MINUTOS
+      // SECTION 4: PARTIDOS INTERNACIONALES (GPS)
       // ==========================================
-      doc.addPage();
-      yPos = 38;
-      drawHeader(5, 'Partidos y Minutos');
+      const internationalGpsMatches = categoryMatches
+        .map(match => {
+          const gpsRecord = gpsStats.find(g => g.fecha === match.date);
+          const compType = (match.competition_type || '').toLowerCase();
+          const isInternational = compType.includes('internacional') || compType.includes('mundial') || compType.includes('sudamericano');
+          
+          const isCitedForThisMicrocycle = match.microcycle_id 
+            ? (citations || []).some((cit: any) => cit.microcycles?.id === match.microcycle_id)
+            : false;
+
+          const isCitedForThisCategoryOnDate = (citations || []).some((cit: any) => {
+            const mc = cit.microcycles;
+            if (!mc) return false;
+            if (Number(mc.category_id) !== Number(match.category_id)) return false;
+            if (mc.start_date && mc.end_date) {
+              return match.date >= mc.start_date && match.date <= mc.end_date;
+            }
+            return cit.fecha_citacion === match.date;
+          });
+
+          const belongsToThisCategory = isCitedForThisMicrocycle || isCitedForThisCategoryOnDate;
+
+          return {
+            match,
+            gpsRecord,
+            isInternational,
+            belongsToThisCategory
+          };
+        })
+        .filter(item => item.isInternational && item.gpsRecord && item.belongsToThisCategory)
+        .sort((a, b) => a.match.date.localeCompare(b.match.date));
+
+      let intMatchesYPos = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 12 : yPos + 150;
+      const tableHeightEstimate = 10 + (internationalGpsMatches.length > 0 ? (internationalGpsMatches.length * 10) + 12 : 20);
+
+      if (intMatchesYPos + tableHeightEstimate > pageHeight - 16) {
+        doc.addPage();
+        intMatchesYPos = 32; // Reset Y position for new page (below top header banner)
+      }
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
+      doc.setFontSize(10.5);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO: PARTIDOS JUGADOS Y MINUTOS DE COMPETENCIA', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+      doc.text('PARTIDOS INTERNACIONALES', margin, intMatchesYPos);
+      
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(0.6);
+      doc.line(margin, intMatchesYPos + 2, margin + contentWidth, intMatchesYPos + 2);
 
-      yPos += 8;
-
-      const competitorRows = matchReports.slice(0, 15).map(mr => {
-        const rival = mr.rival || 'Rival no especificado';
-        const matchTitle = mr.categoria_rival ? `${rival} (${mr.categoria_rival})` : rival;
+      const intTableRows = internationalGpsMatches.map(item => {
+        const rival = `VS. ${item.match.opponent || 'S/D'}`;
+        const fecha = formatDateSpanish(item.match.date);
+        const comp = item.match.competition_type || 'S/D';
+        const mins = item.gpsRecord ? `${Number(item.gpsRecord.minutos || item.gpsRecord.duration_mins || 0).toFixed(0)}'` : '-';
+        const dist = item.gpsRecord ? `${(Number(item.gpsRecord.dist_total_m) || 0).toLocaleString('es-cl', { maximumFractionDigits: 0 })} m` : '-';
+        const velMax = item.gpsRecord ? `${(Number(item.gpsRecord.vel_max_kmh) || Number(item.gpsRecord.velocidad_max) || 0).toFixed(1)} km/h` : '-';
+        const hsr = item.gpsRecord ? `${(Number(item.gpsRecord.dist_mai_m_20_kmh) || 0).toLocaleString('es-cl', { maximumFractionDigits: 0 })} m` : '-';
+        const sprint = item.gpsRecord ? `${(Number(item.gpsRecord.dist_sprint_m_25_kmh) || 0).toLocaleString('es-cl', { maximumFractionDigits: 0 })} m` : '-';
+        const sprintsN = item.gpsRecord ? `${Number(item.gpsRecord.sprints_n || 0).toFixed(0)}` : '-';
+        const rel = item.gpsRecord ? `${(Number(item.gpsRecord.m_por_min) || (Number(item.gpsRecord.minutos) > 0 ? (Number(item.gpsRecord.dist_total_m) / Number(item.gpsRecord.minutos)) : 0)).toFixed(1)}` : '-';
+        
         return [
-          mr.fecha || mr.date || 'S/D',
-          matchTitle,
-          mr.minutos_jugados !== undefined ? `${mr.minutos_jugados} min` : 'S/D',
-          mr.titular === true ? 'TITULAR' : (mr.titular === false ? 'SUPLENTE' : 'S/D'),
-          mr.goles !== undefined ? String(mr.goles) : '0',
-          mr.asistencias !== undefined ? String(mr.asistencias) : '0',
-          mr.calificacion_rendimiento ? `${mr.calificacion_rendimiento}/10` : '-'
+          rival,
+          fecha,
+          comp,
+          mins,
+          dist,
+          velMax,
+          rel,
+          hsr,
+          sprint,
+          sprintsN
         ];
       });
 
       autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        head: [['FECHA', 'PARTIDO / ENCUENTRO', 'MINS JUGADOS', 'ESTADO', 'GOLES', 'ASISTENCIAS', 'NOTA']],
-        body: competitorRows.length > 0 ? competitorRows : [['-', 'No se registran informes de partido para este jugador', '-', '-', '-', '-', '-']],
+        startY: intMatchesYPos + 6,
+        margin: { left: margin, right: margin, bottom: 18 },
+        head: [['PARTIDO / RIVAL', 'FECHA', 'COMPETICIÓN', 'MIN', 'DISTANCIA', 'VEL MÁX', 'M/MIN', 'HSR (>20)', 'SPRINT (>25)', 'SPRINTS']],
+        body: intTableRows.length > 0 ? intTableRows : [['-', '-', 'No se registran partidos internacionales disputados con datos de GPS', '-', '-', '-', '-', '-', '-', '-']],
         theme: 'striped',
         headStyles: {
           fillColor: primaryColor,
           textColor: [255, 255, 255],
-          fontSize: 8.5,
-          fontStyle: 'bold'
+          fontSize: 6.5,
+          fontStyle: 'bold',
+          halign: 'center',
+          valign: 'middle'
         },
         styles: {
-          fontSize: 8,
-          cellPadding: 4,
+          fontSize: 7.5,
+          cellPadding: 3.5,
           textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
+          lineColor: [226, 232, 240],
+          valign: 'middle'
         },
         columnStyles: {
-          0: { cellWidth: 24 },
-          1: { cellWidth: 55 },
-          2: { cellWidth: 26 },
-          3: { cellWidth: 24 },
-          4: { cellWidth: 16 },
-          5: { cellWidth: 22 },
-          6: { cellWidth: 15 }
+          0: { cellWidth: 32, halign: 'left' },
+          1: { cellWidth: 16, halign: 'center' },
+          2: { cellWidth: 26, halign: 'left' },
+          3: { cellWidth: 12, halign: 'center' },
+          4: { cellWidth: 18, halign: 'center' },
+          5: { cellWidth: 18, halign: 'center' },
+          6: { cellWidth: 14, halign: 'center' },
+          7: { cellWidth: 16, halign: 'center' },
+          8: { cellWidth: 18, halign: 'center' },
+          9: { cellWidth: 12, halign: 'center' }
         }
       });
 
-      drawFooter(5, 6);
+      (doc as any).lastAutoTable = { finalY: (doc as any).lastAutoTable?.finalY || intMatchesYPos + 20 };
 
       // ==========================================
-      // PAGE 6: HISTORIAL MÉDICO Y LESIONES
+      // SECTION 5: HUELLA DEL ATLETA - EVALUACIÓN IMTP
       // ==========================================
       doc.addPage();
-      yPos = 38;
-      drawHeader(6, 'Historial Médico y Lesiones');
+      const imtpYPos = 32;
+
+      // Header of section
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text('EVALUACIÓN DE FUERZA MÁXIMA - IMTP', margin, imtpYPos);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text('VALORES PICO E ÍNDICES DE FUERZA ISOMÉTRICA Y ASIMETRÍA LATERAL', margin, imtpYPos + 4);
+
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(0.6);
+      doc.line(margin, imtpYPos + 6, margin + contentWidth, imtpYPos + 6);
+
+      // Fetch global reference data if not loaded yet so IMTP section has cohort comparison values
+      let activeAllImtp = globalImtp;
+      let activeAllPlayers = players;
+      if (!globalDataLoaded) {
+        try {
+          console.log("Loading global reference data inside PDF generation...");
+          const [imtpRes, cmjRes, pRes] = await Promise.all([
+            supabase.from('evaluaciones_imtp').select('*'),
+            supabase.from('evaluaciones_cmj').select('*'),
+            supabase.from('players').select('player_id, nombre, apellido1, apellido2, anio, id_club, posicion, fecha_nacimiento')
+          ]);
+          
+          const mergedMap = new Map<string, any>();
+          (imtpRes.data || []).forEach((item: any) => {
+            const newItem = { ...item };
+            
+            // Force Abs fallbacks
+            const fAbs = item['Peak Vertical Force [N]'] ?? item['Peak Vertical Force (N)'] ?? item.imtp_fuerza_n;
+            if (fAbs !== undefined && fAbs !== null) {
+              newItem.imtp_fuerza_n = Number(fAbs);
+              newItem['Peak Vertical Force [N]'] = Number(fAbs);
+            }
+
+            // Force Rel fallbacks
+            const fRel = item['Peak Vertical Force / BM'] ?? item['Peak Vertical Force / BM [N/kg]'] ?? item.imtp_f_relativa_n_kg;
+            if (fRel !== undefined && fRel !== null) {
+              newItem.imtp_f_relativa_n_kg = Number(fRel);
+              newItem['Peak Vertical Force / BM [N/kg]'] = Number(fRel);
+            }
+
+            // Force Net 50ms fallbacks
+            const fNet50 = item['Force (Net of BW) at 50ms [N]'] ?? item['Force (Net of BW) at 50ms'] ?? item.imtp_force_50ms;
+            if (fNet50 !== undefined && fNet50 !== null) {
+              newItem.imtp_force_50ms = Number(fNet50);
+              newItem['Force (Net of BW) at 50ms [N]'] = Number(fNet50);
+            }
+
+            // RFD 100ms fallbacks
+            const rfd100 = item['RFD - 100ms [N/s]'] ?? item['RFD - 100ms'] ?? item.imtp_rfd_100ms;
+            if (rfd100 !== undefined && rfd100 !== null) {
+              newItem.imtp_rfd_100ms = Number(rfd100);
+              newItem['RFD - 100ms [N/s]'] = Number(rfd100);
+            }
+
+            const key = `${item.player_id}_${item.fecha_test}`;
+            mergedMap.set(key, newItem);
+          });
+
+          (cmjRes.data || []).forEach((item: any) => {
+            const newItem = { ...item };
+            if (newItem.concentric_peak_force_n !== undefined && newItem.concentric_peak_force_n !== null) {
+              newItem.fuerza_cmj = Number(newItem.concentric_peak_force_n);
+            } else if (newItem.fuerza_cmj !== undefined && newItem.fuerza_cmj !== null) {
+              newItem.concentric_peak_force_n = Number(newItem.fuerza_cmj);
+            }
+            if (newItem.rsi_modified_m_s !== undefined && newItem.rsi_modified_m_s !== null) {
+              newItem.cmj_rsi_mod = Number(newItem.rsi_modified_m_s);
+            } else if (newItem.cmj_rsi_mod !== undefined && newItem.cmj_rsi_mod !== null) {
+              newItem.rsi_modified_m_s = Number(newItem.cmj_rsi_mod);
+            }
+            if (newItem.jump_height_impmom_cm !== undefined && newItem.jump_height_impmom_cm !== null) {
+              newItem.cmj_altura_salto_im = Number(newItem.jump_height_impmom_cm);
+            } else if (newItem.cmj_altura_salto_im !== undefined && newItem.cmj_altura_salto_im !== null) {
+              newItem.jump_height_impmom_cm = Number(newItem.cmj_altura_salto_im);
+            }
+            if (newItem.peak_power_bm_w_kg !== undefined && newItem.peak_power_bm_w_kg !== null) {
+              newItem.cmj_peak_pot_relativa = Number(newItem.peak_power_bm_w_kg);
+            } else if (newItem.cmj_peak_pot_relativa !== undefined && newItem.cmj_peak_pot_relativa !== null) {
+              newItem.peak_power_bm_w_kg = Number(newItem.cmj_peak_pot_relativa);
+            }
+
+            const key = `${item.player_id}_${item.fecha_test}`;
+            const existing = mergedMap.get(key);
+            if (existing) {
+              mergedMap.set(key, { ...existing, ...newItem });
+            } else {
+              mergedMap.set(key, newItem);
+            }
+          });
+
+          activeAllImtp = Array.from(mergedMap.values());
+          if (pRes.data) {
+            activeAllPlayers = pRes.data;
+          }
+        } catch (e) {
+          console.error("Error loading global data for PDF:", e);
+        }
+      }
+
+      // Map activeAllImtp to always ensure they have normalized keys (imtp_fuerza_n, etc.)
+      activeAllImtp = activeAllImtp.map((item: any) => {
+        const newItem = { ...item };
+        
+        // Force Abs fallbacks
+        const fAbs = item['Peak Vertical Force [N]'] ?? item['Peak Vertical Force (N)'] ?? item.imtp_fuerza_n;
+        if (fAbs !== undefined && fAbs !== null) {
+          newItem.imtp_fuerza_n = Number(fAbs);
+          newItem['Peak Vertical Force [N]'] = Number(fAbs);
+        }
+
+        // Force Rel fallbacks
+        const fRel = item['Peak Vertical Force / BM'] ?? item['Peak Vertical Force / BM [N/kg]'] ?? item.imtp_f_relativa_n_kg;
+        if (fRel !== undefined && fRel !== null) {
+          newItem.imtp_f_relativa_n_kg = Number(fRel);
+          newItem['Peak Vertical Force / BM [N/kg]'] = Number(fRel);
+        }
+
+        // Force Net 50ms fallbacks
+        const fNet50 = item['Force (Net of BW) at 50ms [N]'] ?? item['Force (Net of BW) at 50ms'] ?? item.imtp_force_50ms;
+        if (fNet50 !== undefined && fNet50 !== null) {
+          newItem.imtp_force_50ms = Number(fNet50);
+          newItem['Force (Net of BW) at 50ms [N]'] = Number(fNet50);
+        }
+
+        // RFD 100ms fallbacks
+        const rfd100 = item['RFD - 100ms [N/s]'] ?? item['RFD - 100ms'] ?? item.imtp_rfd_100ms;
+        if (rfd100 !== undefined && rfd100 !== null) {
+          newItem.imtp_rfd_100ms = Number(rfd100);
+          newItem['RFD - 100ms [N/s]'] = Number(rfd100);
+        }
+
+        // CMJ keys
+        if (item.concentric_peak_force_n !== undefined && item.concentric_peak_force_n !== null) {
+          newItem.fuerza_cmj = Number(item.concentric_peak_force_n);
+        } else if (item.fuerza_cmj !== undefined && item.fuerza_cmj !== null) {
+          newItem.concentric_peak_force_n = Number(item.fuerza_cmj);
+        }
+        if (item.rsi_modified_m_s !== undefined && item.rsi_modified_m_s !== null) {
+          newItem.cmj_rsi_mod = Number(item.rsi_modified_m_s);
+        } else if (item.cmj_rsi_mod !== undefined && item.cmj_rsi_mod !== null) {
+          newItem.rsi_modified_m_s = Number(item.cmj_rsi_mod);
+        }
+        if (item.jump_height_impmom_cm !== undefined && item.jump_height_impmom_cm !== null) {
+          newItem.cmj_altura_salto_im = Number(item.jump_height_impmom_cm);
+        } else if (item.cmj_altura_salto_im !== undefined && item.cmj_altura_salto_im !== null) {
+          newItem.jump_height_impmom_cm = Number(item.cmj_altura_salto_im);
+        }
+        if (item.peak_power_bm_w_kg !== undefined && item.peak_power_bm_w_kg !== null) {
+          newItem.cmj_peak_pot_relativa = Number(item.peak_power_bm_w_kg);
+        } else if (item.cmj_peak_pot_relativa !== undefined && item.cmj_peak_pot_relativa !== null) {
+          newItem.peak_power_bm_w_kg = Number(item.cmj_peak_pot_relativa);
+        }
+
+        return newItem;
+      });
+
+      const parseYearFromDate = (dateStr: string | null | undefined): number => {
+        if (!dateStr) return NaN;
+        const str = String(dateStr).trim();
+        if (str.includes('/')) {
+          const parts = str.split('/');
+          if (parts.length === 3) {
+            const yr = Number(parts[2]);
+            if (!isNaN(yr) && yr > 1900) return yr;
+            const yrFirst = Number(parts[0]);
+            if (!isNaN(yrFirst) && yrFirst > 1900) return yrFirst;
+          }
+        }
+        if (str.includes('-')) {
+          const parts = str.split('-');
+          if (parts.length === 3) {
+            const yr = Number(parts[0]);
+            if (!isNaN(yr) && yr > 1900) return yr;
+            const yrLast = Number(parts[2]);
+            if (!isNaN(yrLast) && yrLast > 1900) return yrLast;
+          }
+        }
+        const parsed = new Date(str).getFullYear();
+        return isNaN(parsed) ? NaN : parsed;
+      };
+
+      const playerYearRaw = profileData ? (profileData.anio ? Number(profileData.anio) : parseYearFromDate(profileData.fecha_nacimiento)) : NaN;
+      const playerYear = isNaN(playerYearRaw) ? null : playerYearRaw;
+
+      const activeComparisonPlayerIds = playerYear 
+        ? activeAllPlayers.filter((p: any) => {
+            const pYear = p.anio ? Number(p.anio) : parseYearFromDate(p.fecha_nacimiento);
+            return pYear === playerYear;
+          }).map((p: any) => p.player_id)
+        : [];
+
+      const resolveMetricValue = (row: any, key: string): any => {
+        if (!row) return undefined;
+        let val = row[key];
+        if (val === undefined || val === null || val === '') {
+          if (key === 'imtp_fuerza_n') val = row['Peak Vertical Force [N]'];
+          if (key === 'imtp_f_relativa_n_kg') val = row['Peak Vertical Force / BM'] || row['Peak Vertical Force / BM [N/kg]'];
+          if (key === 'imtp_force_50ms') val = row['Force (Net of BW) at 50ms'] || row['Force (Net of BW) at 50ms [N]'];
+          if (key === 'imtp_rfd_100ms') val = row['RFD - 100ms [N/s]'];
+        }
+        return val;
+      };
+
+      const getAvg = (data: any[], key: string) => {
+        let values = data
+          .filter(d => activeComparisonPlayerIds.includes(d.player_id) && resolveMetricValue(d, key) != null && !isNaN(Number(resolveMetricValue(d, key))))
+          .map(d => Number(resolveMetricValue(d, key)));
+
+        if (values.length === 0) {
+          values = data
+            .filter(d => resolveMetricValue(d, key) != null && !isNaN(Number(resolveMetricValue(d, key))))
+            .map(d => Number(resolveMetricValue(d, key)));
+        }
+
+        if (values.length === 0) return 0;
+        const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
+        return isNaN(avg) ? 0 : avg;
+      };
+
+      const calculatePercentile = (playerValue: number, data: any[], key: string, lowerIsBetter: boolean = false) => {
+        if (isNaN(playerValue) || playerValue <= 0) return undefined;
+
+        let playerBestValues = activeComparisonPlayerIds.map(pId => {
+          const pRows = data.filter(d => d.player_id === pId && resolveMetricValue(d, key) != null && !isNaN(Number(resolveMetricValue(d, key))));
+          if (pRows.length === 0) return null;
+          const numericVals = pRows.map(r => Number(resolveMetricValue(r, key))).filter(v => v > 0);
+          if (numericVals.length === 0) return null;
+          return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+        }).filter((v): v is number => v !== null);
+
+        if (playerBestValues.length <= 1) {
+          const allPlayerIds = activeAllPlayers.map((p: any) => p.player_id);
+          playerBestValues = allPlayerIds.map(pId => {
+            const pRows = data.filter(d => d.player_id === pId && resolveMetricValue(d, key) != null && !isNaN(Number(resolveMetricValue(d, key))));
+            if (pRows.length === 0) return null;
+            const numericVals = pRows.map(r => Number(resolveMetricValue(r, key))).filter(v => v > 0);
+            if (numericVals.length === 0) return null;
+            return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+          }).filter((v): v is number => v !== null);
+        }
+
+        if (playerBestValues.length === 0) return undefined;
+        if (playerBestValues.length === 1) return 50;
+
+        let countWorse = 0;
+        let countEqual = 0;
+
+        playerBestValues.forEach(val => {
+          if (lowerIsBetter) {
+            if (val > playerValue) countWorse++;
+            else if (val === playerValue) countEqual++;
+          } else {
+            if (val < playerValue) countWorse++;
+            else if (val === playerValue) countEqual++;
+          }
+        });
+
+        const rank = countWorse + (countEqual - 1) * 0.5;
+        const pct = (rank / (playerBestValues.length - 1)) * 100;
+        return Math.min(99, Math.max(1, Math.round(pct)));
+      };
+
+      const getCohortBest = (data: any[], key: string, lowerIsBetter: boolean = false) => {
+        let playerBestValues = activeComparisonPlayerIds.map(pId => {
+          const pRows = data.filter(d => d.player_id === pId && resolveMetricValue(d, key) != null && !isNaN(Number(resolveMetricValue(d, key))));
+          if (pRows.length === 0) return null;
+          const numericVals = pRows.map(r => Number(resolveMetricValue(r, key))).filter(v => v > 0);
+          if (numericVals.length === 0) return null;
+          return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+        }).filter((v): v is number => v !== null);
+
+        if (playerBestValues.length <= 1) {
+          const allPlayerIds = activeAllPlayers.map((p: any) => p.player_id);
+          playerBestValues = allPlayerIds.map(pId => {
+            const pRows = data.filter(d => d.player_id === pId && resolveMetricValue(d, key) != null && !isNaN(Number(resolveMetricValue(d, key))));
+            if (pRows.length === 0) return null;
+            const numericVals = pRows.map(r => Number(resolveMetricValue(r, key))).filter(v => v > 0);
+            if (numericVals.length === 0) return null;
+            return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+          }).filter((v): v is number => v !== null);
+        }
+
+        if (playerBestValues.length === 0) return 0;
+        return lowerIsBetter ? Math.min(...playerBestValues) : Math.max(...playerBestValues);
+      };
+
+      const calculateCohortSD = (list: any[], key: string): number => {
+        if (!list || list.length === 0) return 0;
+        const values = list
+          .map(d => Number(resolveMetricValue(d, key)))
+          .filter(v => !isNaN(v) && v > 0);
+        if (values.length <= 1) return 0;
+        const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+        const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (values.length - 1);
+        return Math.sqrt(variance);
+      };
+
+      const checkOutlier = (playerValue: number, data: any[], key: string, lowerIsBetter: boolean = false) => {
+        if (isNaN(playerValue) || playerValue <= 0) return undefined;
+
+        let playerBestValues = activeComparisonPlayerIds.map(pId => {
+          const pRows = data.filter(d => d.player_id === pId && resolveMetricValue(d, key) != null && !isNaN(Number(resolveMetricValue(d, key))));
+          if (pRows.length === 0) return null;
+          const numericVals = pRows.map(r => Number(resolveMetricValue(r, key))).filter(v => v > 0);
+          if (numericVals.length === 0) return null;
+          return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+        }).filter((v): v is number => v !== null);
+
+        if (playerBestValues.length < 4) {
+          const allPlayerIds = activeAllPlayers.map((p: any) => p.player_id);
+          playerBestValues = allPlayerIds.map(pId => {
+            const pRows = data.filter(d => d.player_id === pId && resolveMetricValue(d, key) != null && !isNaN(Number(resolveMetricValue(d, key))));
+            if (pRows.length === 0) return null;
+            const numericVals = pRows.map(r => Number(resolveMetricValue(r, key))).filter(v => v > 0);
+            if (numericVals.length === 0) return null;
+            return lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+          }).filter((v): v is number => v !== null);
+        }
+
+        if (playerBestValues.length < 4) return undefined;
+        const sorted = [...playerBestValues].sort((a, b) => a - b);
+        const getQuantile = (q: number) => {
+          const pos = (sorted.length - 1) * q;
+          const base = Math.floor(pos);
+          const rest = pos - base;
+          return sorted[base + 1] !== undefined
+            ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+            : sorted[base];
+        };
+        const q1 = getQuantile(0.25);
+        const q3 = getQuantile(0.75);
+        const iqr = q3 - q1;
+        const lowBoundary = q1 - 1.5 * iqr;
+        const highBoundary = q3 + 1.5 * iqr;
+
+        if (playerValue < lowBoundary) return 'low';
+        else if (playerValue > highBoundary) return 'high';
+        return undefined;
+      };
+
+      const getMetricPDFProps = (metricKey: string, title: string, unit: string, lowerIsBetter: boolean = false) => {
+        const playerRows = (physicalData.imtp || [])
+          .filter(d => {
+            const resolved = resolveMetricValue(d, metricKey);
+            return resolved !== undefined && resolved !== null && resolved !== '' && !isNaN(Number(resolved));
+          });
+
+        const sortedPlayerRows = [...playerRows].sort((a, b) => {
+          const dateA = a.fecha_test ? new Date(a.fecha_test).getTime() : 0;
+          const dateB = b.fecha_test ? new Date(b.fecha_test).getTime() : 0;
+          return dateB - dateA;
+        });
+
+        const latestValue = sortedPlayerRows.length > 0 ? Number(resolveMetricValue(sortedPlayerRows[0], metricKey)) : 0;
+        const penultimateValue = sortedPlayerRows.length >= 2 ? Number(resolveMetricValue(sortedPlayerRows[1], metricKey)) : undefined;
+
+        let bestValue = 0;
+        if (playerRows.length > 0) {
+          const numericVals = playerRows.map(d => Number(resolveMetricValue(d, metricKey)));
+          bestValue = lowerIsBetter ? Math.min(...numericVals) : Math.max(...numericVals);
+        }
+
+        const average = getAvg(activeAllImtp, metricKey);
+        const percentile = calculatePercentile(latestValue, activeAllImtp, metricKey, lowerIsBetter);
+        const outlier = checkOutlier(latestValue, activeAllImtp, metricKey, lowerIsBetter);
+        const cohortBest = getCohortBest(activeAllImtp, metricKey, lowerIsBetter);
+
+        const cohortSd = calculateCohortSD(activeAllImtp, metricKey);
+        let swc = cohortSd * 0.2;
+        let mdc = cohortSd * 0.88;
+
+        if (cohortSd === 0 && penultimateValue !== undefined && penultimateValue > 0) {
+          swc = penultimateValue * 0.02;
+          mdc = penultimateValue * 0.05;
+        }
+
+        return {
+          title,
+          value: latestValue,
+          unit,
+          average,
+          percentile,
+          outlier,
+          referenceMax: cohortBest,
+          personalMax: bestValue,
+          penultimateValue,
+          swc,
+          mdc,
+          lowerIsBetter
+        };
+      };
+
+      const getPercentileLevelShared = (pct: number | undefined) => {
+        if (pct === undefined || isNaN(pct)) return 'Sin Datos';
+        if (pct >= 90) return 'Élite';
+        if (pct >= 75) return 'Sobresaliente';
+        if (pct >= 45) return 'Promedio';
+        if (pct >= 20) return 'Por Mejorar';
+        return 'Alerta';
+      };
+
+      const imtpMaxProps = getMetricPDFProps('imtp_fuerza_n', 'IMTP Fuerza Máxima', 'N');
+      const imtpRelProps = getMetricPDFProps('imtp_f_relativa_n_kg', 'IMTP F. Relativa', 'N/kg');
+      const imtpRfdProps = getMetricPDFProps('imtp_rfd_100ms', 'RFD a 100ms', 'N/s');
+
+      const drawMetricPDFCard = (x: number, y: number, w: number, h: number, props: any, accentColorRGB: [number, number, number]) => {
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(x, y, w, h, 3, 3, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.35);
+        doc.roundedRect(x, y, w, h, 3, 3, 'S');
+
+        doc.setFillColor(accentColorRGB[0], accentColorRGB[1], accentColorRGB[2]);
+        doc.rect(x + 4, y, w - 8, 2, 'F');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.0);
+        doc.setTextColor(100, 116, 139);
+        doc.text(props.title.toUpperCase(), x + w/2, y + 8, { align: 'center' });
+
+        const safeVal = props.value;
+        const valStr = safeVal > 0 ? safeVal.toLocaleString('es-ES', { maximumFractionDigits: 1 }) : 'S/D';
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(18);
+        doc.setTextColor(15, 23, 42);
+        
+        let displayVal = valStr;
+        if (safeVal > 0) {
+          displayVal = `${valStr} ${props.unit}`;
+        }
+        doc.text(displayVal, x + w/2, y + 17, { align: 'center' });
+
+        let outlierYOffset = 0;
+        if (props.outlier && safeVal > 0) {
+          doc.setFillColor(254, 243, 199);
+          doc.roundedRect(x + w/2 - 14, y + 20, 28, 4, 1, 1, 'F');
+          doc.setDrawColor(251, 191, 36);
+          doc.setLineWidth(0.2);
+          doc.roundedRect(x + w/2 - 14, y + 20, 28, 4, 1, 1, 'S');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5);
+          doc.setTextColor(180, 83, 9);
+          doc.text(`▲ ATÍPICO ${props.outlier === 'high' ? 'ALTO' : 'BAJO'}`, x + w/2, y + 23, { align: 'center' });
+          outlierYOffset = 5;
+        }
+
+        const safeAvg = props.average;
+        const avgStr = safeAvg > 0 ? `${safeAvg.toLocaleString('es-ES', { maximumFractionDigits: 1 })} ${props.unit}` : 'S/D';
+        const avgY = y + 23 + outlierYOffset;
+        doc.setFillColor(241, 245, 249);
+        doc.roundedRect(x + 4, avgY, w - 8, 11, 2, 2, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6);
+        doc.setTextColor(148, 163, 184);
+        doc.text('PROMEDIO CATEGORÍA', x + w/2, avgY + 4, { align: 'center' });
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(51, 65, 85);
+        doc.text(avgStr, x + w/2, avgY + 9, { align: 'center' });
+
+        const isBetter = props.lowerIsBetter 
+          ? (safeVal > 0 && safeAvg > 0 ? safeVal <= safeAvg : false) 
+          : (safeVal >= safeAvg);
+        const pctDiff = safeAvg > 0 
+          ? (props.lowerIsBetter 
+              ? ((safeAvg - safeVal) / safeAvg) * 100 
+              : ((safeVal - safeAvg) / safeAvg) * 100
+            )
+          : 0;
+
+        const vsAvgY = avgY + 14;
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(x + 4, vsAvgY, w - 8, 10, 2, 2, 'F');
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(x + 4, vsAvgY, w - 8, 10, 2, 2, 'S');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text('VS PROMEDIO', x + w/2, vsAvgY + 3.5, { align: 'center' });
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        if (safeVal > 0 && safeAvg > 0) {
+          const diffColor = isBetter ? [16, 185, 129] : [239, 68, 68];
+          doc.setTextColor(diffColor[0], diffColor[1], diffColor[2]);
+          doc.text(`${isBetter ? '+' : ''}${pctDiff.toFixed(1)}%`, x + w/2, vsAvgY + 8.5, { align: 'center' });
+        } else {
+          doc.setTextColor(148, 163, 184);
+          doc.text('—', x + w/2, vsAvgY + 8.5, { align: 'center' });
+        }
+
+        const pctY = vsAvgY + 12;
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(x + 4, pctY, w - 8, 11, 2, 2, 'F');
+        doc.roundedRect(x + 4, pctY, w - 8, 11, 2, 2, 'S');
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5);
+        doc.setTextColor(100, 116, 139);
+        doc.text('PERCENTIL', x + 8, pctY + 4.5);
+        
+        const pctVal = props.percentile;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text(pctVal !== undefined && safeVal > 0 ? `P${pctVal}` : 'S/D', x + 8, pctY + 9);
+
+        if (pctVal !== undefined && safeVal > 0) {
+          const levelLabel = getPercentileLevelShared(pctVal).toUpperCase();
+          let badgeColors = { bg: [243, 244, 246], text: [100, 116, 139] };
+          if (pctVal >= 90) badgeColors = { bg: [243, 232, 255], text: [126, 34, 206] };
+          else if (pctVal >= 75) badgeColors = { bg: [209, 250, 229], text: [4, 120, 87] };
+          else if (pctVal >= 45) badgeColors = { bg: [219, 234, 254], text: [29, 78, 216] };
+          else if (pctVal >= 20) badgeColors = { bg: [255, 237, 213], text: [194, 65, 12] };
+          else badgeColors = { bg: [254, 226, 226], text: [185, 28, 28] };
+
+          doc.setFillColor(badgeColors.bg[0], badgeColors.bg[1], badgeColors.bg[2]);
+          doc.roundedRect(x + w - 24, pctY + 3, 18, 5, 1, 1, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5);
+          doc.setTextColor(badgeColors.text[0], badgeColors.text[1], badgeColors.text[2]);
+          doc.text(levelLabel, x + w - 15, pctY + 6.5, { align: 'center' });
+        }
+
+        const refMax = props.referenceMax;
+        const hasRefMax = refMax !== undefined && refMax > 0;
+        const isBetterThanMax = props.lowerIsBetter ? (safeVal < refMax) : (safeVal > refMax);
+        const isEqualToMax = safeVal === refMax;
+        const pctDiffMax = hasRefMax 
+          ? (props.lowerIsBetter 
+              ? ((refMax - safeVal) / refMax) * 100 
+              : ((safeVal - refMax) / refMax) * 100
+            )
+          : 0;
+
+        const recordY = pctY + 13;
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(x + 4, recordY, w - 8, 11, 2, 2, 'F');
+        doc.roundedRect(x + 4, recordY, w - 8, 11, 2, 2, 'S');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5);
+        doc.setTextColor(100, 116, 139);
+        doc.text('VS RÉCORD CAT.', x + 8, recordY + 4.5);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(15, 23, 42);
+        if (hasRefMax && safeVal > 0) {
+          doc.text(isEqualToMax ? '0.0%' : `${pctDiffMax > 0 ? '+' : ''}${pctDiffMax.toFixed(1)}%`, x + 8, recordY + 9);
+
+          let badgeColors = { bg: [241, 245, 249], text: [100, 116, 139], label: 'DEL RÉCORD' };
+          if (isEqualToMax) badgeColors = { bg: [254, 243, 199], text: [180, 83, 9], label: 'RÉCORD CAT.' };
+          else if (isBetterThanMax) badgeColors = { bg: [243, 232, 255], text: [126, 34, 206], label: 'SUPERA RÉCORD' };
+
+          doc.setFillColor(badgeColors.bg[0], badgeColors.bg[1], badgeColors.bg[2]);
+          doc.roundedRect(x + w - 24, recordY + 3, 18, 5, 1, 1, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(4);
+          doc.setTextColor(badgeColors.text[0], badgeColors.text[1], badgeColors.text[2]);
+          doc.text(badgeColors.label, x + w - 15, recordY + 6.5, { align: 'center' });
+        } else {
+          doc.text('—', x + 8, recordY + 9);
+        }
+
+        const persMax = props.personalMax;
+        const hasPersonalMax = persMax !== undefined && persMax > 0;
+        const isBetterThanPersonal = props.lowerIsBetter ? (safeVal < persMax) : (safeVal > persMax);
+        const isEqualToPersonal = safeVal === persMax;
+        const pctDiffPersonal = hasPersonalMax 
+          ? (props.lowerIsBetter 
+              ? ((persMax - safeVal) / persMax) * 100 
+              : ((safeVal - persMax) / persMax) * 100
+            )
+          : 0;
+
+        const athleteY = recordY + 13;
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(x + 4, athleteY, w - 8, 11, 2, 2, 'F');
+        doc.roundedRect(x + 4, athleteY, w - 8, 11, 2, 2, 'S');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5);
+        doc.setTextColor(100, 116, 139);
+        doc.text('VS RÉCORD ATLETA', x + 8, athleteY + 4.5);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(15, 23, 42);
+        if (hasPersonalMax && safeVal > 0) {
+          doc.text(isEqualToPersonal ? '0.0%' : `${pctDiffPersonal > 0 ? '+' : ''}${pctDiffPersonal.toFixed(1)}%`, x + 8, athleteY + 9);
+
+          let badgeColors = { bg: [241, 245, 249], text: [100, 116, 139], label: 'DEL ATLETA' };
+          if (isEqualToPersonal) badgeColors = { bg: [209, 250, 229], text: [4, 120, 87], label: 'RÉCORD PERS.' };
+          else if (isBetterThanPersonal) badgeColors = { bg: [243, 232, 255], text: [126, 34, 206], label: 'NUEVO RÉCORD' };
+
+          doc.setFillColor(badgeColors.bg[0], badgeColors.bg[1], badgeColors.bg[2]);
+          doc.roundedRect(x + w - 24, athleteY + 3, 18, 5, 1, 1, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(4);
+          doc.setTextColor(badgeColors.text[0], badgeColors.text[1], badgeColors.text[2]);
+          doc.text(badgeColors.label, x + w - 15, athleteY + 6.5, { align: 'center' });
+        } else {
+          doc.text('—', x + 8, athleteY + 9);
+        }
+
+        const penVal = props.penultimateValue;
+        const hasPenultimate = penVal !== undefined && penVal > 0;
+        let isPrevBetter = false;
+        let isPrevEqual = false;
+        let displayPctPrev = 0;
+        let changeClassification: 'mejora_real' | 'mejora_probable' | 'estable' | 'deterioro_probable' | 'deterioro_real' = 'estable';
+
+        if (hasPenultimate && safeVal > 0) {
+          const rawDiff = safeVal - penVal;
+          const diffPrev = props.lowerIsBetter ? -rawDiff : rawDiff;
+          isPrevBetter = diffPrev > 0;
+          isPrevEqual = diffPrev === 0;
+          displayPctPrev = props.lowerIsBetter 
+            ? ((penVal - safeVal) / penVal) * 100 
+            : ((safeVal - penVal) / penVal) * 100;
+
+          const absDiff = Math.abs(rawDiff);
+          const swc = props.swc || 0;
+          const mdc = props.mdc || 0;
+
+          if (absDiff >= mdc) {
+            changeClassification = isPrevBetter ? 'mejora_real' : 'deterioro_real';
+          } else if (absDiff >= swc) {
+            changeClassification = isPrevBetter ? 'mejora_probable' : 'deterioro_probable';
+          } else {
+            changeClassification = 'estable';
+          }
+        }
+
+        const prevY = athleteY + 13;
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(x + 4, prevY, w - 8, 14, 2, 2, 'F');
+        doc.roundedRect(x + 4, prevY, w - 8, 14, 2, 2, 'S');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5);
+        doc.setTextColor(100, 116, 139);
+        doc.text('VS EVAL. PREVIA', x + 8, prevY + 4.5);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        if (hasPenultimate && safeVal > 0) {
+          doc.text(isPrevEqual ? '0.0%' : `${displayPctPrev > 0 ? '+' : ''}${displayPctPrev.toFixed(1)}%`, x + 8, prevY + 9);
+          
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(4.5);
+          doc.setTextColor(148, 163, 184);
+          doc.text(`(antes: ${penVal.toLocaleString('es-ES', { maximumFractionDigits: 1 })})`, x + 8, prevY + 12.5);
+
+          let badgeColors = { bg: [241, 245, 249], text: [100, 116, 139], label: 'ESTABLE / RUIDO' };
+          if (changeClassification === 'mejora_real') badgeColors = { bg: [209, 250, 229], text: [4, 120, 87], label: 'MEJORA REAL' };
+          else if (changeClassification === 'mejora_probable') badgeColors = { bg: [204, 251, 241], text: [13, 148, 136], label: 'MEJORA PROB.' };
+          else if (changeClassification === 'deterioro_probable') badgeColors = { bg: [254, 243, 199], text: [217, 119, 6], label: 'BAJA PROB.' };
+          else if (changeClassification === 'deterioro_real') badgeColors = { bg: [254, 226, 226], text: [185, 28, 28], label: 'BAJA REAL' };
+
+          doc.setFillColor(badgeColors.bg[0], badgeColors.bg[1], badgeColors.bg[2]);
+          doc.roundedRect(x + w - 24, prevY + 3, 18, 5, 1, 1, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(4);
+          doc.setTextColor(badgeColors.text[0], badgeColors.text[1], badgeColors.text[2]);
+          doc.text(badgeColors.label, x + w - 15, prevY + 6.5, { align: 'center' });
+        } else {
+          doc.text('—', x + 8, prevY + 9);
+        }
+
+        const footY = prevY + 17;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(4.2);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`SWC: ±${(props.swc || 0).toLocaleString('es-CL', { maximumFractionDigits: 1 })} ${props.unit}`, x + 5, footY);
+        doc.text(`MDC: ±${(props.mdc || 0).toLocaleString('es-CL', { maximumFractionDigits: 1 })} ${props.unit}`, x + w - 5, footY, { align: 'right' });
+      };
+
+      const cardW = 58;
+      const cardH = 118;
+      const cardGap = 4;
+      const cardsY = imtpYPos + 10;
+
+      drawMetricPDFCard(margin, cardsY, cardW, cardH, imtpMaxProps, [220, 38, 38]); // red-600
+      drawMetricPDFCard(margin + cardW + cardGap, cardsY, cardW, cardH, imtpRelProps, [249, 115, 22]); // orange-500
+      drawMetricPDFCard(margin + 2 * (cardW + cardGap), cardsY, cardW, cardH, imtpRfdProps, [79, 70, 229]); // indigo-600
+
+      const orientY = cardsY + cardH + 6;
+      const orientH = 36;
+      
+      doc.setFillColor(254, 242, 242); // red-50
+      doc.roundedRect(margin, orientY, contentWidth, orientH, 4, 4, 'F');
+      
+      doc.setDrawColor(254, 202, 202); // red-200
+      doc.setLineWidth(0.35);
+      doc.roundedRect(margin, orientY, contentWidth, orientH, 4, 4, 'S');
+
+      doc.setFillColor(239, 68, 68); // red-500
+      doc.roundedRect(margin + 4, orientY + 4, 8, 8, 2, 2, 'F');
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('IMTP', margin + 8, orientY + 9.2, { align: 'center' });
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO 1: HISTORIAL DE LESIONES REGISTRADAS', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
+      doc.setFontSize(8.5);
+      doc.setTextColor(153, 27, 27); // red-800
+      doc.text('FICHA DE ORIENTACIÓN: FUERZA ISOMÉTRICA & TASA DE FUERZA (IMTP)', margin + 15, orientY + 9.5);
 
-      yPos += 8;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.0);
+      doc.setTextColor(55, 65, 81); // slate-700
+      
+      let orientationText = '';
+      const relPct = imtpRelProps.percentile || 0;
+      const rfdPct = imtpRfdProps.percentile || 0;
+      const relLevel = getPercentileLevelShared(relPct);
+      const rfdLevel = getPercentileLevelShared(rfdPct);
 
-      const injuryLogRows = medicalHistory.injuries.map(i => [
-        i.fecha_inicio || 'S/D',
-        i.tipo_lesion || i.diagnostico_clinico || 'Lesión',
-        i.localizacion || 'General',
-        i.lado ? String(i.lado).toUpperCase() : '-',
-        i.gravedad ? String(i.gravedad).toUpperCase() : '-',
-        i.estado ? String(i.estado).toUpperCase() : 'FINALIZADO',
-        i.fecha_alta || '-'
-      ]);
+      const isRelLow = relPct < 45;
+      const isRfdLow = rfdPct < 45;
 
-      autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        head: [['FECHA INICIO', 'DIAGNÓSTICO CLÍNICO', 'LOCALIZACIÓN', 'LADO', 'GRAVEDAD', 'ESTADO', 'FECHA ALTA']],
-        body: injuryLogRows.length > 0 ? injuryLogRows : [['-', 'No se registran lesiones para este atleta', '-', '-', '-', '-', '-']],
-        theme: 'striped',
-        headStyles: {
-          fillColor: primaryColor,
-          textColor: [255, 255, 255],
-          fontSize: 8.5,
-          fontStyle: 'bold'
-        },
-        styles: {
-          fontSize: 8,
-          cellPadding: 4,
-          textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
-        },
-        columnStyles: {
-          0: { cellWidth: 24 },
-          1: { cellWidth: 44 },
-          2: { cellWidth: 30 },
-          3: { cellWidth: 16 },
-          4: { cellWidth: 22 },
-          5: { cellWidth: 22 },
-          6: { cellWidth: 24 }
+      if (imtpMaxProps.value === 0 && imtpRelProps.value === 0) {
+        orientationText = 'No se registran suficientes datos históricos de evaluaciones de fuerza IMTP para generar una ficha de orientación dinámica para este atleta.';
+      } else if (isRelLow && isRfdLow) {
+        orientationText = `Déficit crítico tanto de fuerza relativa (Nivel: ${relLevel}, ${imtpRelProps.value} N/kg, Percentil: ${Math.round(relPct)}%) como de tasa de desarrollo de fuerza (RFD 100ms Nivel: ${rfdLevel}, ${imtpRfdProps.value} N/s, Percentil: ${Math.round(rfdPct)}%). El atleta presenta una baja capacidad de reclutamiento y tensión muscular absoluta. Se prescribe un ciclo prioritario de fuerza estructural y adaptaciones neuronales con cargas pesadas, combinado de manera secundaria con aceleraciones balísticas ligeras para romper la inercia.`;
+      } else if (isRelLow && !isRfdLow) {
+        orientationText = `Nivel de fuerza relativa bajo (Nivel: ${relLevel}, ${imtpRelProps.value} N/kg, Percentil: ${Math.round(relPct)}%) pero con una tasa de desarrollo de fuerza (RFD Nivel: ${rfdLevel}, ${imtpRfdProps.value} N/s, Percentil: ${Math.round(rfdPct)}%) relativamente eficiente. Esto indica que aunque el deportista es rápido para aplicar fuerza, carece de la masa muscular o la fuerza máxima de base para sostener altas tensiones. Se prescribe entrenamiento de hipertrofia funcional y fuerza máxima dinámica (cargas > 80% 1RM) para elevar su potencial de fuerza absoluta.`;
+      } else if (!isRelLow && isRfdLow) {
+        orientationText = `Adecuado nivel de fuerza relativa (Nivel: ${relLevel}, ${imtpRelProps.value} N/kg, Percentil: ${Math.round(relPct)}%) pero con deficiente velocidad de aplicación (RFD 100ms bajo, Nivel: ${rfdLevel}, ${imtpRfdProps.value} N/s, Percentil: ${Math.round(rfdPct)}%). El atleta es sumamente fuerte pero "lento" en la ventana de tiempo crucial de un gesto deportivo (primeros 100-150ms). Se aconseja priorizar de inmediato el entrenamiento de potencia de alta velocidad, ejercicios balísticos, derivados de levantamiento olímpico desde el colgajo y saltos cargados ligeros (<30% 1RM) orientados a maximizar el RFD.`;
+      } else {
+        orientationText = `Perfil de fuerza isométrica sobresaliente (Nivel: ${relLevel}, Fuerza Relativa: ${imtpRelProps.value} N/kg, Percentil: ${Math.round(relPct)}%) y fantástica velocidad de transmisión neural (RFD Nivel: ${rfdLevel}, ${imtpRfdProps.value} N/s, Percentil: ${Math.round(rfdPct)}%). Demuestra una óptima capacidad para generar altos niveles de tensión y transmitirlos con extrema rapidez. Se prescribe entrenamiento de mantenimiento, prevención de lesiones y transferencia dinámica multidireccional específica al fútbol.`;
+      }
+
+      const wrappedText = doc.splitTextToSize(orientationText, contentWidth - 8);
+      doc.text(wrappedText, margin + 4, orientY + 14.5, { baseline: 'top' });
+
+      // Draw dynamic header/footers on all pages
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        
+        // 1. Header Band
+        doc.setFillColor(11, 45, 106); // #0b2d6a
+        doc.rect(0, 0, pageWidth, 24, 'F');
+        
+        // Accent Red strip
+        doc.setFillColor(207, 27, 43); // #CF1B2B
+        doc.rect(0, 22.5, pageWidth, 1.5, 'F');
+        
+        // Federation Logo with perfect aspect ratio centering
+        if (base64FederationLogo) {
+          try {
+            const fedSize = await getImageDimensions(base64FederationLogo);
+            let drawW = 15;
+            let drawH = 15;
+            let drawX = margin;
+            let drawY = 4;
+
+            if (fedSize.width > 0 && fedSize.height > 0) {
+              const aspect = fedSize.width / fedSize.height;
+              if (aspect > 1) {
+                drawW = 15;
+                drawH = 15 / aspect;
+                drawY = 4 + (15 - drawH) / 2;
+              } else {
+                drawH = 15;
+                drawW = 15 * aspect;
+                drawX = margin + (15 - drawW) / 2;
+              }
+            }
+            doc.addImage(base64FederationLogo, 'PNG', drawX, drawY, drawW, drawH);
+          } catch (e) {
+            console.error("Error drawing federation logo:", e);
+          }
         }
-      });
-
-      yPos = (doc as any).lastAutoTable.finalY + 10;
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text('TÍTULO 2: ATENCIONES MÉDICAS, DIAGNÓSTICOS Y TRATAMIENTOS', margin, yPos);
-      doc.line(margin, yPos + 2, margin + 45, yPos + 2);
-
-      yPos += 8;
-
-      const medicalEvents: any[] = [];
-      medicalHistory.reports.forEach(r => {
-        medicalEvents.push({
-          date: r.report_date || '',
-          type: 'Parte Médico',
-          desc: r.diagnostico_medico || 'Evaluación médica',
-          obs: r.observation || r.observacion || '-',
-          sev: r.severity ? r.severity.toUpperCase() : 'LOW'
-        });
-      });
-      medicalHistory.treatments.forEach(t => {
-        medicalEvents.push({
-          date: t.treatment_date || '',
-          type: 'Kinesiología',
-          desc: 'Tratamiento kinésico aplicado',
-          obs: t.description || '-',
-          sev: '-'
-        });
-      });
-
-      // Sort by date descending
-      medicalEvents.sort((a, b) => b.date.localeCompare(a.date));
-
-      const eventRows = medicalEvents.slice(0, 12).map(e => [
-        e.date || 'S/D',
-        e.type,
-        e.desc,
-        e.obs,
-        e.sev
-      ]);
-
-      autoTable(doc, {
-        startY: yPos,
-        margin: { left: margin, right: margin },
-        head: [['FECHA', 'TIPO DE EVENTO', 'DESCRIPCIÓN / EVALUACIÓN', 'OBSERVACIÓN / DETALLE', 'SEVERIDAD']],
-        body: eventRows.length > 0 ? eventRows : [['-', 'No se registran eventos médicos para este jugador', '-', '-', '-']],
-        theme: 'striped',
-        headStyles: {
-          fillColor: primaryColor,
-          textColor: [255, 255, 255],
-          fontSize: 8.5,
-          fontStyle: 'bold'
-        },
-        styles: {
-          fontSize: 8,
-          cellPadding: 4,
-          textColor: [51, 65, 85],
-          lineColor: [226, 232, 240]
-        },
-        columnStyles: {
-          0: { cellWidth: 24 },
-          1: { cellWidth: 32 },
-          2: { cellWidth: 50 },
-          3: { cellWidth: 60 },
-          4: { cellWidth: 16 }
-        }
-      });
-
-      drawFooter(6, 6);
+        
+        // Title Text
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(255, 255, 255);
+        doc.text('LA ROJA PERFORMANCE', margin + 19, 11);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(200, 210, 230);
+        doc.text('FICHA DE CONTROL INDIVIDUAL - SEGUIMIENTO DE CARGA', margin + 19, 16);
+        
+        // Right side header label
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(255, 255, 255);
+        doc.text('REPORTE OFICIAL', pageWidth - margin, 13, { align: 'right' });
+        
+        // 2. Footer
+        doc.setFillColor(248, 250, 252); // slate-50
+        doc.rect(0, pageHeight - 12, pageWidth, 12, 'F');
+        
+        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.setLineWidth(0.2);
+        doc.line(0, pageHeight - 12, pageWidth, pageHeight - 12);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184); // slate-400
+        
+        const timestamp = new Date().toLocaleString('es-CL');
+        doc.text(`Generado el: ${timestamp}`, margin, pageHeight - 5);
+        doc.text(`La Roja Performance Hub — Confidencial`, pageWidth / 2, pageHeight - 5, { align: 'center' });
+        doc.text(`Página ${i} de ${totalPages}`, pageWidth - margin, pageHeight - 5, { align: 'right' });
+      }
 
       // Save document
       const cleanName = `${profileData.nombre}-${profileData.apellido1}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -1819,6 +2343,41 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
       })
       .filter(item => item.participated);
   }, [categoryMatches, gpsStats, matchData, filteredCitations]);
+
+  const internationalGpsMatches = useMemo(() => {
+    return categoryMatches
+      .map(match => {
+        const gpsRecord = gpsStats.find(g => g.fecha === match.date);
+        const compType = (match.competition_type || '').toLowerCase();
+        const isInternational = compType.includes('internacional') || compType.includes('mundial') || compType.includes('sudamericano');
+        
+        // Check if player actually belongs to this category / was cited for it
+        const isCitedForThisMicrocycle = match.microcycle_id 
+          ? filteredCitations.some(cit => cit.microcycles?.id === match.microcycle_id)
+          : false;
+
+        const isCitedForThisCategoryOnDate = filteredCitations.some(cit => {
+          const mc = cit.microcycles;
+          if (!mc) return false;
+          if (Number(mc.category_id) !== Number(match.category_id)) return false;
+          if (mc.start_date && mc.end_date) {
+            return match.date >= mc.start_date && match.date <= mc.end_date;
+          }
+          return cit.fecha_citacion === match.date;
+        });
+
+        const belongsToThisCategory = isCitedForThisMicrocycle || isCitedForThisCategoryOnDate;
+
+        return {
+          match,
+          gpsRecord,
+          isInternational,
+          belongsToThisCategory
+        };
+      })
+      .filter(item => item.isInternational && item.gpsRecord && item.belongsToThisCategory)
+      .sort((a, b) => a.match.date.localeCompare(b.match.date));
+  }, [categoryMatches, gpsStats, filteredCitations]);
 
   const matchDatesSet = useMemo(() => {
     const dates = new Set<string>();
@@ -3291,6 +3850,81 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
                         )}
                      </div>
                   </div>
+
+                  {/* Partidos Internacionales */}
+                  <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
+                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                        <div>
+                           <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
+                              <span className="w-2 h-6 bg-red-600 rounded-full"></span>
+                              Partidos Internacionales (Control GPS)
+                           </h3>
+                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">
+                              Historial de encuentros internacionales oficiales o amistosos disputados con telemetría de rendimiento GPS
+                           </p>
+                        </div>
+                        <div className="flex gap-2 text-[9px] font-black uppercase text-slate-500 bg-slate-50 border border-slate-100 p-2 rounded-2xl shrink-0">
+                           <div>Partidos Registrados: <span className="text-red-500 font-mono font-black">{internationalGpsMatches.length}</span></div>
+                        </div>
+                     </div>
+
+                     <div className="overflow-x-auto rounded-3xl border border-slate-100 shadow-sm">
+                        <table className="w-full text-left border-collapse bg-white">
+                           <thead>
+                              <tr className="bg-slate-50 border-b border-slate-100">
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider font-sans">Partido / Rival</th>
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider text-center font-sans">Fecha</th>
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider font-sans">Competición</th>
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider text-center font-sans">Min</th>
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider text-right font-sans">Distancia</th>
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider text-right font-sans">Vel Máx</th>
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider text-right font-sans">M/min</th>
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider text-right font-sans">HSR (&gt;20)</th>
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider text-right font-sans">Sprint (&gt;25)</th>
+                                 <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-wider text-center font-sans">Sprints</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-slate-100 text-[11px] font-bold text-slate-700">
+                              {internationalGpsMatches.map(({ match, gpsRecord }, idx) => {
+                                 const relative = gpsRecord ? (Number(gpsRecord.m_por_min) || (Number(gpsRecord.minutos) > 0 ? (Number(gpsRecord.dist_total_m) / Number(gpsRecord.minutos)) : 0)) : 0;
+                                 return (
+                                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                       <td className="px-5 py-4 font-black text-slate-900 uppercase">vs. {match.opponent}</td>
+                                       <td className="px-5 py-4 text-center text-slate-500 font-mono italic">{match.date}</td>
+                                       <td className="px-5 py-4 text-slate-500 uppercase text-[10px]">{match.competition_type}</td>
+                                       <td className="px-5 py-4 text-center font-mono text-slate-900">{gpsRecord ? `${Number(gpsRecord.minutos || gpsRecord.duration_mins || 0).toFixed(0)}'` : '-'}</td>
+                                       <td className="px-5 py-4 text-right font-mono text-slate-900">
+                                          {gpsRecord ? `${(Number(gpsRecord.dist_total_m) || 0).toLocaleString('es-cl', { maximumFractionDigits: 0 })} m` : '-'}
+                                       </td>
+                                       <td className="px-5 py-4 text-right font-mono text-red-600">
+                                          {gpsRecord ? `${(Number(gpsRecord.vel_max_kmh) || Number(gpsRecord.velocidad_max) || 0).toFixed(1)} km/h` : '-'}
+                                       </td>
+                                       <td className="px-5 py-4 text-right font-mono text-emerald-600">
+                                          {gpsRecord ? `${relative.toFixed(1)}` : '-'}
+                                       </td>
+                                       <td className="px-5 py-4 text-right font-mono text-amber-600">
+                                          {gpsRecord ? `${(Number(gpsRecord.dist_mai_m_20_kmh) || 0).toLocaleString('es-cl', { maximumFractionDigits: 0 })} m` : '-'}
+                                       </td>
+                                       <td className="px-5 py-4 text-right font-mono text-violet-600">
+                                          {gpsRecord ? `${(Number(gpsRecord.dist_sprint_m_25_kmh) || 0).toLocaleString('es-cl', { maximumFractionDigits: 0 })} m` : '-'}
+                                       </td>
+                                       <td className="px-5 py-4 text-center font-mono text-fuchsia-600">
+                                          {gpsRecord ? `${Number(gpsRecord.sprints_n || 0).toFixed(0)}` : '-'}
+                                       </td>
+                                    </tr>
+                                 );
+                              })}
+                              {internationalGpsMatches.length === 0 && (
+                                 <tr>
+                                    <td colSpan={10} className="text-center py-12 text-slate-400 font-black uppercase text-[10px] tracking-wider">
+                                       No se registran partidos internacionales disputados con datos de GPS para este atleta
+                                    </td>
+                                 </tr>
+                              )}
+                           </tbody>
+                         </table>
+                      </div>
+                   </div>
 
                  {/* GPS Detailed List */}
                  <div className="hidden bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">

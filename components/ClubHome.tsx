@@ -484,10 +484,10 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
       )}
 
       {!loading && (
-        <div className="space-y-10">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             
             {/* 1. DINÁMICAS DE LA CATEGORÍA */}
-            <div className="bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-6">
+            <div className="lg:col-span-2 bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-600">
@@ -678,28 +678,28 @@ const ClubHome: React.FC<ClubHomeProps> = ({ performanceRecords, userClub, userC
             </div>
 
             {/* 2. JUGADORES EN EL MICROCICLO */}
-            <div className="bg-white rounded-[40px] p-6 md:p-8 border border-slate-100 shadow-sm space-y-6">
+            <div className="lg:col-span-1 bg-white rounded-[40px] p-6 border border-slate-100 shadow-sm space-y-6">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-6 bg-blue-600 rounded-full"></div>
-                  <h2 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter">
-                    Jugadores Citados en el Microciclo Activo
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-5 bg-blue-600 rounded-full"></div>
+                  <h2 className="text-sm font-black text-slate-900 uppercase italic tracking-tighter">
+                    Convocados
                   </h2>
                 </div>
-                <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[9px] font-black uppercase tracking-wider">
-                  {activeMicrocyclePlayers.length} Convocados
+                <span className="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-full text-[8px] font-black uppercase tracking-wider">
+                  {activeMicrocyclePlayers.length} Citados
                 </span>
               </div>
 
               {activeMicrocyclePlayers.length === 0 ? (
                 <div className="py-10 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                   <i className="fa-solid fa-users-slash text-slate-300 text-3xl mb-3 block"></i>
-                  <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
+                  <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest leading-normal px-4">
                     No hay jugadores de tu club convocados para este microciclo
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
                   {activeMicrocyclePlayers.map(player => (
                     <div 
                       key={player.player_id}

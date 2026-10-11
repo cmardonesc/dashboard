@@ -1189,13 +1189,9 @@ export default function CitacionesArea({
       const matchesYear = selectedYear === 'TODOS' || p.anio?.toString() === selectedYear;
       const matchesPos = selectedPositions.includes('TODAS') || selectedPositions.some(pos => (p.position || "").includes(pos));
       
-      // Relax category constraint if search query is active or a specific birth year is selected
-      const isSearchActive = searchTerm.trim().length > 0;
-      const isYearSelected = selectedYear !== 'TODOS';
+      // Filter strictly by selected category
       const matchesCat = selectedCategoryPlayer === 'TODOS' || 
-                         p.category === selectedCategoryPlayer || 
-                         isSearchActive || 
-                         isYearSelected;
+                         p.category === selectedCategoryPlayer;
                          
       const matchesClub = selectedClubId === 'TODOS' || Number(p.id_club) === Number(selectedClubId);
       return matchesSearch && matchesYear && matchesPos && matchesCat && matchesClub;

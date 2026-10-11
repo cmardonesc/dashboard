@@ -322,10 +322,26 @@ export default function ContactosClubesArea() {
         if (error) throw error;
         alert('Club actualizado correctamente');
       } else {
+        // Obtener el ID de club más alto disponible para evitar problemas con secuencias/identidad rotas en PostgreSQL
+        let nextClubId = 150;
+        try {
+          const { data: maxClubData, error: maxClubErr } = await supabase
+            .from('clubes')
+            .select('id_club')
+            .order('id_club', { ascending: false })
+            .limit(1);
+          
+          if (!maxClubErr && maxClubData && maxClubData.length > 0) {
+            nextClubId = Number(maxClubData[0].id_club) + 1;
+          }
+        } catch (seqErr) {
+          console.warn('No se pudo autodetectar el id_club secuencial:', seqErr);
+        }
+
         // Insert
         const { error } = await supabase
           .from('clubes')
-          .insert([payload]);
+          .insert([{ ...payload, id_club: nextClubId }]);
         
         if (error) throw error;
         alert('Club insertado correctamente');

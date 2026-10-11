@@ -275,7 +275,7 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
           const to = from + pageSize - 1;
           const { data, error } = await supabase
             .from('gps_import')
-            .select('*')
+            .select('player_id, fecha, dist_total_m, dist_ai_m_15_kmh, dist_mai_m_20_kmh, dist_sprint_m_25_kmh, acc_decc_ai_n')
             .range(from, to);
           
           if (error) {
@@ -1550,11 +1550,8 @@ export default function FisicaArea({ performanceRecords, view = 'wellness', user
       load: loadValid.reduce((acc, l) => acc + l.sessions.reduce((sacc: number, s: any) => sacc + s.load, 0), 0) / loadValid.length,
     } : null;
 
-    // NUEVO: Cálculo de Promedios para GPS Totales (Solo jugadores con >= 80% de la duración máxima)
-    const maxDuration = gpsImportReport.length ? Math.max(...gpsImportReport.map(g => g.minutos || 0), 0) : 0;
-    const threshold = maxDuration * 0.8;
-    const filteredGpsForAvg = gpsImportReport.filter(g => (g.minutos || 0) >= threshold);
-    const avgSourceList = filteredGpsForAvg.length ? filteredGpsForAvg : gpsImportReport;
+    // NUEVO: Cálculo de Promedios para GPS Totales de toda la sesión (todos los jugadores de la jornada)
+    const avgSourceList = gpsImportReport;
 
     const gpsAvg = avgSourceList.length ? {
       minutos: avgSourceList.reduce((acc, g) => acc + (g.minutos || 0), 0) / avgSourceList.length,

@@ -27,6 +27,49 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
   const [staffError, setStaffError] = useState<string | null>(null);
 
   const [editingProfile, setEditingProfile] = useState<any>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Password reset state
+  const [resetPasswordProfile, setResetPasswordProfile] = useState<any | null>(null);
+  const [resetTempPassword, setResetTempPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccessMsg, setResetSuccessMsg] = useState<string | null>(null);
+  const [resetErrorMsg, setResetErrorMsg] = useState<string | null>(null);
+
+  const [processingStatusId, setProcessingStatusId] = useState<string | null>(null);
+
+  const pendingApprovals = useMemo(() => {
+    return profiles.filter(p => p.estado_aprobacion === 'pendiente');
+  }, [profiles]);
+
+  const filteredProfiles = useMemo(() => {
+    if (!searchTerm.trim()) return profiles;
+    const term = searchTerm.toLowerCase().trim();
+    return profiles.filter(p => {
+      // Buscar por email
+      const email = (p.email || '').toLowerCase();
+      if (email.includes(term)) return true;
+
+      // Buscar por ID
+      const id = (p.id || '').toLowerCase();
+      if (id.includes(term)) return true;
+
+      // Buscar por rol
+      const role = (p.role || '').toLowerCase();
+      if (role.includes(term)) return true;
+
+      // Buscar por nombre y apellido del jugador vinculado
+      if (p.player_id) {
+        const pl = players.find(x => x.player_id === p.player_id);
+        if (pl) {
+          const fullName = `${pl.nombre || ''} ${pl.apellido1 || ''}`.toLowerCase();
+          if (fullName.includes(term)) return true;
+        }
+      }
+
+      return false;
+    });
+  }, [profiles, players, searchTerm]);
 
   const groupedClubs = useMemo(() => {
     const groups: Record<string, typeof dbClubs> = {};
@@ -47,11 +90,37 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const { data: profs, error: pErr } = await supabase.from('profiles').select('*, club_name');
+      let profs: any[] = [];
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (token) {
+          const res = await fetch('/api/admin/profiles', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (res.ok) {
+            const resData = await res.json();
+            profs = resData.profiles || [];
+          } else {
+            console.warn("Failing profiles admin endpoint, fallback to raw DB");
+          }
+        }
+      } catch (err) {
+        console.error("Error calling profiles admin endpoint, falling back to raw DB:", err);
+      }
+
+      if (profs.length === 0) {
+        const { data: directProfs, error: pErr } = await supabase.from('profiles').select('*, club_name');
+        if (pErr) throw pErr;
+        profs = directProfs || [];
+      }
+
       const { data: plays, error: plErr } = await supabase.from('players').select('player_id, nombre, apellido1, id_club');
       const { data: clubs, error: cErr } = await supabase.from('clubes').select('*');
       
-      if (pErr) throw pErr;
+      if (plErr) throw plErr;
       if (cErr) throw cErr;
 
       // Intentar traer los registros de staff
@@ -179,6 +248,39 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
     }
   };
 
+  const handleSetUserApprovalStatus = async (userId: string, status: 'aprobado' | 'rechazado') => {
+    setProcessingStatusId(userId);
+    setMsg(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error('No se pudo verificar la sesión de administrador.');
+      }
+
+      const res = await fetch('/api/admin/usuarios/set-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ userId, status })
+      });
+
+      const resData = await res.json();
+      if (!res.ok) {
+        throw new Error(resData.error || 'Error actualizando el estado de aprobación.');
+      }
+
+      setMsg({ text: `Usuario ${status === 'aprobado' ? 'aprobado' : 'rechazado'} correctamente. Se ha enviado un correo de notificación.`, type: 'success' });
+      fetchData();
+    } catch (err: any) {
+      setMsg({ text: err.message, type: 'error' });
+    } finally {
+      setProcessingStatusId(null);
+    }
+  };
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProfile) return;
@@ -190,7 +292,8 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
           role: editingProfile.role,
           player_id: editingProfile.player_id || null,
           club_name: editingProfile.club_name || null,
-          id_club: editingProfile.id_club || null
+          id_club: editingProfile.id_club || null,
+          estado_aprobacion: editingProfile.estado_aprobacion || 'pendiente'
         })
         .eq('id', editingProfile.id);
 
@@ -203,17 +306,33 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
     }
   };
 
-  const handleAdminResetPassword = async (userId: string) => {
-    const defaultTempPass = `Roja${new Date().getFullYear()}%Temp`;
-    const newPass = window.prompt(`Ingresa la nueva contraseña temporal para el usuario (ID: ${userId}):`, defaultTempPass);
-    if (!newPass) return;
+  const handleStartEditProfile = (p: any) => {
+    setEditingProfile(p);
+    setResetPasswordProfile(null);
+  };
 
-    if (newPass.length < 6) {
-      alert("La contraseña debe tener al menos 6 caracteres.");
+  const handleOpenResetPassword = (profile: any) => {
+    const defaultTempPass = `Roja${new Date().getFullYear()}%Temp`;
+    setResetPasswordProfile(profile);
+    setResetTempPassword(defaultTempPass);
+    setResetSuccessMsg(null);
+    setResetErrorMsg(null);
+    setEditingProfile(null);
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPasswordProfile || !resetTempPassword) return;
+
+    if (resetTempPassword.length < 6) {
+      setResetErrorMsg("La contraseña debe tener al menos 6 caracteres.");
       return;
     }
 
-    setLoading(true);
+    setResetLoading(true);
+    setResetErrorMsg(null);
+    setResetSuccessMsg(null);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
@@ -229,8 +348,8 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          targetUserId: userId,
-          newPassword: newPass
+          targetUserId: resetPasswordProfile.id,
+          newPassword: resetTempPassword
         })
       });
 
@@ -239,11 +358,11 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
         throw new Error(resData.error || "Error al restablecer contraseña.");
       }
 
-      alert(`¡Contraseña restablecida correctamente!\n\nNueva clave temporal:\n${newPass}\n\nPor favor, entrégale esta contraseña al usuario.`);
+      setResetSuccessMsg(`¡Contraseña restablecida correctamente!`);
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      setResetErrorMsg(err.message || "Error al restablecer contraseña.");
     } finally {
-      setLoading(false);
+      setResetLoading(false);
     }
   };
 
@@ -254,10 +373,26 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
     try {
       const codigo = clubName.toLowerCase().replace(/\s+/g, '_').normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       
+      // Obtener el ID de club más alto disponible para evitar problemas con secuencias/identidad rotas en PostgreSQL
+      let nextClubId = 150;
+      try {
+        const { data: maxClubData, error: maxClubErr } = await supabase
+          .from('clubes')
+          .select('id_club')
+          .order('id_club', { ascending: false })
+          .limit(1);
+        
+        if (!maxClubErr && maxClubData && maxClubData.length > 0) {
+          nextClubId = Number(maxClubData[0].id_club) + 1;
+        }
+      } catch (seqErr) {
+        console.warn('No se pudo autodetectar el id_club secuencial:', seqErr);
+      }
+
       // 1. Crear en tabla clubes
       const { data: newClub, error: iErr } = await supabase
         .from('clubes')
-        .insert({ nombre: clubName, codigo, activo: true })
+        .insert({ id_club: nextClubId, nombre: clubName, codigo, activo: true })
         .select()
         .single();
       
@@ -479,27 +614,115 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
         </div>
       )}
 
+      {activeTab === 'users' && pendingApprovals.length > 0 && (
+        <div className="bg-amber-50/60 rounded-[40px] border border-amber-100/80 p-8 space-y-6 mb-8 animate-in fade-in duration-500">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600">
+              <i className="fa-solid fa-user-clock text-sm"></i>
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-amber-800 uppercase tracking-widest">Solicitudes de Registro Pendientes ({pendingApprovals.length})</h3>
+              <p className="text-[10px] text-amber-600/80 font-bold uppercase tracking-wider">Estos usuarios se han registrado y requieren aprobación para ingresar</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {pendingApprovals.map((p) => (
+              <div key={p.id} className="bg-white rounded-3xl p-6 border border-amber-100 shadow-sm flex flex-col justify-between gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="px-3 py-1 bg-amber-100/60 text-amber-700 text-[8px] font-black uppercase tracking-widest rounded-full">
+                      {p.role === 'player' ? 'Jugador' : p.role === 'club' ? 'Club' : 'Staff Técnico'}
+                    </span>
+                    <span className="text-[8px] text-slate-400 font-bold uppercase">
+                      ID: {p.id.substring(0, 8)}...
+                    </span>
+                  </div>
+                  <p className="text-xs font-black text-slate-800 break-all">{p.email || 'Sin correo'}</p>
+                  
+                  {p.role === 'club' && p.club_name && (
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                      <i className="fa-solid fa-shield-halved mr-1 text-[8px]"></i> Club: {p.club_name}
+                    </p>
+                  )}
+                  {p.role === 'player' && p.player_id && (
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                      <i className="fa-solid fa-id-card mr-1 text-[8px]"></i> ID Atleta: {p.player_id}
+                    </p>
+                  )}
+                </div>
+                
+                <div className="flex gap-2 pt-2 border-t border-slate-50">
+                  <button
+                    onClick={() => handleSetUserApprovalStatus(p.id, 'aprobado')}
+                    disabled={processingStatusId !== null}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[9px] uppercase tracking-widest transition-all shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {processingStatusId === p.id ? (
+                      <i className="fa-solid fa-circle-notch animate-spin text-[8px]"></i>
+                    ) : (
+                      <>
+                        <i className="fa-solid fa-check text-[8px]"></i>
+                        Aprobar
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleSetUserApprovalStatus(p.id, 'rechazado')}
+                    disabled={processingStatusId !== null}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-black text-[9px] uppercase tracking-widest border border-rose-100 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {processingStatusId === p.id ? (
+                      <i className="fa-solid fa-circle-notch animate-spin text-[8px]"></i>
+                    ) : (
+                      <>
+                        <i className="fa-solid fa-xmark text-[8px]"></i>
+                        Rechazar
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {activeTab === 'users' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-          <div className="p-8 border-b border-slate-50 bg-slate-50/50">
+          <div className="p-8 border-b border-slate-50 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Lista de Perfiles</h3>
+            <div className="relative w-full sm:w-72">
+              <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400"></i>
+              <input
+                type="text"
+                placeholder="Buscar por jugador, email, rol, ID..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200/80 rounded-xl text-[10px] font-bold text-slate-700 placeholder-slate-400 focus:outline-none focus:border-[#CF1B2B]/60 transition-all shadow-sm"
+              />
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50">
                   <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">ID Usuario (Auth)</th>
+                  <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Email</th>
                   <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Rol</th>
+                  <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
                   <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Jugador Vinculado</th>
                   <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {profiles.map((p) => (
+                {filteredProfiles.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-8 py-4">
                       <p className="text-[10px] font-mono text-slate-400">{p.id}</p>
+                    </td>
+                    <td className="px-8 py-4">
+                      <p className="text-[10px] font-bold text-slate-600 font-mono">{p.email || 'N/A'}</p>
                     </td>
                     <td className="px-8 py-4">
                       <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
@@ -517,29 +740,44 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                       )}
                     </td>
                     <td className="px-8 py-4">
+                      <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                        p.estado_aprobacion === 'aprobado' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                        p.estado_aprobacion === 'rechazado' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
+                        'bg-amber-50 text-amber-600 border border-amber-100'
+                      }`}>
+                        {p.estado_aprobacion || 'pendiente'}
+                      </span>
+                    </td>
+                    <td className="px-8 py-4">
                       <p className="text-[10px] font-bold text-slate-600">
-                        {p.player_id ? players.find(pl => pl.player_id === p.player_id)?.nombre || `ID: ${p.player_id}` : 'N/A'}
+                        {p.player_id ? (() => {
+                          const pl = players.find(x => x.player_id === p.player_id);
+                          if (!pl) return `ID: ${p.player_id}`;
+                          return `${pl.nombre || ''} ${pl.apellido1 || ''}`.trim();
+                        })() : 'N/A'}
                       </p>
                     </td>
                     <td className="px-8 py-4 text-right">
                       <div className="flex items-center justify-end gap-3">
                         <button 
-                          onClick={() => handleAdminResetPassword(p.id)} 
+                          onClick={() => handleOpenResetPassword(p)} 
                           title="Restablecer Contraseña"
                           className="text-slate-400 hover:text-[#CF1B2B] transition-colors"
                         >
                           <i className="fa-solid fa-key"></i>
                         </button>
-                        <button onClick={() => setEditingProfile(p)} className="text-slate-400 hover:text-blue-600 transition-colors">
+                        <button onClick={() => handleStartEditProfile(p)} className="text-slate-400 hover:text-blue-600 transition-colors">
                           <i className="fa-solid fa-pen-to-square"></i>
                         </button>
                       </div>
                     </td>
                   </tr>
                 ))}
-                {profiles.length === 0 && !loading && (
+                {filteredProfiles.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={4} className="px-8 py-12 text-center text-slate-400 text-[10px] font-black uppercase tracking-widest">No hay perfiles registrados</td>
+                    <td colSpan={5} className="px-8 py-12 text-center text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                      {searchTerm.trim() ? "No se encontraron perfiles para la búsqueda" : "No hay perfiles registrados"}
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -549,7 +787,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
 
         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm p-8">
           <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-8">
-            {editingProfile ? 'Editar Perfil' : 'Información'}
+            {editingProfile ? 'Editar Perfil' : resetPasswordProfile ? 'Restablecer Contraseña' : 'Información'}
           </h3>
           
           {editingProfile ? (
@@ -611,9 +849,124 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                 </select>
               </div>
 
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Estado de Aprobación</label>
+                <select 
+                  value={editingProfile.estado_aprobacion || 'pendiente'} 
+                  onChange={e => setEditingProfile({...editingProfile, estado_aprobacion: e.target.value})}
+                  className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-amber-500 font-black uppercase"
+                >
+                  <option value="pendiente">⏳ Pendiente</option>
+                  <option value="aprobado">🟢 Aprobado</option>
+                  <option value="rechazado">🔴 Rechazado</option>
+                </select>
+              </div>
+
               <div className="flex gap-3 pt-4">
                 <button type="submit" className="flex-1 py-4 bg-[#0b1220] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all">Guardar</button>
                 <button type="button" onClick={() => setEditingProfile(null)} className="px-6 py-4 bg-slate-100 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">Cancelar</button>
+              </div>
+            </form>
+          ) : resetPasswordProfile ? (
+            <form onSubmit={handleResetPasswordSubmit} className="space-y-6">
+              <div className="space-y-2 bg-slate-50 p-6 rounded-3xl border border-slate-100/50">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Usuario Seleccionado</p>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-slate-700">
+                    ID: <span className="font-mono text-slate-500 text-[9px]">{resetPasswordProfile.id}</span>
+                  </p>
+                  {resetPasswordProfile.email ? (
+                    <p className="text-[10px] font-bold text-slate-700">
+                      Email: <span className="text-slate-900 font-black">{resetPasswordProfile.email}</span>
+                    </p>
+                  ) : (
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Email: N/A</p>
+                  )}
+                  {resetPasswordProfile.player_id && (
+                    <p className="text-[10px] font-bold text-slate-700">
+                      Jugador: <span className="text-slate-900 font-bold">{(() => {
+                        const pl = players.find(x => x.player_id === resetPasswordProfile.player_id);
+                        return pl ? `${pl.nombre || ''} ${pl.apellido1 || ''}`.trim() : `ID: ${resetPasswordProfile.player_id}`;
+                      })()}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Nueva Contraseña Temporal</label>
+                <input 
+                  type="text"
+                  value={resetTempPassword}
+                  onChange={e => setResetTempPassword(e.target.value)}
+                  className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-[#CF1B2B]/60 text-slate-800"
+                  placeholder="Contraseña temporal"
+                  required
+                />
+                <p className="text-[8px] font-medium text-slate-400 ml-4 italic">Puedes modificar la clave sugerida antes de asignarla.</p>
+              </div>
+
+              {resetErrorMsg && (
+                <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-[10px] font-black uppercase tracking-wide">
+                  <i className="fa-solid fa-triangle-exclamation mr-2"></i>
+                  {resetErrorMsg}
+                </div>
+              )}
+
+              {resetSuccessMsg && (
+                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-emerald-800 text-[10px] font-bold tracking-wide space-y-3">
+                  <div className="flex items-start">
+                    <i className="fa-solid fa-circle-check mr-2 text-emerald-500 text-sm mt-0.5"></i>
+                    <div>
+                      <p className="font-black uppercase text-[10px] text-emerald-800">{resetSuccessMsg}</p>
+                      <p className="text-[8px] text-emerald-600 font-bold uppercase tracking-wider mt-0.5">Proporciona los siguientes datos al usuario:</p>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white p-4 rounded-xl border border-emerald-100 flex flex-col gap-2 mt-2">
+                    <div className="flex justify-between items-center border-b border-slate-50 pb-2">
+                      <span className="text-[8px] font-black text-slate-400 uppercase">Email/Usuario:</span>
+                      <span className="text-[10px] font-mono font-black text-slate-800">{resetPasswordProfile.email || resetPasswordProfile.id}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[8px] font-black text-slate-400 uppercase">Clave Temporal:</span>
+                      <code className="text-sm font-black text-[#CF1B2B] font-mono select-all bg-[#CF1B2B]/5 px-2 py-0.5 rounded">{resetTempPassword}</code>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`Email: ${resetPasswordProfile.email || resetPasswordProfile.id}\nClave Temporal: ${resetTempPassword}`);
+                        alert("¡Credenciales copiadas al portapapeles!");
+                      }}
+                      className="flex-1 text-[9px] font-black text-emerald-700 hover:text-emerald-900 bg-white hover:bg-emerald-100 border border-emerald-200 py-3 rounded-xl transition-all uppercase tracking-widest text-center"
+                    >
+                      <i className="fa-solid fa-copy mr-1"></i> Copiar Datos
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                {!resetSuccessMsg && (
+                  <button 
+                    type="submit" 
+                    disabled={resetLoading}
+                    className="flex-1 py-4 bg-[#CF1B2B] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-[#b01420] transition-all disabled:opacity-50"
+                  >
+                    {resetLoading ? <i className="fa-solid fa-circle-notch animate-spin mr-2"></i> : null}
+                    Restablecer Clave
+                  </button>
+                )}
+                <button 
+                  type="button" 
+                  onClick={() => setResetPasswordProfile(null)} 
+                  className="px-6 py-4 bg-slate-100 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all flex-1"
+                >
+                  {resetSuccessMsg ? 'Cerrar' : 'Cancelar'}
+                </button>
               </div>
             </form>
           ) : (
@@ -622,7 +975,7 @@ const UserManagementArea: React.FC<UserManagementAreaProps> = () => {
                 <i className="fa-solid fa-user-gear text-2xl"></i>
               </div>
               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest leading-relaxed">
-                Selecciona un perfil de la lista para modificar su rol o vincularlo a un jugador de la base de datos.
+                Selecciona un perfil de la lista para modificar su rol, vincularlo a un jugador de la base de datos o restablecer su contraseña.
               </p>
             </div>
           )}
