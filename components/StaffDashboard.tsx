@@ -29,6 +29,7 @@ import ClubDashboard from './ClubDashboard'
 import PlayerProfileArea from './PlayerProfileArea'
 import DinamicasArea from './DinamicasArea'
 import FisicaGimnasioArea from './FisicaGimnasioArea'
+import ReporteMicrocicloArea from './ReporteMicrocicloArea'
 import { logActivity } from '../lib/activityLogger'
 import { getPerformanceInsights, queryCoachAssistant } from '../services/geminiService'
 import { AreaChart, Area, XAxis, ResponsiveContainer, Tooltip, BarChart, Bar, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
@@ -1366,6 +1367,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({
         />;
       case 'fisica_reporte':
         return <FisicaArea performanceRecords={performanceRecords} view="report" userRole={userRole} userClub={userClub} userClubId={userClubId} highlightPlayerId={player_id} clubs={clubs} categoryName={selectedCategoryName} />;
+      case 'fisica_reporte_microciclo':
+        return <ReporteMicrocicloArea userRole={userRole} userClub={userClub} userClubId={userClubId} clubs={clubs} performanceRecords={performanceRecords} />;
       case 'fisica_pronostico':
         return (
           <PronosticoCargas 

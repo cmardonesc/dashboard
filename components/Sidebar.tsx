@@ -38,7 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const [diarioOpen, setDiarioOpen] = useState(isDiarioActive);
 
   // Estado para Área Física y sus submenús
-  const FISICA_IDS = ['fisica_reporte', 'fisica_pronostico', 'fisica_gimnasio', 'fisica_resumen_grupal'];
+  const FISICA_IDS = ['fisica_reporte', 'fisica_reporte_microciclo', 'fisica_pronostico', 'fisica_gimnasio', 'fisica_resumen_grupal'];
   const isFisicaActive = FISICA_IDS.includes(activeMenu);
   const [fisicaOpen, setFisicaOpen] = useState(isFisicaActive);
 
@@ -121,6 +121,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
   const isMenuAllowed = (menuId: string) => {
     if (userRole === 'admin') return true;
     if (userRole === 'club') {
+      if (menuId.startsWith('nutricion_') || menuId === 'nutricion') return true;
       return [
         'inicio', 
         'perfil_jugador', 
@@ -153,6 +154,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
       if (allowedMenus.includes('fisica') && (
         menuId === 'fisica_resumen_grupal' || 
         menuId === 'fisica_reporte' || 
+        menuId === 'fisica_reporte_microciclo' || 
         menuId === 'fisica_pronostico' || 
         menuId === 'fisica_gimnasio'
       )) return true;
@@ -417,6 +419,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMenu, onMenuChange, userRole, u
                       >
                         <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_reporte' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
                         <span className="text-[10px] font-bold">Reporte Sesión</span>
+                      </button>
+                    )}
+
+                    {/* REPORTE DE MICROCICLO */}
+                    {isMenuAllowed('fisica_reporte_microciclo') && (
+                      <button
+                        onClick={() => onMenuChange('fisica_reporte_microciclo')}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${
+                          activeMenu === 'fisica_reporte_microciclo' ? 'text-red-400 bg-red-900/20' : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'fisica_reporte_microciclo' ? 'bg-red-400' : 'bg-slate-700'}`}></div>
+                        <span className="text-[10px] font-bold">Reporte de Microciclo</span>
                       </button>
                     )}
 

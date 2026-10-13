@@ -185,7 +185,10 @@ const PlayerProfileArea: React.FC<PlayerProfileAreaProps> = ({ userRole, userClu
         .eq('player_id', playerId)
         .single();
       if (pData) {
-        const clubName = pData.clubes && !Array.isArray(pData.clubes) ? (pData.clubes as any).nombre : null;
+        let clubName = pData.clubes && !Array.isArray(pData.clubes) ? (pData.clubes as any).nombre : null;
+        if (!clubName && pData.id_club && FALLBACK_CLUB_NAMES[Number(pData.id_club)]) {
+          clubName = FALLBACK_CLUB_NAMES[Number(pData.id_club)];
+        }
         const pDataWithClub = { ...pData, club: clubName } as any;
         if (pData.player_id === 355) {
           pDataWithClub.id_club = 89;

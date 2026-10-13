@@ -100,6 +100,7 @@ export type MenuId =
   | 'fisica_carga_externa_tareas'
   | 'fisica_gps_intelligence'
   | 'fisica_reporte'
+  | 'fisica_reporte_microciclo'
   | 'fisica_pronostico'
   | 'fisica_resumen_grupal'
   | 'fisica_gimnasio'

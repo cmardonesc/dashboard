@@ -611,7 +611,8 @@ export default function App() {
           id_club: clubId ? Number(clubId) : undefined,
           position: p.posicion || 'S/D',
           category: category,
-          anio: p.anio
+          anio: p.anio,
+          fecha_nacimiento: p.fecha_nacimiento
         };
       });
 
@@ -1061,9 +1062,7 @@ export default function App() {
         }
 
         const promises: Promise<any>[] = [];
-        if (userData.role !== 'player') {
-          promises.push(fetchRealPlayers().catch(err => console.error("Error loading players:", err)));
-        }
+        promises.push(fetchRealPlayers().catch(err => console.error("Error loading players:", err)));
         promises.push(fetchPerformanceData(userData.role, userData.player_id).catch(e => console.error("Error loading performance data:", e)));
         
         await Promise.all(promises);
@@ -1544,6 +1543,18 @@ export default function App() {
           (r) => r.player.player_id !== undefined && Number(r.player.player_id) === Number(linkedPlayerId)
         ) || null
     }
+    if (!found && linkedPlayerId !== null) {
+      const dbP = dbPlayers.find(p => p.player_id !== undefined && Number(p.player_id) === Number(linkedPlayerId));
+      if (dbP) {
+        found = {
+          player: dbP,
+          wellness: allData.wellness.filter((w: any) => Number(w.player_id || w.playerId) === Number(linkedPlayerId)),
+          loads: allData.loads.filter((l: any) => Number(l.player_id || l.playerId) === Number(linkedPlayerId)),
+          gps: allData.gps.filter((g: any) => Number(g.player_id || g.playerId) === Number(linkedPlayerId)),
+          nutrition: allData.nutrition.filter((n: any) => Number(n.player_id) === Number(linkedPlayerId))
+        };
+      }
+    }
     if (!found && role === 'player') {
       if (playersLoading) return null
       return {
@@ -1558,7 +1569,7 @@ export default function App() {
       } as AthletePerformanceRecord
     }
     return found
-  }, [performanceRecords, sessionUser, linkedPlayerId, role, playersLoading])
+  }, [performanceRecords, sessionUser, linkedPlayerId, role, playersLoading, dbPlayers, allData])
 
   if (isRecoveryMode) return (
     <div className="min-h-screen flex items-center justify-center bg-[#0b1220] px-6 relative">

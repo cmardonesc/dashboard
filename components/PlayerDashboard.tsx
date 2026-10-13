@@ -590,33 +590,26 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
     const fetchEvaluations = async () => {
       if (!player?.player_id) return;
       
-      const pYearRaw = player ? ((player as any).anio ? Number((player as any).anio) : (player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : NaN)) : NaN;
-      if (isNaN(pYearRaw)) {
-        console.warn("No valid player year found. Skipping evaluations query.");
-        setAllPlayers([]);
-        setEvalImtp([]);
-        setEvalCmj([]);
-        setEvalCmjRebound([]);
-        return;
-      }
-
       setLoadingEvals(true);
       try {
-        const { data: pData } = await supabase
-          .from('players')
-          .select('player_id, anio, fecha_nacimiento')
-          .eq('anio', pYearRaw);
+        const pYearRaw = player ? ((player as any).anio ? Number((player as any).anio) : (player.fecha_nacimiento ? new Date(player.fecha_nacimiento).getFullYear() : NaN)) : NaN;
         
-        if (pData) {
-          setAllPlayers(pData);
+        let pData: any[] = [];
+        if (!isNaN(pYearRaw)) {
+          const { data } = await supabase
+            .from('players')
+            .select('player_id, anio, fecha_nacimiento')
+            .eq('anio', pYearRaw);
+          if (data) pData = data;
         }
+        setAllPlayers(pData);
 
         const ids = Array.from(new Set([
           player.player_id,
-          ...(pData || []).map((p: any) => p.player_id).filter(Boolean)
+          ...pData.map((p: any) => p.player_id).filter(Boolean)
         ]));
 
-        const fetchInBatches = async (table: string, columns: string, idList: number[]) => {
+        const fetchInBatches = async (table: string, idList: number[]) => {
           if (idList.length === 0) return [];
           const batchSize = 200;
           const results = [];
@@ -624,7 +617,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             const batch = idList.slice(i, i + batchSize);
             const { data, error } = await supabase
               .from(table)
-              .select(columns)
+              .select('*')
               .in('player_id', batch);
             if (error) {
               console.error(`Error querying ${table} batch:`, error.message);
@@ -635,11 +628,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
           return results;
         };
 
-        const imtpData = await fetchInBatches(
-          'evaluaciones_imtp',
-          'player_id, fecha, fecha_test, "Peak Vertical Force [N]", "Peak Vertical Force / BM [N/kg]", imtp_fuerza_n, imtp_f_relativa_n_kg',
-          ids
-        );
+        const imtpData = await fetchInBatches('evaluaciones_imtp', ids);
 
         const processedImtp = imtpData.map((item: any) => {
           const newItem = { ...item };
@@ -657,11 +646,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         });
         setEvalImtp(processedImtp);
 
-        const cmjData = await fetchInBatches(
-          'evaluaciones_cmj',
-          'player_id, fecha, fecha_test, concentric_peak_force_n, fuerza_cmj, rsi_modified_m_s, cmj_rsi_mod, jump_height_impmom_cm, cmj_altura_salto_im',
-          ids
-        );
+        const cmjData = await fetchInBatches('evaluaciones_cmj', ids);
 
         const processedCmj = cmjData.map((item: any) => {
           const newItem = { ...item };
@@ -684,11 +669,7 @@ const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         });
         setEvalCmj(processedCmj);
 
-        const cmjReboundData = await fetchInBatches(
-          'evaluaciones_cmj_rebound',
-          'player_id, fecha, fecha_test, rebound_rsi, rebound_contact_time_ms',
-          ids
-        );
+        const cmjReboundData = await fetchInBatches('evaluaciones_cmj_rebound', ids);
         setEvalCmjRebound(cmjReboundData);
 
       } catch (err) {
