@@ -775,12 +775,12 @@ const MatchManagementArea: React.FC<MatchManagementAreaProps> = ({
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3.5">
                         <ClubBadge 
                           clubName={match.opponent} 
                           clubs={clubs} 
                           showName={false} 
-                          logoSize="w-8 h-8"
+                          logoSize="w-9 h-9 md:w-11 md:h-11"
                         />
                         <div>
                           <h4 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter leading-tight">

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { normalizeClub, getDriveDirectLink } from '../lib/utils';
-import { CLUB_LOGOS, FALLBACK_CLUB_NAMES } from '../constants';
+import { CLUB_LOGOS, FALLBACK_CLUB_NAMES, NATIONAL_FEDERATION_LOGOS, COUNTRY_FLAG_CODES } from '../constants';
 
 interface ClubBadgeProps {
   clubName?: string;
@@ -72,17 +72,38 @@ const ClubBadge: React.FC<ClubBadgeProps> = ({
     if (!finalUrl && resolvedName) {
       const normName = normalizeClub(resolvedName);
       
-      // Buscar en listado de clubes por nombre si existe algún club con logo_url en la lista
-      const clubByName = clubs.find(c => normalizeClub(c.nombre) === normName);
-      if (clubByName?.logo_url) {
-        finalUrl = getDriveDirectLink(clubByName.logo_url);
+      // A. Buscar en federaciones nacionales de fútbol
+      if (NATIONAL_FEDERATION_LOGOS[normName]) {
+        finalUrl = NATIONAL_FEDERATION_LOGOS[normName];
+      } else {
+        const fedKey = Object.keys(NATIONAL_FEDERATION_LOGOS).find(k => normName.includes(k));
+        if (fedKey) {
+          finalUrl = NATIONAL_FEDERATION_LOGOS[fedKey];
+        }
+      }
+
+      // B. Buscar en listado de clubes por nombre si existe algún club con logo_url en la lista
+      if (!finalUrl) {
+        const clubByName = clubs.find(c => normalizeClub(c.nombre) === normName);
+        if (clubByName?.logo_url) {
+          finalUrl = getDriveDirectLink(clubByName.logo_url);
+        }
       }
       
-      // Si aún no hay logo, buscar en las constantes estáticas de logos
+      // C. Buscar en las constantes estáticas de logos de clubes
       if (!finalUrl) {
         const staticLogo = CLUB_LOGOS[normName];
         if (staticLogo) {
           finalUrl = getDriveDirectLink(staticLogo);
+        }
+      }
+
+      // D. Fallback de banderas para selecciones nacionales
+      if (!finalUrl) {
+        const foundKey = Object.keys(COUNTRY_FLAG_CODES).find(k => normName.includes(k));
+        const flagCode = COUNTRY_FLAG_CODES[normName] || (foundKey ? COUNTRY_FLAG_CODES[foundKey] : null);
+        if (flagCode) {
+          finalUrl = `https://flagcdn.com/w160/${flagCode}.png`;
         }
       }
     }
